@@ -3,42 +3,64 @@
 package authz_test
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/authz"
 	"github.com/grepnest/grepnest/internal/postgres"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestAuthorizedRepositoriesUseDurableIDs(t *testing.T) {
 	store := testStore(t)
-	installationID := time.Now().UnixNano()
-	repositoryID := installationID + 1
-	oldName := "acme/old-" + time.Now().Format("150405.000000000")
-	newName := "acme/new-" + time.Now().Format("150405.000000000")
-	seedRepository(t, store, installationID, repositoryID, oldName, true)
-	principal := authn.Principal{InstallationID: installationID, RepositoryIDs: []int64{repositoryID}}
+	seedRepository(t, store, 10, 101, "acme/old", true)
+	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}
 	got, err := authz.NewPostgres(store).AuthorizedRepositories(t.Context(), principal, authz.RepositorySelection{})
-	if err != nil || len(got) != 1 || got[0].GitHubID != repositoryID {
+	if err != nil || len(got) != 1 || got[0].GitHubID != 101 {
 		t.Fatalf("got=%#v err=%v", got, err)
 	}
-	seedRepository(t, store, installationID, repositoryID, newName, true)
-	seedRepository(t, store, installationID, repositoryID+1, oldName, true)
-	got, err = authz.NewPostgres(store).AuthorizedRepositories(t.Context(), principal, authz.RepositorySelection{Names: []string{oldName}})
+	seedRepository(t, store, 10, 101, "acme/new", true)
+	seedRepository(t, store, 10, 102, "acme/old", true)
+	got, err = authz.NewPostgres(store).AuthorizedRepositories(t.Context(), principal, authz.RepositorySelection{Names: []string{"acme/old"}})
 	if err != nil || len(got) != 0 {
 		t.Fatalf("old-name reuse authorized: %#v err=%v", got, err)
 	}
-	one, err := authz.NewPostgres(store).AuthorizedRepository(t.Context(), principal, repositoryID)
-	if err != nil || one.Name != newName {
+	one, err := authz.NewPostgres(store).AuthorizedRepository(t.Context(), principal, 101)
+	if err != nil || one.Name != "acme/new" {
 		t.Fatalf("got=%#v err=%v", one, err)
 	}
 }
 
 func testStore(t *testing.T) *postgres.Store {
 	t.Helper()
-	pool, err := postgres.Open(t.Context(), testDSN(t))
+	admin, err := pgxpool.New(t.Context(), testDSN(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(admin.Close)
+	bytes := make([]byte, 8)
+	if _, err := rand.Read(bytes); err != nil {
+		t.Fatal(err)
+	}
+	schema := "grepnest_authz_" + hex.EncodeToString(bytes)
+	if _, err := admin.Exec(t.Context(), "create schema "+schema); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = admin.Exec(t.Context(), "drop schema "+schema+" cascade") })
+	config, err := pgxpool.ParseConfig(testDSN(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.AfterConnect = func(ctx context.Context, connection *pgx.Conn) error {
+		_, err := connection.Exec(ctx, "set search_path to "+schema)
+		return err
+	}
+	pool, err := pgxpool.NewWithConfig(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)
 	}

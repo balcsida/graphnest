@@ -46,12 +46,13 @@ func TestRepositoryStorePreservesDurableIDs(t *testing.T) {
 	if err := store.UpsertSearchNode(t.Context(), "node-a", "http://zoekt.invalid"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.UpsertSearchNode(t.Context(), "node-b", "http://zoekt.invalid"); err != nil {
+	if err := store.UpsertSearchNode(t.Context(), "node-b", "http://zoekt-b.invalid"); err != nil {
 		t.Fatal(err)
 	}
 	var nodes int
-	if err := store.pool.QueryRow(t.Context(), "select count(*) from search_nodes").Scan(&nodes); err != nil || nodes != 1 {
-		t.Fatalf("nodes=%d err=%v", nodes, err)
+	var nodeID, baseURL string
+	if err := store.pool.QueryRow(t.Context(), "select count(*), min(node_id), min(base_url) from search_nodes").Scan(&nodes, &nodeID, &baseURL); err != nil || nodes != 1 || nodeID != "node-b" || baseURL != "http://zoekt-b.invalid" {
+		t.Fatalf("nodes=%d nodeID=%q baseURL=%q err=%v", nodes, nodeID, baseURL, err)
 	}
 }
 
