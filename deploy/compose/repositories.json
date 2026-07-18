@@ -1,0 +1,10 @@
+[
+  {
+    "id": 1,
+    "zoekt_id": 7,
+    "name": "fixture/repository",
+    "branch": "main",
+    "indexed_sha": "",
+    "web_url": "https://example.invalid/fixture/repository"
+  }
+]

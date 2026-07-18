@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:18.3@sha256:7e32e9833a6fb1c92c32552794cb6ed569d51b445a54907d35fc112ef39684db
+    environment:
+      POSTGRES_DB: grepnest
+      POSTGRES_PASSWORD: grepnest
+      POSTGRES_USER: grepnest
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grepnest"]
+      interval: 1s
+      timeout: 1s
+      retries: 30
+    networks: [internal]
+
+  zoekt-index:
+    image: ghcr.io/sourcegraph/zoekt@sha256:ac76391662c77d02f5be73b64272304415dbc42cac70633ef89d28747edff4cd
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        cp -R /fixture /tmp/repository
+        git init --initial-branch=main /tmp/repository
+        git -C /tmp/repository config user.name "GrepNest Test"
+        git -C /tmp/repository config user.email test@grepnest.invalid
+        git -C /tmp/repository config zoekt.repoid 7
+        git -C /tmp/repository config zoekt.name fixture/repository
+        git -C /tmp/repository add .
+        git -C /tmp/repository commit -m fixture
+        zoekt-git-index -index /data/index -branches main -submodules=false -incremental=false /tmp/repository
+    volumes:
+      - ../../test/fixtures/repository:/fixture:ro
+      - zoekt-index:/data/index
+    networks: [internal]
+
+  zoekt:
+    image: ghcr.io/sourcegraph/zoekt@sha256:ac76391662c77d02f5be73b64272304415dbc42cac70633ef89d28747edff4cd
+    entrypoint: ["zoekt-webserver"]
+    command: ["-index", "/data/index", "-listen", ":6070", "-rpc", "-html=false"]
+    ports:
+      - "127.0.0.1:6070:6070"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - --header 'Content-Type: application/json' --post-data '{\"Q\":\"file:.\",\"RepoIDs\":[],\"Opts\":{\"MaxDocDisplayCount\":1}}' http://127.0.0.1:6070/api/search >/dev/null"]
+      interval: 1s
+      timeout: 1s
+      retries: 30
+    volumes:
+      - zoekt-index:/data/index:ro
+    networks: [internal]
+
+networks:
+  internal:
+    internal: true
+
+volumes:
+  zoekt-index:
