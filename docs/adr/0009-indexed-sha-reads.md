@@ -5,8 +5,9 @@
 
 ## Decision
 
-Future file reads default to each repository's `indexed_sha`, not its moving
-default branch.
+File reads use each repository's committed `indexed_sha`, not its moving
+default branch. Search results are served only when Zoekt's branch version
+matches that same committed SHA.
 
 ## Rationale
 
@@ -14,5 +15,7 @@ Agent-visible file content must correspond to search results and citations.
 
 ## Consequences
 
-Search results carry indexed SHA metadata. File reads will use the authorized
-GitHub content API because the public server does not mount the Zoekt PVC.
+During the unavoidable Zoekt-filesystem/PostgreSQL publication gap, mismatched
+search results are suppressed. File reads use the authorized GitHub Contents
+API because the public server does not mount the Zoekt data volume. An empty
+`indexed_sha` returns `not_indexed`; it never falls back to a branch head.

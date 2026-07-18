@@ -1,6 +1,6 @@
 # GrepNest Implementation Plan
 
-## Current Pass: Milestones 0 and 1
+## Completed: Milestones 0 and 1
 
 Work proceeds in this order, with a runnable check and atomic commit after each
 logical change:
@@ -18,30 +18,30 @@ logical change:
 9. Prove fixture indexing, REST search, MCP search, and authorization isolation
    with real Zoekt.
 
-The executable task plan, exact file paths, APIs, tests, commands, and commits
-are in `docs/superpowers/plans/2026-07-18-milestones-0-1.md`.
+The completed task plan is in
+`docs/superpowers/plans/2026-07-18-milestones-0-1.md`.
 
-## Milestone 2 Notes: GitHub Enterprise and Durable Indexing
+## Current Pass: Milestone 2
 
-Start only after every Milestones 0-1 gate passes.
+Milestones 0-1 passed every gate. Work now proceeds in this order:
 
-- Add embedded PostgreSQL migrations for installations, repositories,
-  index jobs, webhook deliveries, and search nodes.
-- Use `pgx` transactions and `SKIP LOCKED` for one leased job per repository;
-  coalesce queued pushes to the newest desired SHA.
-- Add configurable GitHub web, API, and upload URLs plus a shared custom CA
-  trust source.
-- Generate GitHub App installation tokens just in time; keep them in memory and
-  use a temporary credential helper for Git without credential-bearing remotes.
-- Authenticate webhook HMAC before parsing, bound payloads, deduplicate delivery
-  IDs durably, and enqueue only default-branch work.
-- Run one indexer beside Zoekt. It maintains mirrors and isolated worktrees,
-  invokes pinned binaries with argument arrays, never executes repository code,
-  and atomically records `indexed_sha` only after index visibility checks.
-- Implement repository list/status APIs and indexed-SHA file reads through the
-  authorized GitHub content API.
-- Test with fake GHES HTTP, PostgreSQL-backed queue concurrency, webhook
-  coalescing, token redaction, repository removal, and rename behavior.
+1. Add `pgx/v5`, embedded PostgreSQL migrations, and transactional repository,
+   delivery, and leased-job operations.
+2. Add the standard-library GitHub App client, custom CA trust, installation
+   token handling, and installation repository reconciliation.
+3. Add bounded HMAC-verified webhook ingestion and transactional default-branch
+   job coalescing.
+4. Replace the runtime static repository registry with PostgreSQL while keeping
+   the shared authorization and search service.
+5. Add the one-at-a-time indexer using safe Git mirrors, temporary worktrees,
+   the pinned Zoekt binary, and exact `/api/list` visibility checks.
+6. Add repository list/status and authorized indexed-SHA file reads.
+7. Prove fake-GHES, PostgreSQL concurrency, Git safety, Zoekt visibility, REST,
+   MCP, and authorization behavior end to end.
+
+The approved design is in
+`docs/superpowers/specs/2026-07-18-milestone-2-design.md`. The executable TDD
+plan will be written after this design document is reviewed.
 
 ## Milestone 3 Notes: OpenShift Pilot
 

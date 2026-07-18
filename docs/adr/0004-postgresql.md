@@ -5,8 +5,9 @@
 
 ## Decision
 
-Use PostgreSQL as the future metadata store and durable index-job queue. Do not
-use it in the static Milestone 1 application path.
+Use PostgreSQL as the metadata store and durable index-job queue beginning in
+Milestone 2. Use `pgx/v5` directly with embedded ordered SQL migrations; do not
+add an ORM, Redis, or a migration framework.
 
 ## Rationale
 
@@ -15,5 +16,8 @@ deduplication, job coalescing, and lease-based claims without Redis.
 
 ## Consequences
 
-Development Compose includes PostgreSQL now. Schema, migrations, `pgx`, and
-runtime readiness dependency begin only in Milestone 2.
+The schema stores installations, repositories, webhook delivery IDs, index
+jobs, and the single search node. Webhook deduplication, desired-SHA updates,
+and queued-job coalescing share one transaction. Workers claim short
+transactions with `FOR UPDATE SKIP LOCKED`, perform external work outside the
+transaction, and publish `indexed_sha` only for the current desired SHA.

@@ -6,7 +6,9 @@
 ## Decision
 
 Access GitHub Enterprise Server and GitHub Enterprise Cloud with short-lived
-GitHub App installation tokens and configurable web, API, and upload base URLs.
+GitHub App installation tokens and independently configurable HTTPS web, API,
+upload, and Git remote base URLs. Use the Go standard library rather than a
+GitHub SDK.
 
 ## Rationale
 
@@ -15,6 +17,7 @@ persisting user credentials.
 
 ## Consequences
 
-Tokens stay in memory, never enter persisted remotes, and are passed only to
-the Git operation or API client that needs them. Milestone 1 uses fixtures and
-does not implement this decision.
+App JWTs use RS256 and installation tokens stay in memory. Tokens never enter
+persisted remotes and are passed only to the Git process or API request that
+needs them. Go and Git share a configurable custom CA bundle, reject redirects,
+and never disable TLS verification. Numeric GitHub IDs are durable identity.

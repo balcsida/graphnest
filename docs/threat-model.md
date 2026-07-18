@@ -3,7 +3,7 @@
 ## Protected assets
 
 - source, repository metadata, and indexed revisions;
-- bearer tokens and future installation credentials;
+- bearer tokens and GitHub App installation credentials;
 - authorization scopes and server-selected Zoekt repository IDs;
 - service and index availability.
 
@@ -22,11 +22,30 @@
 - fixture indexing uses pinned binaries with argument arrays and never runs
   fixture repository code.
 
+## Milestone 2 controls
+
+- webhook HMAC is checked over bounded untouched bytes before JSON decoding;
+- App and installation credentials stay in memory and are redacted from logs;
+- Go and Git extend system trust with the same custom CA, require HTTPS, and
+  reject redirects and unconfigured hosts;
+- persisted Git remotes contain no credentials, and child processes receive an
+  allowlisted environment through a fixed askpass helper;
+- indexing never runs repository hooks, code, submodules, LFS smudge filters,
+  build tools, or repository-supplied ctags configuration;
+- numeric IDs determine database and disk identity; untrusted names and paths
+  never determine filesystem locations;
+- PostgreSQL transactions deduplicate deliveries and coalesce pushes, leases
+  prevent concurrent indexing, and indexed SHA is published only after exact
+  Zoekt visibility;
+- search suppresses Zoekt revisions that do not match committed repository
+  metadata, and file reads authorize before fetching the committed indexed SHA;
+- HTTP bodies, decoded files, child output, command duration, and free-space
+  admission are bounded.
+
 ## Known limits
 
-This is a local development slice, not a production security boundary.
-PostgreSQL has no application role yet. GitHub webhook verification,
-installation-token handling, enterprise CAs, durable job leases, container
-isolation, network policy, secret delivery, and production ingress are deferred
-to Milestones 2 and 3. Do not claim production readiness from local or Compose
-success.
+This remains a local development slice, not a production security boundary.
+Git pack expansion and Zoekt shards require container and volume quotas.
+Container isolation, network policy, secret delivery, backup/restore, and
+production ingress remain Milestone 3 work. Do not claim production readiness
+from local or Compose success.
