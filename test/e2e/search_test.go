@@ -71,19 +71,15 @@ func TestPinnedFixtureSearch(t *testing.T) {
 		t.Fatal(err)
 	}
 	webserver := exec.CommandContext(ctx, zoektWebserver, "-index", index, "-listen", address, "-rpc", "-html=false")
-	var logs bytes.Buffer
-	webserver.Stdout, webserver.Stderr = &logs, &logs
-	if err := webserver.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { stop(t, webserver, &logs) })
+	process := startProcess(t, webserver)
+	t.Cleanup(func() { process.stop(t) })
 
 	client, err := zoekt.New("http://"+address, &http.Client{Timeout: time.Second}, 256<<10, observability.New())
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitReady(t, ctx, client, webserver, &logs)
-	waitIndexed(t, ctx, client, &logs)
+	waitReady(t, ctx, client, process)
+	waitIndexed(t, ctx, client, process)
 	backend := &recordingBackend{SearchBackend: client}
 	registry, err := repository.NewStatic([]repository.Repository{
 		{ID: 1, ZoektID: 7, Name: fixtureName, Branch: "main", IndexedSHA: sha, WebURL: "https://example.invalid/fixture/repository"},
@@ -138,6 +134,18 @@ func TestPinnedFixtureSearch(t *testing.T) {
 	})
 }
 
+func TestManagedProcessCapturesEarlyExit(t *testing.T) {
+	process := startProcess(t, exec.Command("/bin/sh", "-c", "printf boom; exit 7"))
+	select {
+	case <-process.done:
+		if process.err == nil || process.logs.String() != "boom" {
+			t.Fatalf("error = %v, logs = %q", process.err, process.logs.String())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("process exit was not reported")
+	}
+}
+
 func requiredExecutables(t *testing.T) (string, string) {
 	t.Helper()
 	names := []string{"ZOEKT_GIT_INDEX", "ZOEKT_WEBSERVER"}
@@ -187,26 +195,46 @@ func run(t *testing.T, ctx context.Context, name string, args ...string) string 
 	return string(output)
 }
 
-func waitReady(t *testing.T, ctx context.Context, client *zoekt.Client, command *exec.Cmd, logs *bytes.Buffer) {
+type managedProcess struct {
+	command *exec.Cmd
+	logs    bytes.Buffer
+	done    chan struct{}
+	err     error
+}
+
+func startProcess(t *testing.T, command *exec.Cmd) *managedProcess {
+	t.Helper()
+	process := &managedProcess{command: command, done: make(chan struct{})}
+	command.Stdout, command.Stderr = &process.logs, &process.logs
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		process.err = command.Wait()
+		close(process.done)
+	}()
+	return process
+}
+
+func waitReady(t *testing.T, ctx context.Context, client *zoekt.Client, process *managedProcess) {
 	t.Helper()
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		if command.ProcessState != nil {
-			t.Fatalf("zoekt-webserver exited before readiness: %s", logs.String())
-		}
 		if err := client.Health(ctx); err == nil {
 			return
 		}
 		select {
+		case <-process.done:
+			t.Fatalf("zoekt-webserver exited before readiness: %v\n%s", process.err, process.logs.String())
 		case <-ctx.Done():
-			t.Fatalf("zoekt-webserver readiness: %v\n%s", ctx.Err(), logs.String())
+			t.Fatalf("zoekt-webserver readiness: %v", ctx.Err())
 		case <-ticker.C:
 		}
 	}
 }
 
-func waitIndexed(t *testing.T, ctx context.Context, client *zoekt.Client, logs *bytes.Buffer) {
+func waitIndexed(t *testing.T, ctx context.Context, client *zoekt.Client, process *managedProcess) {
 	t.Helper()
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
@@ -218,27 +246,29 @@ func waitIndexed(t *testing.T, ctx context.Context, client *zoekt.Client, logs *
 			return
 		}
 		select {
+		case <-process.done:
+			t.Fatalf("zoekt-webserver exited before index visibility: %v\n%s", process.err, process.logs.String())
 		case <-ctx.Done():
-			t.Fatalf("fixture index visibility: %v (last search: %v)\n%s", ctx.Err(), err, logs.String())
+			t.Fatalf("fixture index visibility: %v (last search: %v)", ctx.Err(), err)
 		case <-ticker.C:
 		}
 	}
 }
 
-func stop(t *testing.T, command *exec.Cmd, logs *bytes.Buffer) {
+func (process *managedProcess) stop(t *testing.T) {
 	t.Helper()
-	if command.ProcessState != nil {
-		return
-	}
-	_ = command.Process.Signal(os.Interrupt)
-	done := make(chan error, 1)
-	go func() { done <- command.Wait() }()
 	select {
-	case <-done:
+	case <-process.done:
+		return
+	default:
+	}
+	_ = process.command.Process.Signal(os.Interrupt)
+	select {
+	case <-process.done:
 	case <-time.After(2 * time.Second):
-		_ = command.Process.Kill()
-		<-done
-		t.Errorf("zoekt-webserver required SIGKILL: %s", logs.String())
+		_ = process.command.Process.Kill()
+		<-process.done
+		t.Errorf("zoekt-webserver required SIGKILL: %s", process.logs.String())
 	}
 }
 
