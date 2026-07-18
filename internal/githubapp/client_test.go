@@ -22,6 +22,7 @@ func TestInstallationTokenCachesSortedRestrictionsAndRefreshes(t *testing.T) {
 	now := time.Date(2026, time.July, 18, 12, 0, 0, 0, time.UTC)
 	var mu sync.Mutex
 	requests := 0
+	var client *Client
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -29,7 +30,7 @@ func TestInstallationTokenCachesSortedRestrictionsAndRefreshes(t *testing.T) {
 		if r.Method != http.MethodPost || r.URL.EscapedPath() != "/api/v3/app/installations/42/access_tokens" {
 			t.Errorf("request = %s %s", r.Method, r.URL.EscapedPath())
 		}
-		assertHeaders(t, r, "Bearer ")
+		assertRequest(t, r, http.MethodPost, signerAuthorization(t, client.signer))
 		var body struct {
 			RepositoryIDs []int64 `json:"repository_ids"`
 		}
@@ -42,7 +43,7 @@ func TestInstallationTokenCachesSortedRestrictionsAndRefreshes(t *testing.T) {
 		fmt.Fprintf(w, `{"token":"opaque-token-%d","expires_at":%q}`, requests, now.Add(10*time.Minute).Format(time.RFC3339))
 	}))
 	defer server.Close()
-	client := testClient(t, server, &now, 1024)
+	client = testClient(t, server, &now, 1024)
 
 	first, err := client.InstallationToken(context.Background(), 42, []int64{7, 2})
 	if err != nil {
@@ -68,10 +69,11 @@ func TestClientPaginatesRetries401AndEscapesSegments(t *testing.T) {
 	var server *httptest.Server
 	var repositoryRequests int
 	var tokenRequests int
+	var client *Client
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assertHeaders(t, r, "")
 		switch r.URL.EscapedPath() {
 		case "/api/v3/app/installations":
+			assertRequest(t, r, http.MethodGet, signerAuthorization(t, client.signer))
 			if r.URL.Query().Get("page") == "2" {
 				fmt.Fprint(w, `[{"id":2,"account":{"login":"two","type":"Organization"},"status":"active"}]`)
 				return
@@ -79,6 +81,7 @@ func TestClientPaginatesRetries401AndEscapesSegments(t *testing.T) {
 			w.Header().Set("Link", "<"+server.URL+"/api/v3/app/installations?page=2>; rel=\"next\"")
 			fmt.Fprint(w, `[{"id":1,"account":{"login":"one","type":"User"},"status":"active"}]`)
 		case "/api/v3/app/installations/9/access_tokens":
+			assertRequest(t, r, http.MethodPost, signerAuthorization(t, client.signer))
 			tokenRequests++
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -90,17 +93,17 @@ func TestClientPaginatesRetries401AndEscapesSegments(t *testing.T) {
 			fmt.Fprintf(w, `{"token":"installation-secret-%d","expires_at":"2026-07-18T13:00:00Z"}`, tokenRequests)
 		case "/api/v3/installation/repositories":
 			repositoryRequests++
+			assertRequest(t, r, http.MethodGet, fmt.Sprintf("Bearer installation-secret-%d", repositoryRequests))
 			if repositoryRequests == 1 {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
-			if got := r.Header.Get("Authorization"); got != "Bearer installation-secret-2" {
-				t.Errorf("authorization = %q", got)
-			}
 			fmt.Fprint(w, `{"repositories":[{"id":22,"full_name":"o/r","owner":{"login":"o"},"name":"r","clone_url":"https://example/r.git","html_url":"https://example/r","default_branch":"main","private":true}]}`)
 		case "/api/v3/repos/space%20owner/repo%2Fname/branches/main%2Fbranch":
+			assertRequest(t, r, http.MethodGet, "Bearer installation-secret-2")
 			fmt.Fprint(w, `{"commit":{"sha":"abc123"}}`)
 		case "/api/v3/repos/space%20owner/repo%2Fname/contents/dir/file%20name":
+			assertRequest(t, r, http.MethodGet, "Bearer installation-secret-2")
 			if got := r.URL.Query().Get("ref"); got != "refs/heads/main & exact" {
 				t.Errorf("ref = %q", got)
 			}
@@ -113,7 +116,7 @@ func TestClientPaginatesRetries401AndEscapesSegments(t *testing.T) {
 	server = httptest.NewTLSServer(handler)
 	defer server.Close()
 	now := time.Date(2026, time.July, 18, 12, 0, 0, 0, time.UTC)
-	client := testClient(t, server, &now, 4096)
+	client = testClient(t, server, &now, 4096)
 
 	installations, err := client.Installations(context.Background())
 	if err != nil || len(installations) != 2 || installations[1].AccountLogin != "two" {
@@ -133,6 +136,47 @@ func TestClientPaginatesRetries401AndEscapesSegments(t *testing.T) {
 	content, err := client.ReadContents(context.Background(), 9, "space owner", "repo/name", "dir/file name", "refs/heads/main & exact", 256)
 	if err != nil || content.SHA != "blob" {
 		t.Fatalf("content = %#v, err = %v", content, err)
+	}
+}
+
+func TestClientNextPageParsesRFC5988Links(t *testing.T) {
+	api, err := url.Parse("https://github.example/api/v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := NewClient(Endpoints{API: api}, nil, nil, "", 0, nil)
+	tests := []struct {
+		name string
+		link string
+		want string
+	}{
+		{"URI delimiters", `<https://github.example/api/v3/items?cursor=a,b;c>; rel=next`, "https://github.example/api/v3/items?cursor=a,b;c"},
+		{"unquoted relation", `<https://github.example/api/v3/items?page=2>; rel=next`, "https://github.example/api/v3/items?page=2"},
+		{"multiple relations", `<https://github.example/api/v3/items?page=2>; rel="prev next"`, "https://github.example/api/v3/items?page=2"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			next, err := client.nextPage(test.link)
+			if err != nil || next == nil || next.String() != test.want {
+				t.Fatalf("next = %v, err = %v", next, err)
+			}
+		})
+	}
+}
+
+func TestClientNextPageRejectsDotSegments(t *testing.T) {
+	api, err := url.Parse("https://github.example/api/v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := NewClient(Endpoints{API: api}, nil, nil, "", 0, nil)
+	for _, link := range []string{
+		`<https://github.example/api/v3/../outside>; rel="next"`,
+		`<https://github.example/api/v3/%2e%2e/outside>; rel="next"`,
+	} {
+		if next, err := client.nextPage(link); err == nil || next != nil {
+			t.Fatalf("next = %v, err = %v", next, err)
+		}
 	}
 }
 
@@ -200,15 +244,27 @@ func testClient(t *testing.T, server *httptest.Server, now *time.Time, maxBytes 
 	return NewClient(Endpoints{Web: endpoint, API: endpoint, Upload: endpoint, Git: endpoint}, httpClient, signer, "2022-11-28", maxBytes, func() time.Time { return *now })
 }
 
-func assertHeaders(t *testing.T, r *http.Request, authPrefix string) {
+func assertRequest(t *testing.T, r *http.Request, method, authorization string) {
 	t.Helper()
+	if r.Method != method {
+		t.Errorf("method = %q, want %q", r.Method, method)
+	}
 	if got := r.Header.Get("Accept"); got != "application/vnd.github+json" {
 		t.Errorf("Accept = %q", got)
 	}
 	if got := r.Header.Get("X-GitHub-Api-Version"); got != "2022-11-28" {
 		t.Errorf("version = %q", got)
 	}
-	if authPrefix != "" && !strings.HasPrefix(r.Header.Get("Authorization"), authPrefix) {
+	if got := r.Header.Get("Authorization"); got != authorization {
 		t.Errorf("authorization = %q", r.Header.Get("Authorization"))
 	}
+}
+
+func signerAuthorization(t *testing.T, signer *Signer) string {
+	t.Helper()
+	jwt, err := signer.JWT()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return "Bearer " + jwt
 }

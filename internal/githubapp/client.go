@@ -243,12 +243,26 @@ func (c *Client) apiURL(segments ...string) *url.URL {
 }
 
 func (c *Client) nextPage(link string) (*url.URL, error) {
-	for _, value := range strings.Split(link, ",") {
-		parts := strings.Split(strings.TrimSpace(value), ";")
+	for _, value := range splitLinkHeader(link, ',') {
+		parts := splitLinkHeader(value, ';')
 		nextRelation := false
 		for _, parameter := range parts[1:] {
-			if strings.TrimSpace(parameter) == `rel="next"` {
-				nextRelation = true
+			name, value, ok := strings.Cut(strings.TrimSpace(parameter), "=")
+			if !ok || !strings.EqualFold(strings.TrimSpace(name), "rel") {
+				continue
+			}
+			value = strings.TrimSpace(value)
+			if strings.HasPrefix(value, `"`) {
+				var err error
+				value, err = strconv.Unquote(value)
+				if err != nil {
+					return nil, errors.New("invalid GitHub pagination link")
+				}
+			}
+			for _, relation := range strings.Fields(value) {
+				if relation == "next" {
+					nextRelation = true
+				}
 			}
 		}
 		if !nextRelation {
@@ -259,12 +273,46 @@ func (c *Client) nextPage(link string) (*url.URL, error) {
 			return nil, errors.New("invalid GitHub pagination link")
 		}
 		next, err := url.Parse(raw[1 : len(raw)-1])
-		if err != nil || next.Scheme != c.endpoints.API.Scheme || next.Host != c.endpoints.API.Host || !strings.HasPrefix(next.EscapedPath(), strings.TrimSuffix(c.endpoints.API.EscapedPath(), "/")+"/") {
+		apiPath := strings.TrimSuffix(c.endpoints.API.Path, "/")
+		if err != nil || next.Scheme != c.endpoints.API.Scheme || next.Host != c.endpoints.API.Host || hasDotSegment(next.Path) || !strings.HasPrefix(next.Path, apiPath+"/") {
 			return nil, errors.New("invalid GitHub pagination link")
 		}
 		return next, nil
 	}
 	return nil, nil
+}
+
+func splitLinkHeader(value string, separator byte) []string {
+	var values []string
+	start := 0
+	angle, quoted, escaped := false, false, false
+	for i := range len(value) {
+		switch {
+		case escaped:
+			escaped = false
+		case quoted && value[i] == '\\':
+			escaped = true
+		case value[i] == '"':
+			quoted = !quoted
+		case !quoted && value[i] == '<':
+			angle = true
+		case !quoted && value[i] == '>':
+			angle = false
+		case !quoted && !angle && value[i] == separator:
+			values = append(values, value[start:i])
+			start = i + 1
+		}
+	}
+	return append(values, value[start:])
+}
+
+func hasDotSegment(path string) bool {
+	for segment := range strings.SplitSeq(path, "/") {
+		if segment == "." || segment == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 func tokenKey(installationID int64, repositoryIDs []int64) string {
