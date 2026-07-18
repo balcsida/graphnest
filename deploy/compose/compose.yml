@@ -14,6 +14,7 @@ services:
 
   zoekt-index:
     image: ghcr.io/sourcegraph/zoekt@sha256:ac76391662c77d02f5be73b64272304415dbc42cac70633ef89d28747edff4cd
+    platform: linux/amd64
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
@@ -33,6 +34,7 @@ services:
 
   zoekt:
     image: ghcr.io/sourcegraph/zoekt@sha256:ac76391662c77d02f5be73b64272304415dbc42cac70633ef89d28747edff4cd
+    platform: linux/amd64
     entrypoint: ["zoekt-webserver"]
     command: ["-index", "/data/index", "-listen", ":6070", "-rpc", "-html=false"]
     ports:
@@ -44,11 +46,12 @@ services:
       retries: 30
     volumes:
       - zoekt-index:/data/index:ro
-    networks: [internal]
+    networks: [internal, loopback]
 
 networks:
   internal:
     internal: true
+  loopback:
 
 volumes:
   zoekt-index:
