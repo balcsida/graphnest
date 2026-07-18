@@ -1,0 +1,101 @@
+openapi: 3.1.0
+info:
+  title: GrepNest REST API
+  version: 0.1.0
+paths:
+  /v1/search:
+    post:
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SearchRequest'}
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SearchResponse'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '502': {$ref: '#/components/responses/BackendError'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {$ref: '#/components/responses/Timeout'}
+  /healthz:
+    get:
+      responses:
+        '200': {description: Process is live, content: {text/plain: {schema: {type: string, example: "ok\\n"}}}}
+  /readyz:
+    get:
+      responses:
+        '200': {description: Zoekt is ready, content: {text/plain: {schema: {type: string, example: "ok\\n"}}}}
+        '503':
+          description: Zoekt is unavailable
+          content: {application/json: {schema: {type: object, required: [error], properties: {error: {type: string, const: unavailable}}}}}
+  /metrics:
+    get:
+      responses:
+        '200': {description: Prometheus metrics, content: {text/plain: {schema: {type: string}}}}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+  responses:
+    InvalidRequest: {description: Invalid request, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+    Unauthenticated: {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+    BackendError: {description: Search backend failed, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+    Unavailable: {description: Service unavailable, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+    Timeout: {description: Search timed out, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+  schemas:
+    SearchRequest:
+      type: object
+      required: [query]
+      properties:
+        query: {type: string}
+        repositories: {type: array, items: {type: string}}
+        limit: {type: integer}
+        context_lines: {type: integer}
+        timeout: {type: integer, description: Go duration in nanoseconds}
+        max_response_bytes: {type: integer, format: int64}
+    SearchResponse:
+      type: object
+      required: [matches, truncated]
+      properties:
+        matches: {type: array, items: {$ref: '#/components/schemas/SearchMatch'}}
+        truncated: {type: boolean}
+    SearchMatch:
+      type: object
+      required: [repository, path, sha, line_number, line_start, line_end, preview, score]
+      properties:
+        repository: {$ref: '#/components/schemas/Repository'}
+        path: {type: string}
+        sha: {type: string}
+        line_number: {type: integer}
+        line_start: {type: integer}
+        line_end: {type: integer}
+        preview: {type: string}
+        score: {type: number, format: double}
+    Repository:
+      type: object
+      required: [id, name, branch, indexed_sha, web_url]
+      properties:
+        id: {type: integer, format: int64}
+        name: {type: string}
+        branch: {type: string}
+        indexed_sha: {type: string}
+        web_url: {type: string}
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, request_id, retryable]
+          properties:
+            code: {type: string}
+            message: {type: string}
+            request_id: {type: string}
+            retryable: {type: boolean}
