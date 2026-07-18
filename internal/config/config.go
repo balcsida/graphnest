@@ -47,7 +47,7 @@ func Load() (Config, error) {
 			DefaultContextLines: 3,
 			MaxContextLines:     20,
 			DefaultTimeout:      5 * time.Second,
-			MaxTimeout:          30 * time.Second,
+			MaxTimeout:          5 * time.Second,
 			MaxRequestBytes:     64 << 10,
 			MaxResponseBytes:    256 << 10,
 		},
@@ -85,6 +85,9 @@ func loadLimits(limits *Limits) error {
 	}
 	if err := int64Value("GREPNEST_MAX_RESPONSE_BYTES", &limits.MaxResponseBytes); err != nil {
 		return err
+	}
+	if limits.MaxResults > 100 || limits.MaxContextLines > 20 || limits.MaxTimeout > 5*time.Second || limits.MaxRequestBytes > 64<<10 || limits.MaxResponseBytes > 256<<10 {
+		return invalid("maximums exceed server safety caps")
 	}
 	if limits.DefaultResults > limits.MaxResults || limits.DefaultContextLines > limits.MaxContextLines || limits.DefaultTimeout > limits.MaxTimeout {
 		return invalid("defaults must not exceed maximums")
