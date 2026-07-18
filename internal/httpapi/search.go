@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -55,16 +54,11 @@ func RegisterSearch(mux *http.ServeMux, authenticator authn.Authenticator, servi
 		decoder.DisallowUnknownFields()
 		var input api.SearchRequest
 		if err := decoder.Decode(&input); err != nil {
-			status := http.StatusBadRequest
-			var tooLarge *http.MaxBytesError
-			if errors.As(err, &tooLarge) {
-				status = http.StatusRequestEntityTooLarge
-			}
-			writeError(writer, status, "invalid_request", "request is invalid", false)
+			writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
 			return
 		}
 		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-			writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
+			writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
 			return
 		}
 		response, err := service.Search(request.Context(), PrincipalFromContext(request.Context()), input)
@@ -85,6 +79,14 @@ func RegisterSearch(mux *http.ServeMux, authenticator authn.Authenticator, servi
 	}))
 }
 
+func invalidRequestStatus(err error) int {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		return http.StatusRequestEntityTooLarge
+	}
+	return http.StatusBadRequest
+}
+
 func writeSearchError(writer http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
@@ -99,13 +101,9 @@ func writeSearchError(writer http.ResponseWriter, err error) {
 }
 
 func writeError(writer http.ResponseWriter, status int, code, message string, retryable bool) {
-	requestID := make([]byte, 16)
-	if _, err := rand.Read(requestID); err != nil {
-		requestID = nil
-	}
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(status)
 	_ = json.NewEncoder(writer).Encode(map[string]any{"error": map[string]any{
-		"code": code, "message": message, "request_id": hex.EncodeToString(requestID), "retryable": retryable,
+		"code": code, "message": message, "request_id": rand.Text(), "retryable": retryable,
 	}})
 }

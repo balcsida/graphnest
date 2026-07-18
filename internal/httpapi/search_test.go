@@ -37,6 +37,7 @@ func TestSearchHTTP(t *testing.T) {
 		{"wrong content type", http.MethodPost, "application/json; charset=utf-8", `{"query":"needle"}`, "secret", nil, 1024, http.StatusUnsupportedMediaType, false, "invalid_request", "request is invalid", false},
 		{"unknown JSON field", http.MethodPost, "application/json", `{"query":"needle","extra":true}`, "secret", nil, 1024, http.StatusBadRequest, false, "invalid_request", "request is invalid", false},
 		{"oversized body", http.MethodPost, "application/json", `{"query":"needle"}`, "secret", nil, 8, http.StatusRequestEntityTooLarge, false, "invalid_request", "request is invalid", false},
+		{"trailing data exceeds body limit", http.MethodPost, "application/json", `{"query":"needle"}x`, "secret", nil, 18, http.StatusRequestEntityTooLarge, false, "invalid_request", "request is invalid", false},
 		{"wrong method", http.MethodGet, "application/json", `{"query":"needle"}`, "secret", nil, 1024, http.StatusMethodNotAllowed, false, "invalid_request", "request is invalid", false},
 		{"backend timeout", http.MethodPost, "application/json", `{"query":"needle"}`, "secret", context.DeadlineExceeded, 1024, http.StatusGatewayTimeout, true, "timeout", "search timed out", true},
 	}
