@@ -25,8 +25,11 @@ type Registry interface {
 
 type Static struct{ repositories []Repository }
 
-func NewStatic(repositories []Repository) *Static {
-	return &Static{repositories: append([]Repository(nil), repositories...)}
+func NewStatic(repositories []Repository) (*Static, error) {
+	if err := validate(repositories); err != nil {
+		return nil, err
+	}
+	return &Static{repositories: append([]Repository(nil), repositories...)}, nil
 }
 
 func Load(path string, maxBytes int64) (*Static, error) {
@@ -50,10 +53,7 @@ func Load(path string, maxBytes int64) (*Static, error) {
 	if err := json.Unmarshal(data, &repositories); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
-	if err := validate(repositories); err != nil {
-		return nil, err
-	}
-	return NewStatic(repositories), nil
+	return NewStatic(repositories)
 }
 
 func (registry *Static) Repositories() []Repository {

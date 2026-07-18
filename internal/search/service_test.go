@@ -48,6 +48,18 @@ func TestSearchClampsRequestLimits(t *testing.T) {
 	}
 }
 
+func TestSearchClampsConfiguredDefaults(t *testing.T) {
+	backend := &recordingBackend{}
+	service := NewService(backend, authorizer(), Limits{DefaultResults: 999, MaxResults: 100, DefaultContextLines: 999, MaxContextLines: 20, DefaultTimeout: 99 * time.Second, MaxTimeout: 5 * time.Second})
+	_, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{Query: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backend.request.Limit != 100 || backend.request.ContextLines != 20 || backend.request.Timeout != 5*time.Second {
+		t.Fatalf("request = %#v", backend.request)
+	}
+}
+
 type recordingBackend struct {
 	calls   int
 	request BackendRequest
@@ -62,7 +74,11 @@ func (backend *recordingBackend) Search(_ context.Context, request BackendReques
 func (*recordingBackend) Health(context.Context) error { return nil }
 
 func authorizer() authz.Authorizer {
-	return authz.NewStatic(repository.NewStatic([]repository.Repository{{ID: 1, ZoektID: 7, Name: "acme/one"}, {ID: 2, ZoektID: 8, Name: "acme/two"}}))
+	registry, err := repository.NewStatic([]repository.Repository{{ID: 1, ZoektID: 7, Name: "acme/one"}, {ID: 2, ZoektID: 8, Name: "acme/two"}})
+	if err != nil {
+		panic(err)
+	}
+	return authz.NewStatic(registry)
 }
 
 func principalFor(name string) authn.Principal {

@@ -97,6 +97,9 @@ func defaults(limits Limits) Limits {
 	if limits.MaxResponseBytes <= 0 {
 		limits.MaxResponseBytes = 256 << 10
 	}
+	limits.DefaultResults = clamp(limits.DefaultResults, limits.MaxResults, limits.MaxResults)
+	limits.DefaultContextLines = clamp(limits.DefaultContextLines, limits.MaxContextLines, limits.MaxContextLines)
+	limits.DefaultTimeout = clampDuration(limits.DefaultTimeout, limits.MaxTimeout, limits.MaxTimeout)
 	return limits
 }
 

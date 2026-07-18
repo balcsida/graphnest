@@ -9,7 +9,11 @@ import (
 
 func TestAuthorizedRepositoriesIntersectsRequestedNames(t *testing.T) {
 	principal := authn.Principal{Subject: "user", RepositoryNames: []string{"acme/one"}}
-	authorizer := NewStatic(repository.NewStatic([]repository.Repository{{ID: 1, ZoektID: 7, Name: "acme/one"}, {ID: 2, ZoektID: 8, Name: "acme/two"}}))
+	registry, err := repository.NewStatic([]repository.Repository{{ID: 1, ZoektID: 7, Name: "acme/one"}, {ID: 2, ZoektID: 8, Name: "acme/two"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorizer := NewStatic(registry)
 	got, err := authorizer.AuthorizedRepositories(t.Context(), principal, RepositorySelection{Names: []string{"acme/one", "acme/two"}})
 	if err != nil {
 		t.Fatal(err)

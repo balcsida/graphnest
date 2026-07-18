@@ -24,10 +24,20 @@ func TestLoadRejectsDuplicateRepositoryIdentifiers(t *testing.T) {
 }
 
 func TestStaticReturnsDefensiveRepositoryCopies(t *testing.T) {
-	registry := NewStatic([]Repository{{ID: 1, ZoektID: 7, Name: "acme/one"}})
+	registry, err := NewStatic([]Repository{{ID: 1, ZoektID: 7, Name: "acme/one"}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	got := registry.Repositories()
 	got[0].Name = "changed"
 	if again := registry.Repositories(); again[0].Name != "acme/one" {
 		t.Fatalf("Repositories() = %#v", again)
+	}
+}
+
+func TestNewStaticRejectsDuplicateRepositoryIdentifiers(t *testing.T) {
+	_, err := NewStatic([]Repository{{ID: 1, ZoektID: 7, Name: "acme/one"}, {ID: 1, ZoektID: 8, Name: "acme/two"}})
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("NewStatic() error = %v", err)
 	}
 }
