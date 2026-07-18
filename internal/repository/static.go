@@ -38,7 +38,7 @@ func NewStatic(repositories []Repository) (*Static, error) {
 	if err := validate(repositories); err != nil {
 		return nil, err
 	}
-	return &Static{repositories: append([]Repository(nil), repositories...)}, nil
+	return &Static{repositories: copyRepositories(repositories)}, nil
 }
 
 func Load(path string, maxBytes int64) (*Static, error) {
@@ -66,7 +66,18 @@ func Load(path string, maxBytes int64) (*Static, error) {
 }
 
 func (registry *Static) Repositories() []Repository {
-	return append([]Repository(nil), registry.repositories...)
+	return copyRepositories(registry.repositories)
+}
+
+func copyRepositories(repositories []Repository) []Repository {
+	copy := append([]Repository(nil), repositories...)
+	for index := range copy {
+		if copy[index].LastIndexedAt != nil {
+			indexedAt := *copy[index].LastIndexedAt
+			copy[index].LastIndexedAt = &indexedAt
+		}
+	}
+	return copy
 }
 
 func validate(repositories []Repository) error {

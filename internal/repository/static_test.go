@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoadRejectsUnsafeSizeBoundsBeforeOpeningFile(t *testing.T) {
@@ -41,6 +42,24 @@ func TestStaticReturnsDefensiveRepositoryCopies(t *testing.T) {
 	got[0].Name = "changed"
 	if again := registry.Repositories(); again[0].Name != "acme/one" {
 		t.Fatalf("Repositories() = %#v", again)
+	}
+}
+
+func TestStaticDeepCopiesLastIndexedAt(t *testing.T) {
+	indexedAt := time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
+	repositories := []Repository{{ID: 1, ZoektID: 7, Name: "acme/one", LastIndexedAt: &indexedAt}}
+	registry, err := NewStatic(repositories)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexedAt = indexedAt.Add(time.Hour)
+	if got := registry.Repositories()[0].LastIndexedAt; !got.Equal(time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)) {
+		t.Fatalf("original timestamp mutation leaked: %s", got)
+	}
+	got := registry.Repositories()
+	*got[0].LastIndexedAt = got[0].LastIndexedAt.Add(time.Hour)
+	if again := registry.Repositories()[0].LastIndexedAt; !again.Equal(time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)) {
+		t.Fatalf("returned timestamp mutation leaked: %s", again)
 	}
 }
 
