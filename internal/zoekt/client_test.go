@@ -235,13 +235,14 @@ func TestNormalizePreservesUTF8AtPreviewBoundary(t *testing.T) {
 func TestHealthUsesEmptyRepoIDs(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var body struct {
+			Q       string   `json:"Q"`
 			RepoIDs []uint32 `json:"RepoIDs"`
 		}
 		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if body.RepoIDs == nil || len(body.RepoIDs) != 0 {
-			t.Fatalf("RepoIDs = %#v", body.RepoIDs)
+		if body.Q != "file:." || body.RepoIDs == nil || len(body.RepoIDs) != 0 {
+			t.Fatalf("Q = %q, RepoIDs = %#v", body.Q, body.RepoIDs)
 		}
 		_, _ = writer.Write([]byte(`{"Result":{"Files":[]}}`))
 	}))

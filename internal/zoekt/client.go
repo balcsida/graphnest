@@ -86,7 +86,7 @@ func (client *Client) Search(ctx context.Context, request search.BackendRequest)
 func (client *Client) Health(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	_, err := client.call(ctx, wireRequest{RepoIDs: []uint32{}, Opts: wireOptions{MaxDocDisplayCount: 1, MaxWallTime: int64(time.Second)}}, client.maxBytes)
+	_, err := client.call(ctx, wireRequest{Q: "file:.", RepoIDs: []uint32{}, Opts: wireOptions{MaxDocDisplayCount: 1, MaxWallTime: int64(time.Second)}}, client.maxBytes)
 	return err
 }
 
