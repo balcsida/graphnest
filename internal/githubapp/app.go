@@ -32,7 +32,7 @@ func NewSigner(appID int64, pemBytes []byte, now func() time.Time) (*Signer, err
 	if err != nil {
 		parsed, parseErr := x509.ParsePKCS8PrivateKey(block.Bytes)
 		if parseErr != nil {
-			return nil, fmt.Errorf("parse GitHub App private key: %w", err)
+			return nil, fmt.Errorf("parse GitHub App PKCS#8 private key: %w", parseErr)
 		}
 		var ok bool
 		privateKey, ok = parsed.(*rsa.PrivateKey)

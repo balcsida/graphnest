@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -25,17 +26,28 @@ func TestLoadReadsDurableConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" || got.GitHub.WebURL != "https://ghe.example.com" || got.GitHub.APIURL != "https://ghe.example.com/api/v3" || got.GitHub.UploadURL != "https://ghe.example.com/uploads" || got.GitHub.GitURL != "https://ghe.example.com" || got.GitHub.AppID != 123 || got.GitHub.APIVersion != "2022-11-28" || got.UserInstallationID != 10 || len(got.UserRepositoryIDs) != 2 || got.Indexer.MinFreeBytes != 1<<30 {
+	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" || got.GitHub.WebURL != "https://ghe.example.com" || got.GitHub.APIURL != "https://ghe.example.com/api/v3" || got.GitHub.UploadURL != "https://ghe.example.com/uploads" || got.GitHub.GitURL != "https://ghe.example.com" || got.GitHub.AppID != 123 || got.GitHub.PrivateKeyFile != "/run/secrets/key.pem" || got.GitHub.WebhookSecretFile != "/run/secrets/webhook" || got.GitHub.CAFile != "/run/secrets/ca.pem" || got.GitHub.APIVersion != "2022-11-28" || got.UserInstallationID != 10 || !reflect.DeepEqual(got.UserRepositoryIDs, []int64{101, 102}) || got.AdminInstallationID != 10 || !reflect.DeepEqual(got.AdminRepositoryIDs, []int64{101, 102, 103}) || got.Indexer.DataDir != "/var/lib/grepnest/data" || got.Indexer.IndexDir != "/var/lib/grepnest/index" || got.Indexer.GitPath != "/usr/bin/git" || got.Indexer.ZoektGitIndex != "/usr/local/bin/zoekt-git-index" || got.Indexer.WorkerID != "worker-1" || got.Indexer.MinFreeBytes != 1<<30 {
 		t.Fatalf("configuration = %#v", got)
 	}
 }
 
 func TestLoadRejectsUnsafeDurableConfiguration(t *testing.T) {
-	setValidEnvironment(t)
-	setDurableEnvironment(t)
-	t.Setenv("GREPNEST_GITHUB_API_URL", "http://ghe.example.com/api/v3")
-	if _, err := Load(); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("Load() error = %v", err)
+	for _, test := range []struct {
+		name, env, value string
+	}{
+		{"HTTP GitHub API", "GREPNEST_GITHUB_API_URL", "http://ghe.example.com/api/v3"},
+		{"missing private key path", "GREPNEST_GITHUB_PRIVATE_KEY_FILE", ""},
+		{"missing webhook secret path", "GREPNEST_GITHUB_WEBHOOK_SECRET_FILE", ""},
+		{"zero free space floor", "GREPNEST_MIN_FREE_BYTES", "0"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			setValidEnvironment(t)
+			setDurableEnvironment(t)
+			t.Setenv(test.env, test.value)
+			if _, err := Load(); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("Load() error = %v", err)
+			}
+		})
 	}
 }
 

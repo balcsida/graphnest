@@ -57,6 +57,31 @@ func TestJWTUsesRS256AndGitHubClaims(t *testing.T) {
 	}
 }
 
+func TestNewSignerSupportsPKCS8RSA(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := NewSigner(123, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: encoded}), time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := signer.JWT(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNewSignerReportsPKCS8ParseFailure(t *testing.T) {
+	_, err := NewSigner(123, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte("not a key")}), time.Now)
+	if err == nil || !strings.Contains(err.Error(), "PKCS#8") {
+		t.Fatalf("NewSigner() error = %v", err)
+	}
+}
+
 func decodePart(t *testing.T, value string, target any) {
 	t.Helper()
 	data, err := base64.RawURLEncoding.DecodeString(value)
