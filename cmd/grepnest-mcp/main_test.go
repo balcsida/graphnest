@@ -67,3 +67,45 @@ func TestProxyForwardsToolsWithBearerAuthentication(t *testing.T) {
 		t.Fatal("proxy did not stop after cancellation")
 	}
 }
+
+func TestProxyBoundsUpstreamStartup(t *testing.T) {
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	httpServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		select {
+		case <-request.Context().Done():
+		case <-release:
+		}
+	}))
+	defer httpServer.Close()
+	released := false
+	defer func() {
+		if !released {
+			close(release)
+		}
+	}()
+	_, serverTransport := mcp.NewInMemoryTransports()
+	done := make(chan error, 1)
+	go func() { done <- runProxy(t.Context(), httpServer.URL, "secret", serverTransport) }()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("startup unexpectedly succeeded")
+		}
+	case <-time.After(3*upstreamTimeout + 2*time.Second):
+		close(release)
+		released = true
+		<-done
+		t.Fatal("proxy startup remained unbounded")
+	}
+	select {
+	case <-started:
+	default:
+		t.Fatal("upstream server was not contacted")
+	}
+}

@@ -7,9 +7,12 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+const upstreamTimeout = 5 * time.Second
 
 func main() {
 	if err := runProxy(context.Background(), os.Getenv("GREPNEST_SERVER_URL"), os.Getenv("GREPNEST_TOKEN"), &mcp.StdioTransport{}); err != nil {
@@ -22,10 +25,12 @@ func runProxy(ctx context.Context, serverURL, token string, transport mcp.Transp
 	if serverURL == "" || token == "" {
 		return errors.New("GREPNEST_SERVER_URL and GREPNEST_TOKEN are required")
 	}
+	startupCtx, cancelStartup := context.WithTimeout(ctx, upstreamTimeout)
+	defer cancelStartup()
 	client := mcp.NewClient(&mcp.Implementation{Name: "grepnest-mcp", Version: "0.1.0"}, nil)
-	upstream, err := client.Connect(ctx, &mcp.StreamableClientTransport{
+	upstream, err := client.Connect(startupCtx, &mcp.StreamableClientTransport{
 		Endpoint: strings.TrimRight(serverURL, "/") + "/mcp",
-		HTTPClient: &http.Client{Transport: bearerTransport{
+		HTTPClient: &http.Client{Timeout: upstreamTimeout, Transport: bearerTransport{
 			token: token, base: http.DefaultTransport,
 		}},
 		DisableStandaloneSSE: true,
@@ -35,10 +40,11 @@ func runProxy(ctx context.Context, serverURL, token string, transport mcp.Transp
 	}
 	defer upstream.Close()
 
-	tools, err := upstream.ListTools(ctx, nil)
+	tools, err := upstream.ListTools(startupCtx, nil)
 	if err != nil {
 		return err
 	}
+	cancelStartup()
 	server := mcp.NewServer(&mcp.Implementation{Name: "grepnest-mcp", Version: "0.1.0"}, nil)
 	for _, tool := range tools.Tools {
 		server.AddTool(tool, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
