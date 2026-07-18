@@ -83,8 +83,10 @@ func newHandler(settings config.Config) (http.Handler, error) {
 	httpapi.RegisterSystem(mux, backend, metrics.Handler())
 	httpapi.RegisterSearch(mux, authenticator, service, settings.Limits.MaxRequestBytes)
 	mcpServer := mcpserver.New(service)
-	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, mcp.NewStreamableHTTPHandler(
-		func(*http.Request) *mcp.Server { return mcpServer }, nil,
-	)))
+	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer }, nil)
+	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		request.Body = http.MaxBytesReader(writer, request.Body, settings.Limits.MaxRequestBytes)
+		mcpHandler.ServeHTTP(writer, request)
+	})))
 	return metrics.WrapHTTP(mux), nil
 }
