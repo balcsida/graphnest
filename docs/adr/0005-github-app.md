@@ -20,4 +20,5 @@ persisting user credentials.
 App JWTs use RS256 and installation tokens stay in memory. Tokens never enter
 persisted remotes and are passed only to the Git process or API request that
 needs them. Go and Git share a configurable custom CA bundle, reject redirects,
-and never disable TLS verification. Numeric GitHub IDs are durable identity.
+and never disable TLS verification. Numeric GitHub installation and repository
+IDs are durable identity; the App requires only Metadata read and Contents read.

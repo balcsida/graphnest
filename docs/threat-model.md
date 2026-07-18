@@ -34,6 +34,8 @@
   build tools, or repository-supplied ctags configuration;
 - numeric IDs determine database and disk identity; untrusted names and paths
   never determine filesystem locations;
+- bearer authorization binds to numeric installation IDs, excludes disabled
+  state before selecting RepoIDs, and never treats a mutable name as identity;
 - PostgreSQL transactions deduplicate deliveries and coalesce pushes, leases
   prevent concurrent indexing, and indexed SHA is published only after exact
   Zoekt visibility;

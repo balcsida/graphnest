@@ -22,7 +22,8 @@ durable index queue. `grepnest-server` verifies GitHub webhooks and reconciles
 GitHub App installations. `grepnest-indexer` leases one job at a time, fetches
 only its default branch, and publishes the indexed SHA after Zoekt confirms
 visibility through `/api/list`. Search suppresses a result when Zoekt's branch
-version differs from PostgreSQL's committed indexed SHA.
+version differs from PostgreSQL's committed indexed SHA. Runtime bearer scopes
+bind to numeric installation IDs; mutable repository names are selectors only.
 
 The local Compose topology keeps the indexer, Zoekt, and PostgreSQL on the
 internal network. Zoekt alone additionally joins the loopback-published

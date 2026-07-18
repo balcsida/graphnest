@@ -39,7 +39,8 @@ and optional custom CA bundle. The API version defaults to `2022-11-28`.
 App JWTs use RS256 with `iat` 60 seconds in the past, expiration no more than
 10 minutes later, and App ID as `iss`. Installation tokens are minted just in
 time, kept only in process memory, and discarded shortly before expiry. Cache
-keys include installation and optional repository restriction.
+keys include installation and optional repository restriction. The App needs
+only Metadata read and Contents read permissions.
 
 The Go and Git clients extend the system root pool with the same configured CA
 bundle. They require HTTPS, reject redirects, and accept API and clone targets
@@ -47,13 +48,15 @@ only on their configured hosts. No code path may set `InsecureSkipVerify`.
 
 Reconciliation uses numeric installation and repository IDs as durable
 identity. It runs at startup, periodically, and after relevant webhook events.
-Renames update display metadata without changing the internal repository or
-Zoekt IDs. Removed, suspended, archived, or disabled repositories become
-unavailable without recycling their IDs.
+Adding a repository, changing its default branch, or observing a different
+default-branch head transactionally updates `desired_sha` and coalesces a job
+for that head. Renames update display metadata without changing the internal
+repository or Zoekt IDs. Removed, suspended, archived, or disabled repositories
+become unavailable without recycling their IDs.
 
 ## Webhook Ingestion
 
-`POST /v1/github/webhooks` requires `X-Hub-Signature-256`,
+`POST /webhooks/github` requires `X-Hub-Signature-256`,
 `X-GitHub-Event`, and `X-GitHub-Delivery`. Read a bounded raw body, verify the
 SHA-256 HMAC in constant time, and only then decode JSON. Never persist the
 body.
@@ -65,9 +68,11 @@ Handle these events:
 - `push`: enqueue only `refs/heads/<current-default-branch>` with a nonzero
   40-character hexadecimal commit SHA.
 
-One transaction inserts the delivery ID, updates repository state and
-`desired_sha`, and upserts the newest queued job. A duplicate delivery is a
-successful no-op. Unknown event types are acknowledged without mutation.
+One transaction inserts the delivery status, updates repository state and
+`desired_sha`, and upserts the newest queued job. A verified but malformed or
+unusable delivery records a bounded error status without mutating repository
+state. A duplicate delivery is a successful no-op. Unknown event types are
+acknowledged without repository mutation.
 
 ## PostgreSQL Model and Queue
 
@@ -76,20 +81,38 @@ Use `github.com/jackc/pgx/v5` directly. Embedded SQL migrations create:
 - `installations`: GitHub installation ID, account metadata, and availability;
 - `repositories`: GitHub repository ID, installation, owner/name, default
   branch, desired and indexed SHAs, status, error, and stable Zoekt RepoID;
-- `webhook_deliveries`: delivery ID, event name, and receipt time only;
+- `webhook_deliveries`: delivery ID, event name, installation ID, receipt and
+  processing times, state, and bounded error code;
 - `index_jobs`: repository, target SHA, state, attempt, scheduling, lease, and
   bounded failure metadata;
-- `search_nodes`: the single configured Zoekt node identity and health state.
+- `search_nodes`: the single configured Zoekt node identity, base URL, state,
+  and capacity weight required by the master brief. Milestone 2 stores one row
+  and adds no node scheduler or routing abstraction.
 
 Allocate Zoekt RepoIDs from a sequence constrained to unsigned 32-bit values;
 never recycle them. Partial unique indexes allow at most one queued and one
 running job per repository.
 
+A job moves through this minimal state machine:
+
+| Current | Event | Next and transaction postcondition |
+| --- | --- | --- |
+| absent/queued | enqueue newer desired SHA | one queued row contains the newest SHA, resets attempt to zero, and has `run_after=now()` |
+| running | enqueue newer desired SHA | the running row is unchanged and one queued row contains the newest SHA |
+| queued | claim | running with incremented attempt, owner, and two-minute lease; no other running job exists for the repository |
+| running | renew before expiry | running with the same owner and a fresh two-minute lease |
+| running | exact SHA visible and still desired | succeeded; repository `indexed_sha` and ready status change in the same transaction |
+| running | desired SHA changed | superseded; the single queued row retains the newest desired SHA |
+| running | retryable failure below five attempts | if the target is still desired, the same row returns to queued with its attempt retained and a capped retry time; otherwise it becomes superseded and the newer queued row remains |
+| running | permanent failure or fifth failed attempt | failed; no automatic retry for that target |
+| running | lease expires | failed as `lease_expired`; the same retry rule queues the current desired SHA |
+
 A worker claims with `FOR UPDATE SKIP LOCKED` in a short transaction and
-commits before network or process work. A running job holds a renewable lease.
-Renew, complete, and fail operations require the matching lease owner and an
-unexpired lease. A reaper terminalizes expired attempts and queues the current
-desired SHA when needed.
+commits before network or process work. The indexer renews every 30 seconds and
+cancels the attempt immediately if renewal or lease ownership is lost. Renew,
+complete, supersede, and fail operations require the matching lease owner and
+an unexpired lease. Retry delay uses full jitter capped by
+`min(5s * 2^(attempt-1), 5m)`.
 
 Completing a job and updating repository status occur in one transaction.
 Publish `indexed_sha` only when the completed target still equals
@@ -133,17 +156,24 @@ Git can exhaust the data volume.
 ## Serving Consistency
 
 PostgreSQL supplies the existing search service with authorized repositories
-and server-selected Zoekt RepoIDs. Search returns a match only when Zoekt's
+and server-selected Zoekt RepoIDs. Milestone 2 static bearer principals are
+scoped to configured numeric GitHub installation IDs; repository names remain
+request selectors and display metadata, never authorization identity. The
+fixture-only registry may retain name scopes for Milestones 0-1 tests. Search
+first excludes disabled repositories, then returns a match only when Zoekt's
 branch version equals that repository's committed `indexed_sha`. During the
 filesystem/database publication gap, a mismatch therefore produces no result
 rather than a citation to inconsistent content.
 
-Repository list and status endpoints expose only repositories authorized for
-the bearer principal. File reads authorize first, require a nonempty
+Repository list and status endpoints expose only enabled repositories in an
+authorized installation. File reads authorize and recheck enabled installation
+and repository state before any GitHub request, require a nonempty
 `indexed_sha`, validate a clean slash-separated repository path, and call the
 GitHub Contents API at that exact SHA. Accept only bounded UTF-8 regular-file
 content; reject directories, symlinks, submodules, binary data, invalid base64,
-and invalid line ranges. Responses include indexed and blob SHAs.
+and invalid line ranges. Responses include indexed and blob SHAs. Disabling an
+installation or repository immediately blocks stale Zoekt shards and prior
+indexed-SHA reads; physical shard cleanup remains asynchronous.
 
 ## Failure Handling
 
@@ -169,15 +199,20 @@ and unredacted remote stderr never enter logs or PostgreSQL.
 2. Webhook tests prove verification-before-decoding, body bounds, durable
    deduplication, default-branch filtering, and transactional job coalescing.
 3. PostgreSQL integration tests prove concurrent claims, lease ownership,
-   expiry recovery, push coalescing, and atomic indexed-SHA publication.
+   expiry recovery, capped retries, push coalescing, exact state transitions,
+   and atomic indexed-SHA publication.
 4. Temporary Git repositories prove credential-free remotes, default-branch
    fetches, missing and superseded SHA handling, rename identity, and cleanup.
 5. The pinned Zoekt binaries prove webhook to queue to exact visible SHA to
    authorized REST and MCP search, including an empty repository.
 6. Search and file-read tests prove unauthorized repositories, unindexed
-   repositories, and SHA-mismatched shards return no source content.
+   repositories, disabled installations/repositories, stale shards, prior
+   indexed SHAs, and SHA-mismatched shards return no source content. Rename and
+   old-name reuse do not change installation-scoped authorization.
 7. Existing Milestones 0-1 unit, race, integration, end-to-end, and build gates
    remain green.
+8. Reconciliation tests prove a newly added quiet repository and a changed
+   default branch enqueue their current default-branch heads without a push.
 
 ## Milestone Boundary
 

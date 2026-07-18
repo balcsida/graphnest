@@ -20,4 +20,6 @@ The schema stores installations, repositories, webhook delivery IDs, index
 jobs, and the single search node. Webhook deduplication, desired-SHA updates,
 and queued-job coalescing share one transaction. Workers claim short
 transactions with `FOR UPDATE SKIP LOCKED`, perform external work outside the
-transaction, and publish `indexed_sha` only for the current desired SHA.
+transaction, and publish `indexed_sha` only for the current desired SHA. Queue
+states and database constraints enforce one running and one newest queued job
+per repository.
