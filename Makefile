@@ -1,6 +1,7 @@
 ZOEKT_VERSION := v0.0.0-20260717095332-3c8b39b1ef4f
+POSTGRES_COMPOSE := docker compose -p grepnest-postgres
 
-.PHONY: fmt lint test test-race integration e2e tools build server image helm-lint
+.PHONY: fmt lint test test-race integration postgres-test postgres-integration e2e tools build server image helm-lint
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
@@ -16,6 +17,13 @@ test-race:
 
 integration:
 	go test -tags=integration ./test/integration
+
+postgres-test:
+	GREPNEST_TEST_POSTGRES_DSN='postgres://grepnest:grepnest@127.0.0.1:5432/grepnest?sslmode=disable' go test -count=1 -tags=integration ./internal/postgres
+
+postgres-integration:
+	$(POSTGRES_COMPOSE) -f deploy/compose/compose.yml up -d --wait postgres
+	$(MAKE) postgres-test
 
 tools:
 	mkdir -p .cache/bin

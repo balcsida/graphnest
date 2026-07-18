@@ -10,6 +10,8 @@ services:
       interval: 1s
       timeout: 1s
       retries: 30
+    ports:
+      - "127.0.0.1:5432:5432"
     networks: [internal]
 
   zoekt-index:
