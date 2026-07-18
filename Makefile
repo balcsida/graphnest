@@ -1,4 +1,4 @@
-.PHONY: fmt lint test test-race build image helm-lint
+.PHONY: fmt lint test test-race integration build image helm-lint
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
@@ -11,6 +11,9 @@ test:
 
 test-race:
 	@if test -n "$$(go list ./... 2>/dev/null)"; then go test -race ./...; fi
+
+integration:
+	go test -tags=integration ./test/integration
 
 build:
 	@if test -n "$$(go list ./cmd/... 2>/dev/null)"; then go build ./cmd/...; fi
