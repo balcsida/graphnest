@@ -58,5 +58,5 @@ func runSearch(ctx context.Context, service *search.Service, input api.SearchReq
 	if response.Matches == nil {
 		response.Matches = []api.SearchMatch{}
 	}
-	return nil, output{Matches: response.Matches}, nil
+	return nil, output{Matches: response.Matches, Truncated: response.Truncated}, nil
 }

@@ -32,5 +32,6 @@ type SearchMatch struct {
 }
 
 type SearchResponse struct {
-	Matches []SearchMatch `json:"matches"`
+	Matches   []SearchMatch `json:"matches"`
+	Truncated bool          `json:"truncated"`
 }

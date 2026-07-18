@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -57,7 +58,12 @@ func TestProxyForwardsToolsWithBearerAuthentication(t *testing.T) {
 		t.Fatal(err)
 	}
 	cancel()
-	if err := <-errCh; err != nil && err != context.Canceled {
-		t.Fatal(err)
+	select {
+	case err := <-errCh:
+		if err != nil && err != context.Canceled {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("proxy did not stop after cancellation")
 	}
 }

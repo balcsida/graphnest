@@ -83,11 +83,27 @@ func TestSearchToolsUseAuthenticatedService(t *testing.T) {
 		t.Fatalf("matches = %d, backend calls = %d", len(output.Matches), backend.calls)
 	}
 
-	_, err = session.CallTool(t.Context(), &mcp.CallToolParams{
+	backend.response.Truncated = true
+	result, err = session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "search_code", Arguments: map[string]any{"query": "needle", "repositories": []string{"acme/one"}, "limit": 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decodeStructured(t, result.StructuredContent, &output)
+	if !output.Truncated {
+		t.Fatalf("search_code truncated = %v, want true", output.Truncated)
+	}
+
+	result, err = session.CallTool(t.Context(), &mcp.CallToolParams{
 		Name: "find_files", Arguments: map[string]any{"pattern": "\\.go$", "repositories": []string{"acme/one"}, "limit": 5, "max_output_bytes": 2048},
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	decodeStructured(t, result.StructuredContent, &output)
+	if !output.Truncated {
+		t.Fatalf("find_files truncated = %v, want true", output.Truncated)
 	}
 	if backend.request.Query != `file:\.go$` || backend.request.Limit != 5 || backend.request.MaxResponseBytes != 2048 {
 		t.Fatalf("backend request = %#v", backend.request)
