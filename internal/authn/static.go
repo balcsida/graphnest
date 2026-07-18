@@ -12,6 +12,8 @@ type Principal struct {
 	Subject         string
 	Method          string
 	Administrator   bool
+	InstallationID  int64
+	RepositoryIDs   []int64
 	RepositoryNames []string
 }
 
@@ -24,6 +26,7 @@ type Static struct{ principals map[string]Principal }
 func NewStatic(principals map[string]Principal) *Static {
 	copy := make(map[string]Principal, len(principals))
 	for token, principal := range principals {
+		principal.RepositoryIDs = append([]int64(nil), principal.RepositoryIDs...)
 		principal.RepositoryNames = append([]string(nil), principal.RepositoryNames...)
 		copy[token] = principal
 	}
@@ -45,6 +48,7 @@ func (auth *Static) Authenticate(token string) (Principal, error) {
 	if matched != 1 {
 		return Principal{}, ErrUnauthenticated
 	}
+	principal.RepositoryIDs = append([]int64(nil), principal.RepositoryIDs...)
 	principal.RepositoryNames = append([]string(nil), principal.RepositoryNames...)
 	return principal, nil
 }

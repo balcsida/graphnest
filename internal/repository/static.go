@@ -7,17 +7,25 @@ import (
 	"io"
 	"math"
 	"os"
+	"time"
 )
 
 var ErrInvalid = errors.New("invalid repository registry")
 
 type Repository struct {
-	ID         int64  `json:"id"`
-	ZoektID    uint32 `json:"zoekt_id"`
-	Name       string `json:"name"`
-	Branch     string `json:"branch"`
-	IndexedSHA string `json:"indexed_sha"`
-	WebURL     string `json:"web_url"`
+	ID             int64      `json:"id"`
+	InstallationID int64      `json:"installation_id"`
+	GitHubID       int64      `json:"github_id"`
+	ZoektID        uint32     `json:"zoekt_id"`
+	Name           string     `json:"name"`
+	Branch         string     `json:"branch"`
+	DesiredSHA     string     `json:"desired_sha"`
+	IndexedSHA     string     `json:"indexed_sha"`
+	WebURL         string     `json:"web_url"`
+	Status         string     `json:"status"`
+	ErrorCode      string     `json:"error_code"`
+	Enabled        bool       `json:"enabled"`
+	LastIndexedAt  *time.Time `json:"last_indexed_at"`
 }
 
 type Registry interface {

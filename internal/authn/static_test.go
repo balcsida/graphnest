@@ -2,6 +2,19 @@ package authn
 
 import "testing"
 
+func TestAuthenticateReturnsDefensiveDurableRepositoryIDs(t *testing.T) {
+	auth := NewStatic(map[string]Principal{"token": {InstallationID: 10, RepositoryIDs: []int64{101}}})
+	got, err := auth.Authenticate("token")
+	if err != nil || got.InstallationID != 10 || len(got.RepositoryIDs) != 1 || got.RepositoryIDs[0] != 101 {
+		t.Fatalf("got %#v, %v", got, err)
+	}
+	got.RepositoryIDs[0] = 999
+	again, err := auth.Authenticate("token")
+	if err != nil || again.RepositoryIDs[0] != 101 {
+		t.Fatalf("got %#v, %v", again, err)
+	}
+}
+
 func TestAuthenticateUsesOpaqueTokenLengths(t *testing.T) {
 	auth := NewStatic(map[string]Principal{"short": {Subject: "user"}})
 	got, err := auth.Authenticate("short")
