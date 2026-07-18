@@ -1,0 +1,50 @@
+package authn
+
+import (
+	"crypto/sha256"
+	"crypto/subtle"
+	"errors"
+)
+
+var ErrUnauthenticated = errors.New("unauthenticated")
+
+type Principal struct {
+	Subject         string
+	Method          string
+	Administrator   bool
+	RepositoryNames []string
+}
+
+type Authenticator interface {
+	Authenticate(string) (Principal, error)
+}
+
+type Static struct{ principals map[string]Principal }
+
+func NewStatic(principals map[string]Principal) *Static {
+	copy := make(map[string]Principal, len(principals))
+	for token, principal := range principals {
+		principal.RepositoryNames = append([]string(nil), principal.RepositoryNames...)
+		copy[token] = principal
+	}
+	return &Static{principals: copy}
+}
+
+func (auth *Static) Authenticate(token string) (Principal, error) {
+	presented := sha256.Sum256([]byte(token))
+	var principal Principal
+	matched := 0
+	for configured, candidate := range auth.principals {
+		expected := sha256.Sum256([]byte(configured))
+		equal := subtle.ConstantTimeCompare(presented[:], expected[:])
+		if equal == 1 {
+			principal = candidate
+		}
+		matched |= equal
+	}
+	if matched != 1 {
+		return Principal{}, ErrUnauthenticated
+	}
+	principal.RepositoryNames = append([]string(nil), principal.RepositoryNames...)
+	return principal, nil
+}
