@@ -79,22 +79,22 @@ func defaults(limits Limits) Limits {
 	if limits.DefaultResults <= 0 {
 		limits.DefaultResults = 25
 	}
-	if limits.MaxResults <= 0 {
+	if limits.MaxResults <= 0 || limits.MaxResults > 100 {
 		limits.MaxResults = 100
 	}
 	if limits.DefaultContextLines <= 0 {
 		limits.DefaultContextLines = 3
 	}
-	if limits.MaxContextLines <= 0 {
+	if limits.MaxContextLines <= 0 || limits.MaxContextLines > 20 {
 		limits.MaxContextLines = 20
 	}
 	if limits.DefaultTimeout <= 0 {
 		limits.DefaultTimeout = 5 * time.Second
 	}
-	if limits.MaxTimeout <= 0 {
+	if limits.MaxTimeout <= 0 || limits.MaxTimeout > 5*time.Second {
 		limits.MaxTimeout = 5 * time.Second
 	}
-	if limits.MaxResponseBytes <= 0 {
+	if limits.MaxResponseBytes <= 0 || limits.MaxResponseBytes > 256<<10 {
 		limits.MaxResponseBytes = 256 << 10
 	}
 	limits.DefaultResults = clamp(limits.DefaultResults, limits.MaxResults, limits.MaxResults)

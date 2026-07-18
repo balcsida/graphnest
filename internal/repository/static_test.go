@@ -2,10 +2,19 @@ package repository
 
 import (
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestLoadRejectsUnsafeSizeBoundsBeforeOpeningFile(t *testing.T) {
+	for _, maxBytes := range []int64{-1, 0, math.MaxInt64} {
+		if _, err := Load(filepath.Join(t.TempDir(), "missing.json"), maxBytes); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("Load(_, %d) error = %v", maxBytes, err)
+		}
+	}
+}
 
 func TestLoadRejectsDuplicateRepositoryIdentifiers(t *testing.T) {
 	for _, data := range []string{

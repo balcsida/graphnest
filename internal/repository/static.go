@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 )
 
@@ -33,7 +34,7 @@ func NewStatic(repositories []Repository) (*Static, error) {
 }
 
 func Load(path string, maxBytes int64) (*Static, error) {
-	if maxBytes <= 0 {
+	if maxBytes <= 0 || maxBytes == math.MaxInt64 {
 		return nil, fmt.Errorf("%w: size limit must be positive", ErrInvalid)
 	}
 	file, err := os.Open(path)

@@ -60,6 +60,22 @@ func TestSearchClampsConfiguredDefaults(t *testing.T) {
 	}
 }
 
+func TestNewServiceClampsConfiguredMaximaToAbsoluteCaps(t *testing.T) {
+	backend := &recordingBackend{}
+	service := NewService(backend, authorizer(), Limits{
+		MaxResults: 999, MaxContextLines: 999, MaxTimeout: 99 * time.Second, MaxResponseBytes: 999 << 10,
+	})
+	_, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{
+		Query: "secret", Limit: 999, ContextLines: 999, Timeout: 99 * time.Second, MaxResponseBytes: 999 << 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backend.request.Limit != 100 || backend.request.ContextLines != 20 || backend.request.Timeout != 5*time.Second || backend.request.MaxResponseBytes != 256<<10 {
+		t.Fatalf("request = %#v", backend.request)
+	}
+}
+
 type recordingBackend struct {
 	calls   int
 	request BackendRequest
