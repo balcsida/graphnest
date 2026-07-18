@@ -2,11 +2,18 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 
 	"github.com/grepnest/grepnest/internal/httpapi"
 	"github.com/grepnest/grepnest/internal/search"
+	"github.com/grepnest/grepnest/internal/zoekt"
 	"github.com/grepnest/grepnest/pkg/api"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+var (
+	errInvalidSearch = errors.New("search query is invalid")
+	errUnavailable   = errors.New("search service is unavailable")
 )
 
 type searchInput struct {
@@ -53,7 +60,10 @@ func New(service *search.Service) *mcp.Server {
 func runSearch(ctx context.Context, service *search.Service, input api.SearchRequest) (*mcp.CallToolResult, output, error) {
 	response, err := service.Search(ctx, httpapi.PrincipalFromContext(ctx), input)
 	if err != nil {
-		return nil, output{}, err
+		if errors.Is(err, search.ErrInvalidQuery) || errors.Is(err, zoekt.ErrInvalidQuery) {
+			return nil, output{}, errInvalidSearch
+		}
+		return nil, output{}, errUnavailable
 	}
 	if response.Matches == nil {
 		response.Matches = []api.SearchMatch{}

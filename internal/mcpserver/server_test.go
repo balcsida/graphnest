@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/grepnest/grepnest/internal/authn"
@@ -106,6 +108,58 @@ func TestSearchToolsUseAuthenticatedService(t *testing.T) {
 	}
 	if backend.request.Query != `file:\.go$` || backend.request.Limit != 5 {
 		t.Fatalf("backend request = %#v", backend.request)
+	}
+}
+
+func TestSearchToolErrorsAreSafe(t *testing.T) {
+	const secret = "https://token@zoekt.internal.invalid/search"
+	backend := &recordingBackend{err: errors.New(secret)}
+	server := New(testService(t, backend))
+	handler := httpapi.AuthenticateBearer(
+		authn.NewStatic(map[string]authn.Principal{"secret": {Subject: "user", RepositoryNames: []string{"acme/one"}}}),
+		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil),
+	)
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(
+		t.Context(),
+		&mcp.StreamableClientTransport{Endpoint: httpServer.URL, HTTPClient: bearerClient(httpServer.Client(), "secret"), DisableStandaloneSSE: true},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	for _, test := range []struct {
+		name, query, message string
+	}{
+		{"invalid query", " ", "search query is invalid"},
+		{"backend failure", "needle", "search service is unavailable"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "search_code", Arguments: map[string]any{"query": test.query}})
+			if err != nil {
+				if strings.Contains(err.Error(), secret) {
+					t.Fatalf("protocol error leaked backend detail: %v", err)
+				}
+				t.Fatalf("protocol error = %v", err)
+			}
+			encoded, err := json.Marshal(result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(encoded), secret) {
+				t.Fatalf("tool result leaked backend detail: %s", encoded)
+			}
+			if !result.IsError || len(result.Content) != 1 {
+				t.Fatalf("result = %#v", result)
+			}
+			content, ok := result.Content[0].(*mcp.TextContent)
+			if !ok || content.Text != test.message {
+				t.Fatalf("content = %#v, want %q", result.Content, test.message)
+			}
+		})
 	}
 }
 
@@ -236,12 +290,13 @@ type recordingBackend struct {
 	calls    int
 	request  search.BackendRequest
 	response api.SearchResponse
+	err      error
 }
 
 func (backend *recordingBackend) Search(_ context.Context, request search.BackendRequest) (api.SearchResponse, error) {
 	backend.calls++
 	backend.request = request
-	return backend.response, nil
+	return backend.response, backend.err
 }
 
 func (*recordingBackend) Health(context.Context) error { return nil }
