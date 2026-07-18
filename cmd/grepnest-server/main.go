@@ -14,10 +14,12 @@ import (
 	"github.com/grepnest/grepnest/internal/authz"
 	"github.com/grepnest/grepnest/internal/config"
 	"github.com/grepnest/grepnest/internal/httpapi"
+	"github.com/grepnest/grepnest/internal/mcpserver"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/internal/search"
 	"github.com/grepnest/grepnest/internal/zoekt"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func main() { os.Exit(run()) }
@@ -80,5 +82,9 @@ func newHandler(settings config.Config) (http.Handler, error) {
 	mux := http.NewServeMux()
 	httpapi.RegisterSystem(mux, backend, metrics.Handler())
 	httpapi.RegisterSearch(mux, authenticator, service, settings.Limits.MaxRequestBytes)
+	mcpServer := mcpserver.New(service)
+	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return mcpServer }, nil,
+	)))
 	return metrics.WrapHTTP(mux), nil
 }
