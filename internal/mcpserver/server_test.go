@@ -157,12 +157,23 @@ func TestSearchCodeLimitsCanonicalOutputThroughZoekt(t *testing.T) {
 	}
 	defer session.Close()
 	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "search_code", Arguments: map[string]any{
-		"query": "needle", "repositories": []string{"acme/one"}, "max_output_bytes": budget,
+		"query": "needle", "repositories": []string{"acme/one"}, "limit": 1, "max_output_bytes": 256 << 10,
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var output api.SearchResponse
+	decodeStructured(t, result.StructuredContent, &output)
+	if len(output.Matches) != 1 || !output.Truncated {
+		t.Fatalf("limited normalized output = %#v", output)
+	}
+
+	result, err = session.CallTool(t.Context(), &mcp.CallToolParams{Name: "search_code", Arguments: map[string]any{
+		"query": "needle", "repositories": []string{"acme/one"}, "max_output_bytes": budget,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	decodeStructured(t, result.StructuredContent, &output)
 	structured, err := json.Marshal(result.StructuredContent)
 	if err != nil {

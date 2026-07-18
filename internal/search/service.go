@@ -72,10 +72,14 @@ func (service *Service) Search(ctx context.Context, principal authn.Principal, r
 		return api.SearchResponse{}, err
 	}
 	response.Matches = enrich(response.Matches, metadata)
-	return limitResponse(response, maxResponseBytes), nil
+	return limitResponse(response, backendRequest.Limit, maxResponseBytes), nil
 }
 
-func limitResponse(response api.SearchResponse, maxBytes int64) api.SearchResponse {
+func limitResponse(response api.SearchResponse, maxMatches int, maxBytes int64) api.SearchResponse {
+	if len(response.Matches) > maxMatches {
+		response.Matches = response.Matches[:maxMatches]
+		response.Truncated = true
+	}
 	matches := response.Matches
 	limited := api.SearchResponse{Matches: []api.SearchMatch{}, Truncated: response.Truncated || len(matches) > 0}
 	if !fits(limited, maxBytes) {

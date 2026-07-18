@@ -211,8 +211,8 @@ func TestSearchHonorsRequestTimeout(t *testing.T) {
 
 func TestNormalizeLimitsPreviewBytes(t *testing.T) {
 	response := normalize([]wireFile{{RepositoryID: 7, LineMatches: []wireMatch{{Line: []byte("abcdef")}}}}, 4)
-	if got := response.Matches[0].Preview; got != "abcd" {
-		t.Fatalf("preview = %q", got)
+	if got := response.Matches[0].Preview; got != "abcd" || !response.Truncated {
+		t.Fatalf("preview = %q, truncated = %v", got, response.Truncated)
 	}
 }
 

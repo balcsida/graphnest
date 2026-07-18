@@ -149,6 +149,9 @@ func normalize(files []wireFile, maxBytes int64) api.SearchResponse {
 	for _, file := range files {
 		for _, line := range file.LineMatches {
 			preview := trimUTF8(line.Line, &remaining)
+			if len(preview) < len(line.Line) {
+				response.Truncated = true
+			}
 			response.Matches = append(response.Matches, api.SearchMatch{Path: path.Clean(file.FileName), SHA: file.Version, LineNumber: line.LineNumber, LineStart: line.LineStart, LineEnd: line.LineEnd, Preview: string(preview), Score: line.Score, ZoektID: file.RepositoryID})
 		}
 	}
