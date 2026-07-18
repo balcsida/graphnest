@@ -26,6 +26,7 @@ internal network, publishing Zoekt only to `127.0.0.1:6070`. The pinned Zoekt
 image runs as `linux/amd64`; this is deliberate for Apple-silicon hosts, where
 Docker's emulation is needed because the pinned image has no arm64 variant.
 
-`make image` and `make helm-lint` are expected to return nonzero with a
-Milestone 3-not-implemented message. They are boundaries, not failed release
+`make image` and `make helm-lint` are expected to return nonzero with,
+respectively, `image: milestone not implemented` and
+`helm-lint: milestone not implemented`. They are boundaries, not failed release
 checks for Milestones 0-1.

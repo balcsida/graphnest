@@ -35,7 +35,7 @@ paths:
         '200': {description: Zoekt is ready, content: {text/plain: {schema: {type: string, example: "ok\\n"}}}}
         '503':
           description: Zoekt is unavailable
-          content: {application/json: {schema: {type: object, required: [error], properties: {error: {type: string, const: unavailable}}}}}
+          content: {application/json: {schema: {type: object, additionalProperties: false, required: [error], properties: {error: {type: string, const: unavailable}}}}}
   /metrics:
     get:
       responses:
@@ -52,6 +52,7 @@ components:
   schemas:
     SearchRequest:
       type: object
+      additionalProperties: false
       required: [query]
       properties:
         query: {type: string}
@@ -62,12 +63,14 @@ components:
         max_response_bytes: {type: integer, format: int64}
     SearchResponse:
       type: object
+      additionalProperties: false
       required: [matches, truncated]
       properties:
         matches: {type: array, items: {$ref: '#/components/schemas/SearchMatch'}}
         truncated: {type: boolean}
     SearchMatch:
       type: object
+      additionalProperties: false
       required: [repository, path, sha, line_number, line_start, line_end, preview, score]
       properties:
         repository: {$ref: '#/components/schemas/Repository'}
@@ -80,6 +83,7 @@ components:
         score: {type: number, format: double}
     Repository:
       type: object
+      additionalProperties: false
       required: [id, name, branch, indexed_sha, web_url]
       properties:
         id: {type: integer, format: int64}
@@ -89,10 +93,12 @@ components:
         web_url: {type: string}
     ErrorResponse:
       type: object
+      additionalProperties: false
       required: [error]
       properties:
         error:
           type: object
+          additionalProperties: false
           required: [code, message, request_id, retryable]
           properties:
             code: {type: string}

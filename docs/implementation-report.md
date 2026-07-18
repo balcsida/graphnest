@@ -25,6 +25,7 @@
 The documentation pass ran the following commands after the final edit:
 
 ```sh
+go clean -testcache
 make fmt
 make lint
 make test
@@ -37,6 +38,7 @@ docker compose -f deploy/compose/compose.yml up -d --wait
 docker compose -f deploy/compose/compose.yml ps
 rg -n 'github\\.com|latest|Authorization|token|RepoIDs|java|jvm|maven|gradle' --glob '!go.sum' .
 git diff --check HEAD
+git status --short
 ```
 
 Results: all listed quality gates, uncached race/integration/E2E/build, Compose
@@ -44,7 +46,8 @@ configuration, and live Compose health checks exited 0. The scope scan found
 expected module, documentation, test, and authorization references; it found no
 runtime hard-coded host, `latest` image tag, credential logging, JVM dependency,
 or client-controlled Zoekt `RepoIDs`. `make image` and `make helm-lint` were
-not run as success gates: each is an intentional nonzero Milestone 3 boundary.
+not run as success gates: they intentionally return nonzero with
+`image: milestone not implemented` and `helm-lint: milestone not implemented`.
 
 ## Risks and next milestone
 

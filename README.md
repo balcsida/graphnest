@@ -99,8 +99,10 @@ Optional limits are positive and cannot exceed their server caps:
 | `GREPNEST_MAX_RESPONSE_BYTES` | 262144 | 262144 |
 
 Run `make fmt lint test test-race integration e2e build` before proposing a
-change. `make image` and `make helm-lint` intentionally fail with a Milestone
-3-not-implemented message; they are not deployment gates for this slice.
+change. `make image` and `make helm-lint` intentionally fail with,
+respectively, `image: milestone not implemented` and
+`helm-lint: milestone not implemented`; they are not deployment gates for this
+slice.
 
 ## Policies
 
