@@ -110,9 +110,11 @@ A job moves through this minimal state machine:
 A worker claims with `FOR UPDATE SKIP LOCKED` in a short transaction and
 commits before network or process work. The indexer renews every 30 seconds and
 cancels the attempt immediately if renewal or lease ownership is lost. Renew,
-complete, supersede, and fail operations require the matching lease owner and
-an unexpired lease. Retry delay uses full jitter capped by
-`min(5s * 2^(attempt-1), 5m)`.
+complete, supersede, and worker-fail operations require the matching lease
+owner and an unexpired lease. A separate reaper transaction locks only running
+rows whose `lease_expires_at <= now()`; it may mark those rows `lease_expired`
+and apply the retry rule without claiming the former owner identity. Retry
+delay uses full jitter capped by `min(5s * 2^(attempt-1), 5m)`.
 
 Completing a job and updating repository status occur in one transaction.
 Publish `indexed_sha` only when the completed target still equals
@@ -156,18 +158,22 @@ Git can exhaust the data volume.
 ## Serving Consistency
 
 PostgreSQL supplies the existing search service with authorized repositories
-and server-selected Zoekt RepoIDs. Milestone 2 static bearer principals are
-scoped to configured numeric GitHub installation IDs; repository names remain
-request selectors and display metadata, never authorization identity. The
-fixture-only registry may retain name scopes for Milestones 0-1 tests. Search
-first excludes disabled repositories, then returns a match only when Zoekt's
-branch version equals that repository's committed `indexed_sha`. During the
-filesystem/database publication gap, a mismatch therefore produces no result
-rather than a citation to inconsistent content.
+and server-selected Zoekt RepoIDs. Milestone 2 static bearer principals carry
+an installation/tenant boundary plus an explicit subset of numeric GitHub
+repository IDs; omitting a request selector never broadens that subset.
+Repository names remain request selectors and display metadata, never
+authorization identity. The fixture-only registry may retain name scopes for
+Milestones 0-1 tests. Search intersects the durable permitted-ID subset with
+enabled repository state and caller selectors before sending RepoIDs, then
+returns a match only when Zoekt's branch version equals that repository's
+committed `indexed_sha`. During the filesystem/database publication gap, a
+mismatch therefore produces no result rather than a citation to inconsistent
+content.
 
-Repository list and status endpoints expose only enabled repositories in an
-authorized installation. File reads authorize and recheck enabled installation
-and repository state before any GitHub request, require a nonempty
+Repository list and status endpoints expose only enabled repositories in the
+principal's permitted repository-ID subset. File reads authorize and recheck
+the permitted ID plus enabled installation and repository state before any
+GitHub request, require a nonempty
 `indexed_sha`, validate a clean slash-separated repository path, and call the
 GitHub Contents API at that exact SHA. Accept only bounded UTF-8 regular-file
 content; reject directories, symlinks, submodules, binary data, invalid base64,
@@ -208,7 +214,7 @@ and unredacted remote stderr never enter logs or PostgreSQL.
 6. Search and file-read tests prove unauthorized repositories, unindexed
    repositories, disabled installations/repositories, stale shards, prior
    indexed SHAs, and SHA-mismatched shards return no source content. Rename and
-   old-name reuse do not change installation-scoped authorization.
+   old-name reuse do not change repository-ID authorization.
 7. Existing Milestones 0-1 unit, race, integration, end-to-end, and build gates
    remain green.
 8. Reconciliation tests prove a newly added quiet repository and a changed
