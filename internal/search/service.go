@@ -53,7 +53,7 @@ func (service *Service) Search(ctx context.Context, principal authn.Principal, r
 		return api.SearchResponse{}, err
 	}
 	if len(repositories) == 0 {
-		return api.SearchResponse{}, nil
+		return api.SearchResponse{Matches: []api.SearchMatch{}}, nil
 	}
 	maxResponseBytes := clampInt64(request.MaxResponseBytes, service.limits.MaxResponseBytes)
 	backendRequest := BackendRequest{

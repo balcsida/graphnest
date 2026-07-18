@@ -29,12 +29,15 @@ func TestSearchPassesOnlyAuthorizedZoektIDs(t *testing.T) {
 func TestSearchSkipsBackendForEmptyAuthorization(t *testing.T) {
 	backend := &recordingBackend{}
 	service := NewService(backend, authorizer(), Limits{MaxResults: 100})
-	_, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{Query: "secret", Repositories: []string{"acme/two"}})
+	response, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{Query: "secret", Repositories: []string{"acme/two"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if backend.calls != 0 {
 		t.Fatalf("backend calls = %d", backend.calls)
+	}
+	if response.Matches == nil {
+		t.Fatal("matches = nil, want empty array")
 	}
 }
 
