@@ -26,7 +26,7 @@ func (authorizer *Static) AuthorizedRepositories(ctx context.Context, principal 
 	allRequested := len(requested) == 0
 	var authorized []repository.Repository
 	for _, candidate := range authorizer.registry.Repositories() {
-		if (principal.Administrator || allowed[candidate.Name]) && (allRequested || requested[candidate.Name]) {
+		if allowed[candidate.Name] && (allRequested || requested[candidate.Name]) {
 			authorized = append(authorized, candidate)
 		}
 	}

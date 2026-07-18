@@ -22,3 +22,18 @@ func TestAuthorizedRepositoriesIntersectsRequestedNames(t *testing.T) {
 		t.Fatalf("got %#v", got)
 	}
 }
+
+func TestAdministratorSearchRemainsRepositoryScoped(t *testing.T) {
+	principal := authn.Principal{Subject: "admin", Administrator: true, RepositoryNames: []string{"acme/one"}}
+	registry, err := repository.NewStatic([]repository.Repository{{ID: 1, ZoektID: 7, Name: "acme/one"}, {ID: 2, ZoektID: 8, Name: "acme/two"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := NewStatic(registry).AuthorizedRepositories(t.Context(), principal, RepositorySelection{Names: []string{"acme/two"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("got %#v, want no repositories", got)
+	}
+}
