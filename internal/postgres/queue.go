@@ -153,7 +153,10 @@ func (s *Store) finishFailure(ctx context.Context, id int64, owner, errorCode st
 		state = "queued"
 	}
 	if _, err := tx.Exec(ctx, `update index_jobs set state=$2, lease_owner=null, lease_expires_at=null,
-		error_code=$3, error_message=null, run_after=now(), updated_at=now() where id=$1`, id, state, errorCode); err != nil {
+		error_code=$3, error_message=null,
+		run_after=case when $2::varchar='queued' then now()+interval '1 second'*
+			least(5*power(2::double precision, attempt-1), 300)*random() else run_after end,
+		updated_at=now() where id=$1`, id, state, errorCode); err != nil {
 		return err
 	}
 	if state == "failed" {
@@ -204,7 +207,10 @@ func (s *Store) ReapExpired(ctx context.Context, limit int) (int64, error) {
 			state = "queued"
 		}
 		if _, err := tx.Exec(ctx, `update index_jobs set state=$2, lease_owner=null, lease_expires_at=null,
-			error_code='lease_expired', error_message=null, run_after=now(), updated_at=now() where id=$1`, job.id, state); err != nil {
+			error_code='lease_expired', error_message=null,
+			run_after=case when $2::varchar='queued' then now()+interval '1 second'*
+				least(5*power(2::double precision, attempt-1), 300)*random() else run_after end,
+			updated_at=now() where id=$1`, job.id, state); err != nil {
 			return 0, err
 		}
 		if state == "failed" {

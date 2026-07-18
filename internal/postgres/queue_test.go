@@ -213,6 +213,29 @@ func TestQueuePublishesOnlyCurrentDesiredSHA(t *testing.T) {
 func TestQueueRetriesAndReapsExpiredLeases(t *testing.T) {
 	store := migratedStore(t)
 	repositoryID := queueRepository(t, store)
+	assertScheduled := func(jobID int64, cap string, attempt int) {
+		t.Helper()
+		var future, bounded bool
+		var retainedAttempt int
+		if err := store.pool.QueryRow(t.Context(), `select run_after>updated_at, run_after<=updated_at+$2::interval, attempt from index_jobs where id=$1`, jobID, cap).Scan(&future, &bounded, &retainedAttempt); err != nil {
+			t.Fatal(err)
+		}
+		if !future || !bounded || retainedAttempt != attempt {
+			t.Fatalf("scheduled future=%v bounded=%v attempt=%d want=%d cap=%s", future, bounded, retainedAttempt, attempt, cap)
+		}
+		if _, err := store.pool.Exec(t.Context(), "update index_jobs set run_after=now()+interval '1 minute' where id=$1", jobID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.ClaimIndex(t.Context(), "early"); !errors.Is(err, ErrNoJob) {
+			t.Fatalf("early claim err=%v", err)
+		}
+	}
+	makeRunnable := func(jobID int64) {
+		t.Helper()
+		if _, err := store.pool.Exec(t.Context(), "update index_jobs set run_after=now()-interval '1 second' where id=$1", jobID); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := store.EnqueueIndex(t.Context(), IndexRequest{RepositoryID: repositoryID, TargetSHA: shaA}); err != nil {
 		t.Fatal(err)
 	}
@@ -223,6 +246,8 @@ func TestQueueRetriesAndReapsExpiredLeases(t *testing.T) {
 	if err := store.FailIndex(t.Context(), job.ID, "owner", "temporary", true); err != nil {
 		t.Fatal(err)
 	}
+	assertScheduled(job.ID, "5 seconds", 1)
+	makeRunnable(job.ID)
 	job, err = store.ClaimIndex(t.Context(), "owner")
 	if err != nil || job.Attempt != 2 {
 		t.Fatalf("retry job=%#v err=%v", job, err)
@@ -247,19 +272,60 @@ func TestQueueRetriesAndReapsExpiredLeases(t *testing.T) {
 	if reaped.Load() != 1 {
 		t.Fatalf("reaped=%d", reaped.Load())
 	}
+	assertScheduled(job.ID, "10 seconds", 2)
+	makeRunnable(job.ID)
 	job, err = store.ClaimIndex(t.Context(), "owner")
 	if err != nil || job.Attempt != 3 {
 		t.Fatalf("reaped retry job=%#v err=%v", job, err)
 	}
-	if err := store.EnqueueIndex(t.Context(), IndexRequest{RepositoryID: repositoryID, TargetSHA: shaB}); err != nil {
-		t.Fatal(err)
+	for _, cap := range []string{"20 seconds", "40 seconds"} {
+		if err := store.FailIndex(t.Context(), job.ID, "owner", "temporary", true); err != nil {
+			t.Fatal(err)
+		}
+		assertScheduled(job.ID, cap, job.Attempt)
+		makeRunnable(job.ID)
+		job, err = store.ClaimIndex(t.Context(), "owner")
+		if err != nil || job.Attempt > 5 {
+			t.Fatalf("retry job=%#v err=%v", job, err)
+		}
 	}
 	if err := store.FailIndex(t.Context(), job.ID, "owner", "temporary", true); err != nil {
 		t.Fatal(err)
 	}
 	var state string
-	if err := store.pool.QueryRow(t.Context(), "select state from index_jobs where id=$1", job.ID).Scan(&state); err != nil || state != "superseded" {
-		t.Fatalf("state=%q err=%v", state, err)
+	if err := store.pool.QueryRow(t.Context(), "select state from index_jobs where id=$1", job.ID).Scan(&state); err != nil || state != "failed" {
+		t.Fatalf("fifth attempt state=%q err=%v", state, err)
+	}
+
+	if err := store.EnqueueIndex(t.Context(), IndexRequest{RepositoryID: repositoryID, TargetSHA: shaB}); err != nil {
+		t.Fatal(err)
+	}
+	permanent, err := store.ClaimIndex(t.Context(), "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FailIndex(t.Context(), permanent.ID, "owner", "permanent", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.pool.QueryRow(t.Context(), "select state from index_jobs where id=$1", permanent.ID).Scan(&state); err != nil || state != "failed" {
+		t.Fatalf("permanent state=%q err=%v", state, err)
+	}
+
+	if err := store.EnqueueIndex(t.Context(), IndexRequest{RepositoryID: repositoryID, TargetSHA: shaA}); err != nil {
+		t.Fatal(err)
+	}
+	superseded, err := store.ClaimIndex(t.Context(), "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.EnqueueIndex(t.Context(), IndexRequest{RepositoryID: repositoryID, TargetSHA: shaB}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FailIndex(t.Context(), superseded.ID, "owner", "temporary", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.pool.QueryRow(t.Context(), "select state from index_jobs where id=$1", superseded.ID).Scan(&state); err != nil || state != "superseded" {
+		t.Fatalf("superseded state=%q err=%v", state, err)
 	}
 }
 
