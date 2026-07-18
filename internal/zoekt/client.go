@@ -25,6 +25,8 @@ var (
 	ErrResponseTooLarge = errors.New("zoekt response too large")
 )
 
+const maxResponseBytes int64 = 256 << 10
+
 type Client struct {
 	endpoint string
 	http     *http.Client
@@ -39,6 +41,9 @@ func New(baseURL string, client *http.Client, maxBytes int64, metrics *observabi
 	}
 	if maxBytes <= 0 {
 		return nil, fmt.Errorf("%w: response limit must be positive", ErrResponseTooLarge)
+	}
+	if maxBytes > maxResponseBytes {
+		maxBytes = maxResponseBytes
 	}
 	if client == nil {
 		client = http.DefaultClient
@@ -90,6 +95,9 @@ func (client *Client) Health(ctx context.Context) error {
 }
 
 func (client *Client) call(ctx context.Context, payload wireRequest, maxBytes int64) (result wireResult, err error) {
+	if maxBytes > maxResponseBytes {
+		maxBytes = maxResponseBytes
+	}
 	if payload.RepoIDs == nil {
 		payload.RepoIDs = []uint32{}
 	}
@@ -137,6 +145,9 @@ func (client *Client) call(ctx context.Context, payload wireRequest, maxBytes in
 }
 
 func normalize(files []wireFile, maxBytes int64) api.SearchResponse {
+	if maxBytes > maxResponseBytes {
+		maxBytes = maxResponseBytes
+	}
 	response := api.SearchResponse{}
 	remaining := maxBytes
 	for _, file := range files {

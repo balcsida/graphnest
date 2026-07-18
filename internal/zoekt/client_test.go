@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/search"
@@ -132,6 +133,31 @@ func TestSearchRejectsOversizedResponse(t *testing.T) {
 	}
 }
 
+func TestNewClampsResponseLimitToCanonicalCeiling(t *testing.T) {
+	client, err := New("http://example.test", http.DefaultClient, 512<<10, observability.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.maxBytes != 256<<10 {
+		t.Fatalf("maxBytes = %d, want %d", client.maxBytes, 256<<10)
+	}
+}
+
+func TestSearchAppliesCanonicalCeilingToUpstreamBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(writer, strings.Repeat("x", 256<<10+1))
+	}))
+	defer server.Close()
+	client, err := New(server.URL, server.Client(), 512<<10, observability.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Search(t.Context(), search.BackendRequest{Query: "needle", MaxResponseBytes: 512 << 10})
+	if !errors.Is(err, ErrResponseTooLarge) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestSearchRejectsRedirectWithoutMutatingCallerClient(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		http.Redirect(writer, request, "/other", http.StatusFound)
@@ -187,6 +213,22 @@ func TestNormalizeLimitsPreviewBytes(t *testing.T) {
 	response := normalize([]wireFile{{RepositoryID: 7, LineMatches: []wireMatch{{Line: []byte("abcdef")}}}}, 4)
 	if got := response.Matches[0].Preview; got != "abcd" {
 		t.Fatalf("preview = %q", got)
+	}
+}
+
+func TestNormalizeClampsDirectCallersToCanonicalCeiling(t *testing.T) {
+	line := []byte(strings.Repeat("x", 256<<10+1))
+	response := normalize([]wireFile{{LineMatches: []wireMatch{{Line: line}}}}, 512<<10)
+	if got := len(response.Matches[0].Preview); got != 256<<10 {
+		t.Fatalf("preview bytes = %d, want %d", got, 256<<10)
+	}
+}
+
+func TestNormalizePreservesUTF8AtPreviewBoundary(t *testing.T) {
+	response := normalize([]wireFile{{LineMatches: []wireMatch{{Line: []byte("a€")}}}}, 2)
+	preview := response.Matches[0].Preview
+	if !utf8.ValidString(preview) || len(preview) > 2 || preview != "a" {
+		t.Fatalf("preview = %q (%d bytes)", preview, len(preview))
 	}
 }
 
