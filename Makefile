@@ -1,4 +1,4 @@
-.PHONY: fmt lint test test-race integration build image helm-lint
+.PHONY: fmt lint test test-race integration build server image helm-lint
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
@@ -17,6 +17,9 @@ integration:
 
 build:
 	@if test -n "$$(go list ./cmd/... 2>/dev/null)"; then go build ./cmd/...; fi
+
+server:
+	go run ./cmd/grepnest-server
 
 image:
 	@echo "image: milestone not implemented" >&2
