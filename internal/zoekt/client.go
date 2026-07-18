@@ -68,10 +68,6 @@ func (client *Client) Search(ctx context.Context, request search.BackendRequest)
 		ctx, cancel = context.WithTimeout(ctx, request.Timeout)
 		defer cancel()
 	}
-	maxBytes := client.maxBytes
-	if request.MaxResponseBytes > 0 && request.MaxResponseBytes < maxBytes {
-		maxBytes = request.MaxResponseBytes
-	}
 	result, err := client.call(ctx, wireRequest{
 		Q:       request.Query,
 		RepoIDs: append([]uint32{}, request.RepositoryIDs...),
@@ -80,11 +76,11 @@ func (client *Client) Search(ctx context.Context, request search.BackendRequest)
 			MaxDocDisplayCount: request.Limit,
 			MaxWallTime:        int64(request.Timeout),
 		},
-	}, maxBytes)
+	}, client.maxBytes)
 	if err != nil {
 		return api.SearchResponse{}, err
 	}
-	return normalize(result.Files, maxBytes), nil
+	return normalize(result.Files, client.maxBytes), nil
 }
 
 func (client *Client) Health(ctx context.Context) error {

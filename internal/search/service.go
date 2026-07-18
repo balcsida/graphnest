@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -21,12 +22,11 @@ type Limits struct {
 }
 
 type BackendRequest struct {
-	Query            string
-	RepositoryIDs    []uint32
-	Limit            int
-	ContextLines     int
-	Timeout          time.Duration
-	MaxResponseBytes int64
+	Query         string
+	RepositoryIDs []uint32
+	Limit         int
+	ContextLines  int
+	Timeout       time.Duration
 }
 
 type SearchBackend interface {
@@ -55,12 +55,12 @@ func (service *Service) Search(ctx context.Context, principal authn.Principal, r
 	if len(repositories) == 0 {
 		return api.SearchResponse{}, nil
 	}
+	maxResponseBytes := clampInt64(request.MaxResponseBytes, service.limits.MaxResponseBytes)
 	backendRequest := BackendRequest{
 		Query: request.Query, RepositoryIDs: make([]uint32, len(repositories)),
-		Limit:            clamp(request.Limit, service.limits.DefaultResults, service.limits.MaxResults),
-		ContextLines:     clamp(request.ContextLines, service.limits.DefaultContextLines, service.limits.MaxContextLines),
-		Timeout:          clampDuration(request.Timeout, service.limits.DefaultTimeout, service.limits.MaxTimeout),
-		MaxResponseBytes: clampInt64(request.MaxResponseBytes, service.limits.MaxResponseBytes),
+		Limit:        clamp(request.Limit, service.limits.DefaultResults, service.limits.MaxResults),
+		ContextLines: clamp(request.ContextLines, service.limits.DefaultContextLines, service.limits.MaxContextLines),
+		Timeout:      clampDuration(request.Timeout, service.limits.DefaultTimeout, service.limits.MaxTimeout),
 	}
 	metadata := make(map[uint32]api.Repository, len(repositories))
 	for index, repository := range repositories {
@@ -72,7 +72,34 @@ func (service *Service) Search(ctx context.Context, principal authn.Principal, r
 		return api.SearchResponse{}, err
 	}
 	response.Matches = enrich(response.Matches, metadata)
-	return response, nil
+	return limitResponse(response, maxResponseBytes), nil
+}
+
+func limitResponse(response api.SearchResponse, maxBytes int64) api.SearchResponse {
+	matches := response.Matches
+	limited := api.SearchResponse{Matches: []api.SearchMatch{}, Truncated: response.Truncated || len(matches) > 0}
+	if !fits(limited, maxBytes) {
+		// The empty truncated JSON envelope is the response floor even when the caller requests fewer bytes.
+		return limited
+	}
+	// ponytail: O(n²) marshaling is bounded by 100 matches; stream/count once if that cap grows.
+	for index, match := range matches {
+		candidate := api.SearchResponse{
+			Matches:   append(limited.Matches, match),
+			Truncated: response.Truncated || index+1 < len(matches),
+		}
+		if !fits(candidate, maxBytes) {
+			limited.Truncated = true
+			return limited
+		}
+		limited = candidate
+	}
+	return limited
+}
+
+func fits(response api.SearchResponse, maxBytes int64) bool {
+	data, err := json.Marshal(response)
+	return err == nil && int64(len(data)) <= maxBytes
 }
 
 func defaults(limits Limits) Limits {

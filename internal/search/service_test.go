@@ -2,7 +2,9 @@ package search
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,7 +45,7 @@ func TestSearchClampsRequestLimits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if backend.request.Limit != 100 || backend.request.ContextLines != 20 || backend.request.Timeout != 5*time.Second || backend.request.MaxResponseBytes != 256<<10 {
+	if backend.request.Limit != 100 || backend.request.ContextLines != 20 || backend.request.Timeout != 5*time.Second {
 		t.Fatalf("request = %#v", backend.request)
 	}
 }
@@ -61,30 +63,84 @@ func TestSearchClampsConfiguredDefaults(t *testing.T) {
 }
 
 func TestNewServiceClampsConfiguredMaximaToAbsoluteCaps(t *testing.T) {
-	backend := &recordingBackend{}
+	backend := &recordingBackend{response: api.SearchResponse{Matches: []api.SearchMatch{{Preview: strings.Repeat("x", 300<<10), ZoektID: 7}}}}
 	service := NewService(backend, authorizer(), Limits{
 		MaxResults: 999, MaxContextLines: 999, MaxTimeout: 99 * time.Second, MaxResponseBytes: 999 << 10,
 	})
-	_, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{
+	response, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{
 		Query: "secret", Limit: 999, ContextLines: 999, Timeout: 99 * time.Second, MaxResponseBytes: 999 << 10,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if backend.request.Limit != 100 || backend.request.ContextLines != 20 || backend.request.Timeout != 5*time.Second || backend.request.MaxResponseBytes != 256<<10 {
+	if backend.request.Limit != 100 || backend.request.ContextLines != 20 || backend.request.Timeout != 5*time.Second || marshaledSize(t, response) > 256<<10 || !response.Truncated {
 		t.Fatalf("request = %#v", backend.request)
 	}
 }
 
+func TestSearchLimitsEnrichedCanonicalResponse(t *testing.T) {
+	backend := &recordingBackend{response: api.SearchResponse{Matches: []api.SearchMatch{
+		{Path: "one.go", Preview: "first", ZoektID: 7},
+		{Path: "two.go", Preview: "second", ZoektID: 7},
+	}}}
+	service := NewService(backend, authorizer(), Limits{MaxResults: 100, MaxResponseBytes: 256 << 10})
+	want := api.SearchResponse{Matches: []api.SearchMatch{{
+		Repository: api.Repository{ID: 1, Name: "acme/one"}, Path: "one.go", Preview: "first", ZoektID: 7,
+	}}, Truncated: true}
+	budget := marshaledSize(t, want)
+
+	got, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{Query: "secret", MaxResponseBytes: int64(budget)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Matches) != 1 || !got.Truncated || marshaledSize(t, got) > budget {
+		t.Fatalf("response = %#v, size = %d, budget = %d", got, marshaledSize(t, got), budget)
+	}
+}
+
+func TestSearchPreservesBackendTruncation(t *testing.T) {
+	backend := &recordingBackend{response: api.SearchResponse{Truncated: true}}
+	service := NewService(backend, authorizer(), Limits{MaxResults: 100, MaxResponseBytes: 1024})
+	got, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{Query: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Truncated {
+		t.Fatal("backend truncation was lost")
+	}
+}
+
+func TestSearchReturnsEmptyTruncatedEnvelopeBelowFloor(t *testing.T) {
+	backend := &recordingBackend{response: api.SearchResponse{Matches: []api.SearchMatch{{Path: "one.go", ZoektID: 7}}}}
+	service := NewService(backend, authorizer(), Limits{MaxResults: 100, MaxResponseBytes: 1024})
+	got, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{Query: "secret", MaxResponseBytes: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Matches) != 0 || !got.Truncated || marshaledSize(t, got) <= 1 {
+		t.Fatalf("response = %#v, size = %d", got, marshaledSize(t, got))
+	}
+}
+
+func marshaledSize(t *testing.T, value any) int {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(data)
+}
+
 type recordingBackend struct {
-	calls   int
-	request BackendRequest
+	calls    int
+	request  BackendRequest
+	response api.SearchResponse
 }
 
 func (backend *recordingBackend) Search(_ context.Context, request BackendRequest) (api.SearchResponse, error) {
 	backend.calls++
 	backend.request = request
-	return api.SearchResponse{}, nil
+	return backend.response, nil
 }
 
 func (*recordingBackend) Health(context.Context) error { return nil }

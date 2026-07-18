@@ -45,7 +45,7 @@ func TestSearchUsesPinnedJSONContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := client.Search(t.Context(), search.BackendRequest{Query: "needle", RepositoryIDs: []uint32{7}, Limit: 20, ContextLines: 3, Timeout: time.Second, MaxResponseBytes: 1024})
+	response, err := client.Search(t.Context(), search.BackendRequest{Query: "needle", RepositoryIDs: []uint32{7}, Limit: 20, ContextLines: 3, Timeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestSearchAppliesCanonicalCeilingToUpstreamBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = client.Search(t.Context(), search.BackendRequest{Query: "needle", MaxResponseBytes: 512 << 10})
+	_, err = client.Search(t.Context(), search.BackendRequest{Query: "needle"})
 	if !errors.Is(err, ErrResponseTooLarge) {
 		t.Fatalf("error = %v", err)
 	}
