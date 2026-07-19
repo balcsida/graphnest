@@ -130,6 +130,27 @@ for pattern in 'name: runtime.team.example' 'key: DB_URL.v1-key' \
   require "$pattern" "$tmp/references.yaml"
 done
 
+helm template security "$chart" -n grepnest -f "$minimal" \
+  --set=server.podSecurityContext.runAsNonRoot=false \
+  --set=server.podSecurityContext.seccompProfile.type=Unconfined \
+  --set=server.podSecurityContext.fsGroup=1234 \
+  --set=node.podSecurityContext.runAsNonRoot=false \
+  --set=node.podSecurityContext.seccompProfile.type=Unconfined \
+  --set=node.podSecurityContext.fsGroup=2345 >"$tmp/pod-security.yaml"
+sed -n '/^kind: Deployment$/,/^      containers:$/p' "$tmp/pod-security.yaml" \
+  | sed -n '/^      securityContext:$/,$p' >"$tmp/server-pod-security.yaml"
+sed -n '/^kind: StatefulSet$/,/^      containers:$/p' "$tmp/pod-security.yaml" \
+  | sed -n '/^      securityContext:$/,$p' >"$tmp/node-pod-security.yaml"
+for workload in server node; do
+  security=$tmp/$workload-pod-security.yaml
+  [ "$(awk '/^        runAsNonRoot: true$/ {count++} END {print count + 0}' "$security")" -eq 1 ] || exit 1
+  [ "$(awk '/^        seccompProfile:/ {count++} END {print count + 0}' "$security")" -eq 1 ] || exit 1
+  require 'type: RuntimeDefault' "$security"
+  reject 'runAsNonRoot: false|type: Unconfined' "$security"
+done
+require '^        fsGroup: 1234$' "$tmp/server-pod-security.yaml"
+require '^        fsGroup: 2345$' "$tmp/node-pod-security.yaml"
+
 for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
   for pattern in \
     '^kind: Deployment$' '^kind: StatefulSet$' '^kind: Job$' \
@@ -167,9 +188,10 @@ for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
 
   images=$(rg -c '^ *image:' "$images_file")
   for pattern in 'allowPrivilegeEscalation: false' 'capabilities: \{drop: \[ALL\]\}' \
-    'readOnlyRootFilesystem: true' 'runAsNonRoot: true'; do
+    'readOnlyRootFilesystem: true'; do
     [ "$(rg -c "$pattern" "$manifest")" -eq "$images" ] || exit 1
   done
+  [ "$(rg -c 'runAsNonRoot: true' "$manifest")" -eq "$((images + 2))" ] || exit 1
   [ "$(rg -c 'seccompProfile: \{type: RuntimeDefault\}' "$manifest")" -ge "$images" ] || exit 1
   [ "$(rg -c '^kind: StatefulSet$' "$manifest")" -eq 1 ] || exit 1
   [ "$(rg -c '^  replicas: 1$' "$manifest")" -eq 1 ] || exit 1

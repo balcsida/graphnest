@@ -19,6 +19,12 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "grepnest.image" -}}
 {{- printf "%s@%s" (required "image repository is required" .repository) (required "image sha256 digest is required" .digest) -}}
 {{- end }}
+{{- define "grepnest.podSecurityContext" -}}
+{{- $context := omit . "runAsNonRoot" "seccompProfile" -}}
+{{- $_ := set $context "runAsNonRoot" true -}}
+{{- $_ := set $context "seccompProfile" (dict "type" "RuntimeDefault") -}}
+{{- toYaml $context -}}
+{{- end }}
 {{- define "grepnest.resourceName" -}}
 {{- $base := include "grepnest.fullname" (index . 0) -}}
 {{- $suffix := index . 1 -}}

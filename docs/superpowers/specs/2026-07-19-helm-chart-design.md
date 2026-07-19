@@ -109,8 +109,10 @@ Secret.
 
 ## Security Defaults
 
-Every container sets `allowPrivilegeEscalation: false`, drops all capabilities,
-uses `seccompProfile: RuntimeDefault`, runs as non-root without a fixed UID, and
+Every pod reserves `runAsNonRoot: true` and `seccompProfile: RuntimeDefault`
+while preserving additive operator security-context fields. Every container
+sets `allowPrivilegeEscalation: false`, drops all capabilities, uses
+`seccompProfile: RuntimeDefault`, runs as non-root without a fixed UID, and
 uses a read-only root filesystem. Dedicated `emptyDir` volumes provide `/tmp`
 and a writable runtime home. Workloads do not mount host paths, use privileged
 ports, or receive Kubernetes API tokens. Pod-level UID/GID settings remain

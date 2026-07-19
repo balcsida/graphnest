@@ -25,10 +25,7 @@ spec:
       automountServiceAccountToken: false
       serviceAccountName: {{ include "grepnest.serverName" . }}
       securityContext:
-        seccompProfile: {type: RuntimeDefault}
-        {{- with .Values.server.podSecurityContext }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- include "grepnest.podSecurityContext" .Values.server.podSecurityContext | nindent 8 }}
       {{- with .Values.images.pullSecrets }}
       imagePullSecrets:
         {{- range . }}
