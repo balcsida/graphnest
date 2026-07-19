@@ -16,10 +16,11 @@ spec:
       labels:
         {{- include "grepnest.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: server
-      {{- with .Values.server.podAnnotations }}
       annotations:
+        {{- with .Values.server.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
+        checksum/config: {{ include (print $.Template.BasePath "/configmaps.yaml") . | sha256sum }}
     spec:
       automountServiceAccountToken: false
       serviceAccountName: {{ include "grepnest.serverName" . }}
@@ -61,7 +62,7 @@ spec:
             runAsNonRoot: true
             seccompProfile: {type: RuntimeDefault}
           ports:
-            - {name: http, containerPort: 8080, protocol: TCP}
+            - {name: http, containerPort: {{ .Values.server.port }}, protocol: TCP}
           livenessProbe:
             httpGet: {path: /healthz, port: http}
           readinessProbe:
