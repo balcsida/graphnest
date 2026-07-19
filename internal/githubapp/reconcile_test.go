@@ -3,8 +3,11 @@ package githubapp
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 )
 
 type reconcileAPIStub struct {
@@ -35,6 +38,8 @@ type reconcileStoreStub struct {
 	installationIDs []int64
 	reconciled      []int64
 	disabled        []int64
+	installations   []Installation
+	repositories    [][]Repository
 	api             *reconcileAPIStub
 }
 
@@ -57,8 +62,39 @@ func (store *reconcileStoreStub) ReconcileInstallation(_ context.Context, instal
 			return fmt.Errorf("repository %d SHA = %q", repository.ID, repository.DefaultSHA)
 		}
 	}
+	store.installations = append(store.installations, installation)
+	store.repositories = append(store.repositories, append([]Repository(nil), repositories...))
 	store.reconciled = append(store.reconciled, installation.ID)
 	return nil
+}
+
+func TestReconcileClientInstallationWithoutStatusReadsDefaultHead(t *testing.T) {
+	api := &reconcileAPIStub{shas: map[int64]string{101: sha('a')}}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		switch request.URL.EscapedPath() {
+		case "/api/v3/app/installations":
+			fmt.Fprint(w, `[{"id":7,"account":{"login":"acme","type":"Organization"},"suspended_at":null}]`)
+		case "/api/v3/app/installations/7/access_tokens":
+			fmt.Fprint(w, `{"token":"installation-token","expires_at":"2026-07-20T13:00:00Z"}`)
+		case "/api/v3/installation/repositories":
+			fmt.Fprint(w, `{"repositories":[{"id":101,"full_name":"acme/one","owner":{"login":"acme"},"name":"one","clone_url":"https://example.invalid/acme/one.git","html_url":"https://example.invalid/acme/one","default_branch":"main"}]}`)
+		case "/api/v3/repos/acme/one/branches/main":
+			api.reads++
+			fmt.Fprintf(w, `{"commit":{"sha":%q}}`, sha('a'))
+		default:
+			http.NotFound(w, request)
+		}
+	}))
+	defer server.Close()
+	now := time.Date(2026, time.July, 20, 12, 0, 0, 0, time.UTC)
+	store := &reconcileStoreStub{api: api}
+
+	if err := NewReconciler(testClient(t, server, &now, 4096), store).All(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.installations) != 1 || store.installations[0].Status != "active" || len(store.repositories[0]) != 1 || store.repositories[0][0].DefaultSHA != sha('a') {
+		t.Fatalf("installations=%#v repositories=%#v", store.installations, store.repositories)
+	}
 }
 
 func TestReconcileUnavailableObjectsWithoutBranchReads(t *testing.T) {

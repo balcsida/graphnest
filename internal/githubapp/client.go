@@ -82,7 +82,6 @@ func (c *Client) Installations(ctx context.Context) ([]Installation, error) {
 			Login string `json:"login"`
 			Type  string `json:"type"`
 		} `json:"account"`
-		Status      string     `json:"status"`
 		SuspendedAt *time.Time `json:"suspended_at"`
 	}
 	var result []Installation
@@ -98,7 +97,11 @@ func (c *Client) Installations(ctx context.Context) ([]Installation, error) {
 			return nil, err
 		}
 		for _, item := range page {
-			result = append(result, Installation{ID: item.ID, AccountLogin: item.Account.Login, AccountType: item.Account.Type, Status: item.Status, SuspendedAt: item.SuspendedAt})
+			status := "active"
+			if item.SuspendedAt != nil {
+				status = "suspended"
+			}
+			result = append(result, Installation{ID: item.ID, AccountLogin: item.Account.Login, AccountType: item.Account.Type, Status: status, SuspendedAt: item.SuspendedAt})
 		}
 		next, err = c.nextPage(link)
 		if err != nil {
