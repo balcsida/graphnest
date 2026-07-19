@@ -1,0 +1,24 @@
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {nginx.ingress.kubernetes.io/proxy-body-size: 1m}
+  hosts:
+    - host: grepnest.example.invalid
+      paths:
+        - {path: /, pathType: Prefix}
+  tls:
+    - secretName: grepnest-existing-tls
+      hosts: [grepnest.example.invalid]
+monitoring:
+  serviceMonitor:
+    enabled: true
+    labels: {monitoring: pilot}
+    namespaceSelector: {matchNames: [monitoring]}
+secrets:
+  customCA: {name: grepnest-existing-ca, key: ca.crt}
+networkPolicy:
+  serverIngress:
+    ingressControllerNamespaceSelector:
+      matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+    monitoringNamespaceSelector:
+      matchLabels: {kubernetes.io/metadata.name: monitoring}
