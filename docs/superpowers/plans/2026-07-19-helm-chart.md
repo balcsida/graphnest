@@ -475,13 +475,13 @@ free-form map:
   "required": ["enabled", "serverIngress", "externalEgress"],
   "properties": {
     "enabled": {"type": "boolean"},
-    "serverIngress": {"type": "object", "additionalProperties": false, "required": ["ingressControllerNamespaceSelector", "monitoringNamespaceSelector"], "properties": {"ingressControllerNamespaceSelector": {"$ref": "#/definitions/map"}, "monitoringNamespaceSelector": {"$ref": "#/definitions/map"}}},
+    "serverIngress": {"type": "object", "additionalProperties": false, "required": ["ingressControllerNamespaceSelector", "monitoringNamespaceSelector"], "properties": {"ingressControllerNamespaceSelector": {"$ref": "#/definitions/optionalSelector"}, "monitoringNamespaceSelector": {"$ref": "#/definitions/optionalSelector"}}},
     "externalEgress": {
       "type": "object", "additionalProperties": false,
       "required": ["enabled", "dns", "postgresql", "github"],
       "properties": {
         "enabled": {"type": "boolean"},
-        "dns": {"type": "object", "additionalProperties": false, "required": ["namespaceSelector", "podSelector", "ports"], "properties": {"namespaceSelector": {"$ref": "#/definitions/map"}, "podSelector": {"$ref": "#/definitions/map"}, "ports": {"$ref": "#/definitions/ports"}}},
+        "dns": {"type": "object", "additionalProperties": false, "required": ["namespaceSelector", "podSelector", "ports"], "properties": {"namespaceSelector": {"$ref": "#/definitions/optionalSelector"}, "podSelector": {"$ref": "#/definitions/optionalSelector"}, "ports": {"$ref": "#/definitions/ports"}}},
         "postgresql": {"type": "object", "additionalProperties": false, "required": ["cidrs", "port"], "properties": {"cidrs": {"$ref": "#/definitions/cidrs"}, "port": {"$ref": "#/definitions/port"}}},
         "github": {"type": "object", "additionalProperties": false, "required": ["cidrs", "ports"], "properties": {"cidrs": {"$ref": "#/definitions/cidrs"}, "ports": {"$ref": "#/definitions/ports"}}}
       }
@@ -503,7 +503,14 @@ Add these definitions alongside the earlier definitions:
 "stringMap": {"type": "object", "additionalProperties": {"type": "string"}},
 "array": {"type": "array"},
 "ports": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/definitions/port"}},
-"cidrs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[0-9a-fA-F:.]+/[0-9]+$"}},
+"selectorLabels": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string"}},
+"nonEmptySelector": {"type": "object", "additionalProperties": false, "required": ["matchLabels"], "properties": {"matchLabels": {"$ref": "#/definitions/selectorLabels"}}},
+"optionalSelector": {"oneOf": [{"type": "object", "maxProperties": 0}, {"$ref": "#/definitions/nonEmptySelector"}]},
+"cidrs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/network"}},
+"network": {"oneOf": [
+  {"type": "object", "additionalProperties": false, "required": ["address", "prefix"], "properties": {"address": {"type": "string", "format": "ipv4"}, "prefix": {"type": "integer", "minimum": 1, "maximum": 32}}},
+  {"type": "object", "additionalProperties": false, "required": ["address", "prefix"], "properties": {"address": {"type": "string", "format": "ipv6"}, "prefix": {"type": "integer", "minimum": 1, "maximum": 128}}}
+]},
 "resources": {
   "type": "object", "additionalProperties": false,
   "required": ["requests", "limits"],
@@ -539,7 +546,8 @@ Add these definitions alongside the earlier definitions:
 Add root `allOf` conditions: when `ingress.enabled` is true require
 `className` length 1 and `hosts` `minItems: 1`; when
 `networkPolicy.externalEgress.enabled` is true require both PostgreSQL and
-GitHub `cidrs` `minItems: 1`. Keep `server.pdb.minAvailable` fixed at 1; in the
+GitHub `cidrs` `minItems: 1` and require both DNS selectors to match
+`nonEmptySelector`. Keep `server.pdb.minAvailable` fixed at 1; in the
 PDB template call `fail "server.replicas must exceed server.pdb.minAvailable"`
 when the PDB is enabled and `server.replicas` is 1, because JSON Schema
 cannot compare numeric siblings.
@@ -925,10 +933,10 @@ networkPolicy:
   externalEgress:
     enabled: true
     postgresql:
-      cidrs: [192.0.2.10/32]
+      cidrs: [{address: 192.0.2.10, prefix: 32}]
       port: 5432
     github:
-      cidrs: [198.51.100.0/24]
+      cidrs: [{address: 198.51.100.0, prefix: 24}]
       ports: [443]
 ```
 

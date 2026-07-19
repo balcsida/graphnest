@@ -149,7 +149,7 @@ spec:
   egress:
     - to:
         {{- range .Values.networkPolicy.externalEgress.postgresql.cidrs }}
-        - ipBlock: {cidr: {{ . | quote }}}
+        - ipBlock: {cidr: {{ printf "%s/%v" .address .prefix | quote }}}
         {{- end }}
       ports:
         - {protocol: TCP, port: {{ .Values.networkPolicy.externalEgress.postgresql.port }}}
@@ -172,7 +172,7 @@ spec:
   egress:
     - to:
         {{- range .Values.networkPolicy.externalEgress.github.cidrs }}
-        - ipBlock: {cidr: {{ . | quote }}}
+        - ipBlock: {cidr: {{ printf "%s/%v" .address .prefix | quote }}}
         {{- end }}
       ports:
         {{- range .Values.networkPolicy.externalEgress.github.ports }}

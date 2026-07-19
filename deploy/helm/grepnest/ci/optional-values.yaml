@@ -24,8 +24,8 @@ networkPolicy:
   externalEgress:
     enabled: true
     postgresql:
-      cidrs: [192.0.2.10/32]
+      cidrs: [{address: 192.0.2.10, prefix: 32}]
       port: 5432
     github:
-      cidrs: [198.51.100.0/24]
+      cidrs: [{address: 198.51.100.0, prefix: 24}]
       ports: [443]
