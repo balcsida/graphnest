@@ -55,5 +55,5 @@ networkPolicy:
       cidrs: [{address: 192.0.2.10, prefix: 32}]
       port: 5432
     github:
-      cidrs: [{address: "2001:db8:1234::", prefix: 48}]
+      cidrs: [{address: 198.51.100.0, prefix: 24}, {address: "2001:db8:1234::", prefix: 48}]
       ports: [443]

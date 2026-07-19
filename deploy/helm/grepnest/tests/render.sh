@@ -207,6 +207,7 @@ require 'cidr: "192\.0\.2\.10/32"' "$tmp/allow-postgresql-egress-spec.yaml"
 require 'protocol: TCP, port: 5432' "$tmp/allow-postgresql-egress-spec.yaml"
 require 'values: \[server, node\]' "$tmp/allow-github-egress-spec.yaml"
 require 'policyTypes: \[Egress\]' "$tmp/allow-github-egress-spec.yaml"
+require 'cidr: "198\.51\.100\.0/24"' "$tmp/allow-github-egress-spec.yaml"
 require 'cidr: "2001:db8:1234::/48"' "$tmp/allow-github-egress-spec.yaml"
 require 'protocol: TCP, port: 443' "$tmp/allow-github-egress-spec.yaml"
 
