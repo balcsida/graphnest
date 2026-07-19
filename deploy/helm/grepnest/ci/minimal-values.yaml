@@ -1,0 +1,17 @@
+images:
+  application:
+    repository: registry.example.invalid/grepnest/application
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  node:
+    repository: registry.example.invalid/grepnest/node
+    digest: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+secrets:
+  runtime: {name: grepnest-runtime}
+  githubApp: {name: grepnest-github-app}
+server:
+  config:
+    githubAppID: "12345"
+    userInstallationID: "67890"
+    adminInstallationID: "67890"
+    userRepositoryIDs: "101,102"
+    adminRepositoryIDs: "101,102,103"

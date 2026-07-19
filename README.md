@@ -5,6 +5,11 @@ pinned Zoekt-backed search path, bearer authorization, REST, and MCP. It is not
 production-ready. PostgreSQL is present only in the development Compose stack
 and is unused until Milestone 2.
 
+The [Helm chart](deploy/helm/grepnest/README.md) is structurally lintable and
+renderable, but not currently deployable. This repository does not build or
+publish the required images, and Milestone 2 `grepnest-indexer` and
+`grepnest-migrate` behavior is unfinished. The chart has not been cluster-tested.
+
 ## Local quick start
 
 Prerequisites: Go 1.26, Git, Docker Compose, and an internet connection for
@@ -99,10 +104,9 @@ Optional limits are positive and cannot exceed their server caps:
 | `GREPNEST_MAX_RESPONSE_BYTES` | 262144 | 262144 |
 
 Run `make fmt lint test test-race integration e2e build` before proposing a
-change. `make image` and `make helm-lint` intentionally fail with,
-respectively, `image: milestone not implemented` and
-`helm-lint: milestone not implemented`; they are not deployment gates for this
-slice.
+change. `make helm-lint helm-test` validates the chart structure without
+contacting a cluster. `make image` intentionally fails with
+`image: milestone not implemented`; no deployable image is produced.
 
 ## Policies
 

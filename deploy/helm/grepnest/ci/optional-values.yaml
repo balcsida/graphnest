@@ -1,0 +1,59 @@
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {nginx.ingress.kubernetes.io/proxy-body-size: 1m}
+  hosts:
+    - host: grepnest.example.invalid
+      paths:
+        - {path: /, pathType: Prefix}
+  tls:
+    - secretName: grepnest-existing-tls
+      hosts: [grepnest.example.invalid]
+monitoring:
+  serviceMonitor:
+    enabled: true
+    labels: {monitoring: pilot}
+secrets:
+  customCA: {name: grepnest-existing-ca, key: ca.crt}
+server:
+  nodeSelector: {grepnest.example.invalid/pool: server}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions: [{key: grepnest.example.invalid/tier, operator: In, values: [frontend]}]
+  tolerations: [{key: grepnest.example.invalid/dedicated, operator: Equal, value: server, effect: NoSchedule}]
+  topologySpreadConstraints:
+    - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway, labelSelector: {matchLabels: {app.kubernetes.io/component: server}}}
+node:
+  nodeSelector: {grepnest.example.invalid/pool: node}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions: [{key: grepnest.example.invalid/tier, operator: In, values: [storage]}]
+  tolerations: [{key: grepnest.example.invalid/dedicated, operator: Equal, value: node, effect: NoSchedule}]
+  topologySpreadConstraints:
+    - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: DoNotSchedule, labelSelector: {matchLabels: {app.kubernetes.io/component: node}}}
+migration:
+  nodeSelector: {grepnest.example.invalid/pool: migration}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions: [{key: grepnest.example.invalid/tier, operator: In, values: [batch]}]
+  tolerations: [{key: grepnest.example.invalid/dedicated, operator: Equal, value: migration, effect: NoSchedule}]
+networkPolicy:
+  serverIngress:
+    ingressControllerNamespaceSelector:
+      matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+    monitoringNamespaceSelector:
+      matchLabels: {kubernetes.io/metadata.name: monitoring}
+  externalEgress:
+    enabled: true
+    postgresql:
+      cidrs: [{address: 192.0.2.10, prefix: 32}]
+      port: 5432
+    github:
+      cidrs: [{address: 198.51.100.0, prefix: 24}, {address: "2001:db8:1234::", prefix: 48}]
+      ports: [443]

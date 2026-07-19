@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "grepnest.serverName" . }}
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  replicas: {{ .Values.server.replicas }}
+  selector:
+    matchLabels:
+      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        {{- include "grepnest.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+      annotations:
+        {{- with .Values.server.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        checksum/config: {{ include (print $.Template.BasePath "/configmaps.yaml") . | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      serviceAccountName: {{ include "grepnest.serverName" . }}
+      securityContext:
+        {{- include "grepnest.podSecurityContext" .Values.server.podSecurityContext | nindent 8 }}
+      {{- with .Values.images.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.server.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: server
+          image: {{ include "grepnest.image" .Values.images.application | quote }}
+          imagePullPolicy: {{ .Values.images.application.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            seccompProfile: {type: RuntimeDefault}
+          ports:
+            - {name: http, containerPort: {{ .Values.server.port }}, protocol: TCP}
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+          envFrom:
+            - configMapRef:
+                name: {{ include "grepnest.serverName" . }}
+          env:
+            - name: HOME
+              value: /var/run/grepnest
+            - name: GREPNEST_DATABASE_URL
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.secrets.runtime.name }}, key: {{ .Values.secrets.runtime.databaseURLKey }}}
+            - name: GREPNEST_USER_TOKEN
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.secrets.runtime.name }}, key: {{ .Values.secrets.runtime.userTokenKey }}}
+            - name: GREPNEST_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.secrets.runtime.name }}, key: {{ .Values.secrets.runtime.adminTokenKey }}}
+          resources:
+            {{- toYaml .Values.server.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: runtime-home, mountPath: /var/run/grepnest}
+            - {name: github-app, mountPath: /var/run/secrets/grepnest/github, readOnly: true}
+            {{- if .Values.secrets.customCA.name }}
+            - {name: custom-ca, mountPath: /var/run/secrets/grepnest/ca/ca.crt, subPath: ca.crt, readOnly: true}
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: runtime-home
+          emptyDir: {}
+        - name: github-app
+          secret:
+            secretName: {{ .Values.secrets.githubApp.name }}
+            items:
+              - {key: {{ .Values.secrets.githubApp.privateKeyKey }}, path: private-key.pem}
+              - {key: {{ .Values.secrets.githubApp.webhookSecretKey }}, path: webhook-secret}
+        {{- if .Values.secrets.customCA.name }}
+        - name: custom-ca
+          secret:
+            secretName: {{ .Values.secrets.customCA.name }}
+            items:
+              - {key: {{ .Values.secrets.customCA.key }}, path: ca.crt}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "grepnest.serverName" . }}
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+  {{- with .Values.server.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "grepnest.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+  ports:
+    - {name: http, port: {{ .Values.server.service.port }}, targetPort: http, protocol: TCP}

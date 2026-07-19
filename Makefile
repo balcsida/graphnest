@@ -2,7 +2,7 @@ ZOEKT_VERSION := v0.0.0-20260717095332-3c8b39b1ef4f
 POSTGRES_COMPOSE := docker compose -p grepnest-postgres
 GREPNEST_TEST_POSTGRES_DSN ?= postgres://grepnest:grepnest@127.0.0.1:5432/grepnest?sslmode=disable
 
-.PHONY: fmt lint test test-race integration postgres-test postgres-integration e2e tools build server image helm-lint
+.PHONY: fmt lint test test-race integration postgres-test postgres-integration e2e tools build server image helm-lint helm-test
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
@@ -52,5 +52,7 @@ image:
 	@false
 
 helm-lint:
-	@echo "helm-lint: milestone not implemented" >&2
-	@false
+	helm lint deploy/helm/grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml
+
+helm-test:
+	sh deploy/helm/grepnest/tests/render.sh
