@@ -48,6 +48,11 @@ func RegisterGitHubWebhook(mux *http.ServeMux, secret []byte, maxBytes int64, pr
 			return
 		}
 		if _, err := processor.Process(request.Context(), webhook.Delivery{ID: delivery, Event: event, Body: body}); err != nil {
+			var invalid webhook.InvalidDeliveryError
+			if errors.As(err, &invalid) {
+				http.Error(writer, "bad request", http.StatusBadRequest)
+				return
+			}
 			http.Error(writer, "unavailable", http.StatusServiceUnavailable)
 			return
 		}

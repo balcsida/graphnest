@@ -1,10 +1,30 @@
 package webhook
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"errors"
 	"testing"
 )
+
+func TestGitHubProcessorRejectsMalformedKnownEventsBeforeStorage(t *testing.T) {
+	processor := NewGitHubProcessor(nil, nil)
+	for _, test := range []struct{ event, body string }{
+		{"push", `{}`},
+		{"push", `{"installation":{"id":1},"repository":{"id":2},"ref":"refs/heads/main","after":"bad"}`},
+		{"installation", `{"installation":{"id":0}}`},
+		{"installation", `{"action":"created","installation":{"id":1}} {}`},
+		{"repository", `{"action":"renamed","installation":{"id":1},"repository":{"id":2}}`},
+		{"installation_repositories", `{"action":"removed","installation":{"id":1},"repositories_removed":[]}`},
+	} {
+		_, err := processor.Process(context.Background(), Delivery{ID: "one", Event: test.event, Body: []byte(test.body)})
+		var invalid InvalidDeliveryError
+		if !errors.As(err, &invalid) {
+			t.Fatalf("%s: err=%v", test.event, err)
+		}
+	}
+}
 
 func TestVerify(t *testing.T) {
 	secret := []byte("webhook-secret")

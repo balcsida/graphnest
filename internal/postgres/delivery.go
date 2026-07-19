@@ -60,7 +60,7 @@ func (tx *DeliveryTx) DisableRepository(ctx context.Context, githubID int64, err
 }
 
 func (tx *DeliveryTx) DisableInstallation(ctx context.Context, githubID int64, status string) error {
-	if _, err := tx.tx.Exec(ctx, `update installations set status=$2, suspended_at=case when $2='suspended' then now() else suspended_at end, updated_at=now() where github_id=$1`, githubID, status); err != nil {
+	if _, err := tx.tx.Exec(ctx, `update installations set status=$2::varchar, suspended_at=case when $2::varchar='suspended' then now() else suspended_at end, updated_at=now() where github_id=$1`, githubID, status); err != nil {
 		return err
 	}
 	_, err := tx.tx.Exec(ctx, `update repositories set enabled=false, status='disabled', updated_at=now()

@@ -1,7 +1,6 @@
 package webhook
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -23,6 +22,10 @@ type Delivery struct {
 type Processor interface {
 	Process(context.Context, Delivery) (bool, error)
 }
+
+type InvalidDeliveryError struct{}
+
+func (InvalidDeliveryError) Error() string { return "invalid GitHub webhook delivery" }
 
 func Verify(secret, body []byte, signature string) bool {
 	if !strings.HasPrefix(signature, "sha256=") {
@@ -62,14 +65,18 @@ type eventPayload struct {
 			Login string `json:"login"`
 		} `json:"owner"`
 	} `json:"repository"`
+	RepositoriesRemoved []struct {
+		ID int64 `json:"id"`
+	} `json:"repositories_removed"`
 }
 
 func (processor *GitHubProcessor) Process(ctx context.Context, delivery Delivery) (bool, error) {
+	if !knownEvent(delivery.Event) {
+		return processor.store.ApplyDelivery(ctx, postgres.Delivery{ID: delivery.ID, Event: delivery.Event, State: "ignored"}, nil)
+	}
 	var payload eventPayload
-	decoder := json.NewDecoder(bytes.NewReader(delivery.Body))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&payload); err != nil {
-		return false, err
+	if err := json.Unmarshal(delivery.Body, &payload); err != nil || !validPayload(delivery.Event, payload) {
+		return false, InvalidDeliveryError{}
 	}
 	var installationID *int64
 	if payload.Installation.ID > 0 {
@@ -107,6 +114,14 @@ func (processor *GitHubProcessor) Process(ctx context.Context, delivery Delivery
 			if payload.Action == "renamed" {
 				return tx.RenameRepository(ctx, payload.Repository.ID, payload.Repository.Owner.Login, payload.Repository.Name, payload.Repository.CloneURL, payload.Repository.HTMLURL)
 			}
+		case "installation_repositories":
+			if payload.Action == "removed" {
+				for _, repository := range payload.RepositoriesRemoved {
+					if err := tx.DisableRepository(ctx, repository.ID, "removed"); err != nil {
+						return err
+					}
+				}
+			}
 		}
 		return nil
 	})
@@ -119,6 +134,44 @@ func (processor *GitHubProcessor) Process(ctx context.Context, delivery Delivery
 		}
 	}
 	return inserted, nil
+}
+
+func knownEvent(event string) bool {
+	return event == "push" || event == "installation" || event == "installation_repositories" || event == "repository"
+}
+
+func validPayload(event string, payload eventPayload) bool {
+	if payload.Installation.ID <= 0 {
+		return false
+	}
+	switch event {
+	case "push":
+		return payload.Repository.ID > 0 && strings.HasPrefix(payload.Ref, "refs/heads/") && payload.Ref != "refs/heads/" && validSHA(payload.After)
+	case "installation":
+		return payload.Action != ""
+	case "repository":
+		if payload.Repository.ID <= 0 || payload.Action == "" {
+			return false
+		}
+		return payload.Action != "renamed" || payload.Repository.Owner.Login != "" && payload.Repository.Name != "" && payload.Repository.CloneURL != "" && payload.Repository.HTMLURL != ""
+	case "installation_repositories":
+		if payload.Action == "" {
+			return false
+		}
+		if payload.Action != "removed" {
+			return true
+		}
+		if len(payload.RepositoriesRemoved) == 0 {
+			return false
+		}
+		for _, repository := range payload.RepositoriesRemoved {
+			if repository.ID <= 0 {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 func validSHA(sha string) bool {
