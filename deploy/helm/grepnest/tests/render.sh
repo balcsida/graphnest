@@ -1,19 +1,77 @@
 #!/bin/sh
 set -eu
 
-chart=deploy/helm/grepnest
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+chart=$(CDPATH= cd -- "$script_dir/.." && pwd)
 minimal=$chart/ci/minimal-values.yaml
 optional=$chart/ci/optional-values.yaml
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+trap 'rm -rf "$tmp"' 0 HUP INT TERM
 
-require() { rg -q "$1" "$2" || { echo "missing $1 in $2" >&2; exit 1; }; }
-reject() { ! rg -n "$1" "$2" || { echo "forbidden $1 in $2" >&2; exit 1; }; }
+require() {
+  [ -f "$2" ] && [ -r "$2" ] || {
+    echo "not a readable regular file: $2" >&2
+    return 2
+  }
+  if rg -q -- "$1" "$2"; then
+    return 0
+  else
+    status=$?
+  fi
+  [ "$status" -eq 1 ] || {
+    echo "rg failed with status $status for $2" >&2
+    return "$status"
+  }
+  echo "missing $1 in $2" >&2
+  return 1
+}
+
+reject() {
+  [ -f "$2" ] && [ -r "$2" ] || {
+    echo "not a readable regular file: $2" >&2
+    return 2
+  }
+  if rg -n -- "$1" "$2"; then
+    echo "forbidden $1 in $2" >&2
+    return 1
+  else
+    status=$?
+  fi
+  [ "$status" -eq 1 ] || {
+    echo "rg failed with status $status for $2" >&2
+    return "$status"
+  }
+}
+
+expect_failure() {
+  output=$1
+  shift
+  if "$@" >/dev/null 2>"$output"; then
+    echo "expected failure passed: $*" >&2
+    return 1
+  else
+    status=$?
+  fi
+  [ "$status" -gt 0 ] && [ -s "$output" ] || {
+    echo "expected nonzero failure with diagnostics: $*" >&2
+    return 1
+  }
+}
+
+expect_failure "$tmp/require-missing.err" require anything "$tmp/missing"
+expect_failure "$tmp/reject-missing.err" reject anything "$tmp/missing"
+require 'not a readable regular file:' "$tmp/require-missing.err"
+require 'not a readable regular file:' "$tmp/reject-missing.err"
+: >"$tmp/probe"
+expect_failure "$tmp/require-rg.err" require '[' "$tmp/probe"
+expect_failure "$tmp/reject-rg.err" reject '[' "$tmp/probe"
+require 'rg failed with status 2' "$tmp/require-rg.err"
+require 'rg failed with status 2' "$tmp/reject-rg.err"
 
 helm lint "$chart" -f "$minimal"
-helm template pilot "$chart" -n grepnest -f "$minimal" > "$tmp/minimal.yaml"
+helm template pilot "$chart" -n grepnest -f "$minimal" >"$tmp/minimal.yaml"
 helm template pilot "$chart" -n grepnest -f "$minimal" -f "$optional" \
-  --api-versions monitoring.coreos.com/v1/ServiceMonitor > "$tmp/optional.yaml"
+  --api-versions monitoring.coreos.com/v1/ServiceMonitor >"$tmp/optional.yaml"
 
 for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
   for pattern in \
@@ -32,11 +90,25 @@ for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
   done
   reject '^kind: Secret$|apiVersion: .*openshift\.io|^kind: (Route|BuildConfig|ImageStream|Template|SecurityContextConstraints)$|:latest([[:space:]]|$)|hostPath:|privileged: true|allowPrivilegeEscalation: true|runAsUser: 0|type: (NodePort|LoadBalancer)' "$manifest"
   reject 'runAsNonRoot: false' "$manifest"
-  if rg '^ *image:' "$manifest" | rg -v '@sha256:[a-f0-9]{64}"?$' >/dev/null; then
+
+  images_file=$tmp/$(basename "$manifest").images
+  if rg '^ *image:' "$manifest" >"$images_file"; then
+    :
+  else
+    status=$?
+    echo "image extraction failed with status $status for $manifest" >&2
+    exit "$status"
+  fi
+  invalid_images=$tmp/$(basename "$manifest").invalid-images
+  if rg -v '@sha256:[a-f0-9]{64}"?$' "$images_file" >"$invalid_images"; then
     echo "non-digest image in $manifest" >&2
     exit 1
+  else
+    status=$?
   fi
-  images=$(rg -c '^ *image:' "$manifest")
+  [ "$status" -eq 1 ] || exit "$status"
+
+  images=$(rg -c '^ *image:' "$images_file")
   for pattern in 'allowPrivilegeEscalation: false' 'capabilities: \{drop: \[ALL\]\}' \
     'readOnlyRootFilesystem: true' 'runAsNonRoot: true'; do
     [ "$(rg -c "$pattern" "$manifest")" -eq "$images" ] || exit 1
@@ -49,51 +121,129 @@ done
 
 for pattern in '^kind: Ingress$' '^kind: ServiceMonitor$' \
   'name: custom-ca' 'secretName: grepnest-existing-ca' \
-  'cidr: "192\.0\.2\.10/32"' 'cidr: "198\.51\.100\.0/24"'; do
+  'grepnest.example.invalid/pool: server' \
+  'grepnest.example.invalid/pool: node' \
+  'grepnest.example.invalid/pool: migration' \
+  'nodeSelector:' 'affinity:' 'tolerations:' \
+  'grepnest.example.invalid/tier' \
+  'grepnest.example.invalid/dedicated' \
+  '- frontend$' '- storage$' '- batch$' \
+  'value: server' 'value: node' 'value: migration' \
+  'topologySpreadConstraints:' \
+  'cpu: 250m' 'memory: 256Mi' 'cpu: "8"' 'memory: 24Gi'; do
   require "$pattern" "$tmp/optional.yaml"
 done
-for pattern in 'nodeSelector' 'affinity' 'tolerations' 'topologySpreadConstraints'; do
-  require "$pattern" "$chart/templates/server.yaml"
-  require "$pattern" "$chart/templates/node.yaml"
-done
-require '"format": "ipv4"' "$chart/values.schema.json"
-require '"format": "ipv6"' "$chart/values.schema.json"
 
-sed -n '/^kind: StatefulSet$/,/^# Source: grepnest\/templates\/migration-job.yaml$/p' "$tmp/minimal.yaml" > "$tmp/node.yaml"
+sed -n '/^kind: StatefulSet$/,/^# Source: grepnest\/templates\/migration-job.yaml$/p' \
+  "$tmp/minimal.yaml" >"$tmp/node.yaml"
+require '^kind: StatefulSet$' "$tmp/node.yaml"
 [ "$(rg -c '^  volumeClaimTemplates:$' "$tmp/node.yaml")" -eq 1 ] || exit 1
-sed -n '/^      containers:$/,/^      volumes:$/p' "$tmp/node.yaml" > "$tmp/node-containers.yaml"
+sed -n '/^      containers:$/,/^      volumes:$/p' "$tmp/node.yaml" >"$tmp/node-containers.yaml"
+require '^      containers:$' "$tmp/node-containers.yaml"
 [ "$(rg -c '^        - name:' "$tmp/node-containers.yaml")" -eq 2 ] || exit 1
-sed -n '/^        - name: zoekt-webserver$/,/^        - name: grepnest-indexer$/p' "$tmp/node.yaml" > "$tmp/zoekt.yaml"
-sed -n '/^        - name: grepnest-indexer$/,/^      volumes:$/p' "$tmp/node.yaml" > "$tmp/indexer.yaml"
+sed -n '/^        - name: zoekt-webserver$/,/^        - name: grepnest-indexer$/p' \
+  "$tmp/node.yaml" >"$tmp/zoekt.yaml"
+require '^        - name: zoekt-webserver$' "$tmp/zoekt.yaml"
+sed -n '/^        - name: grepnest-indexer$/,/^      volumes:$/p' \
+  "$tmp/node.yaml" >"$tmp/indexer.yaml"
+require '^        - name: grepnest-indexer$' "$tmp/indexer.yaml"
 reject 'secretKeyRef:|name: GREPNEST_DATABASE_URL|name: GREPNEST_(USER|ADMIN)_TOKEN' "$tmp/zoekt.yaml"
 require 'name: GREPNEST_DATABASE_URL' "$tmp/indexer.yaml"
 reject 'name: GREPNEST_(USER|ADMIN)_TOKEN' "$tmp/indexer.yaml"
 
-sed -n '/^# Source: grepnest\/templates\/ingress.yaml$/,/^---$/p' "$tmp/optional.yaml" > "$tmp/optional-ingress.yaml"
+sed -n '/^# Source: grepnest\/templates\/ingress.yaml$/,/^---$/p' \
+  "$tmp/optional.yaml" >"$tmp/optional-ingress.yaml"
+require '^kind: Ingress$' "$tmp/optional-ingress.yaml"
 reject 'pilot-grepnest-zoekt|name: .*zoekt|backend:.*zoekt' "$tmp/optional-ingress.yaml"
 reject 'host: "?\*|path: /\*|host: "?default([.]|"|$)' "$tmp/optional-ingress.yaml"
+
+policies='deny-ingress allow-server-ingress allow-zoekt-ingress deny-egress allow-internal-egress allow-dns-egress allow-postgresql-egress allow-github-egress'
+for policy in $policies; do
+  sed -n "/^  name: pilot-grepnest-$policy\$/,/^---\$/p" \
+    "$tmp/optional.yaml" >"$tmp/$policy.yaml"
+  require "^  name: pilot-grepnest-$policy\$" "$tmp/$policy.yaml"
+  sed -n '/^spec:$/,/^---$/p' "$tmp/$policy.yaml" >"$tmp/$policy-spec.yaml"
+  require '^spec:$' "$tmp/$policy-spec.yaml"
+  require 'app.kubernetes.io/name: grepnest' "$tmp/$policy-spec.yaml"
+  require 'app.kubernetes.io/instance: pilot' "$tmp/$policy-spec.yaml"
+done
+
+require 'policyTypes: \[Ingress\]' "$tmp/deny-ingress-spec.yaml"
+require 'ingress: \[\]' "$tmp/deny-ingress-spec.yaml"
+require 'app.kubernetes.io/component: server' "$tmp/allow-server-ingress-spec.yaml"
+require 'policyTypes: \[Ingress\]' "$tmp/allow-server-ingress-spec.yaml"
+for peer in grepnest ingress-nginx monitoring; do
+  require "kubernetes.io/metadata.name: $peer" "$tmp/allow-server-ingress-spec.yaml"
+done
+require 'protocol: TCP, port: 8080' "$tmp/allow-server-ingress-spec.yaml"
+
+require 'app.kubernetes.io/component: node' "$tmp/allow-zoekt-ingress-spec.yaml"
+require 'policyTypes: \[Ingress\]' "$tmp/allow-zoekt-ingress-spec.yaml"
+require '^        - namespaceSelector:$' "$tmp/allow-zoekt-ingress-spec.yaml"
+require '^          podSelector:$' "$tmp/allow-zoekt-ingress-spec.yaml"
+require 'app.kubernetes.io/component: server' "$tmp/allow-zoekt-ingress-spec.yaml"
+require 'protocol: TCP, port: 6070' "$tmp/allow-zoekt-ingress-spec.yaml"
+
+require 'policyTypes: \[Egress\]' "$tmp/deny-egress-spec.yaml"
+require 'egress: \[\]' "$tmp/deny-egress-spec.yaml"
+require 'app.kubernetes.io/component: server' "$tmp/allow-internal-egress-spec.yaml"
+require 'policyTypes: \[Egress\]' "$tmp/allow-internal-egress-spec.yaml"
+require '^        - namespaceSelector:$' "$tmp/allow-internal-egress-spec.yaml"
+require '^          podSelector:$' "$tmp/allow-internal-egress-spec.yaml"
+require 'app.kubernetes.io/component: node' "$tmp/allow-internal-egress-spec.yaml"
+require 'protocol: TCP, port: 6070' "$tmp/allow-internal-egress-spec.yaml"
+
+require 'policyTypes: \[Egress\]' "$tmp/allow-dns-egress-spec.yaml"
+require '^        - namespaceSelector:$' "$tmp/allow-dns-egress-spec.yaml"
+require '^          podSelector:$' "$tmp/allow-dns-egress-spec.yaml"
+require 'kubernetes.io/metadata.name: kube-system' "$tmp/allow-dns-egress-spec.yaml"
+require 'k8s-app: kube-dns' "$tmp/allow-dns-egress-spec.yaml"
+require 'protocol: UDP, port: 53' "$tmp/allow-dns-egress-spec.yaml"
+require 'protocol: TCP, port: 53' "$tmp/allow-dns-egress-spec.yaml"
+
+require 'values: \[server, node, migration\]' "$tmp/allow-postgresql-egress-spec.yaml"
+require 'policyTypes: \[Egress\]' "$tmp/allow-postgresql-egress-spec.yaml"
+require 'cidr: "192\.0\.2\.10/32"' "$tmp/allow-postgresql-egress-spec.yaml"
+require 'protocol: TCP, port: 5432' "$tmp/allow-postgresql-egress-spec.yaml"
+require 'values: \[server, node\]' "$tmp/allow-github-egress-spec.yaml"
+require 'policyTypes: \[Egress\]' "$tmp/allow-github-egress-spec.yaml"
+require 'cidr: "2001:db8:1234::/48"' "$tmp/allow-github-egress-spec.yaml"
+require 'protocol: TCP, port: 443' "$tmp/allow-github-egress-spec.yaml"
+
 reject '^ *- \{\}|^ *from: *\[?\]?$|^ *to: *\[?\]?$|^ *- (podSelector|namespaceSelector): *\{\}$' "$tmp/optional.yaml"
+reject 'cidr: "?(0\.0\.0\.0/0|::/0)"?' "$tmp/optional.yaml"
+reject '^ *namespaceSelector: *\{\}$|^ *podSelector: *\{\}$' "$tmp/optional.yaml"
 
-if helm template bad "$chart" --set images.application.repository=x >/dev/null 2> "$tmp/missing.err"; then exit 1; fi
-if helm template bad "$chart" -f "$minimal" --set images.node.digest=latest >/dev/null 2> "$tmp/digest.err"; then exit 1; fi
-if helm template bad "$chart" -f "$minimal" -f "$optional" >/dev/null 2> "$tmp/crd.err"; then exit 1; fi
-if helm template bad "$chart" -f "$minimal" --set 'networkPolicy.externalEgress.postgresql.cidrs[0].address=not-an-ip' >/dev/null 2> "$tmp/ip.err"; then exit 1; fi
-if helm template bad "$chart" -f "$minimal" --set 'networkPolicy.externalEgress.postgresql.cidrs[0].address=192.0.2.1' --set 'networkPolicy.externalEgress.postgresql.cidrs[0].prefix=0' >/dev/null 2> "$tmp/prefix.err"; then exit 1; fi
-if helm template bad "$chart" -f "$minimal" \
-  --set networkPolicy.externalEgress.enabled=true \
-  --set 'networkPolicy.externalEgress.postgresql.cidrs[0].address=192.0.2.1' \
-  --set 'networkPolicy.externalEgress.postgresql.cidrs[0].prefix=32' \
-  --set 'networkPolicy.externalEgress.github.cidrs[0].address=2001:db8::1' \
-  --set 'networkPolicy.externalEgress.github.cidrs[0].prefix=128' \
-  --set-json 'networkPolicy.externalEgress.dns.namespaceSelector.matchLabels=null' \
-  --set-json 'networkPolicy.externalEgress.dns.podSelector.matchLabels=null' \
-  >/dev/null 2> "$tmp/selectors.err"; then exit 1; fi
+expect_failure "$tmp/repository.err" helm template bad "$chart" -f "$minimal" \
+  --set-string=images.application.repository=
+expect_failure "$tmp/digest.err" helm template bad "$chart" -f "$minimal" \
+  --set=images.node.digest=latest
+expect_failure "$tmp/crd.err" helm template bad "$chart" -f "$minimal" -f "$optional"
+expect_failure "$tmp/ipv4.err" helm template bad "$chart" -f "$minimal" \
+  --set-json='networkPolicy.externalEgress.postgresql.cidrs=[{"address":"999.0.2.1","prefix":32}]'
+expect_failure "$tmp/ipv6.err" helm template bad "$chart" -f "$minimal" \
+  --set-json='networkPolicy.externalEgress.github.cidrs=[{"address":"2001:db8::zz","prefix":64}]'
+expect_failure "$tmp/ipv4-prefix.err" helm template bad "$chart" -f "$minimal" \
+  --set-json='networkPolicy.externalEgress.postgresql.cidrs=[{"address":"192.0.2.1","prefix":0}]'
+expect_failure "$tmp/ipv6-prefix.err" helm template bad "$chart" -f "$minimal" \
+  --set-json='networkPolicy.externalEgress.github.cidrs=[{"address":"2001:db8::1","prefix":0}]'
+expect_failure "$tmp/optional-selector.err" helm template bad "$chart" -f "$minimal" -f "$optional" \
+  --set-json='networkPolicy.serverIngress.ingressControllerNamespaceSelector.matchLabels=null'
+expect_failure "$tmp/dns-selectors.err" helm template bad "$chart" -f "$minimal" \
+  --set=networkPolicy.externalEgress.enabled=true \
+  --set-json='networkPolicy.externalEgress.postgresql.cidrs=[{"address":"192.0.2.1","prefix":32}]' \
+  --set-json='networkPolicy.externalEgress.github.cidrs=[{"address":"2001:db8::1","prefix":128}]' \
+  --set-json='networkPolicy.externalEgress.dns.namespaceSelector=null' \
+  --set-json='networkPolicy.externalEgress.dns.podSelector=null'
 
-require '/images/(application|node)|image (repository|sha256 digest)' "$tmp/missing.err"
-require 'digest|sha256' "$tmp/digest.err"
+require "/images/application/repository.*minLength: got 0, want 1" "$tmp/repository.err"
+require "/images/node/digest.*'latest'.*does not match pattern" "$tmp/digest.err"
 require 'monitoring.serviceMonitor.enabled requires monitoring.coreos.com/v1/ServiceMonitor' "$tmp/crd.err"
-require 'address|ipv4|ipv6' "$tmp/ip.err"
-require 'prefix|greater than or equal to 1' "$tmp/prefix.err"
-require 'namespaceSelector|podSelector|matchLabels' "$tmp/selectors.err"
+require "/networkPolicy/externalEgress/postgresql/cidrs/0/address.*'999\.0\.2\.1'.*not valid ipv4" "$tmp/ipv4.err"
+require "/networkPolicy/externalEgress/github/cidrs/0/address.*'2001:db8::zz'.*not valid ipv6" "$tmp/ipv6.err"
+require '/networkPolicy/externalEgress/postgresql/cidrs/0/prefix.*minimum: got 0, want 1' "$tmp/ipv4-prefix.err"
+require '/networkPolicy/externalEgress/github/cidrs/0/prefix.*minimum: got 0, want 1' "$tmp/ipv6-prefix.err"
+require '/networkPolicy/serverIngress/ingressControllerNamespaceSelector/matchLabels.*got null, want object' "$tmp/optional-selector.err"
+require "/networkPolicy/externalEgress/dns.*missing properties 'namespaceSelector', 'podSelector'" "$tmp/dns-selectors.err"
 
 echo 'helm render tests passed'
