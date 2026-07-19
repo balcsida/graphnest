@@ -1,0 +1,182 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "grepnest.fullname" . }}-deny-ingress
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "grepnest.fullname" . }}-allow-server-ingress
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+        {{- with .Values.networkPolicy.serverIngress.ingressControllerNamespaceSelector }}
+        - namespaceSelector:
+            {{- toYaml . | nindent 12 }}
+        {{- end }}
+        {{- with .Values.networkPolicy.serverIngress.monitoringNamespaceSelector }}
+        - namespaceSelector:
+            {{- toYaml . | nindent 12 }}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.server.port }}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "grepnest.fullname" . }}-allow-zoekt-ingress
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: node
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              {{- include "grepnest.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: server
+      ports:
+        - {protocol: TCP, port: {{ .Values.node.zoekt.port }}}
+{{- if .Values.networkPolicy.externalEgress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "grepnest.fullname" . }}-deny-egress
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+  policyTypes: [Egress]
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "grepnest.fullname" . }}-allow-internal-egress
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              {{- include "grepnest.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: node
+      ports:
+        - {protocol: TCP, port: {{ .Values.node.zoekt.port }}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "grepnest.fullname" . }}-allow-dns-egress
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [server, node, migration]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.externalEgress.dns.namespaceSelector | nindent 12 }}
+          podSelector:
+            {{- toYaml .Values.networkPolicy.externalEgress.dns.podSelector | nindent 12 }}
+      ports:
+        {{- range .Values.networkPolicy.externalEgress.dns.ports }}
+        - {protocol: UDP, port: {{ . }}}
+        - {protocol: TCP, port: {{ . }}}
+        {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "grepnest.fullname" . }}-allow-postgresql-egress
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+spec:
+  # NetworkPolicy is pod-level: Zoekt shares this node policy, but only the
+  # indexer container receives the database URL in the long-running node pod.
+  podSelector:
+    matchLabels:
+      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [server, node, migration]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        {{- range .Values.networkPolicy.externalEgress.postgresql.cidrs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.networkPolicy.externalEgress.postgresql.port }}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "grepnest.fullname" . }}-allow-github-egress
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [server, node]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        {{- range .Values.networkPolicy.externalEgress.github.cidrs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports:
+        {{- range .Values.networkPolicy.externalEgress.github.ports }}
+        - {protocol: TCP, port: {{ . }}}
+        {{- end }}
+{{- end }}
+{{- end }}

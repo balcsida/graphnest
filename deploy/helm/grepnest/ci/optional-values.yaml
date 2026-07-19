@@ -21,3 +21,11 @@ networkPolicy:
       matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
     monitoringNamespaceSelector:
       matchLabels: {kubernetes.io/metadata.name: monitoring}
+  externalEgress:
+    enabled: true
+    postgresql:
+      cidrs: [192.0.2.10/32]
+      port: 5432
+    github:
+      cidrs: [198.51.100.0/24]
+      ports: [443]
