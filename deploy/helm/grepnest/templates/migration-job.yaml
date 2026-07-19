@@ -19,7 +19,6 @@ spec:
         app.kubernetes.io/component: migration
     spec:
       automountServiceAccountToken: false
-      serviceAccountName: {{ include "grepnest.fullname" . }}-migrate
       restartPolicy: Never
       securityContext:
         seccompProfile: {type: RuntimeDefault}
