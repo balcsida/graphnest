@@ -24,6 +24,7 @@ type Repository struct {
 	WebURL         string     `json:"web_url"`
 	Status         string     `json:"status"`
 	ErrorCode      string     `json:"error_code"`
+	SearchNode     string     `json:"search_node"`
 	Enabled        bool       `json:"enabled"`
 	LastIndexedAt  *time.Time `json:"last_indexed_at"`
 }

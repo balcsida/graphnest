@@ -51,6 +51,10 @@ func TestRepositoryStorePreservesDurableIDs(t *testing.T) {
 	if err := store.UpsertSearchNode(t.Context(), "node-b", "http://zoekt-b.invalid"); err != nil {
 		t.Fatal(err)
 	}
+	authorized, err := store.AuthorizedRepository(t.Context(), 10, []int64{101}, 101)
+	if err != nil || authorized.SearchNode != "node-b" {
+		t.Fatalf("authorized repository = %#v, err=%v", authorized, err)
+	}
 	var nodes int
 	var nodeID, baseURL string
 	if err := store.pool.QueryRow(t.Context(), "select count(*), min(node_id), min(base_url) from search_nodes").Scan(&nodes, &nodeID, &baseURL); err != nil || nodes != 1 || nodeID != "node-b" || baseURL != "http://zoekt-b.invalid" {

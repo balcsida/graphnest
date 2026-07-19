@@ -45,7 +45,8 @@ func (s *Store) UpsertRepository(ctx context.Context, update RepositoryUpdate) (
 			status = case when excluded.enabled then repositories.status else 'disabled' end, updated_at = now()
 		returning id, (select github_id from installations where id = repositories.installation_id), github_id,
 			zoekt_repo_id, owner || '/' || name, default_branch, coalesce(desired_sha, ''), coalesce(indexed_sha, ''),
-			web_url, status, coalesce(error_code, ''), enabled, last_indexed_at`,
+			web_url, status, coalesce(error_code, ''), coalesce((select node_id from search_nodes where singleton), ''),
+			enabled, last_indexed_at`,
 		update.GitHubID, update.InstallationID, update.Owner, update.Name, update.CloneURL, update.WebURL,
 		update.DefaultBranch, update.Private, update.Archived, update.Enabled)
 	return scanRepository(row)
@@ -194,7 +195,7 @@ func (s *Store) UpsertSearchNode(ctx context.Context, nodeID, baseURL string) er
 const repositoryColumns = `repositories.id, installations.github_id, repositories.github_id, repositories.zoekt_repo_id,
 	repositories.owner || '/' || repositories.name, repositories.default_branch, coalesce(repositories.desired_sha, ''),
 	coalesce(repositories.indexed_sha, ''), repositories.web_url, repositories.status, coalesce(repositories.error_code, ''),
-	repositories.enabled, repositories.last_indexed_at`
+	coalesce((select node_id from search_nodes where singleton), ''), repositories.enabled, repositories.last_indexed_at`
 
 const repositoryQuery = `select ` + repositoryColumns + ` from repositories join installations on installations.id = repositories.installation_id
 	where installations.github_id = $1 and repositories.github_id = any($2) and installations.status = 'active'
@@ -208,7 +209,7 @@ func scanRepository(row repositoryScanner) (repository.Repository, error) {
 	var result repository.Repository
 	var zoektID int64
 	err := row.Scan(&result.ID, &result.InstallationID, &result.GitHubID, &zoektID, &result.Name, &result.Branch,
-		&result.DesiredSHA, &result.IndexedSHA, &result.WebURL, &result.Status, &result.ErrorCode, &result.Enabled, &result.LastIndexedAt)
+		&result.DesiredSHA, &result.IndexedSHA, &result.WebURL, &result.Status, &result.ErrorCode, &result.SearchNode, &result.Enabled, &result.LastIndexedAt)
 	result.ZoektID = uint32(zoektID)
 	return result, err
 }
