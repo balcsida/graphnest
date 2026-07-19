@@ -2,7 +2,7 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.fullname" . }}-deny-ingress
+  name: {{ include "grepnest.resourceName" (list . "deny-ingress") }}
   labels:
     {{- include "grepnest.labels" . | nindent 4 }}
 spec:
@@ -15,7 +15,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.fullname" . }}-allow-server-ingress
+  name: {{ include "grepnest.resourceName" (list . "allow-server-ingress") }}
   labels:
     {{- include "grepnest.labels" . | nindent 4 }}
 spec:
@@ -43,7 +43,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.fullname" . }}-allow-zoekt-ingress
+  name: {{ include "grepnest.resourceName" (list . "allow-zoekt-ingress") }}
   labels:
     {{- include "grepnest.labels" . | nindent 4 }}
 spec:
@@ -68,7 +68,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.fullname" . }}-deny-egress
+  name: {{ include "grepnest.resourceName" (list . "deny-egress") }}
   labels:
     {{- include "grepnest.labels" . | nindent 4 }}
 spec:
@@ -81,7 +81,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.fullname" . }}-allow-internal-egress
+  name: {{ include "grepnest.resourceName" (list . "allow-internal-egress") }}
   labels:
     {{- include "grepnest.labels" . | nindent 4 }}
 spec:
@@ -105,7 +105,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.fullname" . }}-allow-dns-egress
+  name: {{ include "grepnest.resourceName" (list . "allow-dns-egress") }}
   labels:
     {{- include "grepnest.labels" . | nindent 4 }}
 spec:
@@ -132,7 +132,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.fullname" . }}-allow-postgresql-egress
+  name: {{ include "grepnest.resourceName" (list . "allow-postgresql-egress") }}
   labels:
     {{- include "grepnest.labels" . | nindent 4 }}
 spec:
@@ -157,7 +157,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.fullname" . }}-allow-github-egress
+  name: {{ include "grepnest.resourceName" (list . "allow-github-egress") }}
   labels:
     {{- include "grepnest.labels" . | nindent 4 }}
 spec:

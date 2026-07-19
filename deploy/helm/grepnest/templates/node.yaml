@@ -173,7 +173,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "grepnest.fullname" . }}-zoekt
+  name: {{ include "grepnest.zoektName" . }}
   labels:
     {{- include "grepnest.labels" . | nindent 4 }}
     app.kubernetes.io/component: node

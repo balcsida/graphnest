@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/component: server
 data:
   GREPNEST_LISTEN_ADDRESS: {{ printf ":%v" .Values.server.port | quote }}
-  GREPNEST_ZOEKT_URL: {{ printf "http://%s-zoekt:%v" (include "grepnest.fullname" .) .Values.node.service.port | quote }}
+  GREPNEST_ZOEKT_URL: {{ printf "http://%s:%v" (include "grepnest.zoektName" .) .Values.node.service.port | quote }}
   GREPNEST_GITHUB_WEB_URL: {{ .Values.server.config.githubWebURL | quote }}
   GREPNEST_GITHUB_API_URL: {{ .Values.server.config.githubAPIURL | quote }}
   GREPNEST_GITHUB_UPLOAD_URL: {{ .Values.server.config.githubUploadURL | quote }}
@@ -40,7 +40,7 @@ metadata:
     {{- include "grepnest.labels" . | nindent 4 }}
     app.kubernetes.io/component: node
 data:
-  GREPNEST_ZOEKT_URL: {{ printf "http://%s-zoekt:%v" (include "grepnest.fullname" .) .Values.node.service.port | quote }}
+  GREPNEST_ZOEKT_URL: {{ printf "http://%s:%v" (include "grepnest.zoektName" .) .Values.node.service.port | quote }}
   GREPNEST_GITHUB_WEB_URL: {{ .Values.server.config.githubWebURL | quote }}
   GREPNEST_GITHUB_API_URL: {{ .Values.server.config.githubAPIURL | quote }}
   GREPNEST_GITHUB_UPLOAD_URL: {{ .Values.server.config.githubUploadURL | quote }}

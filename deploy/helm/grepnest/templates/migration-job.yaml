@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "grepnest.fullname" . }}-migrate
+  name: {{ include "grepnest.resourceName" (list . "migrate") }}
   labels:
     {{- include "grepnest.labels" . | nindent 4 }}
     app.kubernetes.io/component: migration

@@ -72,6 +72,27 @@ helm lint "$chart" -f "$minimal"
 helm template pilot "$chart" -n grepnest -f "$minimal" >"$tmp/minimal.yaml"
 helm template pilot "$chart" -n grepnest -f "$minimal" -f "$optional" \
   --api-versions monitoring.coreos.com/v1/ServiceMonitor >"$tmp/optional.yaml"
+long_release=abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzx
+helm template "$long_release" "$chart" -n grepnest -f "$minimal" >"$tmp/long-release.yaml"
+
+awk '
+  /^[[:space:]]*(name|serviceName|serviceAccountName): [^{}]/ {
+    value = $2
+    gsub(/^"|"$/, "", value)
+    if (length(value) > 63) {
+      print "name exceeds 63 characters: " value > "/dev/stderr"
+      failed = 1
+    }
+  }
+  END { exit failed }
+' "$tmp/long-release.yaml"
+for suffix in server node zoekt migrate deny-ingress allow-server-ingress \
+  allow-zoekt-ingress; do
+  [ "$(rg -c "^  name: .*$suffix\$" "$tmp/long-release.yaml")" -ge 1 ] || exit 1
+done
+[ "$(sed -n 's/^  name: //p' "$tmp/long-release.yaml" | sort -u | \
+  rg -c -- '-(server|node|zoekt|migrate|deny-ingress|allow-server-ingress|allow-zoekt-ingress)$')" \
+  -eq 7 ] || exit 1
 
 for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
   for pattern in \

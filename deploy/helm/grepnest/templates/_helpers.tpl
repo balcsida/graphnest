@@ -19,5 +19,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "grepnest.image" -}}
 {{- printf "%s@%s" (required "image repository is required" .repository) (required "image sha256 digest is required" .digest) -}}
 {{- end }}
-{{- define "grepnest.serverName" -}}{{ include "grepnest.fullname" . }}-server{{- end }}
-{{- define "grepnest.nodeName" -}}{{ include "grepnest.fullname" . }}-node{{- end }}
+{{- define "grepnest.resourceName" -}}
+{{- $base := include "grepnest.fullname" (index . 0) -}}
+{{- $suffix := index . 1 -}}
+{{- printf "%s-%s" ($base | trunc (int (sub 62 (len $suffix))) | trimSuffix "-") $suffix -}}
+{{- end }}
+{{- define "grepnest.serverName" -}}{{ include "grepnest.resourceName" (list . "server") }}{{- end }}
+{{- define "grepnest.nodeName" -}}{{ include "grepnest.resourceName" (list . "node") }}{{- end }}
+{{- define "grepnest.zoektName" -}}{{ include "grepnest.resourceName" (list . "zoekt") }}{{- end }}
