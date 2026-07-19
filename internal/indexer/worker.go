@@ -44,14 +44,15 @@ type IndexPublisher interface {
 }
 
 type Worker struct {
-	ID           string
-	Queue        JobQueue
-	Store        IndexStore
-	Tokens       TokenSource
-	Git          GitWorkspace
-	Zoekt        IndexPublisher
-	MinFreeBytes uint64
-	RenewEvery   time.Duration
+	ID             string
+	Queue          JobQueue
+	Store          IndexStore
+	Tokens         TokenSource
+	Git            GitWorkspace
+	Zoekt          IndexPublisher
+	MinFreeBytes   uint64
+	RenewEvery     time.Duration
+	CleanupTimeout time.Duration
 }
 
 func (worker *Worker) Run(ctx context.Context) error {
@@ -83,7 +84,7 @@ func (worker *Worker) Run(ctx context.Context) error {
 	}
 }
 
-func (worker *Worker) RunOne(ctx context.Context) (bool, error) {
+func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error) {
 	if err := worker.validate(); err != nil {
 		return false, err
 	}
@@ -120,7 +121,11 @@ func (worker *Worker) RunOne(ctx context.Context) (bool, error) {
 	if err != nil {
 		return fail("repository_failed", true)
 	}
-	defer worker.Git.Cleanup(context.WithoutCancel(ctx), repo.ID, job.ID)
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), worker.cleanupTimeout())
+		defer cleanupCancel()
+		resultErr = errors.Join(resultErr, worker.Git.Cleanup(cleanupCtx, repo.ID, job.ID))
+	}()
 	token, err := worker.Tokens.InstallationToken(jobCtx, repo.InstallationID, []int64{repo.GitHubID})
 	if err != nil {
 		return fail("token_failed", true)
@@ -184,6 +189,13 @@ func (worker *Worker) validate() error {
 		return errors.New("invalid index worker")
 	}
 	return nil
+}
+
+func (worker *Worker) cleanupTimeout() time.Duration {
+	if worker.CleanupTimeout > 0 {
+		return worker.CleanupTimeout
+	}
+	return 30 * time.Second
 }
 
 func (worker *Worker) enoughSpace() (bool, error) {

@@ -88,12 +88,16 @@ func (tokens *fakeTokens) InstallationToken(context.Context, int64, []int64) (gi
 }
 
 type fakeGit struct {
-	queue       *fakeQueue
-	prepareErr  error
-	prepared    bool
-	cleaned     bool
-	pruned      map[int64]struct{}
-	prepareDone chan struct{}
+	queue        *fakeQueue
+	prepareErr   error
+	prepared     bool
+	cleaned      bool
+	cleanupErr   error
+	cleanupWait  bool
+	cleanupRoot  error
+	cleanupBound bool
+	pruned       map[int64]struct{}
+	prepareDone  chan struct{}
 }
 
 func (git *fakeGit) Prepare(context.Context, repository.Repository, postgres.IndexJob, string) (string, string, error) {
@@ -104,10 +108,19 @@ func (git *fakeGit) Prepare(context.Context, repository.Repository, postgres.Ind
 	}
 	return "/mirror", "/worktree", git.prepareErr
 }
-func (git *fakeGit) Cleanup(context.Context, int64, int64) error {
+func (git *fakeGit) Cleanup(ctx context.Context, _ int64, _ int64) error {
 	git.queue.record("cleanup")
 	git.cleaned = true
-	return nil
+	git.cleanupRoot = ctx.Err()
+	_, git.cleanupBound = ctx.Deadline()
+	if git.cleanupWait {
+		if !git.cleanupBound {
+			return errors.New("cleanup context has no deadline")
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return git.cleanupErr
 }
 func (git *fakeGit) Prune(_ context.Context, active map[int64]struct{}) error {
 	git.queue.record("prune")
@@ -120,6 +133,7 @@ type fakePublisher struct {
 	indexErr   error
 	waitErr    error
 	blockIndex bool
+	started    chan struct{}
 	cancelled  chan struct{}
 	indexed    bool
 }
@@ -127,6 +141,9 @@ type fakePublisher struct {
 func (publisher *fakePublisher) Index(ctx context.Context, _ repository.Repository, _ string) error {
 	publisher.queue.record("index")
 	publisher.indexed = true
+	if publisher.started != nil {
+		close(publisher.started)
+	}
 	if publisher.blockIndex {
 		<-ctx.Done()
 		close(publisher.cancelled)
@@ -233,6 +250,50 @@ func TestWorkerLeaseLossCancelsIndexAndSkipsTransition(t *testing.T) {
 	}
 	if queue.failedCode != "" || queue.completed || !git.cleaned {
 		t.Fatalf("failure=%q completed=%v cleaned=%v", queue.failedCode, queue.completed, git.cleaned)
+	}
+}
+
+func TestWorkerCleanupRunsAfterCancellationWithIndependentDeadline(t *testing.T) {
+	worker, _, _, git, publisher := workerFixture()
+	worker.CleanupTimeout = 5 * time.Millisecond
+	git.cleanupWait = true
+	publisher.blockIndex = true
+	publisher.started = make(chan struct{})
+	publisher.cancelled = make(chan struct{})
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct {
+		worked bool
+		err    error
+	}, 1)
+	go func() {
+		worked, err := worker.RunOne(ctx)
+		done <- struct {
+			worked bool
+			err    error
+		}{worked, err}
+	}()
+	<-publisher.started
+	cancel()
+	result := <-done
+	if !result.worked || !errors.Is(result.err, context.Canceled) || !errors.Is(result.err, context.DeadlineExceeded) {
+		t.Fatalf("worked = %v, error = %v", result.worked, result.err)
+	}
+	if !git.cleaned || !git.cleanupBound || git.cleanupRoot != nil {
+		t.Fatalf("cleaned=%v bounded=%v initial error=%v", git.cleaned, git.cleanupBound, git.cleanupRoot)
+	}
+}
+
+func TestWorkerCleanupFailureIsJoinedWithPrimaryError(t *testing.T) {
+	worker, queue, _, git, publisher := workerFixture()
+	cleanupErr := errors.New("cleanup failed")
+	git.cleanupErr = cleanupErr
+	queue.renewErr = postgres.ErrLeaseLost
+	worker.RenewEvery = time.Millisecond
+	publisher.blockIndex = true
+	publisher.cancelled = make(chan struct{})
+	worked, err := worker.RunOne(t.Context())
+	if !worked || !errors.Is(err, postgres.ErrLeaseLost) || !errors.Is(err, cleanupErr) {
+		t.Fatalf("worked = %v, error = %v", worked, err)
 	}
 }
 
