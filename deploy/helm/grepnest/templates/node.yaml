@@ -1,0 +1,190 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "grepnest.nodeName" . }}
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "grepnest.nodeName" . }}
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+spec:
+  replicas: 1
+  serviceName: {{ include "grepnest.nodeName" . }}
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: node
+  template:
+    metadata:
+      labels:
+        {{- include "grepnest.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: node
+      annotations:
+        {{- with .Values.node.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        checksum/config: {{ include (print $.Template.BasePath "/configmaps.yaml") . | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      serviceAccountName: {{ include "grepnest.nodeName" . }}
+      securityContext:
+        seccompProfile: {type: RuntimeDefault}
+        {{- with .Values.node.podSecurityContext }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.images.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.node.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.node.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.node.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.node.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: zoekt-webserver
+          image: {{ include "grepnest.image" .Values.images.node | quote }}
+          imagePullPolicy: {{ .Values.images.node.pullPolicy }}
+          command: [{{ .Values.node.zoekt.executable | quote }}]
+          args:
+            {{- toYaml .Values.node.zoekt.args | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            seccompProfile: {type: RuntimeDefault}
+          ports:
+            - {name: zoekt, containerPort: {{ .Values.node.zoekt.port }}, protocol: TCP}
+          startupProbe:
+            tcpSocket: {port: zoekt}
+          readinessProbe:
+            tcpSocket: {port: zoekt}
+          env:
+            - {name: HOME, value: /var/run/grepnest}
+          resources:
+            {{- toYaml .Values.node.zoekt.resources | nindent 12 }}
+          volumeMounts:
+            - {name: data, mountPath: /data/index, subPath: index, readOnly: true}
+            - {name: zoekt-tmp, mountPath: /tmp}
+            - {name: zoekt-home, mountPath: /var/run/grepnest}
+        - name: grepnest-indexer
+          image: {{ include "grepnest.image" .Values.images.node | quote }}
+          imagePullPolicy: {{ .Values.images.node.pullPolicy }}
+          command: [{{ .Values.node.indexer.executable | quote }}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            seccompProfile: {type: RuntimeDefault}
+          envFrom:
+            - configMapRef:
+                name: {{ include "grepnest.nodeName" . }}
+          env:
+            - {name: HOME, value: /var/run/grepnest}
+            - name: GREPNEST_DATABASE_URL
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.secrets.runtime.name }}, key: {{ .Values.secrets.runtime.databaseURLKey }}}
+            - name: GREPNEST_WORKER_ID
+              valueFrom:
+                fieldRef: {fieldPath: metadata.name}
+          resources:
+            {{- toYaml .Values.node.indexer.resources | nindent 12 }}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: indexer-tmp, mountPath: /tmp}
+            - {name: indexer-home, mountPath: /var/run/grepnest}
+            - {name: github-app, mountPath: /var/run/secrets/grepnest/github, readOnly: true}
+            {{- if .Values.secrets.customCA.name }}
+            - {name: custom-ca, mountPath: /var/run/secrets/grepnest/ca/ca.crt, subPath: ca.crt, readOnly: true}
+            {{- end }}
+      volumes:
+        - {name: zoekt-tmp, emptyDir: {}}
+        - {name: zoekt-home, emptyDir: {}}
+        - {name: indexer-tmp, emptyDir: {}}
+        - {name: indexer-home, emptyDir: {}}
+        - name: github-app
+          secret:
+            secretName: {{ .Values.secrets.githubApp.name }}
+            items:
+              - {key: {{ .Values.secrets.githubApp.privateKeyKey }}, path: private-key.pem}
+        {{- if .Values.secrets.customCA.name }}
+        - name: custom-ca
+          secret:
+            secretName: {{ .Values.secrets.customCA.name }}
+            items:
+              - {key: {{ .Values.secrets.customCA.key }}, path: ca.crt}
+        {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        {{- with .Values.node.storage.annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- if .Values.node.storage.storageClassName }}
+        storageClassName: {{ .Values.node.storage.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.node.storage.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "grepnest.nodeName" . }}
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+spec:
+  clusterIP: None
+  selector:
+    {{- include "grepnest.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+  ports:
+    - {name: zoekt, port: {{ .Values.node.service.port }}, targetPort: zoekt, protocol: TCP}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "grepnest.fullname" . }}-zoekt
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+  {{- with .Values.node.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "grepnest.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+  ports:
+    - {name: zoekt, port: {{ .Values.node.service.port }}, targetPort: zoekt, protocol: TCP}
