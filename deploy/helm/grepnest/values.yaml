@@ -1,0 +1,85 @@
+nameOverride: ""
+fullnameOverride: ""
+images:
+  application: {repository: "", digest: "", tag: "", pullPolicy: IfNotPresent}
+  node: {repository: "", digest: "", tag: "", pullPolicy: IfNotPresent}
+  pullSecrets: []
+secrets:
+  runtime: {name: "", databaseURLKey: database-url, userTokenKey: user-token, adminTokenKey: admin-token}
+  githubApp: {name: "", privateKeyKey: private-key.pem, webhookSecretKey: webhook-secret}
+  customCA: {name: "", key: ca.crt}
+server:
+  replicas: 2
+  port: 8080
+  service: {port: 8080, annotations: {}}
+  config:
+    githubWebURL: https://github.example.invalid
+    githubAPIURL: https://github.example.invalid/api/v3
+    githubUploadURL: https://github.example.invalid/api/uploads
+    githubGitURL: https://github.example.invalid
+    githubAPIVersion: "2022-11-28"
+    githubAppID: ""
+    userInstallationID: ""
+    adminInstallationID: ""
+    userRepositoryIDs: ""
+    adminRepositoryIDs: ""
+    defaultResults: 25
+    maxResults: 100
+    defaultContextLines: 3
+    maxContextLines: 20
+    defaultTimeout: 5s
+    maxTimeout: 5s
+    maxRequestBytes: 65536
+    maxResponseBytes: 262144
+  resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  topologySpreadConstraints: []
+  podSecurityContext: {}
+  podAnnotations: {}
+  pdb: {enabled: true, minAvailable: 1}
+node:
+  replicaCount: 1
+  zoekt:
+    port: 6070
+    executable: /usr/local/bin/zoekt-webserver
+    args: ["-index", "/data/index", "-listen", ":6070", "-rpc", "-html=false"]
+    resources: {requests: {cpu: "2", memory: 8Gi}, limits: {cpu: "8", memory: 24Gi}}
+  indexer:
+    executable: /usr/local/bin/grepnest-indexer
+    gitExecutable: /usr/bin/git
+    zoektGitIndexExecutable: /usr/local/bin/zoekt-git-index
+    minFreeBytes: 10737418240
+    resources: {requests: {cpu: "1", memory: 2Gi}, limits: {cpu: "4", memory: 8Gi}}
+  paths: {data: /data, indexes: /data/index}
+  service: {port: 6070, annotations: {}}
+  storage: {size: 250Gi, accessModes: [ReadWriteOnce], storageClassName: "", annotations: {}}
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  topologySpreadConstraints: []
+  podSecurityContext: {}
+  podAnnotations: {}
+migration:
+  executable: /usr/local/bin/grepnest-migrate
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+  resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: 500m, memory: 512Mi}}
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+ingress: {enabled: false, className: "", annotations: {}, hosts: [], tls: []}
+monitoring:
+  serviceMonitor: {enabled: false, interval: 30s, scrapeTimeout: 10s, labels: {}, namespaceSelector: {}}
+networkPolicy:
+  enabled: true
+  serverIngress: {ingressControllerNamespaceSelector: {}, monitoringNamespaceSelector: {}}
+  externalEgress:
+    enabled: false
+    dns:
+      namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+      podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [53]
+    postgresql: {cidrs: [], port: 5432}
+    github: {cidrs: [], ports: [443]}
