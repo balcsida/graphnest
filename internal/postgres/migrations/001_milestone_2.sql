@@ -38,7 +38,7 @@ create table webhook_deliveries (
     id bigint generated always as identity primary key,
     delivery_id varchar(128) not null unique,
     event_name varchar(128) not null,
-    installation_id bigint not null references installations(id),
+    installation_id bigint references installations(id),
     received_at timestamptz not null default now(),
     processed_at timestamptz,
     state varchar(32) not null check (state in ('received', 'accepted', 'ignored', 'failed')),

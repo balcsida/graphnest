@@ -23,7 +23,7 @@ func (s *Store) ApplyDelivery(ctx context.Context, delivery Delivery, callback f
 
 	result, err := tx.Exec(ctx, `
 		insert into webhook_deliveries (delivery_id, event_name, installation_id, processed_at, state, error_code)
-		select $1, $2, id, now(), $4, nullif($5, '') from installations where github_id=$3
+		values ($1, $2, (select id from installations where github_id=$3), now(), $4, nullif($5, ''))
 		on conflict (delivery_id) do nothing`, delivery.ID, delivery.Event, delivery.InstallationID, delivery.State, delivery.ErrorCode)
 	if err != nil {
 		return false, err
