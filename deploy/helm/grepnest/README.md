@@ -65,6 +65,12 @@ using name overrides). Correct the database or migration problem before retrying
 `className`, `hosts`, and optional existing TLS Secret references. Keep the
 Zoekt Service internal: it is deliberately ClusterIP-only and has no Ingress.
 
+`node.paths.indexes` must be a child of `node.paths.data`. The indexer mounts
+the PVC at the data path, while Zoekt mounts the matching child subpath
+read-only at the indexes path. The chart derives Zoekt's index and listen
+arguments from `node.paths.indexes` and `node.zoekt.port`; `node.service.port`
+is the internal Service port.
+
 `monitoring.serviceMonitor.enabled` requires the
 `monitoring.coreos.com/v1/ServiceMonitor` CRD. Rendering fails clearly if that
 CRD is unavailable. Configure the monitoring namespace selector in the ingress

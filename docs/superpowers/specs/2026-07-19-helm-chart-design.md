@@ -58,12 +58,14 @@ The alternatives were:
 `/readyz`, and `/metrics`, uses JSON logging from the application, and reaches
 PostgreSQL, GitHub, and the internal Zoekt Service.
 
-`grepnest-node` is fixed at one replica. Its two containers share one RWO PVC
-mounted at `/data`; Zoekt reads `/data/index`, while the indexer owns
-`/data/repos`, `/data/index`, and `/data/work`. The Zoekt Service is ClusterIP
-only and selects only this StatefulSet. It has no Ingress or external service
-mode. A TCP readiness/startup probe avoids inventing an undocumented Zoekt
-health endpoint.
+`grepnest-node` is fixed at one replica. Its two containers share one RWO PVC.
+The indexer mounts its root at `node.paths.data`; `node.paths.indexes` must be a
+child of that path, and Zoekt mounts the corresponding PVC subpath there
+read-only. The chart derives Zoekt's `-index` and `-listen` arguments from
+`node.paths.indexes` and `node.zoekt.port`. The Zoekt Service is ClusterIP only
+and selects only this StatefulSet. It has no Ingress or external service mode.
+A TCP readiness/startup probe avoids inventing an undocumented Zoekt health
+endpoint.
 
 The migration Job uses the GrepNest application image and runs
 `grepnest-migrate`. Helm hook annotations run it before install and upgrade and

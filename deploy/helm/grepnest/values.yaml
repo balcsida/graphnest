@@ -44,7 +44,6 @@ node:
   zoekt:
     port: 6070
     executable: /usr/local/bin/zoekt-webserver
-    args: ["-index", "/data/index", "-listen", ":6070", "-rpc", "-html=false"]
     resources: {requests: {cpu: "2", memory: 8Gi}, limits: {cpu: "8", memory: 24Gi}}
   indexer:
     executable: /usr/local/bin/grepnest-indexer

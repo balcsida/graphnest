@@ -1,3 +1,10 @@
+{{- $dataPath := trimSuffix "/" .Values.node.paths.data -}}
+{{- $dataPrefix := printf "%s/" $dataPath -}}
+{{- if eq $dataPath "" }}{{- $dataPrefix = "/" -}}{{- end -}}
+{{- if not (hasPrefix $dataPrefix .Values.node.paths.indexes) -}}
+{{- fail "node.paths.indexes must be a child of node.paths.data so both containers share the same PVC subpath" -}}
+{{- end -}}
+{{- $indexSubPath := trimPrefix $dataPrefix .Values.node.paths.indexes -}}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -70,7 +77,12 @@ spec:
           imagePullPolicy: {{ .Values.images.node.pullPolicy }}
           command: [{{ .Values.node.zoekt.executable | quote }}]
           args:
-            {{- toYaml .Values.node.zoekt.args | nindent 12 }}
+            - -index
+            - {{ .Values.node.paths.indexes | quote }}
+            - -listen
+            - {{ printf ":%v" .Values.node.zoekt.port | quote }}
+            - -rpc
+            - -html=false
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: {drop: [ALL]}
@@ -88,7 +100,7 @@ spec:
           resources:
             {{- toYaml .Values.node.zoekt.resources | nindent 12 }}
           volumeMounts:
-            - {name: data, mountPath: /data/index, subPath: index, readOnly: true}
+            - {name: data, mountPath: {{ .Values.node.paths.indexes | quote }}, subPath: {{ $indexSubPath | quote }}, readOnly: true}
             - {name: zoekt-tmp, mountPath: /tmp}
             - {name: zoekt-home, mountPath: /var/run/grepnest}
         - name: grepnest-indexer
@@ -115,7 +127,7 @@ spec:
           resources:
             {{- toYaml .Values.node.indexer.resources | nindent 12 }}
           volumeMounts:
-            - {name: data, mountPath: /data}
+            - {name: data, mountPath: {{ .Values.node.paths.data | quote }}}
             - {name: indexer-tmp, mountPath: /tmp}
             - {name: indexer-home, mountPath: /var/run/grepnest}
             - {name: github-app, mountPath: /var/run/secrets/grepnest/github, readOnly: true}

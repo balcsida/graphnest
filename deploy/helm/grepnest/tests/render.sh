@@ -94,6 +94,32 @@ done
   rg -c -- '-(server|node|zoekt|migrate|deny-ingress|allow-server-ingress|allow-zoekt-ingress)$')" \
   -eq 7 ] || exit 1
 
+helm template paths "$chart" -n grepnest -f "$minimal" \
+  --set-string=node.paths.data=/srv/grepnest-data \
+  --set-string=node.paths.indexes=/srv/grepnest-data/zoekt/index \
+  --set=node.zoekt.port=16070 --set=node.service.port=16071 >"$tmp/node-contract.yaml"
+for pattern in \
+  'GREPNEST_DATA_DIR: "/srv/grepnest-data"' \
+  'GREPNEST_INDEX_DIR: "/srv/grepnest-data/zoekt/index"' \
+  'containerPort: 16070' 'port: 16071, targetPort: zoekt' \
+  'mountPath: "/srv/grepnest-data/zoekt/index", subPath: "zoekt/index", readOnly: true' \
+  'mountPath: "/srv/grepnest-data"}'; do
+  require "$pattern" "$tmp/node-contract.yaml"
+done
+sed -n '/name: zoekt-webserver$/,/name: grepnest-indexer$/p' \
+  "$tmp/node-contract.yaml" >"$tmp/node-contract-zoekt.yaml"
+require '^- -index$|^            - -index$' "$tmp/node-contract-zoekt.yaml"
+require '^            - "/srv/grepnest-data/zoekt/index"$' \
+  "$tmp/node-contract-zoekt.yaml"
+require '^- -listen$|^            - -listen$' "$tmp/node-contract-zoekt.yaml"
+require '^            - ":16070"$' "$tmp/node-contract-zoekt.yaml"
+[ "$(rg -c 'tcpSocket: \{port: zoekt\}' "$tmp/node-contract-zoekt.yaml")" -eq 2 ] || exit 1
+
+expect_failure "$tmp/disconnected-indexes.err" helm template bad "$chart" -f "$minimal" \
+  --set-string=node.paths.data=/srv/grepnest-data \
+  --set-string=node.paths.indexes=/srv/other/index
+require 'node.paths.indexes must be a child of node.paths.data' "$tmp/disconnected-indexes.err"
+
 for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
   for pattern in \
     '^kind: Deployment$' '^kind: StatefulSet$' '^kind: Job$' \

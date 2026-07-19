@@ -128,7 +128,6 @@ node:
   zoekt:
     port: 6070
     executable: /usr/local/bin/zoekt-webserver
-    args: ["-index", "/data/index", "-listen", ":6070", "-rpc", "-html=false"]
     resources:
       requests: {cpu: "2", memory: 8Gi}
       limits: {cpu: "8", memory: 24Gi}
@@ -703,9 +702,9 @@ Extend the ConfigMap template with the exact node environment mapping. Use the i
 
 Set `replicas: 1`, `serviceName: <release>-grepnest-node`, `podManagementPolicy: OrderedReady`, and `updateStrategy.type: RollingUpdate`. Both containers use the same digest-pinned node image and common security context from Task 2.
 
-`zoekt-webserver` runs `[node.zoekt.executable]` with `node.zoekt.args`, exposes named TCP port `zoekt`, mounts `data` read-only at `/data/index` using `subPath: index`, and has TCP startup/readiness probes on `zoekt`. It receives no runtime Secret env or GitHub App mount.
+`zoekt-webserver` runs `[node.zoekt.executable]` with chart-derived `-index <node.paths.indexes>`, `-listen :<node.zoekt.port>`, `-rpc`, and `-html=false` arguments. It exposes named TCP port `zoekt`, mounts `data` read-only at `node.paths.indexes` using the path relative to `node.paths.data` as its PVC `subPath`, and has TCP startup/readiness probes on `zoekt`. Rendering fails unless `node.paths.indexes` is a child of `node.paths.data`. It receives no runtime Secret env or GitHub App mount.
 
-`grepnest-indexer` runs `[node.indexer.executable]`, loads the node ConfigMap, receives only `GREPNEST_DATABASE_URL` from the runtime Secret, obtains `GREPNEST_WORKER_ID` from `metadata.name`, mounts the GitHub private key plus optional CA read-only, and mounts `data` read-write at `/data`. The webhook secret remains server-only. Both containers get separate `/tmp` and runtime-home `emptyDir` mounts; no process supervisor is added.
+`grepnest-indexer` runs `[node.indexer.executable]`, loads the node ConfigMap, receives only `GREPNEST_DATABASE_URL` from the runtime Secret, obtains `GREPNEST_WORKER_ID` from `metadata.name`, mounts the GitHub private key plus optional CA read-only, and mounts `data` read-write at `node.paths.data`. The webhook secret remains server-only. Both containers get separate `/tmp` and runtime-home `emptyDir` mounts; no process supervisor is added.
 
 Render the claim template exactly as:
 
