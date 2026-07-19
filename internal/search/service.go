@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -162,7 +163,7 @@ func clampInt64(value, maximum int64) int64 {
 func enrich(matches []api.SearchMatch, metadata map[uint32]api.Repository) []api.SearchMatch {
 	result := matches[:0]
 	for _, match := range matches {
-		if repository, ok := metadata[match.ZoektID]; ok {
+		if repository, ok := metadata[match.ZoektID]; ok && repository.IndexedSHA != "" && match.SHA == repository.IndexedSHA && slices.Contains(match.Branches, repository.Branch) {
 			match.Repository = repository
 			result = append(result, match)
 		}

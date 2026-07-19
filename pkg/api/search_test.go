@@ -15,3 +15,13 @@ func TestSearchResponseReportsTruncation(t *testing.T) {
 		t.Fatalf("response = %s", data)
 	}
 }
+
+func TestSearchMatchKeepsBranchesInternal(t *testing.T) {
+	data, err := json.Marshal(SearchMatch{Branches: []string{"main"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "branches") {
+		t.Fatalf("match = %s", data)
+	}
+}

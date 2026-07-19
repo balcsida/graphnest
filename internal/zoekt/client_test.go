@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -53,7 +54,7 @@ func TestSearchUsesPinnedJSONContract(t *testing.T) {
 		t.Fatalf("matches = %#v", response.Matches)
 	}
 	match := response.Matches[0]
-	if match.Path != "main.go" || match.ZoektID != 7 || match.SHA != "abc123" || match.LineNumber != 3 || match.Preview != "func main() {}\n" || match.Score != 4.5 {
+	if match.Path != "main.go" || match.ZoektID != 7 || match.SHA != "abc123" || !slices.Equal(match.Branches, []string{"main"}) || match.LineNumber != 3 || match.Preview != "func main() {}\n" || match.Score != 4.5 {
 		t.Fatalf("match = %#v", match)
 	}
 }

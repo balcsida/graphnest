@@ -24,7 +24,7 @@ import (
 
 func TestSearchToolsUseAuthenticatedService(t *testing.T) {
 	backend := &recordingBackend{response: api.SearchResponse{Matches: []api.SearchMatch{{
-		Path: "main.go", SHA: "abc123", LineNumber: 3, Preview: "needle\n", ZoektID: 7,
+		Path: "main.go", SHA: "abc123", Branches: []string{"main"}, LineNumber: 3, Preview: "needle\n", ZoektID: 7,
 	}}}}
 	service := testService(t, backend)
 	server := New(service)
@@ -166,7 +166,7 @@ func TestSearchToolErrorsAreSafe(t *testing.T) {
 func TestSearchCodeLimitsCanonicalOutputThroughZoekt(t *testing.T) {
 	preview := "needle with enough surrounding source to make each match material"
 	wireBody, err := json.Marshal(map[string]any{"Result": map[string]any{"Files": []any{map[string]any{
-		"FileName": "main.go", "Version": "abc", "RepositoryID": 7,
+		"FileName": "main.go", "Version": "abc", "Branches": []string{"main"}, "RepositoryID": 7,
 		"LineMatches": []any{
 			map[string]any{"Line": base64.StdEncoding.EncodeToString([]byte(preview)), "LineNumber": 1},
 			map[string]any{"Line": base64.StdEncoding.EncodeToString([]byte(preview)), "LineNumber": 2},
@@ -181,13 +181,13 @@ func TestSearchCodeLimitsCanonicalOutputThroughZoekt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	registry, err := repository.NewStatic([]repository.Repository{{ID: 1, ZoektID: 7, Name: "acme/one"}})
+	registry, err := repository.NewStatic([]repository.Repository{{ID: 1, ZoektID: 7, Name: "acme/one", Branch: "main", IndexedSHA: "abc"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	service := search.NewService(backend, authz.NewStatic(registry), search.Limits{MaxResults: 100, MaxResponseBytes: 256 << 10})
 	expected := api.SearchResponse{Matches: []api.SearchMatch{{
-		Repository: api.Repository{ID: 1, Name: "acme/one"}, Path: "main.go", SHA: "abc", LineNumber: 1, Preview: preview,
+		Repository: api.Repository{ID: 1, Name: "acme/one", Branch: "main", IndexedSHA: "abc"}, Path: "main.go", SHA: "abc", LineNumber: 1, Preview: preview,
 	}}, Truncated: true}
 	budget := marshaledSize(t, expected)
 	if len(wireBody) <= budget {
@@ -250,7 +250,7 @@ func marshaledSize(t *testing.T, value any) int {
 func testService(t *testing.T, backend *recordingBackend) *search.Service {
 	t.Helper()
 	registry, err := repository.NewStatic([]repository.Repository{
-		{ID: 1, ZoektID: 7, Name: "acme/one"}, {ID: 2, ZoektID: 8, Name: "acme/two"},
+		{ID: 1, ZoektID: 7, Name: "acme/one", Branch: "main", IndexedSHA: "abc123"}, {ID: 2, ZoektID: 8, Name: "acme/two", Branch: "main", IndexedSHA: "def456"},
 	})
 	if err != nil {
 		t.Fatal(err)
