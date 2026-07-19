@@ -168,7 +168,8 @@ Go code.
 ## Failure Behavior
 
 Rendering fails with an actionable message when required images, digests,
-existing Secret names/keys, or enabled optional-feature inputs are absent. A
+Kubernetes object references, Secret data keys, or enabled optional-feature
+inputs are absent or invalid. A
 requested ServiceMonitor fails when its CRD is unavailable. Migration failure
 blocks installation or upgrade. The chart does not silently create weaker
 credentials, disable security boundaries, or substitute placeholder images.

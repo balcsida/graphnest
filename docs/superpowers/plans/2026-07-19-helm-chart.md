@@ -16,7 +16,7 @@
 - Require operator-supplied application and node image repositories plus `sha256:` digests; never render a tag-only image or `latest`.
 - Treat image tags as optional metadata only; every rendered image is `<repository>@<digest>`.
 - Read credentials only from named existing Secrets; values and templates accept no plaintext credential material.
-- Fix `grepnest-node` at one replica with two containers sharing one `ReadWriteOnce` PVC mounted at `/data`.
+- Fix `grepnest-node` at one replica with two containers sharing one `ReadWriteOnce` PVC through the configured data/index paths.
 - Keep Zoekt internal: one ClusterIP Service, no Ingress, NodePort, LoadBalancer, or external service mode.
 - Run migrations as a blocking `pre-install,pre-upgrade` Helm hook using the application image.
 - Disable service-account token automounting and apply the approved non-root, read-only-root-filesystem, capability-drop, RuntimeDefault security defaults to every pod and container.
@@ -314,7 +314,7 @@ Create a draft-07 object schema with `additionalProperties: false` at the root a
       "properties": {
         "application": {"$ref": "#/definitions/image"},
         "node": {"$ref": "#/definitions/image"},
-        "pullSecrets": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+        "pullSecrets": {"type": "array", "items": {"$ref": "#/definitions/kubernetesObjectName"}, "uniqueItems": true}
       }
     },
     "secrets": {
@@ -329,7 +329,9 @@ Create a draft-07 object schema with `additionalProperties: false` at the root a
   },
   "definitions": {
     "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
-    "dnsLabel": {"type": "string", "minLength": 1, "maxLength": 253},
+    "kubernetesObjectName": {"type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$"},
+    "optionalKubernetesObjectName": {"oneOf": [{"const": ""}, {"$ref": "#/definitions/kubernetesObjectName"}]},
+    "secretKey": {"type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[-._a-zA-Z0-9]+$", "not": {"enum": [".", ".."]}},
     "positiveInteger": {"type": "integer", "minimum": 1},
     "quantity": {"type": "string", "minLength": 1},
     "image": {
@@ -346,25 +348,25 @@ Create a draft-07 object schema with `additionalProperties: false` at the root a
       "type": "object", "additionalProperties": false,
       "required": ["name", "databaseURLKey", "userTokenKey", "adminTokenKey"],
       "properties": {
-        "name": {"$ref": "#/definitions/dnsLabel"},
-        "databaseURLKey": {"$ref": "#/definitions/dnsLabel"},
-        "userTokenKey": {"$ref": "#/definitions/dnsLabel"},
-        "adminTokenKey": {"$ref": "#/definitions/dnsLabel"}
+        "name": {"$ref": "#/definitions/kubernetesObjectName"},
+        "databaseURLKey": {"$ref": "#/definitions/secretKey"},
+        "userTokenKey": {"$ref": "#/definitions/secretKey"},
+        "adminTokenKey": {"$ref": "#/definitions/secretKey"}
       }
     },
     "githubSecret": {
       "type": "object", "additionalProperties": false,
       "required": ["name", "privateKeyKey", "webhookSecretKey"],
       "properties": {
-        "name": {"$ref": "#/definitions/dnsLabel"},
-        "privateKeyKey": {"$ref": "#/definitions/dnsLabel"},
-        "webhookSecretKey": {"$ref": "#/definitions/dnsLabel"}
+        "name": {"$ref": "#/definitions/kubernetesObjectName"},
+        "privateKeyKey": {"$ref": "#/definitions/secretKey"},
+        "webhookSecretKey": {"$ref": "#/definitions/secretKey"}
       }
     },
     "optionalSecret": {
       "type": "object", "additionalProperties": false,
       "required": ["name", "key"],
-      "properties": {"name": {"type": "string"}, "key": {"$ref": "#/definitions/dnsLabel"}}
+      "properties": {"name": {"$ref": "#/definitions/optionalKubernetesObjectName"}, "key": {"$ref": "#/definitions/secretKey"}}
     }
   }
 }
@@ -427,8 +429,8 @@ free-form map:
     "replicaCount": {"const": 1},
     "zoekt": {
       "type": "object", "additionalProperties": false,
-      "required": ["port", "executable", "args", "resources"],
-      "properties": {"port": {"$ref": "#/definitions/port"}, "executable": {"$ref": "#/definitions/path"}, "args": {"type": "array", "items": {"type": "string"}}, "resources": {"$ref": "#/definitions/resources"}}
+      "required": ["port", "executable", "resources"],
+      "properties": {"port": {"$ref": "#/definitions/port"}, "executable": {"$ref": "#/definitions/path"}, "resources": {"$ref": "#/definitions/resources"}}
     },
     "indexer": {
       "type": "object", "additionalProperties": false,
@@ -444,7 +446,7 @@ free-form map:
     "storage": {
       "type": "object", "additionalProperties": false,
       "required": ["size", "accessModes", "storageClassName", "annotations"],
-      "properties": {"size": {"$ref": "#/definitions/quantity"}, "accessModes": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"const": "ReadWriteOnce"}}, "storageClassName": {"type": "string"}, "annotations": {"$ref": "#/definitions/stringMap"}}
+      "properties": {"size": {"$ref": "#/definitions/quantity"}, "accessModes": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"const": "ReadWriteOnce"}}, "storageClassName": {"$ref": "#/definitions/optionalKubernetesObjectName"}, "annotations": {"$ref": "#/definitions/stringMap"}}
     },
     "nodeSelector": {"$ref": "#/definitions/map"},
     "affinity": {"$ref": "#/definitions/map"},
@@ -462,7 +464,7 @@ free-form map:
 "ingress": {
   "type": "object", "additionalProperties": false,
   "required": ["enabled", "className", "annotations", "hosts", "tls"],
-  "properties": {"enabled": {"type": "boolean"}, "className": {"type": "string"}, "annotations": {"$ref": "#/definitions/stringMap"}, "hosts": {"type": "array", "items": {"$ref": "#/definitions/ingressHost"}}, "tls": {"type": "array", "items": {"$ref": "#/definitions/ingressTLS"}}}
+  "properties": {"enabled": {"type": "boolean"}, "className": {"$ref": "#/definitions/optionalKubernetesObjectName"}, "annotations": {"$ref": "#/definitions/stringMap"}, "hosts": {"type": "array", "items": {"$ref": "#/definitions/ingressHost"}}, "tls": {"type": "array", "items": {"$ref": "#/definitions/ingressTLS"}}}
 },
 "monitoring": {
   "type": "object", "additionalProperties": false,
@@ -538,12 +540,12 @@ Add these definitions alongside the earlier definitions:
 "ingressTLS": {
   "type": "object", "additionalProperties": false,
   "required": ["secretName", "hosts"],
-  "properties": {"secretName": {"$ref": "#/definitions/dnsLabel"}, "hosts": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}}
+  "properties": {"secretName": {"$ref": "#/definitions/kubernetesObjectName"}, "hosts": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}}
 }
 ```
 
 Add root `allOf` conditions: when `ingress.enabled` is true require
-`className` length 1 and `hosts` `minItems: 1`; when
+`className` to match `kubernetesObjectName` and `hosts` `minItems: 1`; when
 `networkPolicy.externalEgress.enabled` is true require both PostgreSQL and
 GitHub `cidrs` `minItems: 1` and require both DNS selectors to match
 `nonEmptySelector`. Keep `server.pdb.minAvailable` fixed at 1; in the

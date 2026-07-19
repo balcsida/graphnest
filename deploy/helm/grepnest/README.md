@@ -28,6 +28,8 @@ corresponding values. The key names below are the defaults.
 Override the runtime key names with `databaseURLKey`, `userTokenKey`, and
 `adminTokenKey`, and the GitHub App key names with `privateKeyKey` and
 `webhookSecretKey`. The chart never accepts plaintext credentials in values.
+Referenced object names must be Kubernetes DNS subdomains. Secret data keys
+may contain letters, digits, `-`, `_`, and `.`.
 
 ## Validate and install
 

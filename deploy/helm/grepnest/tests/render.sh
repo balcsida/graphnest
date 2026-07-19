@@ -120,6 +120,16 @@ expect_failure "$tmp/disconnected-indexes.err" helm template bad "$chart" -f "$m
   --set-string=node.paths.indexes=/srv/other/index
 require 'node.paths.indexes must be a child of node.paths.data' "$tmp/disconnected-indexes.err"
 
+helm template refs "$chart" -n grepnest -f "$minimal" \
+  --set-string=secrets.runtime.name=runtime.team.example \
+  --set-string=secrets.runtime.databaseURLKey=DB_URL.v1-key \
+  --set-string=images.pullSecrets[0]=registry.team.example \
+  --set-string=node.storage.storageClassName=ssd.storage.example >"$tmp/references.yaml"
+for pattern in 'name: runtime.team.example' 'key: DB_URL.v1-key' \
+  'name: registry.team.example' 'storageClassName: "ssd.storage.example"'; do
+  require "$pattern" "$tmp/references.yaml"
+done
+
 for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
   for pattern in \
     '^kind: Deployment$' '^kind: StatefulSet$' '^kind: Job$' \
@@ -266,6 +276,12 @@ expect_failure "$tmp/repository.err" helm template bad "$chart" -f "$minimal" \
   --set-string=images.application.repository=
 expect_failure "$tmp/digest.err" helm template bad "$chart" -f "$minimal" \
   --set=images.node.digest=latest
+expect_failure "$tmp/runtime-secret-name.err" helm template bad "$chart" -f "$minimal" \
+  --set-string='secrets.runtime.name=bad name'
+expect_failure "$tmp/runtime-secret-key.err" helm template bad "$chart" -f "$minimal" \
+  --set-string='secrets.runtime.databaseURLKey=bad/key'
+expect_failure "$tmp/ingress-class-name.err" helm template bad "$chart" -f "$minimal" -f "$optional" \
+  --set-string=ingress.className= --set=monitoring.serviceMonitor.enabled=false
 expect_failure "$tmp/crd.err" helm template bad "$chart" -f "$minimal" -f "$optional"
 expect_failure "$tmp/ipv4.err" helm template bad "$chart" -f "$minimal" \
   --set-json='networkPolicy.externalEgress.postgresql.cidrs=[{"address":"999.0.2.1","prefix":32}]'
@@ -286,6 +302,9 @@ expect_failure "$tmp/dns-selectors.err" helm template bad "$chart" -f "$minimal"
 
 require "/images/application/repository.*minLength: got 0, want 1" "$tmp/repository.err"
 require "/images/node/digest.*'latest'.*does not match pattern" "$tmp/digest.err"
+require "/secrets/runtime/name.*'bad name'.*does not match pattern" "$tmp/runtime-secret-name.err"
+require "/secrets/runtime/databaseURLKey.*'bad/key'.*does not match pattern" "$tmp/runtime-secret-key.err"
+require '/ingress/className.*minLength: got 0, want 1' "$tmp/ingress-class-name.err"
 require 'monitoring.serviceMonitor.enabled requires monitoring.coreos.com/v1/ServiceMonitor' "$tmp/crd.err"
 require "/networkPolicy/externalEgress/postgresql/cidrs/0/address.*'999\.0\.2\.1'.*not valid ipv4" "$tmp/ipv4.err"
 require "/networkPolicy/externalEgress/github/cidrs/0/address.*'2001:db8::zz'.*not valid ipv6" "$tmp/ipv6.err"
