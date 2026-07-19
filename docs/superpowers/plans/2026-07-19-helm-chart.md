@@ -35,7 +35,7 @@
 - `deploy/helm/grepnest/ci/minimal-values.yaml`: non-routable image names and dummy existing-Secret references for lint/render tests.
 - `deploy/helm/grepnest/ci/optional-values.yaml`: Ingress, PDB, monitoring, custom CA, scheduling, and external-egress test inputs.
 - `deploy/helm/grepnest/templates/_helpers.tpl`: shared names, labels, image construction, and required-input helpers only.
-- `deploy/helm/grepnest/templates/serviceaccounts.yaml`: component ServiceAccounts with token automount disabled.
+- `deploy/helm/grepnest/templates/serviceaccounts.yaml`: release-managed server ServiceAccount with token automount disabled.
 - `deploy/helm/grepnest/templates/configmaps.yaml`: non-secret server and node environment.
 - `deploy/helm/grepnest/templates/server.yaml`: server Deployment and ClusterIP Service.
 - `deploy/helm/grepnest/templates/node.yaml`: one-replica node StatefulSet, internal Zoekt Service, and RWO claim template.
@@ -612,13 +612,17 @@ Expected: render exits 0, then `rg` FAILS because no server resources exist.
 
 Add one server ConfigMap using the exact server ConfigMap environment mapping above. Derive `GREPNEST_ZOEKT_URL` as `http://<release>-grepnest-zoekt:<node.service.port>`, set the two secret file paths to `/var/run/secrets/grepnest/github/private-key.pem` and `/var/run/secrets/grepnest/github/webhook-secret`, and emit `GREPNEST_GITHUB_CA_FILE=/var/run/secrets/grepnest/ca/ca.crt` only when `secrets.customCA.name` is non-empty. Do not emit the Milestone 1 fixture registry or repository-name lists; the full pilot is database-backed.
 
-Create component ServiceAccounts with:
+Create the release-managed server ServiceAccount with:
 
 ```yaml
 automountServiceAccountToken: false
 ```
 
-The file may render server, node, and migration ServiceAccounts together; later workloads consume the already-stable names.
+Server and node have release-managed ServiceAccounts; the node ServiceAccount is
+rendered with its workload in Task 3. The pre-install migration hook uses the
+namespace default ServiceAccount because it cannot depend on ordinary release
+resources, and pod-level `automountServiceAccountToken: false` prevents API
+token mounting.
 
 - [ ] **Step 3: GREEN — render the Deployment and ClusterIP Service**
 
@@ -751,7 +755,7 @@ git commit -S -m "feat(helm): add single-node Zoekt workload"
 - Create: `deploy/helm/grepnest/templates/migration-job.yaml`
 
 **Interfaces:**
-- Consumes: application image, runtime Secret database URL key, `migration.*`, and migration ServiceAccount.
+- Consumes: application image, runtime Secret database URL key, `migration.*`, and the namespace default ServiceAccount.
 - Produces: `<release>-grepnest-migrate` `batch/v1` Job with Helm hook lifecycle.
 
 - [ ] **Step 1: RED — assert hook semantics before implementation**
@@ -1101,6 +1105,12 @@ helm rollback grepnest <REVISION> -n grepnest --wait --timeout 15m
 
 List the exact runtime, GitHub App, optional CA, image pull, and Ingress TLS existing-Secret names/keys from the values interface. State that the chart never creates Secrets or PostgreSQL, migration failure blocks install/upgrade and remains inspectable, ServiceMonitor requires its CRD, Zoekt must remain internal, and external egress CIDRs must cover DNS, GitHub, and PostgreSQL endpoints before enabling isolation.
 
+Warn directly after the rollback command that Helm rollback does not execute the
+pre-install/pre-upgrade migration hook. Operators must verify database backward
+compatibility and follow release-specific database rollback or restore
+procedures before rolling the application image back after a schema-changing
+upgrade. Do not invent a database downgrade command.
+
 - [ ] **Step 3: GREEN — document scheduling, storage, and capacity truthfully**
 
 Add the server/Zoekt/indexer resource defaults and 250Gi RWO default. State verbatim that actual capacity must be based on measured source corpus size, index size, indexing duration, and query concurrency rather than repository count alone. Explain independent server/node scheduling maps and that `node.storage.storageClassName` selects operator-provided SSD-backed RWO storage where available.
@@ -1167,7 +1177,12 @@ rg '^kind:' /tmp/grepnest-minimal-final.yaml
 rg '^kind:' /tmp/grepnest-optional-final.yaml
 ```
 
-Expected: minimal mode contains ConfigMaps, three ServiceAccounts, server Deployment/Service/PDB, node StatefulSet/headless and Zoekt Services, migration Job, and NetworkPolicies. Optional mode additionally contains one Ingress, one ServiceMonitor, and external-egress policies; neither contains a Secret or OpenShift kind.
+Expected: minimal mode contains ConfigMaps, two release-managed ServiceAccounts
+for server and node, server Deployment/Service/PDB, node StatefulSet/headless
+and Zoekt Services, migration Job, and NetworkPolicies. The migration Job uses
+the namespace default ServiceAccount with pod-level token automount disabled.
+Optional mode additionally contains one Ingress, one ServiceMonitor, and
+external-egress policies; neither contains a Secret or OpenShift kind.
 
 - [ ] **Step 10: Audit signed atomic history**
 

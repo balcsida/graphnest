@@ -22,7 +22,8 @@ The chart lives at `deploy/helm/grepnest` and renders:
 - one internal ClusterIP Service for Zoekt;
 - a shared ReadWriteOnce volume claim template mounted by both node containers;
 - a pre-install/pre-upgrade migration hook Job;
-- component ServiceAccounts with API-token automounting disabled;
+- release-managed server and node ServiceAccounts with API-token automounting
+  disabled;
 - non-secret ConfigMaps;
 - default-deny ingress and narrowly scoped allow NetworkPolicies;
 - an optional server PodDisruptionBudget; and
@@ -66,7 +67,11 @@ health endpoint.
 
 The migration Job uses the GrepNest application image and runs
 `grepnest-migrate`. Helm hook annotations run it before install and upgrade and
-retain failed jobs for diagnosis. A failed migration blocks rollout.
+retain failed jobs for diagnosis. A failed migration blocks rollout. Server and
+node have release-managed ServiceAccounts; the pre-install migration hook uses
+the namespace default ServiceAccount because it cannot depend on ordinary
+release resources, and pod-level `automountServiceAccountToken: false` prevents
+API token mounting.
 
 ## Images
 

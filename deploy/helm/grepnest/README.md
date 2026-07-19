@@ -47,6 +47,11 @@ file. Roll back with:
 helm rollback grepnest <REVISION> -n grepnest --wait --timeout 15m
 ```
 
+Helm rollback does not execute the pre-install/pre-upgrade migration hook.
+Before rolling the application image back after a schema-changing upgrade,
+verify database backward compatibility and follow the release-specific database
+rollback or restore procedure.
+
 The `grepnest-migrate` pre-install/pre-upgrade hook must succeed before the
 release proceeds. A migration failure blocks install or upgrade, and the failed
 Job remains inspectable because only successful and superseded hook Jobs are
