@@ -828,7 +828,6 @@ monitoring:
   serviceMonitor:
     enabled: true
     labels: {monitoring: pilot}
-    namespaceSelector: {matchNames: [monitoring]}
 secrets:
   customCA: {name: grepnest-existing-ca, key: ca.crt}
 networkPolicy:
