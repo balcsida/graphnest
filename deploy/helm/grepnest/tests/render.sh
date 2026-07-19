@@ -276,6 +276,15 @@ expect_failure "$tmp/repository.err" helm template bad "$chart" -f "$minimal" \
   --set-string=images.application.repository=
 expect_failure "$tmp/digest.err" helm template bad "$chart" -f "$minimal" \
   --set=images.node.digest=latest
+for field in nameOverride fullnameOverride; do
+  for value in Bad bad_name -bad bad- \
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; do
+    output=$tmp/$field-$(printf '%s' "$value" | tr -c 'a-zA-Z0-9' _).err
+    expect_failure "$output" helm template bad "$chart" -f "$minimal" \
+      --set-string="$field=$value"
+    require "/$field" "$output"
+  done
+done
 expect_failure "$tmp/runtime-secret-name.err" helm template bad "$chart" -f "$minimal" \
   --set-string='secrets.runtime.name=bad name'
 expect_failure "$tmp/runtime-secret-key.err" helm template bad "$chart" -f "$minimal" \

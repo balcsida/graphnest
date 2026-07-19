@@ -306,8 +306,8 @@ Create a draft-07 object schema with `additionalProperties: false` at the root a
   "type": "object",
   "required": ["images", "secrets", "server", "node", "migration", "ingress", "monitoring", "networkPolicy"],
   "properties": {
-    "nameOverride": {"type": "string"},
-    "fullnameOverride": {"type": "string"},
+    "nameOverride": {"$ref": "#/definitions/optionalDnsLabel"},
+    "fullnameOverride": {"$ref": "#/definitions/optionalDnsLabel"},
     "images": {
       "type": "object", "additionalProperties": false,
       "required": ["application", "node", "pullSecrets"],
@@ -329,6 +329,8 @@ Create a draft-07 object schema with `additionalProperties: false` at the root a
   },
   "definitions": {
     "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "dnsLabel": {"type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$"},
+    "optionalDnsLabel": {"oneOf": [{"const": ""}, {"$ref": "#/definitions/dnsLabel"}]},
     "kubernetesObjectName": {"type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$"},
     "optionalKubernetesObjectName": {"oneOf": [{"const": ""}, {"$ref": "#/definitions/kubernetesObjectName"}]},
     "secretKey": {"type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[-._a-zA-Z0-9]+$", "not": {"enum": [".", ".."]}},
