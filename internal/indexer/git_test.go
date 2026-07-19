@@ -98,7 +98,7 @@ func TestGitPrepareFetchesOnlyTargetBranch(t *testing.T) {
 		WorktreesDir: filepath.Join(directory, "worktrees"),
 		Runner:       Runner{MaxOutput: 64 << 10, KillGrace: 100 * time.Millisecond},
 	}
-	repo := repository.Repository{ID: 7, Name: "acme/repo", Branch: "main"}
+	repo := repository.Repository{ID: 7, ZoektID: 17, Name: "acme/repo", Branch: "main", WebURL: "https://ghe.example/acme/repo"}
 	job := postgres.IndexJob{ID: 11, RepositoryID: 7, TargetSHA: target}
 	mirror, worktree, err := git.Prepare(t.Context(), repo, job, "token-that-must-not-persist")
 	if err != nil {
@@ -109,6 +109,11 @@ func TestGitPrepareFetchesOnlyTargetBranch(t *testing.T) {
 	}
 	if got := strings.Fields(runGit(t, "", "--git-dir", mirror, "config", "--get-all", "remote.origin.fetch")); !slices.Equal(got, []string{"+refs/heads/main:refs/heads/main"}) {
 		t.Fatalf("fetch refspec=%v", got)
+	}
+	for key, want := range map[string]string{"zoekt.repoid": "17", "zoekt.name": "acme/repo", "zoekt.web-url": "https://ghe.example/acme/repo", "zoekt.web-url-type": "github"} {
+		if got := strings.TrimSpace(runGit(t, "", "--git-dir", mirror, "config", "--get", key)); got != want {
+			t.Fatalf("%s=%q want=%q", key, got, want)
+		}
 	}
 	if command := exec.Command(gitBinary(t), "--git-dir", mirror, "show-ref", "--verify", "refs/tags/not-fetched"); command.Run() == nil {
 		t.Fatal("tag was fetched")

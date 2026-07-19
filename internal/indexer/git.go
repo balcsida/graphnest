@@ -24,7 +24,7 @@ type Git struct {
 }
 
 func (git *Git) Prepare(ctx context.Context, repo repository.Repository, job postgres.IndexJob, token string) (string, string, error) {
-	if git == nil || git.Binary == "" || git.AskPass == "" || token == "" || git.MirrorsDir == "" || git.WorktreesDir == "" || git.Runner.MaxOutput <= 0 || git.Runner.KillGrace <= 0 || repo.ID <= 0 || job.ID <= 0 || job.RepositoryID != repo.ID || !validSHA(job.TargetSHA) || repo.Branch == "" {
+	if git == nil || git.Binary == "" || git.AskPass == "" || token == "" || git.MirrorsDir == "" || git.WorktreesDir == "" || git.Runner.MaxOutput <= 0 || git.Runner.KillGrace <= 0 || repo.ID <= 0 || repo.ZoektID == 0 || repo.Name == "" || repo.WebURL == "" || job.ID <= 0 || job.RepositoryID != repo.ID || !validSHA(job.TargetSHA) || repo.Branch == "" {
 		return "", "", errors.New("invalid Git repository job")
 	}
 	remote, err := git.remoteURL(repo.Name)
@@ -63,6 +63,10 @@ func (git *Git) Prepare(ctx context.Context, repo repository.Repository, job pos
 		{"--git-dir", mirror, "config", "remote.origin.url", remote},
 		{"--git-dir", mirror, "config", "--replace-all", "remote.origin.fetch", refspec},
 		{"--git-dir", mirror, "config", "remote.origin.tagOpt", "--no-tags"},
+		{"--git-dir", mirror, "config", "zoekt.repoid", strconv.FormatUint(uint64(repo.ZoektID), 10)},
+		{"--git-dir", mirror, "config", "zoekt.name", repo.Name},
+		{"--git-dir", mirror, "config", "zoekt.web-url", repo.WebURL},
+		{"--git-dir", mirror, "config", "zoekt.web-url-type", "github"},
 		{"--git-dir", mirror, "fetch", "--no-tags", "--prune", "origin"},
 	} {
 		if err := git.run(ctx, environment, arguments...); err != nil {
