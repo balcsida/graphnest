@@ -268,6 +268,7 @@ require 'policyTypes: \[Ingress\]' "$tmp/allow-zoekt-ingress-spec.yaml"
 require '^        - namespaceSelector:$' "$tmp/allow-zoekt-ingress-spec.yaml"
 require '^          podSelector:$' "$tmp/allow-zoekt-ingress-spec.yaml"
 require 'app.kubernetes.io/component: server' "$tmp/allow-zoekt-ingress-spec.yaml"
+[ "$(rg -c 'app.kubernetes.io/component: node' "$tmp/allow-zoekt-ingress-spec.yaml")" -eq 2 ] || exit 1
 require 'protocol: TCP, port: 6070' "$tmp/allow-zoekt-ingress-spec.yaml"
 
 require 'app.kubernetes.io/component: node' "$tmp/allow-indexer-metrics-ingress-spec.yaml"
@@ -277,7 +278,7 @@ require 'protocol: TCP, port: 9090' "$tmp/allow-indexer-metrics-ingress-spec.yam
 
 require 'policyTypes: \[Egress\]' "$tmp/deny-egress-spec.yaml"
 require 'egress: \[\]' "$tmp/deny-egress-spec.yaml"
-require 'app.kubernetes.io/component: server' "$tmp/allow-internal-egress-spec.yaml"
+require 'values: \[server, node\]' "$tmp/allow-internal-egress-spec.yaml"
 require 'policyTypes: \[Egress\]' "$tmp/allow-internal-egress-spec.yaml"
 require '^        - namespaceSelector:$' "$tmp/allow-internal-egress-spec.yaml"
 require '^          podSelector:$' "$tmp/allow-internal-egress-spec.yaml"

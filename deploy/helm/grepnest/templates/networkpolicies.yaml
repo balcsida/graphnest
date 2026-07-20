@@ -61,6 +61,13 @@ spec:
             matchLabels:
               {{- include "grepnest.selectorLabels" . | nindent 14 }}
               app.kubernetes.io/component: server
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              {{- include "grepnest.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: node
       ports:
         - {protocol: TCP, port: {{ .Values.node.zoekt.port }}}
 ---
@@ -112,7 +119,10 @@ spec:
   podSelector:
     matchLabels:
       {{- include "grepnest.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: server
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [server, node]
   policyTypes: [Egress]
   egress:
     - to:
