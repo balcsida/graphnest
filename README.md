@@ -123,10 +123,10 @@ Optional limits are positive and cannot exceed their server caps:
 | `GREPNEST_MAX_REQUEST_BYTES` | 65536 | 65536 |
 | `GREPNEST_MAX_RESPONSE_BYTES` | 262144 | 262144 |
 
-Run `make fmt lint test test-race postgres-integration integration e2e build`
-before proposing a change. `make e2e` starts its pinned PostgreSQL dependency
-and runs real TLS smart-Git and Zoekt processes. `make helm-lint helm-test`
-validates the chart structure without
+Run `make fmt lint staticcheck govulncheck test test-race postgres-integration
+integration e2e build` before proposing a change. `make e2e` starts its pinned
+PostgreSQL dependency and runs real TLS smart-Git and Zoekt processes. `make
+helm-lint helm-test` validates the chart structure without
 contacting a cluster. `make image` intentionally fails with
 `image: milestone not implemented`; no deployable image is produced.
 
