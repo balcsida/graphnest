@@ -41,6 +41,8 @@ func TestPostgresConcurrency(t *testing.T) {
 	t.Run("reapers partition expired work", testConcurrentReapers)
 	t.Run("completion wins repository lock", func(t *testing.T) { testCompletionPushOrder(t, true) })
 	t.Run("push wins repository lock", func(t *testing.T) { testCompletionPushOrder(t, false) })
+	t.Run("installation disable wins completion lock", testDisableCompletionOrder)
+	t.Run("installation disable wins claim lock", testDisableClaimOrder)
 	t.Run("rename preserves numeric authorization", testRenameAuthorization)
 	t.Run("disabled push and queue are inert", testDisabledPushAndQueue)
 	t.Run("unavailable pushes are inert", testUnavailablePushes)
@@ -416,6 +418,94 @@ func testCompletionPushOrder(t *testing.T, completionFirst bool) {
 	}
 	if desired != postgresSHAB || indexed != wantIndexed || state != wantState || queued != 1 {
 		t.Fatalf("desired=%q indexed=%q state=%q queued=%d", desired, indexed, state, queued)
+	}
+}
+
+func testDisableCompletionOrder(t *testing.T) {
+	h := newPostgresHarness(t)
+	repositoryID := h.seedRepository(t, 10, 101)
+	if err := h.store.EnqueueIndex(t.Context(), postgres.IndexRequest{RepositoryID: repositoryID, TargetSHA: postgresSHAA}); err != nil {
+		t.Fatal(err)
+	}
+	job, err := h.store.ClaimIndex(t.Context(), "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	barrier, err := h.pool.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = barrier.Rollback(context.Background()) })
+	if _, err := barrier.Exec(t.Context(), "select id from installations where github_id=10 for update"); err != nil {
+		t.Fatal(err)
+	}
+	results := make(chan error, 2)
+	go func() { results <- h.store.DisableInstallation(t.Context(), 10, "deleted") }()
+	h.waitForLockWaiters(t, 1)
+	go func() { results <- h.store.CompleteIndex(t.Context(), job.ID, "owner") }()
+	h.waitForLockWaiters(t, 2)
+	if err := barrier.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := <-results; err != nil {
+			t.Fatal(err)
+		}
+	}
+	var indexedSHA, jobState, errorCode string
+	if err := h.pool.QueryRow(t.Context(), "select coalesce(indexed_sha, '') from repositories where id=$1", repositoryID).Scan(&indexedSHA); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.pool.QueryRow(t.Context(), "select state, coalesce(error_code, '') from index_jobs where id=$1", job.ID).Scan(&jobState, &errorCode); err != nil {
+		t.Fatal(err)
+	}
+	if indexedSHA != "" || jobState != "superseded" || errorCode != "repository_unavailable" {
+		t.Fatalf("indexed=%q job_state=%q code=%q", indexedSHA, jobState, errorCode)
+	}
+}
+
+func testDisableClaimOrder(t *testing.T) {
+	h := newPostgresHarness(t)
+	repositoryID := h.seedRepository(t, 10, 101)
+	if err := h.store.EnqueueIndex(t.Context(), postgres.IndexRequest{RepositoryID: repositoryID, TargetSHA: postgresSHAA}); err != nil {
+		t.Fatal(err)
+	}
+	barrier, err := h.pool.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = barrier.Rollback(context.Background()) })
+	if _, err := barrier.Exec(t.Context(), "select id from installations where github_id=10 for update"); err != nil {
+		t.Fatal(err)
+	}
+	disabled := make(chan error, 1)
+	go func() { disabled <- h.store.DisableInstallation(t.Context(), 10, "deleted") }()
+	h.waitForLockWaiters(t, 1)
+	var tokenCalls, fetchCalls atomic.Int64
+	worker := &indexer.Worker{
+		ID: "owner", Queue: h.store, Store: h.store,
+		Tokens: integrationTokens{calls: &tokenCalls}, Git: integrationGit{prepares: &fetchCalls}, Zoekt: integrationPublisher{},
+		RenewEvery: time.Hour,
+	}
+	type workerResult struct {
+		worked bool
+		err    error
+	}
+	result := make(chan workerResult, 1)
+	go func() {
+		worked, err := worker.RunOne(t.Context())
+		result <- workerResult{worked: worked, err: err}
+	}()
+	h.waitForLockWaiters(t, 2)
+	if err := barrier.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-disabled; err != nil {
+		t.Fatal(err)
+	}
+	outcome := <-result
+	if outcome.err != nil || outcome.worked || tokenCalls.Load() != 0 || fetchCalls.Load() != 0 {
+		t.Fatalf("worked=%v err=%v tokens=%d fetches=%d", outcome.worked, outcome.err, tokenCalls.Load(), fetchCalls.Load())
 	}
 }
 

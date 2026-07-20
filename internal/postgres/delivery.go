@@ -45,10 +45,10 @@ func (tx *DeliveryTx) EnqueueIndex(ctx context.Context, request IndexRequest) er
 
 func (tx *DeliveryTx) RepositoryForPush(ctx context.Context, installationID, githubID int64) (repository.Repository, error) {
 	return scanRepository(tx.tx.QueryRow(ctx, `select `+repositoryColumns+`
-		from repositories join installations on installations.id=repositories.installation_id
+		from installations join repositories on repositories.installation_id=installations.id
 		where installations.github_id=$1 and repositories.github_id=$2
 		and installations.status='active' and repositories.enabled and not repositories.archived
-		for update of repositories`, installationID, githubID))
+		for share of installations for update of repositories`, installationID, githubID))
 }
 
 func (tx *DeliveryTx) UpdateRepositorySize(ctx context.Context, repositoryID, sizeBytes int64) error {

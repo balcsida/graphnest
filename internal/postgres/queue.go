@@ -80,13 +80,14 @@ func (s *Store) ClaimIndex(ctx context.Context, owner string) (IndexJob, error) 
 	var job IndexJob
 	err = tx.QueryRow(ctx, `
 		with next as (
-			select j.id from index_jobs j
-			join repositories on repositories.id=j.repository_id
-			join installations on installations.id=repositories.installation_id
+			select j.id from installations
+			join repositories on repositories.installation_id=installations.id
+			join index_jobs j on j.repository_id=repositories.id
 			where j.state='queued' and j.run_after<=now() and repositories.enabled
 			and not repositories.archived and installations.status='active'
 			and not exists(select 1 from index_jobs running where running.repository_id=j.repository_id and running.state='running')
-			order by j.priority desc, j.run_after, j.id for update of j skip locked limit 1
+			order by j.priority desc, j.run_after, j.id
+			for share of installations for update of repositories, j skip locked limit 1
 		)
 		update index_jobs set state='running', attempt=attempt+1, lease_owner=$1,
 			lease_expires_at=now()+interval '2 minutes', updated_at=now()
@@ -120,19 +121,18 @@ func (s *Store) CompleteIndex(ctx context.Context, id int64, owner string) error
 	}
 	defer tx.Rollback(ctx)
 	var repositoryID int64
-	var targetSHA string
-	if err := tx.QueryRow(ctx, `select repository_id, target_sha from index_jobs where id=$1 and state='running' and lease_owner=$2 and lease_expires_at>now() for update`, id, owner).Scan(&repositoryID, &targetSHA); errors.Is(err, pgx.ErrNoRows) {
+	var targetSHA, desiredSHA, installationStatus string
+	var enabled, archived bool
+	if err := tx.QueryRow(ctx, `select repositories.id, index_jobs.target_sha,
+		coalesce(repositories.desired_sha, ''), repositories.enabled, repositories.archived, installations.status
+		from installations join repositories on repositories.installation_id=installations.id
+		join index_jobs on index_jobs.repository_id=repositories.id
+		where index_jobs.id=$1 and index_jobs.state='running' and index_jobs.lease_owner=$2
+		and index_jobs.lease_expires_at>now()
+		for share of installations for update of repositories, index_jobs`, id, owner).
+		Scan(&repositoryID, &targetSHA, &desiredSHA, &enabled, &archived, &installationStatus); errors.Is(err, pgx.ErrNoRows) {
 		return ErrLeaseLost
 	} else if err != nil {
-		return err
-	}
-	var desiredSHA, installationStatus string
-	var enabled, archived bool
-	if err := tx.QueryRow(ctx, `select coalesce(repositories.desired_sha, ''), repositories.enabled,
-		repositories.archived, installations.status from repositories
-		join installations on installations.id=repositories.installation_id
-		where repositories.id=$1 for update of repositories`, repositoryID).
-		Scan(&desiredSHA, &enabled, &archived, &installationStatus); err != nil {
 		return err
 	}
 	state := "superseded"
