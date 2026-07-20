@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/grepnest/grepnest/internal/httpapi"
+	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/internal/search"
 	"github.com/grepnest/grepnest/internal/zoekt"
 	"github.com/grepnest/grepnest/pkg/api"
@@ -36,7 +37,22 @@ type output struct {
 	Truncated bool              `json:"truncated"`
 }
 
-func New(service *search.Service) *mcp.Server {
+type repositoryIDInput struct {
+	RepositoryID int64 `json:"repository_id" jsonschema:"GitHub repository ID"`
+}
+
+type readFileInput struct {
+	RepositoryID int64  `json:"repository_id" jsonschema:"GitHub repository ID"`
+	Path         string `json:"path" jsonschema:"repository-relative file path"`
+	StartLine    int    `json:"start_line,omitempty" jsonschema:"first line to return"`
+	EndLine      int    `json:"end_line,omitempty" jsonschema:"last line to return"`
+}
+
+type repositoryListOutput struct {
+	Repositories []api.RepositorySummary `json:"repositories"`
+}
+
+func New(service *search.Service, repositoryServices ...*repository.Service) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "grepnest", Version: "0.1.0"}, nil)
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "search_code", Description: "Search code contents when you know a symbol, string, or code expression.",
@@ -53,6 +69,42 @@ func New(service *search.Service) *mcp.Server {
 			Query: "file:" + input.Pattern, Repositories: input.Repositories,
 			Limit: input.Limit, MaxResponseBytes: input.MaxOutputBytes,
 		})
+	})
+	if len(repositoryServices) == 0 || repositoryServices[0] == nil {
+		return server
+	}
+	repositories := repositoryServices[0]
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "list_repositories", Description: "List repositories visible to you and their current index status.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, repositoryListOutput, error) {
+		items, err := repositories.List(ctx, httpapi.PrincipalFromContext(ctx))
+		if err != nil {
+			return nil, repositoryListOutput{}, errors.New(httpapi.RepositoryErrorMessage(err))
+		}
+		if items == nil {
+			items = []api.RepositorySummary{}
+		}
+		return nil, repositoryListOutput{Repositories: items}, nil
+	})
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "get_repository_status", Description: "Inspect desired and indexed revisions before relying on search results.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, input repositoryIDInput) (*mcp.CallToolResult, api.RepositorySummary, error) {
+		status, err := repositories.Status(ctx, httpapi.PrincipalFromContext(ctx), input.RepositoryID)
+		if err != nil {
+			return nil, api.RepositorySummary{}, errors.New(httpapi.RepositoryErrorMessage(err))
+		}
+		return nil, status, nil
+	})
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "read_file", Description: "Read a bounded file or line range at the repository's indexed revision.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, input readFileInput) (*mcp.CallToolResult, api.ReadFileResponse, error) {
+		file, err := repositories.ReadFile(ctx, httpapi.PrincipalFromContext(ctx), api.ReadFileRequest{
+			RepositoryID: input.RepositoryID, Path: input.Path, StartLine: input.StartLine, EndLine: input.EndLine,
+		})
+		if err != nil {
+			return nil, api.ReadFileResponse{}, errors.New(httpapi.RepositoryErrorMessage(err))
+		}
+		return nil, file, nil
 	})
 	return server
 }

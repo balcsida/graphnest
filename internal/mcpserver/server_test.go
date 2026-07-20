@@ -13,14 +13,171 @@ import (
 
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/authz"
+	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/httpapi"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/internal/search"
 	"github.com/grepnest/grepnest/internal/zoekt"
 	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+func TestRepositoryToolsUseAuthenticatedService(t *testing.T) {
+	repositoryService := mcpRepositoryService()
+	server := New(testService(t, &recordingBackend{}), repositoryService)
+	handler := httpapi.AuthenticateBearer(
+		authn.NewStatic(map[string]authn.Principal{"secret": {InstallationID: 10, RepositoryIDs: []int64{101}}}),
+		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil),
+	)
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(
+		t.Context(),
+		&mcp.StreamableClientTransport{Endpoint: httpServer.URL, HTTPClient: bearerClient(httpServer.Client(), "secret"), DisableStandaloneSSE: true},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	tools, err := session.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, len(tools.Tools))
+	for index, tool := range tools.Tools {
+		names[index] = tool.Name
+	}
+	for _, name := range []string{"list_repositories", "get_repository_status", "read_file"} {
+		if !slices.Contains(names, name) {
+			t.Fatalf("tools = %v", names)
+		}
+	}
+
+	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "list_repositories", Arguments: map[string]any{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list struct {
+		Repositories []api.RepositorySummary `json:"repositories"`
+	}
+	decodeStructured(t, result.StructuredContent, &list)
+	wantList, err := repositoryService.List(t.Context(), authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}})
+	if err != nil || !slices.EqualFunc(list.Repositories, wantList, func(a, b api.RepositorySummary) bool { return a == b }) {
+		t.Fatalf("list = %#v, want %#v, err %v", list.Repositories, wantList, err)
+	}
+
+	result, err = session.CallTool(t.Context(), &mcp.CallToolParams{Name: "get_repository_status", Arguments: map[string]any{"repository_id": 101}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status api.RepositorySummary
+	decodeStructured(t, result.StructuredContent, &status)
+	if status.GitHubID != 101 || status.Status != "ready" || status.SearchNode != "node-a" {
+		t.Fatalf("status = %#v", status)
+	}
+
+	result, err = session.CallTool(t.Context(), &mcp.CallToolParams{Name: "read_file", Arguments: map[string]any{
+		"repository_id": 101, "path": "main.go", "start_line": 2, "end_line": 99,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file api.ReadFileResponse
+	decodeStructured(t, result.StructuredContent, &file)
+	if file.Content != "two\nthree" || file.StartLine != 2 || file.EndLine != 3 || file.IndexedSHA != strings.Repeat("a", 40) {
+		t.Fatalf("file = %#v", file)
+	}
+}
+
+func TestRepositoryToolErrorsAreSafe(t *testing.T) {
+	const secret = "upstream-token"
+	service := mcpRepositoryService()
+	service.GitHub = mcpContentReader{err: errors.New(secret)}
+	server := New(testService(t, &recordingBackend{}), service)
+	handler := httpapi.AuthenticateBearer(
+		authn.NewStatic(map[string]authn.Principal{"secret": {InstallationID: 10, RepositoryIDs: []int64{101}}}),
+		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil),
+	)
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(
+		t.Context(), &mcp.StreamableClientTransport{Endpoint: httpServer.URL, HTTPClient: bearerClient(httpServer.Client(), "secret"), DisableStandaloneSSE: true}, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	for _, test := range []struct {
+		name, tool, message string
+		arguments           map[string]any
+	}{
+		{"unknown repository", "get_repository_status", "repository not found", map[string]any{"repository_id": 999}},
+		{"invalid path", "read_file", "file request is invalid", map[string]any{"repository_id": 101, "path": "../secret"}},
+		{"upstream failure", "read_file", "repository service is unavailable", map[string]any{"repository_id": 101, "path": "main.go"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: test.tool, Arguments: test.arguments})
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := json.Marshal(result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(encoded), secret) || !result.IsError || len(result.Content) != 1 {
+				t.Fatalf("result = %s", encoded)
+			}
+			content, ok := result.Content[0].(*mcp.TextContent)
+			if !ok || content.Text != test.message {
+				t.Fatalf("content = %#v", result.Content)
+			}
+		})
+	}
+}
+
+func mcpRepositoryService() *repository.Service {
+	sha := strings.Repeat("a", 40)
+	return &repository.Service{
+		Store: mcpRepositoryStore{repository: repository.Repository{
+			ID: 1, InstallationID: 10, GitHubID: 101, Name: "acme/one", Branch: "main",
+			DesiredSHA: sha, IndexedSHA: sha, Status: "ready", SearchNode: "node-a",
+		}},
+		GitHub: mcpContentReader{content: githubapp.Content{
+			Type: "file", Encoding: "base64", Content: base64.StdEncoding.EncodeToString([]byte("one\ntwo\nthree")), SHA: "blob", Size: 13,
+		}},
+		MaxLines: 2,
+	}
+}
+
+type mcpRepositoryStore struct{ repository repository.Repository }
+
+func (store mcpRepositoryStore) AuthorizedRepositories(_ context.Context, _ int64, ids []int64, _ []string) ([]repository.Repository, error) {
+	if len(ids) == 1 && ids[0] == store.repository.GitHubID {
+		return []repository.Repository{store.repository}, nil
+	}
+	return []repository.Repository{}, nil
+}
+
+func (store mcpRepositoryStore) AuthorizedRepository(_ context.Context, _ int64, ids []int64, id int64) (repository.Repository, error) {
+	if id == store.repository.GitHubID && len(ids) == 1 && ids[0] == id {
+		return store.repository, nil
+	}
+	return repository.Repository{}, pgx.ErrNoRows
+}
+
+type mcpContentReader struct {
+	content githubapp.Content
+	err     error
+}
+
+func (reader mcpContentReader) ReadContents(context.Context, int64, string, string, string, string, int64) (githubapp.Content, error) {
+	return reader.content, reader.err
+}
 
 func TestSearchToolsUseAuthenticatedService(t *testing.T) {
 	backend := &recordingBackend{response: api.SearchResponse{Matches: []api.SearchMatch{{

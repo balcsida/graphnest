@@ -3,6 +3,74 @@ info:
   title: GrepNest REST API
   version: 0.1.0
 paths:
+  /v1/repositories:
+    get:
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Authorized repositories and index status
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RepositoryList'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/repositories/{id}:
+    get:
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200':
+          description: Authorized repository
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RepositorySummary'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/repositories/{id}/status:
+    get:
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200':
+          description: Authorized repository index status
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RepositorySummary'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/files/read:
+    post:
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReadFileRequest'}
+      responses:
+        '200':
+          description: Bounded file content at the indexed revision
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReadFileResponse'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '422': {$ref: '#/components/responses/InvalidFile'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {$ref: '#/components/responses/Timeout'}
   /v1/search:
     post:
       security: [{bearerAuth: []}]
@@ -46,10 +114,56 @@ components:
   responses:
     InvalidRequest: {description: Invalid request, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     Unauthenticated: {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+    NotFound: {description: Repository not found or not authorized, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+    Conflict: {description: Repository is not indexed, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+    InvalidFile: {description: File cannot be returned, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     BackendError: {description: Search backend failed, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     Unavailable: {description: Service unavailable, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     Timeout: {description: Search timed out, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
   schemas:
+    RepositoryList:
+      type: object
+      additionalProperties: false
+      required: [repositories]
+      properties:
+        repositories: {type: array, items: {$ref: '#/components/schemas/RepositorySummary'}}
+    RepositorySummary:
+      type: object
+      additionalProperties: false
+      required: [id, github_id, name, branch, desired_sha, indexed_sha, status, error_code, search_node]
+      properties:
+        id: {type: integer, format: int64}
+        github_id: {type: integer, format: int64}
+        name: {type: string}
+        branch: {type: string}
+        desired_sha: {type: string}
+        indexed_sha: {type: string}
+        status: {type: string}
+        error_code: {type: string}
+        search_node: {type: string}
+        last_indexed_at: {type: string, format: date-time}
+    ReadFileRequest:
+      type: object
+      additionalProperties: false
+      required: [repository_id, path]
+      properties:
+        repository_id: {type: integer, format: int64, minimum: 1}
+        path: {type: string}
+        start_line: {type: integer, minimum: 1}
+        end_line: {type: integer, minimum: 1}
+    ReadFileResponse:
+      type: object
+      additionalProperties: false
+      required: [repository_id, path, indexed_sha, blob_sha, content, start_line, end_line, truncated]
+      properties:
+        repository_id: {type: integer, format: int64}
+        path: {type: string}
+        indexed_sha: {type: string}
+        blob_sha: {type: string}
+        content: {type: string}
+        start_line: {type: integer}
+        end_line: {type: integer}
+        truncated: {type: boolean}
     SearchRequest:
       type: object
       additionalProperties: false
