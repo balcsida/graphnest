@@ -47,7 +47,14 @@ func RegisterRepositories(mux *http.ServeMux, authenticator authn.Authenticator,
 			writeRepositoryError(writer, err)
 			return
 		}
-		writeJSON(writer, limitRepositoryList(repositories, maxResults, maxResponseBytes))
+		response := limitRepositoryList(repositories, maxResults, maxResponseBytes)
+		data, _ := json.Marshal(response)
+		if int64(len(data)+1) > maxResponseBytes {
+			writer.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write(append(data, '\n'))
 	}))))
 	mux.Handle("/v1/repositories/", exactMethod(http.MethodGet, AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		id, ok := repositoryID(request.URL.Path)

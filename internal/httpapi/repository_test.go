@@ -82,6 +82,16 @@ func TestRepositoryListBoundsWireResponse(t *testing.T) {
 	}
 }
 
+func TestRepositoryListRejectsBudgetSmallerThanEmptyEnvelope(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRepositories(mux, repositoryAuthenticator(), repositoryHTTPService(), 128, 100, 1)
+
+	response := repositoryRequest(t, mux, http.MethodGet, "/v1/repositories", "", "secret", "")
+	if response.Code != http.StatusInternalServerError || response.Body.Len() != 0 {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+}
+
 func TestRepositoriesRoutesEnforceTransportContract(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterRepositories(mux, repositoryAuthenticator(), repositoryHTTPService(), 64, 100, 256<<10)
