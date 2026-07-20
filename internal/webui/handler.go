@@ -1,0 +1,68 @@
+package webui
+
+import (
+	"crypto/sha256"
+	"embed"
+	"encoding/base64"
+	"fmt"
+	"net/http"
+	"strings"
+)
+
+//go:embed index.html
+var assets embed.FS
+
+var document = mustReadDocument()
+var contentSecurityPolicy = policyFor(document)
+
+func Register(mux *http.ServeMux) {
+	mux.Handle("GET /{$}", handler())
+	mux.Handle("GET /index.html", handler())
+}
+
+func handler() http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Cache-Control", "no-store")
+		writer.Header().Set("Content-Security-Policy", contentSecurityPolicy)
+		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+		writer.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+		writer.Header().Set("Permissions-Policy", "camera=(), geolocation=(), microphone=(), payment=(), usb=()")
+		writer.Header().Set("Referrer-Policy", "no-referrer")
+		writer.Header().Set("X-Content-Type-Options", "nosniff")
+		writer.Header().Set("X-Frame-Options", "DENY")
+		_, _ = writer.Write(document)
+	})
+}
+
+func mustReadDocument() []byte {
+	document, err := assets.ReadFile("index.html")
+	if err != nil {
+		panic(fmt.Sprintf("read embedded index.html: %v", err))
+	}
+	return document
+}
+
+func policyFor(document []byte) string {
+	styleHash := base64.StdEncoding.EncodeToString(sha256Bytes(inlineContent(document, "style")))
+	scriptHash := base64.StdEncoding.EncodeToString(sha256Bytes(inlineContent(document, "script")))
+	return fmt.Sprintf("default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; script-src 'sha256-%s'; style-src 'sha256-%s'", scriptHash, styleHash)
+}
+
+func sha256Bytes(content []byte) []byte {
+	hash := sha256.Sum256(content)
+	return hash[:]
+}
+
+func inlineContent(document []byte, tag string) []byte {
+	open, close := "<"+tag+">", "</"+tag+">"
+	start := strings.Index(string(document), open)
+	if start < 0 || strings.Count(string(document), open) != 1 || strings.Count(string(document), close) != 1 {
+		panic("embedded index.html must contain one " + tag + " element")
+	}
+	start += len(open)
+	end := strings.Index(string(document[start:]), close)
+	if end < 0 {
+		panic("embedded index.html has an unclosed " + tag + " element")
+	}
+	return document[start : start+end]
+}
