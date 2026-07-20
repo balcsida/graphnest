@@ -19,6 +19,26 @@ type repositoryList struct {
 	Repositories []api.RepositorySummary `json:"repositories"`
 }
 
+type readFileRequest struct {
+	RepositoryID *int64              `json:"repository_id"`
+	Path         *string             `json:"path"`
+	StartLine    optionalPositiveInt `json:"start_line"`
+	EndLine      optionalPositiveInt `json:"end_line"`
+}
+
+type optionalPositiveInt struct {
+	value int
+	set   bool
+}
+
+func (number *optionalPositiveInt) UnmarshalJSON(data []byte) error {
+	number.set = true
+	if string(data) == "null" || json.Unmarshal(data, &number.value) != nil || number.value < 1 {
+		return errors.New("expected positive integer")
+	}
+	return nil
+}
+
 func RegisterRepositories(mux *http.ServeMux, authenticator authn.Authenticator, service *repository.Service, maxRequestBytes int64) {
 	mux.Handle("/v1/repositories", exactMethod(http.MethodGet, AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		repositories, err := service.List(request.Context(), PrincipalFromContext(request.Context()))
@@ -52,7 +72,7 @@ func RegisterRepositories(mux *http.ServeMux, authenticator authn.Authenticator,
 		request.Body = http.MaxBytesReader(writer, request.Body, maxRequestBytes)
 		decoder := json.NewDecoder(request.Body)
 		decoder.DisallowUnknownFields()
-		var input api.ReadFileRequest
+		var input readFileRequest
 		if err := decoder.Decode(&input); err != nil {
 			writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
 			return
@@ -61,7 +81,18 @@ func RegisterRepositories(mux *http.ServeMux, authenticator authn.Authenticator,
 			writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
 			return
 		}
-		response, err := service.ReadFile(request.Context(), PrincipalFromContext(request.Context()), input)
+		if input.RepositoryID == nil || *input.RepositoryID < 1 || input.Path == nil || *input.Path == "" {
+			writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
+			return
+		}
+		fileRequest := api.ReadFileRequest{RepositoryID: *input.RepositoryID, Path: *input.Path}
+		if input.StartLine.set {
+			fileRequest.StartLine = input.StartLine.value
+		}
+		if input.EndLine.set {
+			fileRequest.EndLine = input.EndLine.value
+		}
+		response, err := service.ReadFile(request.Context(), PrincipalFromContext(request.Context()), fileRequest)
 		if err != nil {
 			writeRepositoryError(writer, err)
 			return

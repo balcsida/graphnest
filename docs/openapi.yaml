@@ -148,7 +148,7 @@ components:
       required: [repository_id, path]
       properties:
         repository_id: {type: integer, format: int64, minimum: 1}
-        path: {type: string}
+        path: {type: string, minLength: 1}
         start_line: {type: integer, minimum: 1}
         end_line: {type: integer, minimum: 1}
     ReadFileResponse:

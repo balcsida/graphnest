@@ -56,6 +56,22 @@ func TestRepositoryToolsUseAuthenticatedService(t *testing.T) {
 			t.Fatalf("tools = %v", names)
 		}
 	}
+	for toolName, fields := range map[string][]string{
+		"get_repository_status": {"repository_id"},
+		"read_file":             {"repository_id", "start_line", "end_line"},
+	} {
+		schema := repositoryToolSchema(t, tools.Tools, toolName)
+		properties := schema["properties"].(map[string]any)
+		for _, field := range fields {
+			if properties[field].(map[string]any)["minimum"] != float64(1) {
+				t.Fatalf("%s.%s schema = %#v", toolName, field, properties[field])
+			}
+		}
+	}
+	readSchema := repositoryToolSchema(t, tools.Tools, "read_file")
+	if readSchema["properties"].(map[string]any)["path"].(map[string]any)["minLength"] != float64(1) {
+		t.Fatalf("read_file.path schema = %#v", readSchema["properties"])
+	}
 
 	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "list_repositories", Arguments: map[string]any{}})
 	if err != nil {
@@ -90,6 +106,22 @@ func TestRepositoryToolsUseAuthenticatedService(t *testing.T) {
 	decodeStructured(t, result.StructuredContent, &file)
 	if file.Content != "two\nthree" || file.StartLine != 2 || file.EndLine != 3 || file.IndexedSHA != strings.Repeat("a", 40) {
 		t.Fatalf("file = %#v", file)
+	}
+
+	store := repositoryService.Store.(*mcpRepositoryStore)
+	store.calls = 0
+	for _, call := range []*mcp.CallToolParams{
+		{Name: "get_repository_status", Arguments: map[string]any{"repository_id": 0}},
+		{Name: "read_file", Arguments: map[string]any{"repository_id": 101, "path": ""}},
+		{Name: "read_file", Arguments: map[string]any{"repository_id": 101, "path": "main.go", "start_line": 0}},
+	} {
+		result, err := session.CallTool(t.Context(), call)
+		if err != nil || !result.IsError {
+			t.Fatalf("invalid %s result = %#v, err = %v", call.Name, result, err)
+		}
+	}
+	if store.calls != 0 {
+		t.Fatalf("invalid tool service calls = %d", store.calls)
 	}
 }
 
@@ -143,7 +175,7 @@ func TestRepositoryToolErrorsAreSafe(t *testing.T) {
 func mcpRepositoryService() *repository.Service {
 	sha := strings.Repeat("a", 40)
 	return &repository.Service{
-		Store: mcpRepositoryStore{repository: repository.Repository{
+		Store: &mcpRepositoryStore{repository: repository.Repository{
 			ID: 1, InstallationID: 10, GitHubID: 101, Name: "acme/one", Branch: "main",
 			DesiredSHA: sha, IndexedSHA: sha, Status: "ready", SearchNode: "node-a",
 		}},
@@ -154,16 +186,21 @@ func mcpRepositoryService() *repository.Service {
 	}
 }
 
-type mcpRepositoryStore struct{ repository repository.Repository }
+type mcpRepositoryStore struct {
+	repository repository.Repository
+	calls      int
+}
 
-func (store mcpRepositoryStore) AuthorizedRepositories(_ context.Context, _ int64, ids []int64, _ []string) ([]repository.Repository, error) {
+func (store *mcpRepositoryStore) AuthorizedRepositories(_ context.Context, _ int64, ids []int64, _ []string) ([]repository.Repository, error) {
+	store.calls++
 	if len(ids) == 1 && ids[0] == store.repository.GitHubID {
 		return []repository.Repository{store.repository}, nil
 	}
 	return []repository.Repository{}, nil
 }
 
-func (store mcpRepositoryStore) AuthorizedRepository(_ context.Context, _ int64, ids []int64, id int64) (repository.Repository, error) {
+func (store *mcpRepositoryStore) AuthorizedRepository(_ context.Context, _ int64, ids []int64, id int64) (repository.Repository, error) {
+	store.calls++
 	if id == store.repository.GitHubID && len(ids) == 1 && ids[0] == id {
 		return store.repository, nil
 	}
@@ -177,6 +214,25 @@ type mcpContentReader struct {
 
 func (reader mcpContentReader) ReadContents(context.Context, int64, string, string, string, string, int64) (githubapp.Content, error) {
 	return reader.content, reader.err
+}
+
+func repositoryToolSchema(t *testing.T, tools []*mcp.Tool, name string) map[string]any {
+	t.Helper()
+	for _, tool := range tools {
+		if tool.Name == name {
+			data, err := json.Marshal(tool.InputSchema)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var schema map[string]any
+			if err := json.Unmarshal(data, &schema); err != nil {
+				t.Fatal(err)
+			}
+			return schema
+		}
+	}
+	t.Fatalf("tool %q not found", name)
+	return nil
 }
 
 func TestSearchToolsUseAuthenticatedService(t *testing.T) {

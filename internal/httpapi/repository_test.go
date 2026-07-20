@@ -105,10 +105,44 @@ func TestReadFileRouteUsesIndexedContentAndSafeErrors(t *testing.T) {
 	assertRepositoryError(t, response.Body.String(), "unavailable")
 }
 
+func TestReadFileRejectsInvalidTransportBeforeService(t *testing.T) {
+	tests := []struct {
+		name, body string
+	}{
+		{"null", `null`},
+		{"empty object", `{}`},
+		{"missing repository", `{"path":"main.go"}`},
+		{"zero repository", `{"repository_id":0,"path":"main.go"}`},
+		{"negative repository", `{"repository_id":-1,"path":"main.go"}`},
+		{"missing path", `{"repository_id":101}`},
+		{"empty path", `{"repository_id":101,"path":""}`},
+		{"null start line", `{"repository_id":101,"path":"main.go","start_line":null}`},
+		{"zero start line", `{"repository_id":101,"path":"main.go","start_line":0}`},
+		{"negative start line", `{"repository_id":101,"path":"main.go","start_line":-1}`},
+		{"null end line", `{"repository_id":101,"path":"main.go","end_line":null}`},
+		{"zero end line", `{"repository_id":101,"path":"main.go","end_line":0}`},
+		{"negative end line", `{"repository_id":101,"path":"main.go","end_line":-1}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			service := repositoryHTTPService()
+			store := service.Store.(*repositoryHTTPStore)
+			mux := http.NewServeMux()
+			RegisterRepositories(mux, repositoryAuthenticator(), service, 256)
+
+			response := repositoryRequest(t, mux, http.MethodPost, "/v1/files/read", test.body, "secret", "application/json")
+			if response.Code != http.StatusBadRequest || store.calls != 0 {
+				t.Fatalf("status = %d, service calls = %d", response.Code, store.calls)
+			}
+			assertRepositoryError(t, response.Body.String(), "invalid_request")
+		})
+	}
+}
+
 func repositoryHTTPService() *repository.Service {
 	sha := strings.Repeat("a", 40)
 	return &repository.Service{
-		Store: repositoryHTTPStore{repository: repository.Repository{
+		Store: &repositoryHTTPStore{repository: repository.Repository{
 			ID: 1, InstallationID: 10, GitHubID: 101, Name: "acme/one", Branch: "main",
 			DesiredSHA: sha, IndexedSHA: sha, Status: "ready", SearchNode: "node-a",
 		}},
@@ -123,16 +157,21 @@ func repositoryAuthenticator() authn.Authenticator {
 	return authn.NewStatic(map[string]authn.Principal{"secret": {InstallationID: 10, RepositoryIDs: []int64{101}}})
 }
 
-type repositoryHTTPStore struct{ repository repository.Repository }
+type repositoryHTTPStore struct {
+	repository repository.Repository
+	calls      int
+}
 
-func (store repositoryHTTPStore) AuthorizedRepositories(_ context.Context, _ int64, ids []int64, _ []string) ([]repository.Repository, error) {
+func (store *repositoryHTTPStore) AuthorizedRepositories(_ context.Context, _ int64, ids []int64, _ []string) ([]repository.Repository, error) {
+	store.calls++
 	if len(ids) == 1 && ids[0] == store.repository.GitHubID {
 		return []repository.Repository{store.repository}, nil
 	}
 	return []repository.Repository{}, nil
 }
 
-func (store repositoryHTTPStore) AuthorizedRepository(_ context.Context, _ int64, ids []int64, id int64) (repository.Repository, error) {
+func (store *repositoryHTTPStore) AuthorizedRepository(_ context.Context, _ int64, ids []int64, id int64) (repository.Repository, error) {
+	store.calls++
 	if id == store.repository.GitHubID && len(ids) == 1 && ids[0] == id {
 		return store.repository, nil
 	}

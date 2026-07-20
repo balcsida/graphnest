@@ -88,6 +88,10 @@ func New(service *search.Service, repositoryServices ...*repository.Service) *mc
 	})
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "get_repository_status", Description: "Inspect desired and indexed revisions before relying on search results.",
+		InputSchema: map[string]any{
+			"type": "object", "additionalProperties": false, "required": []string{"repository_id"},
+			"properties": map[string]any{"repository_id": positiveIntegerSchema("GitHub repository ID")},
+		},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input repositoryIDInput) (*mcp.CallToolResult, api.RepositorySummary, error) {
 		status, err := repositories.Status(ctx, httpapi.PrincipalFromContext(ctx), input.RepositoryID)
 		if err != nil {
@@ -97,6 +101,15 @@ func New(service *search.Service, repositoryServices ...*repository.Service) *mc
 	})
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "read_file", Description: "Read a bounded file or line range at the repository's indexed revision.",
+		InputSchema: map[string]any{
+			"type": "object", "additionalProperties": false, "required": []string{"repository_id", "path"},
+			"properties": map[string]any{
+				"repository_id": positiveIntegerSchema("GitHub repository ID"),
+				"path":          map[string]any{"type": "string", "minLength": 1, "description": "repository-relative file path"},
+				"start_line":    positiveIntegerSchema("first line to return"),
+				"end_line":      positiveIntegerSchema("last line to return"),
+			},
+		},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input readFileInput) (*mcp.CallToolResult, api.ReadFileResponse, error) {
 		file, err := repositories.ReadFile(ctx, httpapi.PrincipalFromContext(ctx), api.ReadFileRequest{
 			RepositoryID: input.RepositoryID, Path: input.Path, StartLine: input.StartLine, EndLine: input.EndLine,
@@ -107,6 +120,10 @@ func New(service *search.Service, repositoryServices ...*repository.Service) *mc
 		return nil, file, nil
 	})
 	return server
+}
+
+func positiveIntegerSchema(description string) map[string]any {
+	return map[string]any{"type": "integer", "minimum": 1, "description": description}
 }
 
 func runSearch(ctx context.Context, service *search.Service, input api.SearchRequest) (*mcp.CallToolResult, output, error) {
