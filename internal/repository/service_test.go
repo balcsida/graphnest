@@ -2,9 +2,17 @@ package repository
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"math"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -73,8 +81,44 @@ func TestServiceReadFile(t *testing.T) {
 	if store.authorizedCalls != 2 {
 		t.Fatalf("authorization calls = %d", store.authorizedCalls)
 	}
-	if reader.calls != 1 || reader.installationID != 10 || reader.owner != "acme" || reader.name != "one" || reader.path != "dir/file.go" || reader.ref != sha || reader.maxBytes != 1024 {
+	wireBytes := int64(base64.StdEncoding.EncodedLen(1024)) + githubEnvelopeBytes
+	if reader.calls != 1 || reader.installationID != 10 || reader.owner != "acme" || reader.name != "one" || reader.path != "dir/file.go" || reader.ref != sha || reader.maxBytes != wireBytes {
 		t.Fatalf("contents call = %#v", reader)
+	}
+}
+
+func TestServiceReadFileAllowsNearLimitContentThroughGitHubClient(t *testing.T) {
+	data := []byte(strings.Repeat("a", 800<<10))
+	sha := strings.Repeat("a", 40)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/app/installations/10/access_tokens":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"token": "token", "expires_at": time.Now().Add(time.Hour)})
+		case "/repos/acme/one/contents/large.txt":
+			_ = json.NewEncoder(writer).Encode(githubapp.Content{Type: "file", Encoding: "base64", Content: base64.StdEncoding.EncodeToString(data), SHA: "blob", Size: int64(len(data))})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	t.Cleanup(server.Close)
+	endpoint, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := githubapp.NewSigner(1, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}), time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := githubapp.NewClient(githubapp.Endpoints{API: endpoint}, server.Client(), signer, "2022-11-28", 2<<20, time.Now)
+	store := &serviceStore{repository: Repository{ID: 1, InstallationID: 10, GitHubID: 101, Name: "acme/one", IndexedSHA: sha}}
+
+	got, err := (&Service{Store: store, GitHub: client}).ReadFile(t.Context(), authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}, api.ReadFileRequest{RepositoryID: 101, Path: "large.txt"})
+	if err != nil || got.Content != string(data) {
+		t.Fatalf("content bytes = %d, err = %v", len(got.Content), err)
 	}
 }
 

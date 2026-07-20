@@ -18,6 +18,7 @@ import (
 const (
 	defaultMaxFileBytes = int64(1 << 20)
 	defaultMaxLines     = 1000
+	githubEnvelopeBytes = int64(64 << 10)
 )
 
 var (
@@ -93,7 +94,8 @@ func (service *Service) ReadFile(ctx context.Context, principal authn.Principal,
 		return api.ReadFileResponse{}, ErrInvalidFile
 	}
 	maxBytes := service.maxFileBytes()
-	content, err := service.GitHub.ReadContents(ctx, repository.InstallationID, owner, name, request.Path, repository.IndexedSHA, maxBytes)
+	wireBytes := int64(base64.StdEncoding.EncodedLen(int(maxBytes))) + githubEnvelopeBytes
+	content, err := service.GitHub.ReadContents(ctx, repository.InstallationID, owner, name, request.Path, repository.IndexedSHA, wireBytes)
 	if err != nil {
 		return api.ReadFileResponse{}, err
 	}
