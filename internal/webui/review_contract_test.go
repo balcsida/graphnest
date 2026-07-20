@@ -55,3 +55,11 @@ func TestConsoleUsesOnlyTheScopedSearchWorkspaceShell(t *testing.T) {
 		}
 	}
 }
+
+func TestConsoleKeepsResultsStaticUntilTheNextShellTask(t *testing.T) {
+	for _, forbidden := range []string{`animation:reveal`, `@keyframes reveal`} {
+		if bytes.Contains(document, []byte(forbidden)) {
+			t.Fatalf("console retains prohibited result animation %q", forbidden)
+		}
+	}
+}
