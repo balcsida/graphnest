@@ -72,6 +72,36 @@ func TestSearchHTTP(t *testing.T) {
 	}
 }
 
+func TestSearchResponseRespectsWireBudgetIncludingNewline(t *testing.T) {
+	backend := &stubBackend{response: api.SearchResponse{Matches: []api.SearchMatch{{Path: "main.go", SHA: strings.Repeat("a", 40), Branches: []string{"main"}, ZoektID: 7, LineNumber: 1, Preview: "needle"}}}}
+	registry, err := repository.NewStatic([]repository.Repository{{ID: 1, ZoektID: 7, Name: "acme/one", Branch: "main", IndexedSHA: strings.Repeat("a", 40)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	principal := authn.Principal{Subject: "user", RepositoryNames: []string{"acme/one"}}
+	probe := search.NewService(backend, authz.NewStatic(registry), search.Limits{MaxResults: 100, MaxResponseBytes: 256 << 10})
+	response, err := probe.Search(t.Context(), principal, api.SearchRequest{Query: "needle"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := search.NewService(backend, authz.NewStatic(registry), search.Limits{MaxResults: 100, MaxResponseBytes: int64(len(payload))})
+	mux := http.NewServeMux()
+	RegisterSearch(mux, authn.NewStatic(map[string]authn.Principal{"secret": principal}), service, 1024, int64(len(payload)))
+
+	request := httptest.NewRequest(http.MethodPost, "/v1/search", strings.NewReader(`{"query":"needle"}`))
+	request.Header.Set("Authorization", "Bearer secret")
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusInternalServerError || recorder.Body.Len() != 0 {
+		t.Fatalf("status=%d body=%q, want bodyless wire-budget failure", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestBearerAuthenticationAttachesPrincipal(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"secret": {Subject: "user"}})
 	var got authn.Principal
@@ -116,7 +146,7 @@ func testHandler(t *testing.T, backend *stubBackend, maxBytes int64) http.Handle
 	}
 	service := search.NewService(backend, authz.NewStatic(registry), search.Limits{MaxResults: 100})
 	mux := http.NewServeMux()
-	RegisterSearch(mux, authn.NewStatic(map[string]authn.Principal{"secret": {Subject: "user", RepositoryNames: []string{"acme/one"}}}), service, maxBytes)
+	RegisterSearch(mux, authn.NewStatic(map[string]authn.Principal{"secret": {Subject: "user", RepositoryNames: []string{"acme/one"}}}), service, maxBytes, 256<<10)
 	return mux
 }
 
@@ -142,13 +172,14 @@ func assertSafeError(t *testing.T, body, secret, code, message string, retryable
 }
 
 type stubBackend struct {
-	called bool
-	err    error
+	called   bool
+	err      error
+	response api.SearchResponse
 }
 
 func (backend *stubBackend) Search(context.Context, search.BackendRequest) (api.SearchResponse, error) {
 	backend.called = true
-	return api.SearchResponse{}, backend.err
+	return backend.response, backend.err
 }
 
 func (backend *stubBackend) Health(context.Context) error { return errors.New("unused") }

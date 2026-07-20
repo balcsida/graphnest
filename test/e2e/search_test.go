@@ -91,7 +91,7 @@ func TestPinnedFixtureSearch(t *testing.T) {
 	service := search.NewService(backend, authz.NewStatic(registry), search.Limits{MaxResults: 100, MaxResponseBytes: 256 << 10})
 	authenticator := authn.NewStatic(map[string]authn.Principal{token: {Subject: "fixture-user", RepositoryNames: []string{fixtureName}}})
 	mux := http.NewServeMux()
-	httpapi.RegisterSearch(mux, authenticator, service, 64<<10)
+	httpapi.RegisterSearch(mux, authenticator, service, 64<<10, 256<<10)
 	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return mcpserver.New(service)
 	}, nil)))

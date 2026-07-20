@@ -92,6 +92,45 @@ func TestRepositoryListRejectsBudgetSmallerThanEmptyEnvelope(t *testing.T) {
 	}
 }
 
+func TestRepositoryStatusAndReadFileRespectWireResponseBudget(t *testing.T) {
+	service := repositoryHTTPService()
+	service.GitHub = repositoryContentReader{content: githubapp.Content{
+		Type: "file", Encoding: "base64", Content: base64.StdEncoding.EncodeToString([]byte("\x01\n\x01")), SHA: "blob", Size: 3,
+	}}
+
+	tests := []struct {
+		name, method, path, body, contentType string
+	}{
+		{"status", http.MethodGet, "/v1/repositories/101/status", "", ""},
+		{"read file with escaped content", http.MethodPost, "/v1/files/read", `{"repository_id":101,"path":"main.go"}`, "application/json"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			wideMux := http.NewServeMux()
+			RegisterRepositories(wideMux, repositoryAuthenticator(), service, 256, 100, 256<<10)
+			wide := repositoryRequest(t, wideMux, test.method, test.path, test.body, "secret", test.contentType)
+			if wide.Code != http.StatusOK {
+				t.Fatalf("wide status=%d body=%q", wide.Code, wide.Body.String())
+			}
+			payload := append([]byte(nil), wide.Body.Bytes()[:wide.Body.Len()-1]...)
+
+			mux := http.NewServeMux()
+			RegisterRepositories(mux, repositoryAuthenticator(), service, 256, 100, int64(len(payload)+1))
+			response := repositoryRequest(t, mux, test.method, test.path, test.body, "secret", test.contentType)
+			if response.Code != http.StatusOK || response.Body.Len() > len(payload)+1 {
+				t.Fatalf("bounded status=%d bytes=%d limit=%d", response.Code, response.Body.Len(), len(payload)+1)
+			}
+
+			mux = http.NewServeMux()
+			RegisterRepositories(mux, repositoryAuthenticator(), service, 256, 100, int64(len(payload)))
+			response = repositoryRequest(t, mux, test.method, test.path, test.body, "secret", test.contentType)
+			if response.Code != http.StatusInternalServerError || response.Body.Len() != 0 {
+				t.Fatalf("impossible status=%d body=%q", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestRepositoriesRoutesEnforceTransportContract(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterRepositories(mux, repositoryAuthenticator(), repositoryHTTPService(), 64, 100, 256<<10)

@@ -43,7 +43,7 @@ func AuthenticateBearer(authenticator authn.Authenticator, next http.Handler) ht
 	})
 }
 
-func RegisterSearch(mux *http.ServeMux, authenticator authn.Authenticator, service *search.Service, maxRequestBytes int64) {
+func RegisterSearch(mux *http.ServeMux, authenticator authn.Authenticator, service *search.Service, maxRequestBytes, maxResponseBytes int64) {
 	searchHandler := AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Header.Get("Content-Type") != "application/json" {
 			writeError(writer, http.StatusUnsupportedMediaType, "invalid_request", "request is invalid", false)
@@ -66,8 +66,7 @@ func RegisterSearch(mux *http.ServeMux, authenticator authn.Authenticator, servi
 			writeSearchError(writer, err)
 			return
 		}
-		writer.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(writer).Encode(response)
+		writeBoundedJSON(writer, response, maxResponseBytes)
 	}))
 	mux.Handle("/v1/search", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodPost {

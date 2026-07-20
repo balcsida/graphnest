@@ -214,7 +214,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.Authenticator, service *search.Service, repositories *repository.Service, webhookSecret []byte, processor webhook.Processor, checker httpapi.ReadyChecker) http.Handler {
 	mux := http.NewServeMux()
 	httpapi.RegisterSystem(mux, checker, metrics.Handler())
-	httpapi.RegisterSearch(mux, authenticator, service, settings.Limits.MaxRequestBytes)
+	httpapi.RegisterSearch(mux, authenticator, service, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
 	if repositories != nil {
 		httpapi.RegisterRepositories(mux, authenticator, repositories, settings.Limits.MaxRequestBytes, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
 	}

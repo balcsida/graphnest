@@ -48,13 +48,7 @@ func RegisterRepositories(mux *http.ServeMux, authenticator authn.Authenticator,
 			return
 		}
 		response := limitRepositoryList(repositories, maxResults, maxResponseBytes)
-		data, _ := json.Marshal(response)
-		if int64(len(data)+1) > maxResponseBytes {
-			writer.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write(append(data, '\n'))
+		writeBoundedJSON(writer, response, maxResponseBytes)
 	}))))
 	mux.Handle("/v1/repositories/", exactMethod(http.MethodGet, AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		id, ok := repositoryID(request.URL.Path)
@@ -67,7 +61,7 @@ func RegisterRepositories(mux *http.ServeMux, authenticator authn.Authenticator,
 			writeRepositoryError(writer, err)
 			return
 		}
-		writeJSON(writer, response)
+		writeBoundedJSON(writer, response, maxResponseBytes)
 	}))))
 	mux.Handle("/v1/files/read", exactMethod(http.MethodPost, AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Header.Get("Content-Type") != "application/json" {
@@ -102,7 +96,7 @@ func RegisterRepositories(mux *http.ServeMux, authenticator authn.Authenticator,
 			writeRepositoryError(writer, err)
 			return
 		}
-		writeJSON(writer, response)
+		writeBoundedJSON(writer, response, maxResponseBytes)
 	}))))
 }
 
@@ -145,9 +139,14 @@ func repositoryID(requestPath string) (int64, bool) {
 	return id, err == nil && id > 0
 }
 
-func writeJSON(writer http.ResponseWriter, value any) {
+func writeBoundedJSON(writer http.ResponseWriter, value any, maxBytes int64) {
+	data, err := json.Marshal(value)
+	if err != nil || int64(len(data)+1) > maxBytes {
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 	writer.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(writer).Encode(value)
+	_, _ = writer.Write(append(data, '\n'))
 }
 
 func writeRepositoryError(writer http.ResponseWriter, err error) {
