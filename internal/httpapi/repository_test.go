@@ -20,7 +20,7 @@ import (
 func TestRepositoriesRoutes(t *testing.T) {
 	service := repositoryHTTPService()
 	mux := http.NewServeMux()
-	RegisterRepositories(mux, repositoryAuthenticator(), service, 128)
+	RegisterRepositories(mux, repositoryAuthenticator(), service, 128, 100, 256<<10)
 
 	response := repositoryRequest(t, mux, http.MethodGet, "/v1/repositories", "", "secret", "")
 	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "application/json" {
@@ -44,9 +44,47 @@ func TestRepositoriesRoutes(t *testing.T) {
 	}
 }
 
+func TestRepositoryListBoundsWireResponse(t *testing.T) {
+	items := []repository.Repository{
+		{ID: 1, InstallationID: 10, GitHubID: 101, Name: strings.Repeat("a", 80), Branch: "main", DesiredSHA: strings.Repeat("a", 40), IndexedSHA: strings.Repeat("a", 40), Status: "ready", SearchNode: "node-a"},
+		{ID: 2, InstallationID: 10, GitHubID: 102, Name: strings.Repeat("b", 80), Branch: "main", DesiredSHA: strings.Repeat("b", 40), IndexedSHA: strings.Repeat("b", 40), Status: "ready", SearchNode: "node-a"},
+		{ID: 3, InstallationID: 10, GitHubID: 103, Name: strings.Repeat("c", 80), Branch: "main", DesiredSHA: strings.Repeat("c", 40), IndexedSHA: strings.Repeat("c", 40), Status: "ready", SearchNode: "node-a"},
+	}
+	service := repositoryHTTPService()
+	service.Store = &repositoryHTTPStore{repositories: items}
+	first := api.RepositorySummary{ID: 101, GitHubID: 101, Name: items[0].Name, Branch: "main", DesiredSHA: items[0].DesiredSHA, IndexedSHA: items[0].IndexedSHA, Status: "ready", SearchNode: "node-a"}
+	budgetBody, err := json.Marshal(struct {
+		Repositories []api.RepositorySummary `json:"repositories"`
+		Truncated    bool                    `json:"truncated"`
+	}{Repositories: []api.RepositorySummary{first}, Truncated: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	RegisterRepositories(mux, authn.NewStatic(map[string]authn.Principal{"secret": {InstallationID: 10, RepositoryIDs: []int64{101, 102, 103}}}), service, 128, 2, int64(len(budgetBody)+1))
+
+	response := repositoryRequest(t, mux, http.MethodGet, "/v1/repositories", "", "secret", "")
+	var output struct {
+		Repositories []api.RepositorySummary `json:"repositories"`
+		Truncated    bool                    `json:"truncated"`
+	}
+	decodeRepositoryResponse(t, response, &output)
+	if response.Code != http.StatusOK || len(response.Body.Bytes()) > len(budgetBody)+1 || len(output.Repositories) != 1 || !output.Truncated {
+		t.Fatalf("status=%d bytes=%d repositories=%d truncated=%v", response.Code, len(response.Body.Bytes()), len(output.Repositories), output.Truncated)
+	}
+
+	mux = http.NewServeMux()
+	RegisterRepositories(mux, authn.NewStatic(map[string]authn.Principal{"secret": {InstallationID: 10, RepositoryIDs: []int64{101, 102, 103}}}), service, 128, 1, 256<<10)
+	response = repositoryRequest(t, mux, http.MethodGet, "/v1/repositories", "", "secret", "")
+	decodeRepositoryResponse(t, response, &output)
+	if response.Code != http.StatusOK || len(output.Repositories) != 1 || !output.Truncated {
+		t.Fatalf("result cap status=%d repositories=%d truncated=%v", response.Code, len(output.Repositories), output.Truncated)
+	}
+}
+
 func TestRepositoriesRoutesEnforceTransportContract(t *testing.T) {
 	mux := http.NewServeMux()
-	RegisterRepositories(mux, repositoryAuthenticator(), repositoryHTTPService(), 64)
+	RegisterRepositories(mux, repositoryAuthenticator(), repositoryHTTPService(), 64, 100, 256<<10)
 
 	tests := []struct {
 		name, method, path, body, token, contentType string
@@ -79,7 +117,7 @@ func TestRepositoriesRoutesEnforceTransportContract(t *testing.T) {
 
 func TestReadFileRouteUsesIndexedContentAndSafeErrors(t *testing.T) {
 	mux := http.NewServeMux()
-	RegisterRepositories(mux, repositoryAuthenticator(), repositoryHTTPService(), 256)
+	RegisterRepositories(mux, repositoryAuthenticator(), repositoryHTTPService(), 256, 100, 256<<10)
 	response := repositoryRequest(t, mux, http.MethodPost, "/v1/files/read", `{"repository_id":101,"path":"main.go","start_line":2,"end_line":3}`, "secret", "application/json")
 	var file api.ReadFileResponse
 	decodeRepositoryResponse(t, response, &file)
@@ -97,7 +135,7 @@ func TestReadFileRouteUsesIndexedContentAndSafeErrors(t *testing.T) {
 	service := repositoryHTTPService()
 	service.GitHub = repositoryContentReader{err: errors.New(secret)}
 	mux = http.NewServeMux()
-	RegisterRepositories(mux, repositoryAuthenticator(), service, 256)
+	RegisterRepositories(mux, repositoryAuthenticator(), service, 256, 100, 256<<10)
 	response = repositoryRequest(t, mux, http.MethodPost, "/v1/files/read", `{"repository_id":101,"path":"main.go"}`, "secret", "application/json")
 	if response.Code != http.StatusServiceUnavailable || strings.Contains(response.Body.String(), secret) {
 		t.Fatalf("unsafe response = %d %s", response.Code, response.Body.String())
@@ -128,7 +166,7 @@ func TestReadFileRejectsInvalidTransportBeforeService(t *testing.T) {
 			service := repositoryHTTPService()
 			store := service.Store.(*repositoryHTTPStore)
 			mux := http.NewServeMux()
-			RegisterRepositories(mux, repositoryAuthenticator(), service, 256)
+			RegisterRepositories(mux, repositoryAuthenticator(), service, 256, 100, 256<<10)
 
 			response := repositoryRequest(t, mux, http.MethodPost, "/v1/files/read", test.body, "secret", "application/json")
 			if response.Code != http.StatusBadRequest || store.calls != 0 {
@@ -158,12 +196,16 @@ func repositoryAuthenticator() authn.Authenticator {
 }
 
 type repositoryHTTPStore struct {
-	repository repository.Repository
-	calls      int
+	repository   repository.Repository
+	repositories []repository.Repository
+	calls        int
 }
 
 func (store *repositoryHTTPStore) AuthorizedRepositories(_ context.Context, _ int64, ids []int64, _ []string) ([]repository.Repository, error) {
 	store.calls++
+	if store.repositories != nil {
+		return store.repositories, nil
+	}
 	if len(ids) == 1 && ids[0] == store.repository.GitHubID {
 		return []repository.Repository{store.repository}, nil
 	}

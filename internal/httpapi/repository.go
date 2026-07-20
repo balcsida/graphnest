@@ -17,6 +17,7 @@ import (
 
 type repositoryList struct {
 	Repositories []api.RepositorySummary `json:"repositories"`
+	Truncated    bool                    `json:"truncated"`
 }
 
 type readFileRequest struct {
@@ -39,17 +40,14 @@ func (number *optionalPositiveInt) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func RegisterRepositories(mux *http.ServeMux, authenticator authn.Authenticator, service *repository.Service, maxRequestBytes int64) {
+func RegisterRepositories(mux *http.ServeMux, authenticator authn.Authenticator, service *repository.Service, maxRequestBytes int64, maxResults int, maxResponseBytes int64) {
 	mux.Handle("/v1/repositories", exactMethod(http.MethodGet, AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		repositories, err := service.List(request.Context(), PrincipalFromContext(request.Context()))
 		if err != nil {
 			writeRepositoryError(writer, err)
 			return
 		}
-		if repositories == nil {
-			repositories = []api.RepositorySummary{}
-		}
-		writeJSON(writer, repositoryList{Repositories: repositories})
+		writeJSON(writer, limitRepositoryList(repositories, maxResults, maxResponseBytes))
 	}))))
 	mux.Handle("/v1/repositories/", exactMethod(http.MethodGet, AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		id, ok := repositoryID(request.URL.Path)
@@ -99,6 +97,24 @@ func RegisterRepositories(mux *http.ServeMux, authenticator authn.Authenticator,
 		}
 		writeJSON(writer, response)
 	}))))
+}
+
+func limitRepositoryList(repositories []api.RepositorySummary, maxResults int, maxResponseBytes int64) repositoryList {
+	result := repositoryList{Repositories: []api.RepositorySummary{}}
+	for index, repository := range repositories {
+		if len(result.Repositories) == maxResults {
+			result.Truncated = true
+			break
+		}
+		candidate := repositoryList{Repositories: append(result.Repositories, repository), Truncated: index+1 < len(repositories)}
+		data, _ := json.Marshal(candidate)
+		if int64(len(data)+1) > maxResponseBytes {
+			result.Truncated = true
+			break
+		}
+		result = candidate
+	}
+	return result
 }
 
 func exactMethod(method string, next http.Handler) http.Handler {

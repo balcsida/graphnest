@@ -216,7 +216,7 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 	httpapi.RegisterSystem(mux, checker, metrics.Handler())
 	httpapi.RegisterSearch(mux, authenticator, service, settings.Limits.MaxRequestBytes)
 	if repositories != nil {
-		httpapi.RegisterRepositories(mux, authenticator, repositories, settings.Limits.MaxRequestBytes)
+		httpapi.RegisterRepositories(mux, authenticator, repositories, settings.Limits.MaxRequestBytes, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
 	}
 	if processor != nil {
 		httpapi.RegisterGitHubWebhook(mux, webhookSecret, 1<<20, processor)

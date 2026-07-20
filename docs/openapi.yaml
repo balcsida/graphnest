@@ -124,9 +124,10 @@ components:
     RepositoryList:
       type: object
       additionalProperties: false
-      required: [repositories]
+      required: [repositories, truncated]
       properties:
         repositories: {type: array, items: {$ref: '#/components/schemas/RepositorySummary'}}
+        truncated: {type: boolean}
     RepositorySummary:
       type: object
       additionalProperties: false
