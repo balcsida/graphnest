@@ -1,7 +1,7 @@
 # GrepNest Search Workspace Redesign
 
 **Date:** 2026-07-20
-**Status:** Draft for written-spec review
+**Status:** Approved
 
 ## Goal
 
@@ -131,6 +131,28 @@ Existing behavior remains authoritative:
 No new endpoint, client-side authorization rule, router, framework, font,
 icon package, or build pipeline is introduced.
 
+## Browser Performance
+
+The document remains a single embedded response with no external scripts,
+styles, fonts, images, source maps, hydration, or client router. The complete
+HTML, CSS, and JavaScript payload stays below 40 KiB uncompressed.
+
+JavaScript work stays proportional to the server-bounded result set:
+
+- API responses are converted into DOM nodes in detached document fragments
+  and attached in one results replacement;
+- repository and path grouping uses maps in one pass over at most 100 matches;
+- rendering does not alternate geometry reads with DOM writes;
+- code previews use text nodes and never syntax-highlight on the client;
+- stale requests are aborted before new results render; and
+- no timer, polling loop, scroll handler, resize handler, or animation runs
+  during steady state.
+
+Browser verification records the shell resource count, document size, rendered
+node count, and page overflow. Performance timing is diagnostic rather than a
+flaky pass/fail threshold, while deterministic budgets remain enforced in
+tests.
+
 ## Accessibility
 
 All controls retain programmatic labels, 44-pixel touch targets where users
@@ -151,6 +173,9 @@ possible. Browser verification must prove:
 - search controls stay inside the viewport without overlap;
 - the results column starts immediately below the shell;
 - long code scrolls inside its code viewport without widening the page; and
+- the initial shell loads no third-party resources and stays below 40 KiB;
+- a maximum-size 100-match response stays within the documented DOM-node
+  budget; and
 - desktop and mobile screenshots are captured only after stable rendering.
 
 Focused Go tests continue to prove security headers, exact routing, credential
