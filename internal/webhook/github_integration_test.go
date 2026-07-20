@@ -14,10 +14,12 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/grepnest/grepnest/internal/githubapp"
+	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -198,6 +200,41 @@ func TestGitHubProcessorDurability(t *testing.T) {
 			t.Fatalf("reconcile requests=%d", requests)
 		}
 	})
+}
+
+func TestGitHubProcessorRecordsTerminalMetricsOnce(t *testing.T) {
+	store, _ := webhookStore(t)
+	seedWebhookRepository(t, store, 101)
+	metrics := observability.New()
+	processor := NewGitHubProcessor(store, nil, metrics)
+	accepted := Delivery{ID: "accepted", Event: "push", Body: pushBody(10, 101, "refs/heads/main", webhookSHAA)}
+	ignored := Delivery{ID: "ignored", Event: "private-event", Body: []byte(`{"secret":"not-a-label"}`)}
+	for _, delivery := range []Delivery{accepted, ignored, ignored} {
+		if _, err := processor.Process(t.Context(), delivery); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	body := scrapeWebhookMetrics(t, metrics)
+	for _, want := range []string{
+		`grepnest_webhook_deliveries_total{event="push",result="accepted"} 1`,
+		`grepnest_webhook_deliveries_total{event="unknown",result="ignored"} 1`,
+		`grepnest_webhook_deliveries_total{event="unknown",result="duplicate"} 1`,
+	} {
+		if strings.Count(body, want) != 1 {
+			t.Errorf("metric %q not recorded exactly once:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "private-event") || strings.Contains(body, "not-a-label") {
+		t.Fatalf("metrics expose unknown event data:\n%s", body)
+	}
+}
+
+func scrapeWebhookMetrics(t *testing.T, metrics *observability.Metrics) string {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	return recorder.Body.String()
 }
 
 func pushBody(installationID, repositoryID int64, ref, sha string) []byte {

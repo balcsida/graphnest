@@ -211,6 +211,58 @@ func TestWorkerRecordsQueueAndPhaseMetrics(t *testing.T) {
 	}
 }
 
+func TestWorkerRecordsEachPhaseTerminalResultOnce(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		configure func(*fakeGit, *fakePublisher)
+		want      []string
+		absent    []string
+		failed    string
+		retry     bool
+		completed bool
+	}{
+		{name: "success", want: []string{`phase="fetch",result="success"`, `phase="index",result="success"`, `phase="visibility",result="success"`}, completed: true},
+		{name: "fetch error", configure: func(git *fakeGit, _ *fakePublisher) { git.prepareErr = ErrTargetMissing }, want: []string{`phase="fetch",result="error"`}, absent: []string{`phase="index"`, `phase="visibility"`}, failed: "target_missing"},
+		{name: "index retry", configure: func(_ *fakeGit, publisher *fakePublisher) { publisher.indexErr = errors.New("index failed") }, want: []string{`phase="fetch",result="success"`, `phase="index",result="error"`}, absent: []string{`phase="visibility"`}, failed: "index_failed", retry: true},
+		{name: "visibility retry", configure: func(_ *fakeGit, publisher *fakePublisher) { publisher.waitErr = errors.New("visibility failed") }, want: []string{`phase="fetch",result="success"`, `phase="index",result="success"`, `phase="visibility",result="error"`}, failed: "visibility_failed", retry: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			worker, queue, _, git, publisher := workerFixture()
+			metrics := observability.New()
+			worker.Metrics = metrics
+			if test.configure != nil {
+				test.configure(git, publisher)
+			}
+			if worked, err := worker.RunOne(t.Context()); err != nil || !worked {
+				t.Fatalf("worked = %v, error = %v", worked, err)
+			}
+
+			body := scrapeWorkerMetrics(t, metrics)
+			for _, labels := range test.want {
+				want := "grepnest_index_phase_total{" + labels + "} 1"
+				if strings.Count(body, want) != 1 {
+					t.Errorf("metric %q not recorded exactly once:\n%s", want, body)
+				}
+			}
+			for _, labels := range test.absent {
+				if strings.Contains(body, labels) {
+					t.Errorf("unexpected phase %q:\n%s", labels, body)
+				}
+			}
+			if queue.failedCode != test.failed || queue.failedRetry != test.retry || queue.completed != test.completed {
+				t.Errorf("failed=%q retry=%v completed=%v", queue.failedCode, queue.failedRetry, queue.completed)
+			}
+		})
+	}
+}
+
+func scrapeWorkerMetrics(t *testing.T, metrics *observability.Metrics) string {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	return recorder.Body.String()
+}
+
 func TestWorkerRunOneChecksSpaceBeforeGit(t *testing.T) {
 	worker, queue, _, git, publisher := workerFixture()
 	worker.MinFreeBytes = math.MaxUint64
@@ -264,6 +316,8 @@ func TestWorkerRunOneClassifiesPermanentAndRetryableFailures(t *testing.T) {
 
 func TestWorkerLeaseLossCancelsIndexAndSkipsTransition(t *testing.T) {
 	worker, queue, _, git, publisher := workerFixture()
+	metrics := observability.New()
+	worker.Metrics = metrics
 	queue.renewErr = postgres.ErrLeaseLost
 	queue.renewed = make(chan struct{}, 1)
 	worker.RenewEvery = time.Millisecond
@@ -280,6 +334,18 @@ func TestWorkerLeaseLossCancelsIndexAndSkipsTransition(t *testing.T) {
 	}
 	if queue.failedCode != "" || queue.completed || !git.cleaned {
 		t.Fatalf("failure=%q completed=%v cleaned=%v", queue.failedCode, queue.completed, git.cleaned)
+	}
+	body := scrapeWorkerMetrics(t, metrics)
+	for _, want := range []string{
+		`grepnest_index_phase_total{phase="fetch",result="success"} 1`,
+		`grepnest_index_phase_total{phase="index",result="error"} 1`,
+	} {
+		if strings.Count(body, want) != 1 {
+			t.Errorf("metric %q not recorded exactly once:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, `phase="visibility"`) || strings.Contains(body, `phase="index",result="success"`) {
+		t.Fatalf("lease loss double-counted phases:\n%s", body)
 	}
 }
 

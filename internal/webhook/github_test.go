@@ -21,7 +21,7 @@ func TestGitHubProcessorRecordsBoundedDeliveryMetrics(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	body := recorder.Body.String()
-	if want := `grepnest_webhook_deliveries_total{event="push",result="error"} 1`; !strings.Contains(body, want) {
+	if want := `grepnest_webhook_deliveries_total{event="push",result="error"} 1`; strings.Count(body, want) != 1 {
 		t.Fatalf("metrics missing %q:\n%s", want, body)
 	}
 	if strings.Contains(body, "delivery-secret") {

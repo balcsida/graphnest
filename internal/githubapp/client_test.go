@@ -39,6 +39,100 @@ func TestClientRecordsBoundedRequestMetrics(t *testing.T) {
 	}
 }
 
+func TestClientRecordsEveryFixedOperationResultOnce(t *testing.T) {
+	for _, operation := range []string{"installation_token", "installations", "repositories", "default_branch", "contents"} {
+		for _, result := range []string{"success", "error"} {
+			t.Run(operation+" "+result, func(t *testing.T) {
+				now := time.Date(2026, time.July, 18, 12, 0, 0, 0, time.UTC)
+				server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requestOperation := githubRequestOperation(r.URL.EscapedPath())
+					if requestOperation == operation && result == "error" {
+						w.WriteHeader(http.StatusInternalServerError)
+						return
+					}
+					switch requestOperation {
+					case "installation_token":
+						fmt.Fprintf(w, `{"token":"opaque","expires_at":%q}`, now.Add(10*time.Minute).Format(time.RFC3339))
+					case "installations":
+						fmt.Fprint(w, `[]`)
+					case "repositories":
+						fmt.Fprint(w, `{"repositories":[]}`)
+					case "default_branch":
+						fmt.Fprint(w, `{"commit":{"sha":"abc"}}`)
+					case "contents":
+						fmt.Fprint(w, `{"type":"file","encoding":"base64","content":"YQ==","sha":"blob","size":1}`)
+					default:
+						t.Fatalf("unexpected path %q", r.URL.EscapedPath())
+					}
+				}))
+				defer server.Close()
+				metrics := observability.New()
+				client := testClient(t, server, &now, 4096, metrics)
+				err := callGitHubOperation(t.Context(), client, operation)
+				if (err == nil) != (result == "success") {
+					t.Fatalf("error = %v", err)
+				}
+
+				body := scrapeClientMetrics(t, metrics)
+				want := fmt.Sprintf(`grepnest_github_requests_total{operation=%q,result=%q} 1`, operation, result)
+				if strings.Count(body, want) != 1 {
+					t.Fatalf("metric %q not recorded exactly once:\n%s", want, body)
+				}
+				other := map[string]string{"success": "error", "error": "success"}[result]
+				if strings.Contains(body, fmt.Sprintf(`operation=%q,result=%q`, operation, other)) {
+					t.Fatalf("operation recorded with both results:\n%s", body)
+				}
+			})
+		}
+	}
+}
+
+func githubRequestOperation(path string) string {
+	switch {
+	case strings.HasSuffix(path, "/access_tokens"):
+		return "installation_token"
+	case strings.HasSuffix(path, "/app/installations"):
+		return "installations"
+	case strings.HasSuffix(path, "/installation/repositories"):
+		return "repositories"
+	case strings.Contains(path, "/branches/"):
+		return "default_branch"
+	case strings.Contains(path, "/contents/"):
+		return "contents"
+	default:
+		return ""
+	}
+}
+
+func callGitHubOperation(ctx context.Context, client *Client, operation string) error {
+	switch operation {
+	case "installation_token":
+		_, err := client.InstallationToken(ctx, 9, nil)
+		return err
+	case "installations":
+		_, err := client.Installations(ctx)
+		return err
+	case "repositories":
+		_, err := client.InstallationRepositories(ctx, 9)
+		return err
+	case "default_branch":
+		_, err := client.DefaultBranchSHA(ctx, 9, "owner", "repo", "main")
+		return err
+	case "contents":
+		_, err := client.ReadContents(ctx, 9, "owner", "repo", "README.md", "abc", 1024)
+		return err
+	default:
+		return fmt.Errorf("unknown operation %q", operation)
+	}
+}
+
+func scrapeClientMetrics(t *testing.T, metrics *observability.Metrics) string {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	return recorder.Body.String()
+}
+
 func TestInstallationTokenCachesSortedRestrictionsAndRefreshes(t *testing.T) {
 	now := time.Date(2026, time.July, 18, 12, 0, 0, 0, time.UTC)
 	var mu sync.Mutex
