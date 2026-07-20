@@ -17,6 +17,12 @@ MCP behind bearer authentication. `grepnest-mcp` is a stdio proxy: it connects
 to `<GREPNEST_SERVER_URL>/mcp` with `GREPNEST_TOKEN`, lists the hosted tools,
 and forwards calls. It does not call Zoekt.
 
+The embedded Web UI at `/` and `/index.html` is a thin, same-origin client of
+the repository service at `GET /v1/repositories` and the search service at
+`POST /v1/search`. It makes no authorization decisions: repository names are
+only usability selectors, and the server authenticates every API request and
+enforces the principal's repository scope.
+
 Beginning in Milestone 2, PostgreSQL supplies repository metadata and the
 durable index queue. `grepnest-server` verifies GitHub webhooks and reconciles
 GitHub App installations. `grepnest-indexer` leases one job at a time, fetches
