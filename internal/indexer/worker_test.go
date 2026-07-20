@@ -33,6 +33,17 @@ type fakeQueue struct {
 	active      map[int64]struct{}
 }
 
+type reapingQueue struct {
+	*fakeQueue
+	reaped  int
+	reapErr error
+}
+
+func (queue *reapingQueue) ReapExpired(context.Context, int) (int64, error) {
+	queue.reaped++
+	return 0, queue.reapErr
+}
+
 func (queue *fakeQueue) record(event string) {
 	queue.mu.Lock()
 	queue.events = append(queue.events, event)
@@ -185,6 +196,30 @@ func TestWorkerRunOneCompletesOnlyAfterExactVisibility(t *testing.T) {
 	}
 	if !queue.completed || !git.cleaned {
 		t.Fatalf("completed=%v cleaned=%v", queue.completed, git.cleaned)
+	}
+}
+
+func TestWorkerReapsExpiredLeasesBeforeClaimAtBoundedInterval(t *testing.T) {
+	worker, queue, _, _, _ := workerFixture()
+	reaper := &reapingQueue{fakeQueue: queue}
+	worker.Queue = reaper
+	worker.ReapEvery = time.Hour
+	queue.claimErr = postgres.ErrNoJob
+
+	for range 2 {
+		if worked, err := worker.RunOne(t.Context()); err != nil || worked {
+			t.Fatalf("worked=%v err=%v", worked, err)
+		}
+	}
+	if reaper.reaped != 1 {
+		t.Fatalf("reaps=%d", reaper.reaped)
+	}
+
+	want := errors.New("reaper failed")
+	reaper.reapErr = want
+	worker.lastReap = time.Time{}
+	if worked, err := worker.RunOne(t.Context()); worked || !errors.Is(err, want) {
+		t.Fatalf("worked=%v err=%v", worked, err)
 	}
 }
 

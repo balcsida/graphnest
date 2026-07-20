@@ -53,8 +53,10 @@ type Worker struct {
 	Zoekt          IndexPublisher
 	MinFreeBytes   uint64
 	RenewEvery     time.Duration
+	ReapEvery      time.Duration
 	CleanupTimeout time.Duration
 	Metrics        *observability.Metrics
+	lastReap       time.Time
 }
 
 func (worker *Worker) Run(ctx context.Context) error {
@@ -88,6 +90,9 @@ func (worker *Worker) Run(ctx context.Context) error {
 
 func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error) {
 	if err := worker.validate(); err != nil {
+		return false, err
+	}
+	if err := worker.reapExpired(ctx); err != nil {
 		return false, err
 	}
 	worker.refreshQueueDepths(ctx)
@@ -173,6 +178,27 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 		return true, err
 	}
 	return true, nil
+}
+
+func (worker *Worker) reapExpired(ctx context.Context) error {
+	reaper, ok := worker.Queue.(interface {
+		ReapExpired(context.Context, int) (int64, error)
+	})
+	if !ok {
+		return nil
+	}
+	interval := worker.ReapEvery
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	if !worker.lastReap.IsZero() && time.Since(worker.lastReap) < interval {
+		return nil
+	}
+	if _, err := reaper.ReapExpired(ctx, 1000); err != nil {
+		return err
+	}
+	worker.lastReap = time.Now()
+	return nil
 }
 
 func (worker *Worker) refreshQueueDepths(ctx context.Context) {

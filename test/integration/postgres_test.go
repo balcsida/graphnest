@@ -1,4 +1,4 @@
-//go:build integration
+//go:build integration && unix
 
 package integration
 
@@ -17,7 +17,9 @@ import (
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/authz"
 	"github.com/grepnest/grepnest/internal/githubapp"
+	"github.com/grepnest/grepnest/internal/indexer"
 	"github.com/grepnest/grepnest/internal/postgres"
+	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/internal/webhook"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -34,6 +36,7 @@ func TestPostgresConcurrency(t *testing.T) {
 	t.Run("workers claim unique jobs", testConcurrentClaims)
 	t.Run("pushes coalesce behind running work", testRunningCoalescing)
 	t.Run("lost owners cannot mutate leases", testLeaseOwnerLoss)
+	t.Run("worker recovers lease expiring after restart", testLeaseRecoveryAfterRestart)
 	t.Run("reapers partition expired work", testConcurrentReapers)
 	t.Run("completion wins repository lock", func(t *testing.T) { testCompletionPushOrder(t, true) })
 	t.Run("push wins repository lock", func(t *testing.T) { testCompletionPushOrder(t, false) })
@@ -42,6 +45,92 @@ func TestPostgresConcurrency(t *testing.T) {
 	t.Run("re-enabled unchanged desired remains claimable", testReenabledRepository)
 	t.Run("retention is bounded", testRetention)
 }
+
+func testLeaseRecoveryAfterRestart(t *testing.T) {
+	h := newPostgresHarness(t)
+	repositoryID := h.seedRepository(t, 10, 101)
+	if err := h.store.EnqueueIndex(t.Context(), postgres.IndexRequest{RepositoryID: repositoryID, TargetSHA: postgresSHAA}); err != nil {
+		t.Fatal(err)
+	}
+	job, err := h.store.ClaimIndex(t.Context(), "old-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.pool.Exec(t.Context(), "update index_jobs set lease_expires_at=now()+interval '100 milliseconds' where id=$1", job.ID); err != nil {
+		t.Fatal(err)
+	}
+	queue := &controlledQueue{Store: h.store, blockClaim: true}
+	worker := &indexer.Worker{
+		ID: "new-owner", Queue: queue, Store: h.store, Tokens: integrationTokens{}, Git: integrationGit{}, Zoekt: integrationPublisher{},
+		ReapEvery: 10 * time.Millisecond,
+	}
+	if worked, err := worker.RunOne(t.Context()); err != nil || worked {
+		t.Fatalf("startup claim worked=%v err=%v", worked, err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		var expired bool
+		if err := h.pool.QueryRow(t.Context(), "select lease_expires_at<=now() from index_jobs where id=$1", job.ID).Scan(&expired); err != nil {
+			t.Fatal(err)
+		}
+		if expired {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("lease did not expire")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if worked, err := worker.RunOne(t.Context()); err != nil || worked {
+		t.Fatalf("reap claim worked=%v err=%v", worked, err)
+	}
+	var state, code string
+	if err := h.pool.QueryRow(t.Context(), "select state,error_code from index_jobs where id=$1", job.ID).Scan(&state, &code); err != nil || state != "queued" || code != "lease_expired" {
+		t.Fatalf("state=%q code=%q err=%v", state, code, err)
+	}
+	if _, err := h.pool.Exec(t.Context(), "update index_jobs set run_after=now() where id=$1", job.ID); err != nil {
+		t.Fatal(err)
+	}
+	queue.blockClaim = false
+	if worked, err := worker.RunOne(t.Context()); err != nil || !worked {
+		t.Fatalf("recovery worked=%v err=%v", worked, err)
+	}
+	if err := h.pool.QueryRow(t.Context(), "select state,attempt from index_jobs where id=$1", job.ID).Scan(&state, &job.Attempt); err != nil || state != "succeeded" || job.Attempt != 2 {
+		t.Fatalf("state=%q attempt=%d err=%v", state, job.Attempt, err)
+	}
+}
+
+type controlledQueue struct {
+	*postgres.Store
+	blockClaim bool
+}
+
+func (queue *controlledQueue) ClaimIndex(ctx context.Context, owner string) (postgres.IndexJob, error) {
+	if queue.blockClaim {
+		return postgres.IndexJob{}, postgres.ErrNoJob
+	}
+	return queue.Store.ClaimIndex(ctx, owner)
+}
+
+type integrationTokens struct{}
+
+func (integrationTokens) InstallationToken(context.Context, int64, []int64) (githubapp.Token, error) {
+	return githubapp.Token{Value: "token"}, nil
+}
+
+type integrationGit struct{}
+
+func (integrationGit) Prepare(context.Context, repository.Repository, postgres.IndexJob, string) (string, string, error) {
+	return "/mirror", "/worktree", nil
+}
+func (integrationGit) Cleanup(context.Context, int64, int64) error     { return nil }
+func (integrationGit) Prune(context.Context, map[int64]struct{}) error { return nil }
+
+type integrationPublisher struct{}
+
+func (integrationPublisher) Index(context.Context, repository.Repository, string) error { return nil }
+func (integrationPublisher) WaitVisible(context.Context, uint32, string, string) error  { return nil }
 
 func testDeliveryDedupe(t *testing.T) {
 	h := newPostgresHarness(t)
