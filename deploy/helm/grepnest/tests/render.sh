@@ -13,13 +13,13 @@ require() {
     echo "not a readable regular file: $2" >&2
     return 2
   }
-  if rg -q -- "$1" "$2"; then
+  if grep -E -q -e "$1" "$2"; then
     return 0
   else
     status=$?
   fi
   [ "$status" -eq 1 ] || {
-    echo "rg failed with status $status for $2" >&2
+    echo "grep failed with status $status for $2" >&2
     return "$status"
   }
   echo "missing $1 in $2" >&2
@@ -31,14 +31,14 @@ reject() {
     echo "not a readable regular file: $2" >&2
     return 2
   }
-  if rg -n -- "$1" "$2"; then
+  if grep -E -n -e "$1" "$2"; then
     echo "forbidden $1 in $2" >&2
     return 1
   else
     status=$?
   fi
   [ "$status" -eq 1 ] || {
-    echo "rg failed with status $status for $2" >&2
+    echo "grep failed with status $status for $2" >&2
     return "$status"
   }
 }
@@ -63,10 +63,10 @@ expect_failure "$tmp/reject-missing.err" reject anything "$tmp/missing"
 require 'not a readable regular file:' "$tmp/require-missing.err"
 require 'not a readable regular file:' "$tmp/reject-missing.err"
 : >"$tmp/probe"
-expect_failure "$tmp/require-rg.err" require '[' "$tmp/probe"
-expect_failure "$tmp/reject-rg.err" reject '[' "$tmp/probe"
-require 'rg failed with status 2' "$tmp/require-rg.err"
-require 'rg failed with status 2' "$tmp/reject-rg.err"
+expect_failure "$tmp/require-grep.err" require '[' "$tmp/probe"
+expect_failure "$tmp/reject-grep.err" reject '[' "$tmp/probe"
+require 'grep failed with status 2' "$tmp/require-grep.err"
+require 'grep failed with status 2' "$tmp/reject-grep.err"
 
 helm lint "$chart" -f "$minimal"
 helm template pilot "$chart" -n grepnest -f "$minimal" >"$tmp/minimal.yaml"
@@ -88,10 +88,10 @@ awk '
 ' "$tmp/long-release.yaml"
 for suffix in server node zoekt indexer migrate deny-ingress allow-server-ingress \
   allow-zoekt-ingress allow-indexer-metrics-ingress; do
-  [ "$(rg -c "^  name: .*$suffix\$" "$tmp/long-release.yaml")" -ge 1 ] || exit 1
+  [ "$(grep -E -c -e "^  name: .*$suffix\$" "$tmp/long-release.yaml")" -ge 1 ] || exit 1
 done
 [ "$(sed -n 's/^  name: //p' "$tmp/long-release.yaml" | sort -u | \
-  rg -c -- '-(server|node|zoekt|indexer|migrate|deny-ingress|allow-server-ingress|allow-zoekt-ingress|allow-indexer-metrics-ingress)$')" \
+  grep -E -c -e '-(server|node|zoekt|indexer|migrate|deny-ingress|allow-server-ingress|allow-zoekt-ingress|allow-indexer-metrics-ingress)$')" \
   -eq 9 ] || exit 1
 
 helm template paths "$chart" -n grepnest -f "$minimal" \
@@ -119,7 +119,7 @@ require '^            - "/srv/grepnest-data/zoekt/index"$' \
   "$tmp/node-contract-zoekt.yaml"
 require '^- -listen$|^            - -listen$' "$tmp/node-contract-zoekt.yaml"
 require '^            - ":16070"$' "$tmp/node-contract-zoekt.yaml"
-[ "$(rg -c 'tcpSocket: \{port: zoekt\}' "$tmp/node-contract-zoekt.yaml")" -eq 2 ] || exit 1
+[ "$(grep -E -c -e 'tcpSocket: \{port: zoekt\}' "$tmp/node-contract-zoekt.yaml")" -eq 2 ] || exit 1
 
 expect_failure "$tmp/disconnected-indexes.err" helm template bad "$chart" -f "$minimal" \
   --set-string=node.paths.data=/srv/grepnest-data \
@@ -176,7 +176,7 @@ for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
   reject 'runAsNonRoot: false' "$manifest"
 
   images_file=$tmp/$(basename "$manifest").images
-  if rg '^ *image:' "$manifest" >"$images_file"; then
+  if grep -E -e '^ *image:' "$manifest" >"$images_file"; then
     :
   else
     status=$?
@@ -184,7 +184,7 @@ for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
     exit "$status"
   fi
   invalid_images=$tmp/$(basename "$manifest").invalid-images
-  if rg -v '@sha256:[a-f0-9]{64}"?$' "$images_file" >"$invalid_images"; then
+  if grep -E -v -e '@sha256:[a-f0-9]{64}"?$' "$images_file" >"$invalid_images"; then
     echo "non-digest image in $manifest" >&2
     exit 1
   else
@@ -192,16 +192,16 @@ for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
   fi
   [ "$status" -eq 1 ] || exit "$status"
 
-  images=$(rg -c '^ *image:' "$images_file")
+  images=$(grep -E -c -e '^ *image:' "$images_file")
   for pattern in 'allowPrivilegeEscalation: false' 'capabilities: \{drop: \[ALL\]\}' \
     'readOnlyRootFilesystem: true'; do
-    [ "$(rg -c "$pattern" "$manifest")" -eq "$images" ] || exit 1
+    [ "$(grep -E -c -e "$pattern" "$manifest")" -eq "$images" ] || exit 1
   done
-  [ "$(rg -c 'runAsNonRoot: true' "$manifest")" -eq "$((images + 2))" ] || exit 1
-  [ "$(rg -c 'seccompProfile: \{type: RuntimeDefault\}' "$manifest")" -ge "$images" ] || exit 1
-  [ "$(rg -c '^kind: StatefulSet$' "$manifest")" -eq 1 ] || exit 1
-  [ "$(rg -c '^  replicas: 1$' "$manifest")" -eq 1 ] || exit 1
-  [ "$(rg -c '^        - name: (zoekt-webserver|grepnest-indexer)$' "$manifest")" -eq 2 ] || exit 1
+  [ "$(grep -E -c -e 'runAsNonRoot: true' "$manifest")" -eq "$((images + 2))" ] || exit 1
+  [ "$(grep -E -c -e 'seccompProfile: \{type: RuntimeDefault\}' "$manifest")" -ge "$images" ] || exit 1
+  [ "$(grep -E -c -e '^kind: StatefulSet$' "$manifest")" -eq 1 ] || exit 1
+  [ "$(grep -E -c -e '^  replicas: 1$' "$manifest")" -eq 1 ] || exit 1
+  [ "$(grep -E -c -e '^        - name: (zoekt-webserver|grepnest-indexer)$' "$manifest")" -eq 2 ] || exit 1
 done
 
 for pattern in '^kind: Ingress$' '^kind: ServiceMonitor$' \
@@ -218,17 +218,17 @@ for pattern in '^kind: Ingress$' '^kind: ServiceMonitor$' \
   'cpu: 250m' 'memory: 256Mi' 'cpu: "8"' 'memory: 24Gi'; do
   require "$pattern" "$tmp/optional.yaml"
 done
-[ "$(rg -c '^kind: ServiceMonitor$' "$tmp/optional.yaml")" -eq 2 ] || exit 1
+[ "$(grep -E -c -e '^kind: ServiceMonitor$' "$tmp/optional.yaml")" -eq 2 ] || exit 1
 require 'app.kubernetes.io/component: indexer' "$tmp/optional.yaml"
 require 'port: metrics' "$tmp/optional.yaml"
 
 sed -n '/^kind: StatefulSet$/,/^# Source: grepnest\/templates\/migration-job.yaml$/p' \
   "$tmp/minimal.yaml" >"$tmp/node.yaml"
 require '^kind: StatefulSet$' "$tmp/node.yaml"
-[ "$(rg -c '^  volumeClaimTemplates:$' "$tmp/node.yaml")" -eq 1 ] || exit 1
+[ "$(grep -E -c -e '^  volumeClaimTemplates:$' "$tmp/node.yaml")" -eq 1 ] || exit 1
 sed -n '/^      containers:$/,/^      volumes:$/p' "$tmp/node.yaml" >"$tmp/node-containers.yaml"
 require '^      containers:$' "$tmp/node-containers.yaml"
-[ "$(rg -c '^        - name:' "$tmp/node-containers.yaml")" -eq 2 ] || exit 1
+[ "$(grep -E -c -e '^        - name:' "$tmp/node-containers.yaml")" -eq 2 ] || exit 1
 sed -n '/^        - name: zoekt-webserver$/,/^        - name: grepnest-indexer$/p' \
   "$tmp/node.yaml" >"$tmp/zoekt.yaml"
 require '^        - name: zoekt-webserver$' "$tmp/zoekt.yaml"
@@ -270,7 +270,7 @@ require 'policyTypes: \[Ingress\]' "$tmp/allow-zoekt-ingress-spec.yaml"
 require '^        - namespaceSelector:$' "$tmp/allow-zoekt-ingress-spec.yaml"
 require '^          podSelector:$' "$tmp/allow-zoekt-ingress-spec.yaml"
 require 'app.kubernetes.io/component: server' "$tmp/allow-zoekt-ingress-spec.yaml"
-[ "$(rg -c 'app.kubernetes.io/component: node' "$tmp/allow-zoekt-ingress-spec.yaml")" -eq 2 ] || exit 1
+[ "$(grep -E -c -e 'app.kubernetes.io/component: node' "$tmp/allow-zoekt-ingress-spec.yaml")" -eq 2 ] || exit 1
 require 'protocol: TCP, port: 6070' "$tmp/allow-zoekt-ingress-spec.yaml"
 
 require 'app.kubernetes.io/component: node' "$tmp/allow-indexer-metrics-ingress-spec.yaml"
