@@ -379,6 +379,24 @@ func TestWorkerCleanupRunsAfterCancellationWithIndependentDeadline(t *testing.T)
 	}
 }
 
+func TestWorkerSuccessfulCleanupPreservesCancellationIdentity(t *testing.T) {
+	worker, _, _, git, publisher := workerFixture()
+	publisher.blockIndex = true
+	publisher.started = make(chan struct{})
+	publisher.cancelled = make(chan struct{})
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { _, err := worker.RunOne(ctx); done <- err }()
+	<-publisher.started
+	cancel()
+	if err := <-done; err != context.Canceled {
+		t.Fatalf("error identity = %T %v", err, err)
+	}
+	if !git.cleaned {
+		t.Fatal("worktree was not cleaned")
+	}
+}
+
 func TestWorkerCleanupFailureIsJoinedWithPrimaryError(t *testing.T) {
 	worker, queue, _, git, publisher := workerFixture()
 	cleanupErr := errors.New("cleanup failed")

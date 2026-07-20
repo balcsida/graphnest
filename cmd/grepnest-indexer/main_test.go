@@ -8,6 +8,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/grepnest/grepnest/internal/githubapp"
+	"github.com/grepnest/grepnest/internal/indexer"
+	"github.com/grepnest/grepnest/internal/postgres"
+	"github.com/grepnest/grepnest/internal/repository"
 )
 
 func TestAskPass(t *testing.T) {
@@ -134,3 +139,71 @@ func TestRuntimeSurfacesCleanupFailureJoinedWithCancellation(t *testing.T) {
 		t.Fatalf("error=%v", err)
 	}
 }
+
+func TestRuntimeTreatsRealWorkerCancellationAsClean(t *testing.T) {
+	job := postgres.IndexJob{ID: 11, RepositoryID: 4, TargetSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+	queue := &commandQueue{job: job}
+	store := commandStore{repo: repository.Repository{ID: 4, InstallationID: 5, GitHubID: 6, ZoektID: 7, Name: "acme/repo", Branch: "main", WebURL: "https://ghe.example/acme/repo"}, desired: job.TargetSHA}
+	publisher := &commandPublisher{started: make(chan struct{})}
+	worker := &indexer.Worker{ID: "worker", Queue: queue, Store: store, Tokens: commandTokens{}, Git: commandGit{}, Zoekt: publisher}
+	runtime := indexRuntime{
+		ping: func(context.Context) error { return nil }, migrate: func(context.Context) error { return nil },
+		upsertNode: func(context.Context) error { return nil }, reapExpired: func(context.Context) error { return nil },
+		pruneHistory: func(context.Context) error { return nil }, runWorker: worker.Run,
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- runtime.run(ctx) }()
+	<-publisher.started
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("runtime error = %T %v", err, err)
+	}
+}
+
+type commandQueue struct{ job postgres.IndexJob }
+
+func (queue *commandQueue) ClaimIndex(context.Context, string) (postgres.IndexJob, error) {
+	return queue.job, nil
+}
+func (*commandQueue) RenewLease(context.Context, int64, string) error              { return nil }
+func (*commandQueue) CompleteIndex(context.Context, int64, string) error           { return nil }
+func (*commandQueue) FailIndex(context.Context, int64, string, string, bool) error { return nil }
+func (*commandQueue) ActiveJobIDs(context.Context) (map[int64]struct{}, error) {
+	return map[int64]struct{}{}, nil
+}
+
+type commandStore struct {
+	repo    repository.Repository
+	desired string
+}
+
+func (store commandStore) RepositoryForIndex(context.Context, int64) (repository.Repository, error) {
+	return store.repo, nil
+}
+func (store commandStore) DesiredSHA(context.Context, int64) (string, error) {
+	return store.desired, nil
+}
+
+type commandTokens struct{}
+
+func (commandTokens) InstallationToken(context.Context, int64, []int64) (githubapp.Token, error) {
+	return githubapp.Token{Value: "token"}, nil
+}
+
+type commandGit struct{}
+
+func (commandGit) Prepare(context.Context, repository.Repository, postgres.IndexJob, string) (string, string, error) {
+	return "/mirror", "/worktree", nil
+}
+func (commandGit) Cleanup(context.Context, int64, int64) error     { return nil }
+func (commandGit) Prune(context.Context, map[int64]struct{}) error { return nil }
+
+type commandPublisher struct{ started chan struct{} }
+
+func (publisher *commandPublisher) Index(ctx context.Context, _ repository.Repository, _ string) error {
+	close(publisher.started)
+	<-ctx.Done()
+	return ctx.Err()
+}
+func (*commandPublisher) WaitVisible(context.Context, uint32, string, string) error { return nil }

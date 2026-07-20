@@ -127,7 +127,9 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 	defer func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), worker.cleanupTimeout())
 		defer cleanupCancel()
-		resultErr = errors.Join(resultErr, worker.Git.Cleanup(cleanupCtx, repo.ID, job.ID))
+		if cleanupErr := worker.Git.Cleanup(cleanupCtx, repo.ID, job.ID); cleanupErr != nil {
+			resultErr = errors.Join(resultErr, cleanupErr)
+		}
 	}()
 	token, err := worker.Tokens.InstallationToken(jobCtx, repo.InstallationID, []int64{repo.GitHubID})
 	if err != nil {
