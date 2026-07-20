@@ -116,6 +116,64 @@ func TestRuntimeWaitsForCancelledWorkerBeforeClosing(t *testing.T) {
 	}
 }
 
+func TestRuntimeStopsMetricsBeforeClosing(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	workerStarted := make(chan struct{})
+	metricsStarted := make(chan struct{})
+	metricsStopped := make(chan struct{})
+	closed := false
+	runtime := indexRuntime{
+		ping: func(context.Context) error { return nil }, migrate: func(context.Context) error { return nil },
+		upsertNode: func(context.Context) error { return nil }, reapExpired: func(context.Context) error { return nil },
+		pruneHistory: func(context.Context) error { return nil },
+		runWorker:    func(ctx context.Context) error { close(workerStarted); <-ctx.Done(); return ctx.Err() },
+		runMetrics: func(ctx context.Context) error {
+			close(metricsStarted)
+			<-ctx.Done()
+			close(metricsStopped)
+			return nil
+		},
+		close: func() {
+			select {
+			case <-metricsStopped:
+			default:
+				t.Error("resources closed before metrics stopped")
+			}
+			closed = true
+		},
+	}
+	done := make(chan error, 1)
+	go func() { done <- runtime.run(ctx) }()
+	<-workerStarted
+	<-metricsStarted
+	cancel()
+	if err := <-done; err != nil || !closed {
+		t.Fatalf("error=%v closed=%v", err, closed)
+	}
+}
+
+func TestRuntimeCancelsWorkerWhenMetricsFail(t *testing.T) {
+	want := errors.New("metrics failed")
+	workerStopped := make(chan struct{})
+	runtime := indexRuntime{
+		ping: func(context.Context) error { return nil }, migrate: func(context.Context) error { return nil },
+		upsertNode: func(context.Context) error { return nil }, reapExpired: func(context.Context) error { return nil },
+		pruneHistory: func(context.Context) error { return nil },
+		runWorker:    func(ctx context.Context) error { <-ctx.Done(); close(workerStopped); return ctx.Err() },
+		runMetrics:   func(context.Context) error { return want },
+		close: func() {
+			select {
+			case <-workerStopped:
+			default:
+				t.Error("resources closed before worker stopped")
+			}
+		},
+	}
+	if err := runtime.run(t.Context()); !errors.Is(err, want) {
+		t.Fatalf("error=%v", err)
+	}
+}
+
 func TestRuntimeClosesAfterInitializationFailure(t *testing.T) {
 	closed := false
 	want := errors.New("migrate")

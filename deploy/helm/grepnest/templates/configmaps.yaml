@@ -56,3 +56,4 @@ data:
   GREPNEST_GIT_PATH: {{ .Values.node.indexer.gitExecutable | quote }}
   GREPNEST_ZOEKT_GIT_INDEX: {{ .Values.node.indexer.zoektGitIndexExecutable | quote }}
   GREPNEST_MIN_FREE_BYTES: {{ .Values.node.indexer.minFreeBytes | quote }}
+  GREPNEST_METRICS_LISTEN_ADDRESS: {{ printf ":%v" .Values.node.indexer.metricsPort | quote }}

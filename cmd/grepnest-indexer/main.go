@@ -5,8 +5,10 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -34,8 +36,8 @@ const (
 )
 
 type indexRuntime struct {
-	ping, migrate, upsertNode, reapExpired, pruneHistory, runWorker func(context.Context) error
-	close                                                           func()
+	ping, migrate, upsertNode, reapExpired, pruneHistory, runWorker, runMetrics func(context.Context) error
+	close                                                                       func()
 }
 
 func main() {
@@ -105,10 +107,30 @@ func (runtime indexRuntime) run(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := runtime.runWorker(ctx); err != nil && err != ctx.Err() {
-		return err
+	if runtime.runMetrics == nil {
+		if err := runtime.runWorker(ctx); err != nil && err != ctx.Err() {
+			return err
+		}
+		return nil
 	}
-	return nil
+	runCtx, cancel := context.WithCancel(ctx)
+	type result struct {
+		name string
+		err  error
+	}
+	results := make(chan result, 2)
+	go func() { results <- result{name: "worker", err: runtime.runWorker(runCtx)} }()
+	go func() { results <- result{name: "metrics", err: runtime.runMetrics(runCtx)} }()
+	first := <-results
+	cancel()
+	second := <-results
+	var failures []error
+	for _, result := range []result{first, second} {
+		if result.err != nil && result.err != context.Canceled && result.err != ctx.Err() {
+			failures = append(failures, fmt.Errorf("%s: %w", result.name, result.err))
+		}
+	}
+	return errors.Join(failures...)
 }
 
 func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime, error) {
@@ -162,6 +184,13 @@ func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime
 		Zoekt:        &indexer.ZoektIndexer{Binary: settings.ZoektGitIndex, IndexDir: settings.IndexDir, Runner: runner, Client: zoektClient, IndexTimeout: 10 * time.Minute, VisibilityTimeout: 2 * time.Minute},
 		MinFreeBytes: uint64(settings.MinFreeBytes), Metrics: metrics,
 	}
+	listener, err := net.Listen("tcp", settings.MetricsListenAddress)
+	if err != nil {
+		pool.Close()
+		return indexRuntime{}, err
+	}
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("GET /metrics", metrics.Handler())
 	return indexRuntime{
 		ping:         pool.Ping,
 		migrate:      func(ctx context.Context) error { return postgres.Migrate(ctx, pool) },
@@ -169,8 +198,36 @@ func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime
 		reapExpired:  func(ctx context.Context) error { _, err := store.ReapExpired(ctx, 1000); return err },
 		pruneHistory: func(ctx context.Context) error { _, _, err := store.Prune(ctx); return err },
 		runWorker:    worker.Run,
-		close:        pool.Close,
+		runMetrics:   func(ctx context.Context) error { return serveMetrics(ctx, listener, metricsMux) },
+		close:        func() { _ = listener.Close(); pool.Close() },
 	}, nil
+}
+
+func serveMetrics(ctx context.Context, listener net.Listener, handler http.Handler) error {
+	server := &http.Server{
+		Handler: handler, ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: time.Minute,
+	}
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(listener) }()
+	select {
+	case err := <-done:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		shutdownErr := server.Shutdown(shutdownCtx)
+		if shutdownErr != nil {
+			_ = server.Close()
+		}
+		serveErr := <-done
+		if errors.Is(serveErr, http.ErrServerClosed) {
+			serveErr = nil
+		}
+		return errors.Join(shutdownErr, serveErr)
+	}
 }
 
 func parseGitHubEndpoints(settings config.GitHub) (githubapp.Endpoints, error) {

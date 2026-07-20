@@ -33,3 +33,4 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "grepnest.serverName" -}}{{ include "grepnest.resourceName" (list . "server") }}{{- end }}
 {{- define "grepnest.nodeName" -}}{{ include "grepnest.resourceName" (list . "node") }}{{- end }}
 {{- define "grepnest.zoektName" -}}{{ include "grepnest.resourceName" (list . "zoekt") }}{{- end }}
+{{- define "grepnest.indexerName" -}}{{ include "grepnest.resourceName" (list . "indexer") }}{{- end }}

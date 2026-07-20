@@ -34,7 +34,7 @@ address, requires the database connection, and runs the GHES-compatible HTTPS
 smart-Git-to-Zoekt proof. Both commands fail rather than skip when their
 required PostgreSQL service is unavailable.
 
-Build the database-only migration and listener-free indexer commands, then
+Build the database-only migration and indexer commands, then
 create the host directories shared with the durable Zoekt profile:
 
 ```sh
@@ -54,6 +54,7 @@ these shared host paths:
 GREPNEST_DATA_DIR="$PWD/.cache/durable-data" \
 GREPNEST_INDEX_DIR="$PWD/.cache/durable-index" \
 GREPNEST_ZOEKT_URL=http://127.0.0.1:6070 \
+GREPNEST_METRICS_LISTEN_ADDRESS=127.0.0.1:9090 \
 .cache/bin/grepnest-indexer
 ```
 
@@ -68,9 +69,10 @@ persisted remotes, Zoekt, logs, and process arguments remain credential-free.
 The fixture and durable profiles use separate index storage and must not be run
 at the same time because both publish loopback port 6070. The durable profile
 does not run GrepNest containers or build images; the host commands provide the
-shared index directory. The indexer exposes no HTTP listener. Recover an
-interrupted worker by restarting it; PostgreSQL reaps expired leases and the
-worker removes abandoned numeric-ID worktrees before claiming more work.
+shared index directory. The indexer serves only Prometheus metrics on
+`/metrics`; its listen address defaults to `:9090` and should remain internal.
+Recover an interrupted worker by restarting it; PostgreSQL reaps expired leases
+and the worker removes abandoned numeric-ID worktrees before claiming more work.
 
 ## Kubernetes chart boundary
 

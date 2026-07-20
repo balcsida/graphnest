@@ -86,22 +86,26 @@ awk '
   }
   END { exit failed }
 ' "$tmp/long-release.yaml"
-for suffix in server node zoekt migrate deny-ingress allow-server-ingress \
-  allow-zoekt-ingress; do
+for suffix in server node zoekt indexer migrate deny-ingress allow-server-ingress \
+  allow-zoekt-ingress allow-indexer-metrics-ingress; do
   [ "$(rg -c "^  name: .*$suffix\$" "$tmp/long-release.yaml")" -ge 1 ] || exit 1
 done
 [ "$(sed -n 's/^  name: //p' "$tmp/long-release.yaml" | sort -u | \
-  rg -c -- '-(server|node|zoekt|migrate|deny-ingress|allow-server-ingress|allow-zoekt-ingress)$')" \
-  -eq 7 ] || exit 1
+  rg -c -- '-(server|node|zoekt|indexer|migrate|deny-ingress|allow-server-ingress|allow-zoekt-ingress|allow-indexer-metrics-ingress)$')" \
+  -eq 9 ] || exit 1
 
 helm template paths "$chart" -n grepnest -f "$minimal" \
   --set-string=node.paths.data=/srv/grepnest-data \
   --set-string=node.paths.indexes=/srv/grepnest-data/zoekt/index \
-  --set=node.zoekt.port=16070 --set=node.service.port=16071 >"$tmp/node-contract.yaml"
+  --set=node.zoekt.port=16070 --set=node.service.port=16071 \
+  --set=node.indexer.metricsPort=19090 >"$tmp/node-contract.yaml"
 for pattern in \
   'GREPNEST_DATA_DIR: "/srv/grepnest-data"' \
   'GREPNEST_INDEX_DIR: "/srv/grepnest-data/zoekt/index"' \
   'containerPort: 16070' 'port: 16071, targetPort: zoekt' \
+  'GREPNEST_METRICS_LISTEN_ADDRESS: ":19090"' \
+  'name: metrics, containerPort: 19090' \
+  'name: metrics, port: 19090, targetPort: metrics' \
   'mountPath: "/srv/grepnest-data/zoekt/index", subPath: "zoekt/index", readOnly: true' \
   'mountPath: "/srv/grepnest-data"}'; do
   require "$pattern" "$tmp/node-contract.yaml"
@@ -212,6 +216,9 @@ for pattern in '^kind: Ingress$' '^kind: ServiceMonitor$' \
   'cpu: 250m' 'memory: 256Mi' 'cpu: "8"' 'memory: 24Gi'; do
   require "$pattern" "$tmp/optional.yaml"
 done
+[ "$(rg -c '^kind: ServiceMonitor$' "$tmp/optional.yaml")" -eq 2 ] || exit 1
+require 'app.kubernetes.io/component: indexer' "$tmp/optional.yaml"
+require 'port: metrics' "$tmp/optional.yaml"
 
 sed -n '/^kind: StatefulSet$/,/^# Source: grepnest\/templates\/migration-job.yaml$/p' \
   "$tmp/minimal.yaml" >"$tmp/node.yaml"
@@ -236,7 +243,7 @@ require '^kind: Ingress$' "$tmp/optional-ingress.yaml"
 reject 'pilot-grepnest-zoekt|name: .*zoekt|backend:.*zoekt' "$tmp/optional-ingress.yaml"
 reject 'host: "?\*|path: /\*|host: "?default([.]|"|$)' "$tmp/optional-ingress.yaml"
 
-policies='deny-ingress allow-server-ingress allow-zoekt-ingress deny-egress allow-internal-egress allow-dns-egress allow-postgresql-egress allow-github-egress'
+policies='deny-ingress allow-server-ingress allow-zoekt-ingress allow-indexer-metrics-ingress deny-egress allow-internal-egress allow-dns-egress allow-postgresql-egress allow-github-egress'
 for policy in $policies; do
   sed -n "/^  name: pilot-grepnest-$policy\$/,/^---\$/p" \
     "$tmp/optional.yaml" >"$tmp/$policy.yaml"
@@ -262,6 +269,11 @@ require '^        - namespaceSelector:$' "$tmp/allow-zoekt-ingress-spec.yaml"
 require '^          podSelector:$' "$tmp/allow-zoekt-ingress-spec.yaml"
 require 'app.kubernetes.io/component: server' "$tmp/allow-zoekt-ingress-spec.yaml"
 require 'protocol: TCP, port: 6070' "$tmp/allow-zoekt-ingress-spec.yaml"
+
+require 'app.kubernetes.io/component: node' "$tmp/allow-indexer-metrics-ingress-spec.yaml"
+require 'policyTypes: \[Ingress\]' "$tmp/allow-indexer-metrics-ingress-spec.yaml"
+require 'kubernetes.io/metadata.name: monitoring' "$tmp/allow-indexer-metrics-ingress-spec.yaml"
+require 'protocol: TCP, port: 9090' "$tmp/allow-indexer-metrics-ingress-spec.yaml"
 
 require 'policyTypes: \[Egress\]' "$tmp/deny-egress-spec.yaml"
 require 'egress: \[\]' "$tmp/deny-egress-spec.yaml"

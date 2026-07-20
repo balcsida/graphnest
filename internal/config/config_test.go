@@ -95,8 +95,20 @@ func TestLoadIndexerRequiresOnlyIndexerConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" || got.ZoektURL != "http://127.0.0.1:6070" || got.GitHub.AppID != 123 || got.GitHub.PrivateKeyFile != "/run/secrets/key.pem" || got.GitHub.WebhookSecretFile != "" || got.WorkerID != "worker-1" {
+	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" || got.ZoektURL != "http://127.0.0.1:6070" || got.MetricsListenAddress != ":9090" || got.GitHub.AppID != 123 || got.GitHub.PrivateKeyFile != "/run/secrets/key.pem" || got.GitHub.WebhookSecretFile != "" || got.WorkerID != "worker-1" {
 		t.Fatalf("configuration = %#v", got)
+	}
+}
+
+func TestLoadIndexerRejectsInvalidMetricsAddress(t *testing.T) {
+	for _, value := range []string{"9090", ":0", ":65536"} {
+		t.Run(value, func(t *testing.T) {
+			setDurableEnvironment(t)
+			t.Setenv("GREPNEST_METRICS_LISTEN_ADDRESS", value)
+			if _, err := LoadIndexer(); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("LoadIndexer() error = %v", err)
+			}
+		})
 	}
 }
 

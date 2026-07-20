@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
@@ -27,7 +28,7 @@ type GitHub struct {
 }
 
 type Indexer struct {
-	DatabaseURL, ZoektURL                               string
+	DatabaseURL, ZoektURL, MetricsListenAddress         string
 	GitHub                                              GitHub
 	DataDir, IndexDir, GitPath, ZoektGitIndex, WorkerID string
 	MinFreeBytes                                        int64
@@ -138,13 +139,14 @@ func loadGitHub(requireWebhookSecret bool) (GitHub, error) {
 
 func LoadIndexer() (Indexer, error) {
 	indexer := Indexer{
-		DatabaseURL:   os.Getenv("GREPNEST_DATABASE_URL"),
-		ZoektURL:      os.Getenv("GREPNEST_ZOEKT_URL"),
-		DataDir:       os.Getenv("GREPNEST_DATA_DIR"),
-		IndexDir:      os.Getenv("GREPNEST_INDEX_DIR"),
-		GitPath:       os.Getenv("GREPNEST_GIT_PATH"),
-		ZoektGitIndex: os.Getenv("GREPNEST_ZOEKT_GIT_INDEX"),
-		WorkerID:      os.Getenv("GREPNEST_WORKER_ID"),
+		DatabaseURL:          os.Getenv("GREPNEST_DATABASE_URL"),
+		ZoektURL:             os.Getenv("GREPNEST_ZOEKT_URL"),
+		MetricsListenAddress: valueOr("GREPNEST_METRICS_LISTEN_ADDRESS", ":9090"),
+		DataDir:              os.Getenv("GREPNEST_DATA_DIR"),
+		IndexDir:             os.Getenv("GREPNEST_INDEX_DIR"),
+		GitPath:              os.Getenv("GREPNEST_GIT_PATH"),
+		ZoektGitIndex:        os.Getenv("GREPNEST_ZOEKT_GIT_INDEX"),
+		WorkerID:             os.Getenv("GREPNEST_WORKER_ID"),
 	}
 	parsedDatabase, databaseErr := url.Parse(indexer.DatabaseURL)
 	if databaseErr != nil || parsedDatabase.Host == "" || (parsedDatabase.Scheme != "postgres" && parsedDatabase.Scheme != "postgresql") {
@@ -163,6 +165,11 @@ func LoadIndexer() (Indexer, error) {
 	}
 	if indexer.MinFreeBytes, err = requiredInt64("GREPNEST_MIN_FREE_BYTES"); err != nil {
 		return Indexer{}, err
+	}
+	_, port, err := net.SplitHostPort(indexer.MetricsListenAddress)
+	portNumber, portErr := strconv.Atoi(port)
+	if err != nil || portErr != nil || portNumber < 1 || portNumber > 65535 {
+		return Indexer{}, invalid("GREPNEST_METRICS_LISTEN_ADDRESS must be a host:port address")
 	}
 	return indexer, nil
 }

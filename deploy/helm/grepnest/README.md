@@ -74,8 +74,10 @@ is the internal Service port.
 
 `monitoring.serviceMonitor.enabled` requires the
 `monitoring.coreos.com/v1/ServiceMonitor` CRD. Rendering fails clearly if that
-CRD is unavailable. Configure the monitoring namespace selector in the ingress
-policy when Prometheus runs outside the release namespace.
+CRD is unavailable. It scrapes the server and the indexer's internal metrics
+Service on `node.indexer.metricsPort`. Configure the monitoring namespace
+selector in the ingress policy when Prometheus runs outside the release
+namespace.
 
 Ingress isolation is enabled by default. External egress CIDR isolation is
 optional because portable NetworkPolicy cannot select DNS names. Before
