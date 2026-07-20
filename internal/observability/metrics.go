@@ -3,6 +3,7 @@ package observability
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -10,13 +11,18 @@ import (
 )
 
 type Metrics struct {
-	registry         *prometheus.Registry
-	activeRequests   prometheus.Gauge
-	httpRequests     *prometheus.CounterVec
-	httpDuration     *prometheus.HistogramVec
-	httpResponseSize *prometheus.HistogramVec
-	backendCalls     *prometheus.CounterVec
-	backendDuration  *prometheus.HistogramVec
+	registry          *prometheus.Registry
+	activeRequests    prometheus.Gauge
+	httpRequests      *prometheus.CounterVec
+	httpDuration      *prometheus.HistogramVec
+	httpResponseSize  *prometheus.HistogramVec
+	backendCalls      *prometheus.CounterVec
+	backendDuration   *prometheus.HistogramVec
+	githubRequests    *prometheus.CounterVec
+	webhookDeliveries *prometheus.CounterVec
+	indexQueueDepth   *prometheus.GaugeVec
+	indexPhases       *prometheus.CounterVec
+	indexDuration     *prometheus.HistogramVec
 }
 
 func New() *Metrics {
@@ -27,7 +33,12 @@ func New() *Metrics {
 	metrics.httpResponseSize = prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "grepnest_http_response_size_bytes", Help: "HTTP response size."}, []string{"method", "path", "status"})
 	metrics.backendCalls = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "grepnest_search_backend_calls_total", Help: "Search backend calls."}, []string{"result"})
 	metrics.backendDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "grepnest_search_backend_duration_seconds", Help: "Search backend duration."}, []string{"result"})
-	metrics.registry.MustRegister(metrics.activeRequests, metrics.httpRequests, metrics.httpDuration, metrics.httpResponseSize, metrics.backendCalls, metrics.backendDuration)
+	metrics.githubRequests = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "grepnest_github_requests_total", Help: "GitHub API requests."}, []string{"operation", "result"})
+	metrics.webhookDeliveries = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "grepnest_webhook_deliveries_total", Help: "GitHub webhook deliveries."}, []string{"event", "result"})
+	metrics.indexQueueDepth = prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "grepnest_index_queue_depth", Help: "Index queue jobs."}, []string{"state"})
+	metrics.indexPhases = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "grepnest_index_phase_total", Help: "Index phase executions."}, []string{"phase", "result"})
+	metrics.indexDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "grepnest_index_phase_duration_seconds", Help: "Index phase duration."}, []string{"phase", "result"})
+	metrics.registry.MustRegister(metrics.activeRequests, metrics.httpRequests, metrics.httpDuration, metrics.httpResponseSize, metrics.backendCalls, metrics.backendDuration, metrics.githubRequests, metrics.webhookDeliveries, metrics.indexQueueDepth, metrics.indexPhases, metrics.indexDuration)
 	return metrics
 }
 
@@ -42,11 +53,22 @@ func (metrics *Metrics) WrapHTTP(next http.Handler) http.Handler {
 		started := time.Now()
 		recorded := &responseWriter{ResponseWriter: writer, status: http.StatusOK}
 		next.ServeHTTP(recorded, request)
-		labels := []string{request.Method, request.URL.Path, strconv.Itoa(recorded.status)}
+		labels := []string{request.Method, routePattern(request), strconv.Itoa(recorded.status)}
 		metrics.httpRequests.WithLabelValues(labels...).Inc()
 		metrics.httpDuration.WithLabelValues(labels...).Observe(time.Since(started).Seconds())
 		metrics.httpResponseSize.WithLabelValues(labels...).Observe(float64(recorded.bytes))
 	})
+}
+
+func routePattern(request *http.Request) string {
+	pattern := request.Pattern
+	if _, path, ok := strings.Cut(pattern, " "); ok {
+		pattern = path
+	}
+	if pattern == "" {
+		return "unknown"
+	}
+	return pattern
 }
 
 func (metrics *Metrics) ObserveBackend(duration time.Duration, err error) {
@@ -56,6 +78,49 @@ func (metrics *Metrics) ObserveBackend(duration time.Duration, err error) {
 	}
 	metrics.backendCalls.WithLabelValues(result).Inc()
 	metrics.backendDuration.WithLabelValues(result).Observe(duration.Seconds())
+}
+
+func (metrics *Metrics) ObserveGitHub(operation, result string) {
+	metrics.githubRequests.WithLabelValues(fixed(operation, "installation_token", "installations", "repositories", "default_branch", "contents"), successOrError(result)).Inc()
+}
+
+func (metrics *Metrics) ObserveWebhook(event, result string) {
+	metrics.webhookDeliveries.WithLabelValues(fixed(event, "push", "installation", "installation_repositories", "repository"), webhookResult(result)).Inc()
+}
+
+func (metrics *Metrics) SetQueueDepth(state string, depth int64) {
+	metrics.indexQueueDepth.WithLabelValues(fixed(state, "queued", "running", "succeeded", "failed", "superseded")).Set(float64(depth))
+}
+
+func (metrics *Metrics) ObserveIndexPhase(phase, result string, duration time.Duration) {
+	labels := []string{fixed(phase, "fetch", "index", "visibility"), successOrError(result)}
+	metrics.indexPhases.WithLabelValues(labels...).Inc()
+	metrics.indexDuration.WithLabelValues(labels...).Observe(duration.Seconds())
+}
+
+func fixed(value string, allowed ...string) string {
+	for _, candidate := range allowed {
+		if value == candidate {
+			return value
+		}
+	}
+	return "unknown"
+}
+
+func successOrError(result string) string {
+	if result == "success" {
+		return result
+	}
+	return "error"
+}
+
+func webhookResult(result string) string {
+	for _, candidate := range []string{"accepted", "ignored", "duplicate", "error"} {
+		if result == candidate {
+			return result
+		}
+	}
+	return "error"
 }
 
 type responseWriter struct {
@@ -82,7 +147,3 @@ func (writer *responseWriter) Write(body []byte) (int, error) {
 	writer.bytes += count
 	return count, err
 }
-
-var defaultMetrics = New()
-
-func WrapHTTP(next http.Handler) http.Handler { return defaultMetrics.WrapHTTP(next) }

@@ -13,18 +13,309 @@ import (
 
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/authz"
+	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/httpapi"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/internal/search"
 	"github.com/grepnest/grepnest/internal/zoekt"
 	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+func TestRepositoryToolsUseAuthenticatedService(t *testing.T) {
+	repositoryService := mcpRepositoryService()
+	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}
+	wantList, err := repositoryService.List(t.Context(), principal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listBudget := mcpResultSize(t, repositoryListOutput{Repositories: wantList})
+	server := NewWithLimits(testService(t, &recordingBackend{}), repositoryService, Limits{MaxOutputBytes: int64(listBudget)})
+	handler := httpapi.AuthenticateBearer(
+		authn.NewStatic(map[string]authn.Principal{"secret": {InstallationID: 10, RepositoryIDs: []int64{101}}}),
+		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil),
+	)
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(
+		t.Context(),
+		&mcp.StreamableClientTransport{Endpoint: httpServer.URL, HTTPClient: bearerClient(httpServer.Client(), "secret"), DisableStandaloneSSE: true},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	tools, err := session.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, len(tools.Tools))
+	for index, tool := range tools.Tools {
+		names[index] = tool.Name
+	}
+	for _, name := range []string{"list_repositories", "get_repository_status", "read_file"} {
+		if !slices.Contains(names, name) {
+			t.Fatalf("tools = %v", names)
+		}
+	}
+	for toolName, fields := range map[string][]string{
+		"list_repositories":     {"limit", "max_output_bytes"},
+		"get_repository_status": {"repository_id", "max_output_bytes"},
+		"read_file":             {"repository_id", "start_line", "end_line", "max_output_bytes"},
+	} {
+		schema := repositoryToolSchema(t, tools.Tools, toolName)
+		properties := schema["properties"].(map[string]any)
+		for _, field := range fields {
+			if properties[field].(map[string]any)["minimum"] != float64(1) {
+				t.Fatalf("%s.%s schema = %#v", toolName, field, properties[field])
+			}
+		}
+	}
+	readSchema := repositoryToolSchema(t, tools.Tools, "read_file")
+	if readSchema["properties"].(map[string]any)["path"].(map[string]any)["minLength"] != float64(1) {
+		t.Fatalf("read_file.path schema = %#v", readSchema["properties"])
+	}
+
+	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "list_repositories", Arguments: map[string]any{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertMCPResultBudget(t, "list_repositories configured", result, listBudget)
+	var list struct {
+		Repositories []api.RepositorySummary `json:"repositories"`
+	}
+	decodeStructured(t, result.StructuredContent, &list)
+	if !slices.EqualFunc(list.Repositories, wantList, func(a, b api.RepositorySummary) bool { return a == b }) {
+		t.Fatalf("list = %#v, want %#v, err %v", list.Repositories, wantList, err)
+	}
+
+	wantStatus, err := repositoryService.Status(t.Context(), principal, 101)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statusBudget := mcpResultSize(t, wantStatus)
+	result, err = session.CallTool(t.Context(), &mcp.CallToolParams{Name: "get_repository_status", Arguments: map[string]any{"repository_id": 101, "max_output_bytes": statusBudget}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertMCPResultBudget(t, "get_repository_status per-call", result, statusBudget)
+	var status api.RepositorySummary
+	decodeStructured(t, result.StructuredContent, &status)
+	if status.GitHubID != 101 || status.Status != "ready" || status.SearchNode != "node-a" {
+		t.Fatalf("status = %#v", status)
+	}
+
+	wantFile, err := repositoryService.ReadFile(t.Context(), principal, api.ReadFileRequest{RepositoryID: 101, Path: "main.go", StartLine: 2, EndLine: 99})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileBudget := mcpResultSize(t, wantFile)
+	result, err = session.CallTool(t.Context(), &mcp.CallToolParams{Name: "read_file", Arguments: map[string]any{
+		"repository_id": 101, "path": "main.go", "start_line": 2, "end_line": 99, "max_output_bytes": fileBudget,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertMCPResultBudget(t, "read_file per-call", result, fileBudget)
+	var file api.ReadFileResponse
+	decodeStructured(t, result.StructuredContent, &file)
+	if file.Content != "two\nthree" || file.StartLine != 2 || file.EndLine != 3 || file.IndexedSHA != strings.Repeat("a", 40) {
+		t.Fatalf("file = %#v", file)
+	}
+
+	result, err = session.CallTool(t.Context(), &mcp.CallToolParams{Name: "read_file", Arguments: map[string]any{
+		"repository_id": 101, "path": "main.go", "max_output_bytes": 1,
+	}})
+	if err != nil || !result.IsError || marshaledSize(t, result) <= 1 {
+		t.Fatalf("tiny-budget result = %#v, size = %d, err = %v", result, marshaledSize(t, result), err)
+	}
+	content, ok := result.Content[0].(*mcp.TextContent)
+	if !ok || content.Text != errOutputBudget.Error() {
+		t.Fatalf("tiny-budget content = %#v", result.Content)
+	}
+
+	store := repositoryService.Store.(*mcpRepositoryStore)
+	store.calls = 0
+	for _, call := range []*mcp.CallToolParams{
+		{Name: "get_repository_status", Arguments: map[string]any{"repository_id": 0}},
+		{Name: "read_file", Arguments: map[string]any{"repository_id": 101, "path": ""}},
+		{Name: "read_file", Arguments: map[string]any{"repository_id": 101, "path": "main.go", "start_line": 0}},
+	} {
+		result, err := session.CallTool(t.Context(), call)
+		if err != nil || !result.IsError {
+			t.Fatalf("invalid %s result = %#v, err = %v", call.Name, result, err)
+		}
+	}
+	if store.calls != 0 {
+		t.Fatalf("invalid tool service calls = %d", store.calls)
+	}
+}
+
+func TestRepositoryToolBudgetsBoundActualCallToolResult(t *testing.T) {
+	items := []api.RepositorySummary{
+		{GitHubID: 101, Name: strings.Repeat("a", 80)},
+		{GitHubID: 102, Name: strings.Repeat("b", 80)},
+		{GitHubID: 103, Name: strings.Repeat("c", 80)},
+	}
+	list, err := limitRepositoryList(items, listInput{Limit: 2, MaxOutputBytes: 400}, Limits{MaxItems: 100, MaxOutputBytes: 256 << 10})
+	if err != nil || len(list.Repositories) != 1 || !list.Truncated || mcpResultSize(t, list) > 400 {
+		t.Fatalf("list=%#v size=%d err=%v", list, mcpResultSize(t, list), err)
+	}
+
+	file := api.ReadFileResponse{RepositoryID: 101, Path: "main.go", IndexedSHA: strings.Repeat("a", 40), BlobSHA: "blob", Content: "one\ntwo\n" + strings.Repeat("x", 400), StartLine: 1, EndLine: 3}
+	wantFile := filePrefix(file, strings.Split(file.Content, "\n"), 2)
+	fileBudget := mcpResultSize(t, wantFile)
+	limited, err := limitReadFile(file, int64(fileBudget), Limits{MaxOutputBytes: 256 << 10})
+	if err != nil || limited != wantFile || mcpResultSize(t, limited) > fileBudget {
+		t.Fatalf("file=%#v size=%d err=%v", limited, mcpResultSize(t, limited), err)
+	}
+	if _, err := limitReadFile(file, 1, Limits{MaxOutputBytes: 256 << 10}); !errors.Is(err, errOutputBudget) {
+		t.Fatalf("tiny budget error=%v", err)
+	}
+	configured, err := limitReadFile(file, 0, Limits{MaxOutputBytes: int64(fileBudget)})
+	if err != nil || mcpResultSize(t, configured) > fileBudget || !configured.Truncated {
+		t.Fatalf("configured file=%#v size=%d err=%v", configured, mcpResultSize(t, configured), err)
+	}
+	list, err = limitRepositoryList(items, listInput{}, Limits{MaxItems: 2, MaxOutputBytes: 256 << 10})
+	if err != nil || len(list.Repositories) != 2 || !list.Truncated {
+		t.Fatalf("configured item limit list=%#v err=%v", list, err)
+	}
+}
+
+func TestReadFileBudgetFindsLargestWholeLinePrefix(t *testing.T) {
+	lines := make([]string, 1000)
+	for index := range lines {
+		lines[index] = "x"
+	}
+	file := api.ReadFileResponse{RepositoryID: 101, Path: "main.go", IndexedSHA: strings.Repeat("a", 40), BlobSHA: "blob", Content: strings.Join(lines, "\n"), StartLine: 1, EndLine: len(lines)}
+	want := file
+	want.Content = strings.Join(lines[:537], "\n")
+	want.EndLine = 537
+	want.Truncated = true
+
+	got, err := limitReadFile(file, int64(mcpResultSize(t, want)), Limits{MaxOutputBytes: 256 << 10})
+	if err != nil || got.Content != want.Content || got.EndLine != want.EndLine || !got.Truncated {
+		t.Fatalf("lines=%d end=%d size=%d err=%v", strings.Count(got.Content, "\n")+1, got.EndLine, mcpResultSize(t, got), err)
+	}
+}
+
+func TestRepositoryToolErrorsAreSafe(t *testing.T) {
+	const secret = "upstream-token"
+	service := mcpRepositoryService()
+	service.GitHub = mcpContentReader{err: errors.New(secret)}
+	server := New(testService(t, &recordingBackend{}), service)
+	handler := httpapi.AuthenticateBearer(
+		authn.NewStatic(map[string]authn.Principal{"secret": {InstallationID: 10, RepositoryIDs: []int64{101}}}),
+		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil),
+	)
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(
+		t.Context(), &mcp.StreamableClientTransport{Endpoint: httpServer.URL, HTTPClient: bearerClient(httpServer.Client(), "secret"), DisableStandaloneSSE: true}, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	for _, test := range []struct {
+		name, tool, message string
+		arguments           map[string]any
+	}{
+		{"unknown repository", "get_repository_status", "repository not found", map[string]any{"repository_id": 999}},
+		{"invalid path", "read_file", "file request is invalid", map[string]any{"repository_id": 101, "path": "../secret"}},
+		{"upstream failure", "read_file", "repository service is unavailable", map[string]any{"repository_id": 101, "path": "main.go"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: test.tool, Arguments: test.arguments})
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := json.Marshal(result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(encoded), secret) || !result.IsError || len(result.Content) != 1 {
+				t.Fatalf("result = %s", encoded)
+			}
+			content, ok := result.Content[0].(*mcp.TextContent)
+			if !ok || content.Text != test.message {
+				t.Fatalf("content = %#v", result.Content)
+			}
+		})
+	}
+}
+
+func mcpRepositoryService() *repository.Service {
+	sha := strings.Repeat("a", 40)
+	return &repository.Service{
+		Store: &mcpRepositoryStore{repository: repository.Repository{
+			ID: 1, InstallationID: 10, GitHubID: 101, Name: "acme/one", Branch: "main",
+			DesiredSHA: sha, IndexedSHA: sha, Status: "ready", SearchNode: "node-a",
+		}},
+		GitHub: mcpContentReader{content: githubapp.Content{
+			Type: "file", Encoding: "base64", Content: base64.StdEncoding.EncodeToString([]byte("one\ntwo\nthree")), SHA: "blob", Size: 13,
+		}},
+		MaxLines: 2,
+	}
+}
+
+type mcpRepositoryStore struct {
+	repository repository.Repository
+	calls      int
+}
+
+func (store *mcpRepositoryStore) AuthorizedRepositories(_ context.Context, _ int64, ids []int64, _ []string) ([]repository.Repository, error) {
+	store.calls++
+	if len(ids) == 1 && ids[0] == store.repository.GitHubID {
+		return []repository.Repository{store.repository}, nil
+	}
+	return []repository.Repository{}, nil
+}
+
+func (store *mcpRepositoryStore) AuthorizedRepository(_ context.Context, _ int64, ids []int64, id int64) (repository.Repository, error) {
+	store.calls++
+	if id == store.repository.GitHubID && len(ids) == 1 && ids[0] == id {
+		return store.repository, nil
+	}
+	return repository.Repository{}, pgx.ErrNoRows
+}
+
+type mcpContentReader struct {
+	content githubapp.Content
+	err     error
+}
+
+func (reader mcpContentReader) ReadContents(context.Context, int64, string, string, string, string, int64) (githubapp.Content, error) {
+	return reader.content, reader.err
+}
+
+func repositoryToolSchema(t *testing.T, tools []*mcp.Tool, name string) map[string]any {
+	t.Helper()
+	for _, tool := range tools {
+		if tool.Name == name {
+			data, err := json.Marshal(tool.InputSchema)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var schema map[string]any
+			if err := json.Unmarshal(data, &schema); err != nil {
+				t.Fatal(err)
+			}
+			return schema
+		}
+	}
+	t.Fatalf("tool %q not found", name)
+	return nil
+}
+
 func TestSearchToolsUseAuthenticatedService(t *testing.T) {
 	backend := &recordingBackend{response: api.SearchResponse{Matches: []api.SearchMatch{{
-		Path: "main.go", SHA: "abc123", LineNumber: 3, Preview: "needle\n", ZoektID: 7,
+		Path: "main.go", SHA: "abc123", Branches: []string{"main"}, LineNumber: 3, Preview: "needle\n", ZoektID: 7,
 	}}}}
 	service := testService(t, backend)
 	server := New(service)
@@ -57,13 +348,19 @@ func TestSearchToolsUseAuthenticatedService(t *testing.T) {
 		t.Fatalf("tools = %v", names)
 	}
 
+	wantOutput := output{Matches: []api.SearchMatch{{
+		Repository: api.Repository{ID: 1, Name: "acme/one", Branch: "main", IndexedSHA: "abc123"},
+		Path:       "main.go", SHA: "abc123", LineNumber: 3, Preview: "needle\n",
+	}}}
+	searchBudget := mcpResultSize(t, wantOutput)
 	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      "search_code",
-		Arguments: map[string]any{"query": "needle", "repositories": []string{"acme/one"}, "max_output_bytes": 4096},
+		Arguments: map[string]any{"query": "needle", "repositories": []string{"acme/one"}, "max_output_bytes": searchBudget},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertMCPResultBudget(t, "search_code per-call", result, searchBudget)
 	var output struct {
 		Matches   []api.SearchMatch `json:"matches"`
 		Truncated bool              `json:"truncated"`
@@ -96,12 +393,15 @@ func TestSearchToolsUseAuthenticatedService(t *testing.T) {
 		t.Fatalf("search_code truncated = %v, want true", output.Truncated)
 	}
 
+	wantOutput.Truncated = true
+	findBudget := mcpResultSize(t, wantOutput)
 	result, err = session.CallTool(t.Context(), &mcp.CallToolParams{
-		Name: "find_files", Arguments: map[string]any{"pattern": "\\.go$", "repositories": []string{"acme/one"}, "limit": 5, "max_output_bytes": 2048},
+		Name: "find_files", Arguments: map[string]any{"pattern": "\\.go$", "repositories": []string{"acme/one"}, "limit": 5, "max_output_bytes": findBudget},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertMCPResultBudget(t, "find_files per-call", result, findBudget)
 	decodeStructured(t, result.StructuredContent, &output)
 	if !output.Truncated {
 		t.Fatalf("find_files truncated = %v, want true", output.Truncated)
@@ -166,7 +466,7 @@ func TestSearchToolErrorsAreSafe(t *testing.T) {
 func TestSearchCodeLimitsCanonicalOutputThroughZoekt(t *testing.T) {
 	preview := "needle with enough surrounding source to make each match material"
 	wireBody, err := json.Marshal(map[string]any{"Result": map[string]any{"Files": []any{map[string]any{
-		"FileName": "main.go", "Version": "abc", "RepositoryID": 7,
+		"FileName": "main.go", "Version": "abc", "Branches": []string{"main"}, "RepositoryID": 7,
 		"LineMatches": []any{
 			map[string]any{"Line": base64.StdEncoding.EncodeToString([]byte(preview)), "LineNumber": 1},
 			map[string]any{"Line": base64.StdEncoding.EncodeToString([]byte(preview)), "LineNumber": 2},
@@ -181,15 +481,15 @@ func TestSearchCodeLimitsCanonicalOutputThroughZoekt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	registry, err := repository.NewStatic([]repository.Repository{{ID: 1, ZoektID: 7, Name: "acme/one"}})
+	registry, err := repository.NewStatic([]repository.Repository{{ID: 1, ZoektID: 7, Name: "acme/one", Branch: "main", IndexedSHA: "abc"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	service := search.NewService(backend, authz.NewStatic(registry), search.Limits{MaxResults: 100, MaxResponseBytes: 256 << 10})
 	expected := api.SearchResponse{Matches: []api.SearchMatch{{
-		Repository: api.Repository{ID: 1, Name: "acme/one"}, Path: "main.go", SHA: "abc", LineNumber: 1, Preview: preview,
+		Repository: api.Repository{ID: 1, Name: "acme/one", Branch: "main", IndexedSHA: "abc"}, Path: "main.go", SHA: "abc", LineNumber: 1, Preview: preview,
 	}}, Truncated: true}
-	budget := marshaledSize(t, expected)
+	budget := mcpResultSize(t, expected)
 	if len(wireBody) <= budget {
 		t.Fatalf("wire body = %d, output budget = %d", len(wireBody), budget)
 	}
@@ -229,12 +529,22 @@ func TestSearchCodeLimitsCanonicalOutputThroughZoekt(t *testing.T) {
 		t.Fatal(err)
 	}
 	decodeStructured(t, result.StructuredContent, &output)
-	structured, err := json.Marshal(result.StructuredContent)
-	if err != nil {
-		t.Fatal(err)
+	if len(output.Matches) != 1 || !output.Truncated || len(result.Content) != 0 || marshaledSize(t, result) > budget {
+		t.Fatalf("output = %#v, content = %#v, size = %d, budget = %d", output, result.Content, marshaledSize(t, result), budget)
 	}
-	if len(output.Matches) != 1 || !output.Truncated || len(structured) > budget {
-		t.Fatalf("output = %#v, size = %d, budget = %d", output, len(structured), budget)
+}
+
+func mcpResultSize(t *testing.T, value any) int {
+	t.Helper()
+	return marshaledSize(t, &mcp.CallToolResult{Content: []mcp.Content{}, StructuredContent: value})
+}
+
+func assertMCPResultBudget(t *testing.T, tool string, result *mcp.CallToolResult, budget int) {
+	t.Helper()
+	size := marshaledSize(t, result)
+	t.Logf("%s CallTool result size = %d, budget = %d", tool, size, budget)
+	if len(result.Content) != 0 || size > budget {
+		t.Fatalf("content = %#v, size = %d, budget = %d", result.Content, size, budget)
 	}
 }
 
@@ -250,7 +560,7 @@ func marshaledSize(t *testing.T, value any) int {
 func testService(t *testing.T, backend *recordingBackend) *search.Service {
 	t.Helper()
 	registry, err := repository.NewStatic([]repository.Repository{
-		{ID: 1, ZoektID: 7, Name: "acme/one"}, {ID: 2, ZoektID: 8, Name: "acme/two"},
+		{ID: 1, ZoektID: 7, Name: "acme/one", Branch: "main", IndexedSHA: "abc123"}, {ID: 2, ZoektID: 8, Name: "acme/two", Branch: "main", IndexedSHA: "def456"},
 	})
 	if err != nil {
 		t.Fatal(err)

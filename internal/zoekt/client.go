@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -28,10 +29,16 @@ var (
 const maxResponseBytes int64 = 256 << 10
 
 type Client struct {
-	endpoint string
-	http     *http.Client
-	maxBytes int64
-	metrics  *observability.Metrics
+	endpoint     string
+	listEndpoint string
+	http         *http.Client
+	maxBytes     int64
+	metrics      *observability.Metrics
+}
+
+type IndexedRepository struct {
+	RepoID          uint32
+	Branch, Version string
 }
 
 func New(baseURL string, client *http.Client, maxBytes int64, metrics *observability.Metrics) (*Client, error) {
@@ -50,13 +57,14 @@ func New(baseURL string, client *http.Client, maxBytes int64, metrics *observabi
 	}
 	copy := *client
 	copy.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/api/search"
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/api"
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	if metrics == nil {
 		metrics = observability.New()
 	}
-	return &Client{endpoint: parsed.String(), http: &copy, maxBytes: maxBytes, metrics: metrics}, nil
+	base := strings.TrimRight(parsed.String(), "/")
+	return &Client{endpoint: base + "/search", listEndpoint: base + "/list", http: &copy, maxBytes: maxBytes, metrics: metrics}, nil
 }
 
 func (client *Client) Search(ctx context.Context, request search.BackendRequest) (api.SearchResponse, error) {
@@ -88,6 +96,55 @@ func (client *Client) Health(ctx context.Context) error {
 	defer cancel()
 	_, err := client.call(ctx, wireRequest{Q: "file:.", RepoIDs: []uint32{}, Opts: wireOptions{MaxDocDisplayCount: 1, MaxWallTime: int64(time.Second)}}, client.maxBytes)
 	return err
+}
+
+func (client *Client) List(ctx context.Context, repositoryID uint32) ([]IndexedRepository, error) {
+	body, err := json.Marshal(listRequest{Q: "", Opts: listOptions{Field: 2}})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, client.listEndpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := client.http.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: HTTP %d", ErrUnavailable, response.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(response.Body, client.maxBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
+	}
+	if int64(len(data)) > client.maxBytes {
+		return nil, ErrResponseTooLarge
+	}
+	var result listResponse
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, fmt.Errorf("%w: trailing JSON", ErrUnavailable)
+	}
+	var repositories []IndexedRepository
+	for id, entry := range result.List.Repositories {
+		parsedID, err := strconv.ParseUint(id, 10, 32)
+		if err != nil || parsedID == 0 {
+			return nil, fmt.Errorf("%w: invalid repository ID", ErrUnavailable)
+		}
+		if uint32(parsedID) != repositoryID {
+			continue
+		}
+		for _, branch := range entry.Branches {
+			repositories = append(repositories, IndexedRepository{RepoID: uint32(parsedID), Branch: branch.Name, Version: branch.Version})
+		}
+	}
+	return repositories, nil
 }
 
 func (client *Client) call(ctx context.Context, payload wireRequest, maxBytes int64) (result wireResult, err error) {
@@ -152,7 +209,7 @@ func normalize(files []wireFile, maxBytes int64) api.SearchResponse {
 			if len(preview) < len(line.Line) {
 				response.Truncated = true
 			}
-			response.Matches = append(response.Matches, api.SearchMatch{Path: path.Clean(file.FileName), SHA: file.Version, LineNumber: line.LineNumber, LineStart: line.LineStart, LineEnd: line.LineEnd, Preview: string(preview), Score: line.Score, ZoektID: file.RepositoryID})
+			response.Matches = append(response.Matches, api.SearchMatch{Path: path.Clean(file.FileName), SHA: file.Version, Branches: file.Branches, LineNumber: line.LineNumber, LineStart: line.LineStart, LineEnd: line.LineEnd, Preview: string(preview), Score: line.Score, ZoektID: file.RepositoryID})
 		}
 	}
 	return response
@@ -208,4 +265,23 @@ type wireMatch struct {
 	LineStart  int     `json:"LineStart"`
 	LineEnd    int     `json:"LineEnd"`
 	Score      float64 `json:"Score"`
+}
+
+type listRequest struct {
+	Q    string      `json:"Q"`
+	Opts listOptions `json:"Opts"`
+}
+
+type listOptions struct {
+	Field int `json:"Field"`
+}
+
+type listResponse struct {
+	List struct {
+		Repositories map[string]struct {
+			Branches []struct {
+				Name, Version string
+			} `json:"Branches"`
+		} `json:"ReposMap"`
+	} `json:"List"`
 }

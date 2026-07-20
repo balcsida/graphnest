@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -14,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/grepnest/grepnest/internal/observability"
 )
 
 const githubMediaType = "application/vnd.github+json"
@@ -25,15 +28,20 @@ type Client struct {
 	apiVersion string
 	maxBytes   int64
 	now        func() time.Time
+	metrics    *observability.Metrics
 	mu         sync.Mutex
 	tokens     map[string]Token
 }
 
-func NewClient(endpoints Endpoints, httpClient *http.Client, signer *Signer, apiVersion string, maxBytes int64, now func() time.Time) *Client {
+func NewClient(endpoints Endpoints, httpClient *http.Client, signer *Signer, apiVersion string, maxBytes int64, now func() time.Time, metricSet ...*observability.Metrics) *Client {
 	if now == nil {
 		now = time.Now
 	}
-	return &Client{endpoints: endpoints, http: httpClient, signer: signer, apiVersion: apiVersion, maxBytes: maxBytes, now: now, tokens: make(map[string]Token)}
+	var metrics *observability.Metrics
+	if len(metricSet) > 0 {
+		metrics = metricSet[0]
+	}
+	return &Client{endpoints: endpoints, http: httpClient, signer: signer, apiVersion: apiVersion, maxBytes: maxBytes, now: now, metrics: metrics, tokens: make(map[string]Token)}
 }
 
 func (c *Client) InstallationToken(ctx context.Context, installationID int64, repositoryIDs []int64) (Token, error) {
@@ -61,7 +69,7 @@ func (c *Client) InstallationToken(ctx context.Context, installationID int64, re
 		Value     string    `json:"token"`
 		ExpiresAt time.Time `json:"expires_at"`
 	}
-	_, err = c.doJSON(ctx, http.MethodPost, c.apiURL("app", "installations", strconv.FormatInt(installationID, 10), "access_tokens"), body, "Bearer "+jwt, c.maxBytes, &response)
+	_, err = c.doJSON(ctx, "installation_token", http.MethodPost, c.apiURL("app", "installations", strconv.FormatInt(installationID, 10), "access_tokens"), body, "Bearer "+jwt, c.maxBytes, &response)
 	if err != nil {
 		return Token{}, err
 	}
@@ -82,7 +90,6 @@ func (c *Client) Installations(ctx context.Context) ([]Installation, error) {
 			Login string `json:"login"`
 			Type  string `json:"type"`
 		} `json:"account"`
-		Status      string     `json:"status"`
 		SuspendedAt *time.Time `json:"suspended_at"`
 	}
 	var result []Installation
@@ -93,12 +100,16 @@ func (c *Client) Installations(ctx context.Context) ([]Installation, error) {
 		if err != nil {
 			return nil, fmt.Errorf("sign GitHub App JWT: %w", err)
 		}
-		link, err := c.doJSON(ctx, http.MethodGet, next, nil, "Bearer "+jwt, c.maxBytes, &page)
+		link, err := c.doJSON(ctx, "installations", http.MethodGet, next, nil, "Bearer "+jwt, c.maxBytes, &page)
 		if err != nil {
 			return nil, err
 		}
 		for _, item := range page {
-			result = append(result, Installation{ID: item.ID, AccountLogin: item.Account.Login, AccountType: item.Account.Type, Status: item.Status, SuspendedAt: item.SuspendedAt})
+			status := "active"
+			if item.SuspendedAt != nil {
+				status = "suspended"
+			}
+			result = append(result, Installation{ID: item.ID, AccountLogin: item.Account.Login, AccountType: item.Account.Type, Status: status, SuspendedAt: item.SuspendedAt})
 		}
 		next, err = c.nextPage(link)
 		if err != nil {
@@ -122,6 +133,7 @@ func (c *Client) InstallationRepositories(ctx context.Context, installationID in
 		Private       bool   `json:"private"`
 		Archived      bool   `json:"archived"`
 		Disabled      bool   `json:"disabled"`
+		SizeKB        int64  `json:"size"`
 	}
 	var result []Repository
 	next := c.apiURL("installation", "repositories")
@@ -129,12 +141,15 @@ func (c *Client) InstallationRepositories(ctx context.Context, installationID in
 		var page struct {
 			Repositories []wireRepository `json:"repositories"`
 		}
-		link, err := c.doInstallationJSON(ctx, installationID, next, c.maxBytes, &page)
+		link, err := c.doInstallationJSON(ctx, "repositories", installationID, next, c.maxBytes, &page)
 		if err != nil {
 			return nil, err
 		}
 		for _, item := range page.Repositories {
-			result = append(result, Repository{ID: item.ID, InstallationID: installationID, FullName: item.FullName, Owner: item.Owner.Login, Name: item.Name, CloneURL: item.CloneURL, HTMLURL: item.HTMLURL, DefaultBranch: item.DefaultBranch, Private: item.Private, Archived: item.Archived, Disabled: item.Disabled})
+			if item.SizeKB < 0 || item.SizeKB > math.MaxInt64/1024 {
+				return nil, errors.New("GitHub repository size is invalid")
+			}
+			result = append(result, Repository{ID: item.ID, InstallationID: installationID, SizeBytes: item.SizeKB * 1024, FullName: item.FullName, Owner: item.Owner.Login, Name: item.Name, CloneURL: item.CloneURL, HTMLURL: item.HTMLURL, DefaultBranch: item.DefaultBranch, Private: item.Private, Archived: item.Archived, Disabled: item.Disabled})
 		}
 		next, err = c.nextPage(link)
 		if err != nil {
@@ -150,7 +165,7 @@ func (c *Client) DefaultBranchSHA(ctx context.Context, installationID int64, own
 			SHA string `json:"sha"`
 		} `json:"commit"`
 	}
-	_, err := c.doInstallationJSON(ctx, installationID, c.apiURL("repos", owner, name, "branches", branch), c.maxBytes, &response)
+	_, err := c.doInstallationJSON(ctx, "default_branch", installationID, c.apiURL("repos", owner, name, "branches", branch), c.maxBytes, &response)
 	return response.Commit.SHA, err
 }
 
@@ -166,17 +181,17 @@ func (c *Client) ReadContents(ctx context.Context, installationID int64, owner, 
 		limit = c.maxBytes
 	}
 	var content Content
-	_, err := c.doInstallationJSON(ctx, installationID, endpoint, limit, &content)
+	_, err := c.doInstallationJSON(ctx, "contents", installationID, endpoint, limit, &content)
 	return content, err
 }
 
-func (c *Client) doInstallationJSON(ctx context.Context, installationID int64, endpoint *url.URL, limit int64, target any) (string, error) {
+func (c *Client) doInstallationJSON(ctx context.Context, operation string, installationID int64, endpoint *url.URL, limit int64, target any) (string, error) {
 	for attempt := 0; attempt < 2; attempt++ {
 		token, err := c.InstallationToken(ctx, installationID, nil)
 		if err != nil {
 			return "", err
 		}
-		link, err := c.doJSON(ctx, http.MethodGet, endpoint, nil, "Bearer "+token.Value, limit, target)
+		link, err := c.doJSON(ctx, operation, http.MethodGet, endpoint, nil, "Bearer "+token.Value, limit, target)
 		if !errors.Is(err, errUnauthorized) || attempt == 1 {
 			return link, err
 		}
@@ -189,7 +204,11 @@ func (c *Client) doInstallationJSON(ctx context.Context, installationID int64, e
 
 var errUnauthorized = errors.New("GitHub API status 401")
 
-func (c *Client) doJSON(ctx context.Context, method string, endpoint *url.URL, body []byte, authorization string, limit int64, target any) (string, error) {
+func (c *Client) doJSON(ctx context.Context, operation, method string, endpoint *url.URL, body []byte, authorization string, limit int64, target any) (link string, resultErr error) {
+	result := "error"
+	if c.metrics != nil {
+		defer func() { c.metrics.ObserveGitHub(operation, result) }()
+	}
 	request, err := http.NewRequestWithContext(ctx, method, endpoint.String(), bytes.NewReader(body))
 	if err != nil {
 		return "", err
@@ -227,6 +246,7 @@ func (c *Client) doJSON(ctx context.Context, method string, endpoint *url.URL, b
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return "", errors.New("decode GitHub API response: trailing JSON")
 	}
+	result = "success"
 	return response.Header.Get("Link"), nil
 }
 

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -90,8 +91,98 @@ func TestMigrateIsConcurrentAndIdempotent(t *testing.T) {
 		}
 	}
 	var count int
-	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != 1 {
+	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != 2 {
 		t.Fatalf("migrations=%d err=%v", count, err)
+	}
+}
+
+func TestMigrateUpgradesAppliedV1(t *testing.T) {
+	pool := testPool(t)
+	legacy, err := migrationFiles.ReadFile("migrations/001_milestone_2.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), string(legacy)); err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		"alter table repositories drop column if exists size_bytes",
+		"alter table webhook_deliveries alter column installation_id set not null",
+		"alter table index_jobs drop column if exists target_ref",
+		"alter table index_jobs drop column if exists reason",
+		"alter table index_jobs drop column if exists priority",
+		"alter table index_jobs drop column if exists max_attempts",
+		"alter table index_jobs drop constraint if exists index_jobs_check",
+		"alter table index_jobs add check ((state = 'running') = (lease_owner is not null and lease_expires_at is not null))",
+		"drop index if exists index_jobs_claim",
+		"create index index_jobs_claim on index_jobs(run_after, id) where state = 'queued'",
+		"create table schema_migrations (version bigint primary key)",
+		"insert into schema_migrations (version) values (1)",
+	} {
+		if _, err := pool.Exec(t.Context(), statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := Migrate(t.Context(), pool); err != nil {
+		t.Fatal(err)
+	}
+	for _, column := range []string{"size_bytes", "target_ref", "reason", "priority", "max_attempts"} {
+		var found bool
+		if err := pool.QueryRow(t.Context(), `select exists(
+			select 1 from information_schema.columns
+			where table_schema = current_schema() and table_name = case when $1 = 'size_bytes' then 'repositories' else 'index_jobs' end and column_name = $1)`, column).Scan(&found); err != nil || !found {
+			t.Fatalf("column %s: found=%v err=%v", column, found, err)
+		}
+	}
+	var nullable, index, lease string
+	if err := pool.QueryRow(t.Context(), `select is_nullable from information_schema.columns
+		where table_schema = current_schema() and table_name = 'webhook_deliveries' and column_name = 'installation_id'`).Scan(&nullable); err != nil || nullable != "YES" {
+		t.Fatalf("installation_id nullable=%q err=%v", nullable, err)
+	}
+	if err := pool.QueryRow(t.Context(), `select indexdef from pg_indexes where schemaname = current_schema() and indexname = 'index_jobs_claim'`).Scan(&index); err != nil || !strings.Contains(index, "priority DESC") {
+		t.Fatalf("claim index=%q err=%v", index, err)
+	}
+	if err := pool.QueryRow(t.Context(), `select pg_get_constraintdef(oid) from pg_constraint
+		where conrelid = 'index_jobs'::regclass and conname = 'index_jobs_check'`).Scan(&lease); err != nil || !strings.Contains(lease, "<> 'running'::text") {
+		t.Fatalf("lease constraint=%q err=%v", lease, err)
+	}
+}
+
+func TestMigrateUpgradesIntermediateV1(t *testing.T) {
+	pool := testPool(t)
+	legacy, err := migrationFiles.ReadFile("migrations/001_milestone_2.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), string(legacy)); err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		"alter table webhook_deliveries alter column installation_id drop not null",
+		"alter table index_jobs add column target_ref text not null default ''",
+		"alter table index_jobs add column reason varchar(128) not null default 'unspecified'",
+		"alter table index_jobs add column priority integer not null default 0",
+		"alter table index_jobs add column max_attempts integer not null default 5 check (max_attempts between 1 and 5)",
+		"alter table index_jobs drop constraint index_jobs_check",
+		"alter table index_jobs add check ((state = 'running' and lease_owner is not null and lease_expires_at is not null) or (state <> 'running' and lease_owner is null and lease_expires_at is null))",
+		"drop index index_jobs_claim",
+		"create index index_jobs_claim on index_jobs(priority desc, run_after, id) where state = 'queued'",
+		"create table schema_migrations (version bigint primary key)",
+		"insert into schema_migrations (version) values (1)",
+	} {
+		if _, err := pool.Exec(t.Context(), statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := Migrate(t.Context(), pool); err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	if err := pool.QueryRow(t.Context(), `select exists(
+		select 1 from information_schema.columns
+		where table_schema = current_schema() and table_name = 'repositories' and column_name = 'size_bytes')`).Scan(&found); err != nil || !found {
+		t.Fatalf("size_bytes found=%v err=%v", found, err)
 	}
 }
 

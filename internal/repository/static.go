@@ -16,6 +16,7 @@ type Repository struct {
 	ID             int64      `json:"id"`
 	InstallationID int64      `json:"installation_id"`
 	GitHubID       int64      `json:"github_id"`
+	SizeBytes      int64      `json:"size_bytes"`
 	ZoektID        uint32     `json:"zoekt_id"`
 	Name           string     `json:"name"`
 	Branch         string     `json:"branch"`
@@ -24,6 +25,7 @@ type Repository struct {
 	WebURL         string     `json:"web_url"`
 	Status         string     `json:"status"`
 	ErrorCode      string     `json:"error_code"`
+	SearchNode     string     `json:"search_node"`
 	Enabled        bool       `json:"enabled"`
 	LastIndexedAt  *time.Time `json:"last_indexed_at"`
 }

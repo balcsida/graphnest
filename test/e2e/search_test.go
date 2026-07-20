@@ -54,7 +54,7 @@ func TestPinnedFixtureSearch(t *testing.T) {
 	run(t, ctx, "git", "-C", repo, "config", "zoekt.repoid", "7")
 	run(t, ctx, "git", "-C", repo, "config", "zoekt.name", fixtureName)
 	run(t, ctx, "git", "-C", repo, "add", ".")
-	run(t, ctx, "git", "-C", repo, "commit", "-m", "fixture")
+	run(t, ctx, "git", "-C", repo, "-c", "commit.gpgsign=false", "commit", "-m", "fixture")
 	shaBytes, err := os.ReadFile(filepath.Join(repo, ".git", "refs", "heads", "main"))
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +91,7 @@ func TestPinnedFixtureSearch(t *testing.T) {
 	service := search.NewService(backend, authz.NewStatic(registry), search.Limits{MaxResults: 100, MaxResponseBytes: 256 << 10})
 	authenticator := authn.NewStatic(map[string]authn.Principal{token: {Subject: "fixture-user", RepositoryNames: []string{fixtureName}}})
 	mux := http.NewServeMux()
-	httpapi.RegisterSearch(mux, authenticator, service, 64<<10)
+	httpapi.RegisterSearch(mux, authenticator, service, 64<<10, 256<<10)
 	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return mcpserver.New(service)
 	}, nil)))

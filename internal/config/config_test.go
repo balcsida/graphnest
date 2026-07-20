@@ -26,7 +26,27 @@ func TestLoadReadsDurableConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" || got.GitHub.WebURL != "https://ghe.example.com" || got.GitHub.APIURL != "https://ghe.example.com/api/v3" || got.GitHub.UploadURL != "https://ghe.example.com/uploads" || got.GitHub.GitURL != "https://ghe.example.com" || got.GitHub.AppID != 123 || got.GitHub.PrivateKeyFile != "/run/secrets/key.pem" || got.GitHub.WebhookSecretFile != "/run/secrets/webhook" || got.GitHub.CAFile != "/run/secrets/ca.pem" || got.GitHub.APIVersion != "2022-11-28" || got.UserInstallationID != 10 || !reflect.DeepEqual(got.UserRepositoryIDs, []int64{101, 102}) || got.AdminInstallationID != 10 || !reflect.DeepEqual(got.AdminRepositoryIDs, []int64{101, 102, 103}) || got.Indexer.DataDir != "/var/lib/grepnest/data" || got.Indexer.IndexDir != "/var/lib/grepnest/index" || got.Indexer.GitPath != "/usr/bin/git" || got.Indexer.ZoektGitIndex != "/usr/local/bin/zoekt-git-index" || got.Indexer.WorkerID != "worker-1" || got.Indexer.MinFreeBytes != 1<<30 {
+	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" || got.GitHub.WebURL != "https://ghe.example.com" || got.GitHub.APIURL != "https://ghe.example.com/api/v3" || got.GitHub.UploadURL != "https://ghe.example.com/uploads" || got.GitHub.GitURL != "https://ghe.example.com" || got.GitHub.AppID != 123 || got.GitHub.PrivateKeyFile != "/run/secrets/key.pem" || got.GitHub.WebhookSecretFile != "/run/secrets/webhook" || got.GitHub.CAFile != "/run/secrets/ca.pem" || got.GitHub.APIVersion != "2022-11-28" || got.UserInstallationID != 10 || !reflect.DeepEqual(got.UserRepositoryIDs, []int64{101, 102}) || got.AdminInstallationID != 10 || !reflect.DeepEqual(got.AdminRepositoryIDs, []int64{101, 102, 103}) || got.Indexer != (Indexer{}) {
+		t.Fatalf("configuration = %#v", got)
+	}
+}
+
+func TestLoadDurableServerDoesNotRequireStaticOrIndexerConfiguration(t *testing.T) {
+	setValidEnvironment(t)
+	setDurableEnvironment(t)
+	for _, name := range []string{
+		"GREPNEST_REPOSITORIES_FILE", "GREPNEST_USER_REPOSITORIES", "GREPNEST_ADMIN_REPOSITORIES",
+		"GREPNEST_DATA_DIR", "GREPNEST_INDEX_DIR", "GREPNEST_GIT_PATH",
+		"GREPNEST_ZOEKT_GIT_INDEX", "GREPNEST_WORKER_ID", "GREPNEST_MIN_FREE_BYTES",
+	} {
+		t.Setenv(name, "")
+	}
+
+	got, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DatabaseURL == "" || got.RepositoriesFile != "" || got.Indexer != (Indexer{}) {
 		t.Fatalf("configuration = %#v", got)
 	}
 }
@@ -38,7 +58,6 @@ func TestLoadRejectsUnsafeDurableConfiguration(t *testing.T) {
 		{"HTTP GitHub API", "GREPNEST_GITHUB_API_URL", "http://ghe.example.com/api/v3"},
 		{"missing private key path", "GREPNEST_GITHUB_PRIVATE_KEY_FILE", ""},
 		{"missing webhook secret path", "GREPNEST_GITHUB_WEBHOOK_SECRET_FILE", ""},
-		{"zero free space floor", "GREPNEST_MIN_FREE_BYTES", "0"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			setValidEnvironment(t)
@@ -46,6 +65,61 @@ func TestLoadRejectsUnsafeDurableConfiguration(t *testing.T) {
 			t.Setenv(test.env, test.value)
 			if _, err := Load(); !errors.Is(err, ErrInvalid) {
 				t.Fatalf("Load() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadIndexerRejectsZeroFreeSpaceFloor(t *testing.T) {
+	setDurableEnvironment(t)
+	t.Setenv("GREPNEST_MIN_FREE_BYTES", "0")
+	if _, err := LoadIndexer(); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("LoadIndexer() error = %v", err)
+	}
+}
+
+func TestLoadIndexerRequiresOnlyIndexerConfiguration(t *testing.T) {
+	setValidEnvironment(t)
+	setDurableEnvironment(t)
+	for _, name := range []string{
+		"GREPNEST_USER_TOKEN", "GREPNEST_ADMIN_TOKEN",
+		"GREPNEST_LISTEN_ADDRESS", "GREPNEST_REPOSITORIES_FILE",
+		"GREPNEST_USER_REPOSITORIES", "GREPNEST_ADMIN_REPOSITORIES",
+		"GREPNEST_USER_INSTALLATION_ID", "GREPNEST_USER_REPOSITORY_IDS",
+		"GREPNEST_ADMIN_INSTALLATION_ID", "GREPNEST_ADMIN_REPOSITORY_IDS",
+	} {
+		t.Setenv(name, "")
+	}
+
+	got, err := LoadIndexer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" || got.ZoektURL != "http://127.0.0.1:6070" || got.MetricsListenAddress != ":9090" || got.GitHub.AppID != 123 || got.GitHub.PrivateKeyFile != "/run/secrets/key.pem" || got.GitHub.WebhookSecretFile != "" || got.WorkerID != "worker-1" || got.MaxRepositoryBytes != 5<<30 {
+		t.Fatalf("configuration = %#v", got)
+	}
+}
+
+func TestLoadIndexerRejectsInvalidMetricsAddress(t *testing.T) {
+	for _, value := range []string{"9090", ":0", ":65536"} {
+		t.Run(value, func(t *testing.T) {
+			setDurableEnvironment(t)
+			t.Setenv("GREPNEST_METRICS_LISTEN_ADDRESS", value)
+			if _, err := LoadIndexer(); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("LoadIndexer() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadIndexerRejectsMissingCredentials(t *testing.T) {
+	for _, name := range []string{"GREPNEST_DATABASE_URL", "GREPNEST_ZOEKT_URL", "GREPNEST_GITHUB_PRIVATE_KEY_FILE"} {
+		t.Run(name, func(t *testing.T) {
+			setDurableEnvironment(t)
+			t.Setenv("GREPNEST_ZOEKT_URL", "http://127.0.0.1:6070")
+			t.Setenv(name, "")
+			if _, err := LoadIndexer(); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("LoadIndexer() error = %v", err)
 			}
 		})
 	}

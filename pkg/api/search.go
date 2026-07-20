@@ -29,6 +29,7 @@ type SearchMatch struct {
 	Preview    string     `json:"preview"`
 	Score      float64    `json:"score"`
 	ZoektID    uint32     `json:"-"`
+	Branches   []string   `json:"-"`
 }
 
 type SearchResponse struct {

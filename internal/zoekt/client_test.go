@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -53,7 +54,7 @@ func TestSearchUsesPinnedJSONContract(t *testing.T) {
 		t.Fatalf("matches = %#v", response.Matches)
 	}
 	match := response.Matches[0]
-	if match.Path != "main.go" || match.ZoektID != 7 || match.SHA != "abc123" || match.LineNumber != 3 || match.Preview != "func main() {}\n" || match.Score != 4.5 {
+	if match.Path != "main.go" || match.ZoektID != 7 || match.SHA != "abc123" || !slices.Equal(match.Branches, []string{"main"}) || match.LineNumber != 3 || match.Preview != "func main() {}\n" || match.Score != 4.5 {
 		t.Fatalf("match = %#v", match)
 	}
 }
@@ -271,5 +272,71 @@ func TestSearchRecordsBackendFailure(t *testing.T) {
 	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	if !strings.Contains(recorder.Body.String(), `grepnest_search_backend_calls_total{result="error"} 1`) {
 		t.Fatalf("metrics = %s", recorder.Body.String())
+	}
+}
+
+func TestListUsesPinnedBoundedContract(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/api/list" {
+			t.Fatalf("request = %s %s", request.Method, request.URL.Path)
+		}
+		var body any
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]any{"Q": "", "Opts": map[string]any{"Field": float64(2)}}
+		if !equalJSON(body, want) {
+			t.Fatalf("body = %#v, want %#v", body, want)
+		}
+		_, _ = io.WriteString(writer, `{"List":{"ReposMap":{"7":{"Branches":[{"Name":"main","Version":"abc123"}]},"8":{"Branches":[{"Name":"main","Version":"other"}]}}}}`)
+	}))
+	defer server.Close()
+	client, err := New(server.URL, server.Client(), 1024, observability.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	repositories, err := client.List(t.Context(), 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []IndexedRepository{{RepoID: 7, Branch: "main", Version: "abc123"}}
+	if !slices.Equal(repositories, want) {
+		t.Fatalf("repositories = %#v, want %#v", repositories, want)
+	}
+}
+
+func TestListRejectsInvalidResponses(t *testing.T) {
+	for _, test := range []struct {
+		name, body string
+		status     int
+		limit      int64
+		redirect   bool
+		want       error
+	}{
+		{name: "oversized", body: `{}`, limit: 1, status: http.StatusOK, want: ErrResponseTooLarge},
+		{name: "malformed", body: `{`, limit: 1024, status: http.StatusOK, want: ErrUnavailable},
+		{name: "trailing", body: `{} {}`, limit: 1024, status: http.StatusOK, want: ErrUnavailable},
+		{name: "status", body: `{}`, limit: 1024, status: http.StatusInternalServerError, want: ErrUnavailable},
+		{name: "redirect", limit: 1024, status: http.StatusFound, redirect: true, want: ErrUnavailable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				if test.redirect {
+					http.Redirect(writer, request, "/other", http.StatusFound)
+					return
+				}
+				writer.WriteHeader(test.status)
+				_, _ = io.WriteString(writer, test.body)
+			}))
+			defer server.Close()
+			client, err := New(server.URL, server.Client(), test.limit, observability.New())
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.List(t.Context(), 7)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("error = %v, want %v", err, test.want)
+			}
+		})
 	}
 }

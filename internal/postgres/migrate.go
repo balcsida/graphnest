@@ -17,6 +17,11 @@ var migrationFiles embed.FS
 
 const migrationLockKey int64 = 2651002
 
+type migration struct {
+	name    string
+	version int64
+}
+
 func Open(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
@@ -47,22 +52,10 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if err != nil {
 		return err
 	}
-	type migration struct {
-		name    string
-		version int64
+	migrations, err := migrationDescriptors(entries)
+	if err != nil {
+		return err
 	}
-	migrations := make([]migration, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
-			continue
-		}
-		version, err := strconv.ParseInt(strings.SplitN(entry.Name(), "_", 2)[0], 10, 64)
-		if err != nil {
-			return fmt.Errorf("migration %q: %w", entry.Name(), err)
-		}
-		migrations = append(migrations, migration{name: entry.Name(), version: version})
-	}
-	sort.Slice(migrations, func(i, j int) bool { return migrations[i].version < migrations[j].version })
 	for _, migration := range migrations {
 		version := migration.version
 		var applied bool
@@ -84,4 +77,25 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+func migrationDescriptors(entries []fs.DirEntry) ([]migration, error) {
+	migrations := make([]migration, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		version, err := strconv.ParseInt(strings.SplitN(entry.Name(), "_", 2)[0], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("migration %q: %w", entry.Name(), err)
+		}
+		migrations = append(migrations, migration{name: entry.Name(), version: version})
+	}
+	sort.SliceStable(migrations, func(i, j int) bool { return migrations[i].version < migrations[j].version })
+	for index := 1; index < len(migrations); index++ {
+		if migrations[index-1].version == migrations[index].version {
+			return nil, fmt.Errorf("duplicate migration version %d: %q and %q", migrations[index].version, migrations[index-1].name, migrations[index].name)
+		}
+	}
+	return migrations, nil
 }

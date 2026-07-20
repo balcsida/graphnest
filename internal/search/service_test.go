@@ -26,6 +26,52 @@ func TestSearchPassesOnlyAuthorizedZoektIDs(t *testing.T) {
 	}
 }
 
+func TestSearchSuppressesMismatchedIndexedRevision(t *testing.T) {
+	backend := &recordingBackend{response: api.SearchResponse{Matches: []api.SearchMatch{{ZoektID: 7, SHA: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Branches: []string{"main"}}}}}
+	service := NewService(backend, authorizerWith(repository.Repository{ID: 1, ZoektID: 7, Name: "acme/one", Branch: "main", IndexedSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}), Limits{})
+	response, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{Query: "needle"})
+	if err != nil || len(response.Matches) != 0 {
+		t.Fatalf("matches=%#v err=%v", response.Matches, err)
+	}
+}
+
+func TestSearchSuppressesEmptyIndexedRevision(t *testing.T) {
+	backend := &recordingBackend{response: api.SearchResponse{Matches: []api.SearchMatch{{ZoektID: 7, SHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Branches: []string{"main"}}}}}
+	service := NewService(backend, authorizerWith(repository.Repository{ID: 1, ZoektID: 7, Name: "acme/one", Branch: "main"}), Limits{})
+	response, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{Query: "needle"})
+	if err != nil || len(response.Matches) != 0 {
+		t.Fatalf("matches=%#v err=%v", response.Matches, err)
+	}
+}
+
+func TestSearchSuppressesWrongIndexedBranch(t *testing.T) {
+	backend := &recordingBackend{response: api.SearchResponse{Matches: []api.SearchMatch{{ZoektID: 7, SHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Branches: []string{"other"}}}}}
+	service := NewService(backend, authorizerWith(repository.Repository{ID: 1, ZoektID: 7, Name: "acme/one", Branch: "main", IndexedSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}), Limits{})
+	response, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{Query: "needle"})
+	if err != nil || len(response.Matches) != 0 {
+		t.Fatalf("matches=%#v err=%v", response.Matches, err)
+	}
+}
+
+func TestSearchSuppressesUnknownRepoID(t *testing.T) {
+	backend := &recordingBackend{response: api.SearchResponse{Matches: []api.SearchMatch{{ZoektID: 8, SHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Branches: []string{"main"}}}}}
+	service := NewService(backend, authorizerWith(repository.Repository{ID: 1, ZoektID: 7, Name: "acme/one", Branch: "main", IndexedSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}), Limits{})
+	response, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{Query: "needle"})
+	if err != nil || len(response.Matches) != 0 {
+		t.Fatalf("matches=%#v err=%v", response.Matches, err)
+	}
+}
+
+func TestSearchReturnsExactIndexedRevision(t *testing.T) {
+	const sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	backend := &recordingBackend{response: api.SearchResponse{Matches: []api.SearchMatch{{ZoektID: 7, SHA: sha, Branches: []string{"main"}}}}}
+	service := NewService(backend, authorizerWith(repository.Repository{ID: 1, GitHubID: 101, ZoektID: 7, Name: "acme/one", Branch: "main", IndexedSHA: sha}), Limits{})
+	response, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{Query: "needle"})
+	if err != nil || len(response.Matches) != 1 || response.Matches[0].Repository.ID != 101 {
+		t.Fatalf("matches=%#v err=%v", response.Matches, err)
+	}
+}
+
 func TestSearchSkipsBackendForEmptyAuthorization(t *testing.T) {
 	backend := &recordingBackend{}
 	service := NewService(backend, authorizer(), Limits{MaxResults: 100})
@@ -66,7 +112,7 @@ func TestSearchClampsConfiguredDefaults(t *testing.T) {
 }
 
 func TestNewServiceClampsConfiguredMaximaToAbsoluteCaps(t *testing.T) {
-	backend := &recordingBackend{response: api.SearchResponse{Matches: []api.SearchMatch{{Preview: strings.Repeat("x", 300<<10), ZoektID: 7}}}}
+	backend := &recordingBackend{response: api.SearchResponse{Matches: []api.SearchMatch{{Preview: strings.Repeat("x", 300<<10), ZoektID: 7, SHA: "abc", Branches: []string{"main"}}}}}
 	service := NewService(backend, authorizer(), Limits{
 		MaxResults: 999, MaxContextLines: 999, MaxTimeout: 99 * time.Second, MaxResponseBytes: 999 << 10,
 	})
@@ -83,12 +129,12 @@ func TestNewServiceClampsConfiguredMaximaToAbsoluteCaps(t *testing.T) {
 
 func TestSearchLimitsEnrichedCanonicalResponse(t *testing.T) {
 	backend := &recordingBackend{response: api.SearchResponse{Matches: []api.SearchMatch{
-		{Path: "one.go", Preview: "first", ZoektID: 7},
-		{Path: "two.go", Preview: "second", ZoektID: 7},
+		{Path: "one.go", Preview: "first", ZoektID: 7, SHA: "abc", Branches: []string{"main"}},
+		{Path: "two.go", Preview: "second", ZoektID: 7, SHA: "abc", Branches: []string{"main"}},
 	}}}
 	service := NewService(backend, authorizer(), Limits{MaxResults: 100, MaxResponseBytes: 256 << 10})
 	want := api.SearchResponse{Matches: []api.SearchMatch{{
-		Repository: api.Repository{ID: 1, Name: "acme/one"}, Path: "one.go", Preview: "first", ZoektID: 7,
+		Repository: api.Repository{ID: 1, Name: "acme/one", Branch: "main", IndexedSHA: "abc"}, Path: "one.go", SHA: "abc", Preview: "first", ZoektID: 7,
 	}}, Truncated: true}
 	budget := marshaledSize(t, want)
 
@@ -114,7 +160,7 @@ func TestSearchPreservesBackendTruncation(t *testing.T) {
 }
 
 func TestSearchReturnsEmptyTruncatedEnvelopeBelowFloor(t *testing.T) {
-	backend := &recordingBackend{response: api.SearchResponse{Matches: []api.SearchMatch{{Path: "one.go", ZoektID: 7}}}}
+	backend := &recordingBackend{response: api.SearchResponse{Matches: []api.SearchMatch{{Path: "one.go", ZoektID: 7, SHA: "abc", Branches: []string{"main"}}}}}
 	service := NewService(backend, authorizer(), Limits{MaxResults: 100, MaxResponseBytes: 1024})
 	got, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{Query: "secret", MaxResponseBytes: 1})
 	if err != nil {
@@ -149,7 +195,11 @@ func (backend *recordingBackend) Search(_ context.Context, request BackendReques
 func (*recordingBackend) Health(context.Context) error { return nil }
 
 func authorizer() authz.Authorizer {
-	registry, err := repository.NewStatic([]repository.Repository{{ID: 1, ZoektID: 7, Name: "acme/one"}, {ID: 2, ZoektID: 8, Name: "acme/two"}})
+	return authorizerWith(repository.Repository{ID: 1, ZoektID: 7, Name: "acme/one", Branch: "main", IndexedSHA: "abc"}, repository.Repository{ID: 2, ZoektID: 8, Name: "acme/two", Branch: "main", IndexedSHA: "def"})
+}
+
+func authorizerWith(repositories ...repository.Repository) authz.Authorizer {
+	registry, err := repository.NewStatic(repositories)
 	if err != nil {
 		panic(err)
 	}

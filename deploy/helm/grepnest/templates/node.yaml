@@ -110,6 +110,8 @@ spec:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             seccompProfile: {type: RuntimeDefault}
+          ports:
+            - {name: metrics, containerPort: {{ .Values.node.indexer.metricsPort }}, protocol: TCP}
           envFrom:
             - configMapRef:
                 name: {{ include "grepnest.nodeName" . }}
@@ -178,6 +180,21 @@ spec:
     app.kubernetes.io/component: node
   ports:
     - {name: zoekt, port: {{ .Values.node.service.port }}, targetPort: zoekt, protocol: TCP}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "grepnest.indexerName" . }}
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+    app.kubernetes.io/component: indexer
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "grepnest.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+  ports:
+    - {name: metrics, port: {{ .Values.node.indexer.metricsPort }}, targetPort: metrics, protocol: TCP}
 ---
 apiVersion: v1
 kind: Service

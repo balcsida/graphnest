@@ -2,8 +2,7 @@
 
 This chart models the generic Kubernetes single-node pilot. It is structurally
 lintable and renderable, but not currently deployable: GrepNest images are not
-built or published, and the required Milestone 2 `grepnest-indexer` and
-`grepnest-migrate` behavior is unfinished. It has not been cluster-tested.
+built or published, and it has not been cluster-tested.
 
 The chart requires an operator-managed PostgreSQL database and never installs
 PostgreSQL or creates Secrets. Supply both image repositories and immutable
@@ -73,10 +72,15 @@ read-only at the indexes path. The chart derives Zoekt's index and listen
 arguments from `node.paths.indexes` and `node.zoekt.port`; `node.service.port`
 is the internal Service port.
 
+`node.indexer.maxRepositoryBytes` defaults to 5 GiB and rejects oversized
+GHES repositories before the indexer mints credentials or fetches Git data.
+
 `monitoring.serviceMonitor.enabled` requires the
 `monitoring.coreos.com/v1/ServiceMonitor` CRD. Rendering fails clearly if that
-CRD is unavailable. Configure the monitoring namespace selector in the ingress
-policy when Prometheus runs outside the release namespace.
+CRD is unavailable. It scrapes the server and the indexer's internal metrics
+Service on `node.indexer.metricsPort`. Configure the monitoring namespace
+selector in the ingress policy when Prometheus runs outside the release
+namespace.
 
 Ingress isolation is enabled by default. External egress CIDR isolation is
 optional because portable NetworkPolicy cannot select DNS names. Before

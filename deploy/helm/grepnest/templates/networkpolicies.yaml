@@ -61,8 +61,39 @@ spec:
             matchLabels:
               {{- include "grepnest.selectorLabels" . | nindent 14 }}
               app.kubernetes.io/component: server
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              {{- include "grepnest.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: node
       ports:
         - {protocol: TCP, port: {{ .Values.node.zoekt.port }}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "grepnest.resourceName" (list . "allow-indexer-metrics-ingress") }}
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: node
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+        {{- with .Values.networkPolicy.serverIngress.monitoringNamespaceSelector }}
+        - namespaceSelector:
+            {{- toYaml . | nindent 12 }}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.node.indexer.metricsPort }}}
 {{- if .Values.networkPolicy.externalEgress.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -88,7 +119,10 @@ spec:
   podSelector:
     matchLabels:
       {{- include "grepnest.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: server
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [server, node]
   policyTypes: [Egress]
   egress:
     - to:

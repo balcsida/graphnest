@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -65,7 +66,11 @@ func (service *Service) Search(ctx context.Context, principal authn.Principal, r
 	metadata := make(map[uint32]api.Repository, len(repositories))
 	for index, repository := range repositories {
 		backendRequest.RepositoryIDs[index] = repository.ZoektID
-		metadata[repository.ZoektID] = api.Repository{ID: repository.ID, Name: repository.Name, Branch: repository.Branch, IndexedSHA: repository.IndexedSHA, WebURL: repository.WebURL}
+		publicID := repository.GitHubID
+		if publicID == 0 {
+			publicID = repository.ID
+		}
+		metadata[repository.ZoektID] = api.Repository{ID: publicID, Name: repository.Name, Branch: repository.Branch, IndexedSHA: repository.IndexedSHA, WebURL: repository.WebURL}
 	}
 	response, err := service.backend.Search(ctx, backendRequest)
 	if err != nil {
@@ -162,7 +167,7 @@ func clampInt64(value, maximum int64) int64 {
 func enrich(matches []api.SearchMatch, metadata map[uint32]api.Repository) []api.SearchMatch {
 	result := matches[:0]
 	for _, match := range matches {
-		if repository, ok := metadata[match.ZoektID]; ok {
+		if repository, ok := metadata[match.ZoektID]; ok && repository.IndexedSHA != "" && match.SHA == repository.IndexedSHA && slices.Contains(match.Branches, repository.Branch) {
 			match.Repository = repository
 			result = append(result, match)
 		}

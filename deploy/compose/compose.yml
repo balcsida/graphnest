@@ -15,6 +15,7 @@ services:
     networks: [internal]
 
   zoekt-index:
+    profiles: [fixture]
     image: ghcr.io/sourcegraph/zoekt@sha256:ac76391662c77d02f5be73b64272304415dbc42cac70633ef89d28747edff4cd
     platform: linux/amd64
     entrypoint: ["/bin/sh", "-ec"]
@@ -35,6 +36,7 @@ services:
     networks: [internal]
 
   zoekt:
+    profiles: [fixture]
     image: ghcr.io/sourcegraph/zoekt@sha256:ac76391662c77d02f5be73b64272304415dbc42cac70633ef89d28747edff4cd
     platform: linux/amd64
     entrypoint: ["zoekt-webserver"]
@@ -48,6 +50,23 @@ services:
       retries: 30
     volumes:
       - zoekt-index:/data/index:ro
+    networks: [internal, loopback]
+
+  zoekt-durable:
+    profiles: [durable]
+    image: ghcr.io/sourcegraph/zoekt@sha256:ac76391662c77d02f5be73b64272304415dbc42cac70633ef89d28747edff4cd
+    platform: linux/amd64
+    entrypoint: ["zoekt-webserver"]
+    command: ["-index", "/data/index", "-listen", ":6070", "-rpc", "-html=false"]
+    ports:
+      - "127.0.0.1:6070:6070"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - --header 'Content-Type: application/json' --post-data '{\"Q\":\"file:.\",\"RepoIDs\":[],\"Opts\":{\"MaxDocDisplayCount\":1}}' http://127.0.0.1:6070/api/search >/dev/null"]
+      interval: 1s
+      timeout: 1s
+      retries: 30
+    volumes:
+      - ../../.cache/durable-index:/data/index:ro
     networks: [internal, loopback]
 
 networks:

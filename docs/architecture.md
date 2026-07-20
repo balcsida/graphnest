@@ -26,8 +26,8 @@ version differs from PostgreSQL's committed indexed SHA. Runtime bearer scopes
 bind to numeric GitHub repository IDs within an installation boundary; mutable
 repository names are selectors only.
 
-The local Compose topology keeps the indexer, Zoekt, and PostgreSQL on the
-internal network. Zoekt alone additionally joins the loopback-published
-network at `127.0.0.1:6070`; it is not public ingress. OpenShift packaging and
-production ingress remain Milestone 3 work. See `docs/adr` for accepted
-decisions.
+The local durable Compose profile keeps PostgreSQL and Zoekt on the internal
+network and bind-mounts the host indexer's shard directory into Zoekt. Zoekt is
+published only at `127.0.0.1:6070`; it is not public ingress. OpenShift
+packaging and production ingress remain Milestone 3 work. See `docs/adr` for
+accepted decisions.

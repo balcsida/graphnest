@@ -15,12 +15,15 @@ var ErrLeaseLost = errors.New("index job lease lost")
 type IndexRequest struct {
 	RepositoryID                 int64
 	TargetSHA, TargetRef, Reason string
+	Priority, MaxAttempts        int
 }
 
 type IndexJob struct {
 	ID, RepositoryID             int64
-	TargetSHA, State, LeaseOwner string
-	Attempt                      int
+	TargetSHA, TargetRef, Reason string
+	State, LeaseOwner            string
+	Attempt, Priority            int
+	MaxAttempts                  int
 	LeaseExpiresAt               time.Time
 }
 
@@ -38,8 +41,18 @@ func (s *Store) EnqueueIndex(ctx context.Context, request IndexRequest) error {
 
 func enqueueIndex(ctx context.Context, tx pgx.Tx, request IndexRequest) error {
 	var desiredSHA *string
-	if err := tx.QueryRow(ctx, `select desired_sha from repositories where id=$1 for update`, request.RepositoryID).Scan(&desiredSHA); err != nil {
+	var defaultBranch string
+	if err := tx.QueryRow(ctx, `select desired_sha, default_branch from repositories where id=$1 for update`, request.RepositoryID).Scan(&desiredSHA, &defaultBranch); err != nil {
 		return err
+	}
+	if request.TargetRef == "" {
+		request.TargetRef = "refs/heads/" + defaultBranch
+	}
+	if request.Reason == "" {
+		request.Reason = "reconcile"
+	}
+	if request.MaxAttempts <= 0 || request.MaxAttempts > 5 {
+		request.MaxAttempts = 5
 	}
 	if _, err := tx.Exec(ctx, `update repositories set desired_sha=$2, status='pending', error_code=null, updated_at=now() where id=$1`, request.RepositoryID, request.TargetSHA); err != nil {
 		return err
@@ -53,7 +66,8 @@ func enqueueIndex(ctx context.Context, tx pgx.Tx, request IndexRequest) error {
 	if _, err := tx.Exec(ctx, `delete from index_jobs where repository_id=$1 and state='queued'`, request.RepositoryID); err != nil {
 		return err
 	}
-	_, err := tx.Exec(ctx, `insert into index_jobs(repository_id, target_sha, state) values($1,$2,'queued')`, request.RepositoryID, request.TargetSHA)
+	_, err := tx.Exec(ctx, `insert into index_jobs(repository_id, target_ref, target_sha, reason, priority, max_attempts, state)
+		values($1,$2,$3,$4,$5,$6,'queued')`, request.RepositoryID, request.TargetRef, request.TargetSHA, request.Reason, request.Priority, request.MaxAttempts)
 	return err
 }
 
@@ -66,15 +80,22 @@ func (s *Store) ClaimIndex(ctx context.Context, owner string) (IndexJob, error) 
 	var job IndexJob
 	err = tx.QueryRow(ctx, `
 		with next as (
-			select id from index_jobs j where state='queued' and run_after<=now()
+			select j.id from installations
+			join repositories on repositories.installation_id=installations.id
+			join index_jobs j on j.repository_id=repositories.id
+			where j.state='queued' and j.run_after<=now() and repositories.enabled
+			and not repositories.archived and installations.status='active'
 			and not exists(select 1 from index_jobs running where running.repository_id=j.repository_id and running.state='running')
-			order by run_after, id for update skip locked limit 1
+			order by j.priority desc, j.run_after, j.id
+			for share of installations for update of repositories, j skip locked limit 1
 		)
 		update index_jobs set state='running', attempt=attempt+1, lease_owner=$1,
 			lease_expires_at=now()+interval '2 minutes', updated_at=now()
 		where id=(select id from next)
-		returning id, repository_id, target_sha, state, lease_owner, attempt, lease_expires_at`, owner).
-		Scan(&job.ID, &job.RepositoryID, &job.TargetSHA, &job.State, &job.LeaseOwner, &job.Attempt, &job.LeaseExpiresAt)
+		returning id, repository_id, target_ref, target_sha, reason, priority, max_attempts,
+			state, lease_owner, attempt, lease_expires_at`, owner).
+		Scan(&job.ID, &job.RepositoryID, &job.TargetRef, &job.TargetSHA, &job.Reason, &job.Priority, &job.MaxAttempts,
+			&job.State, &job.LeaseOwner, &job.Attempt, &job.LeaseExpiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return IndexJob{}, ErrNoJob
 	}
@@ -100,24 +121,33 @@ func (s *Store) CompleteIndex(ctx context.Context, id int64, owner string) error
 	}
 	defer tx.Rollback(ctx)
 	var repositoryID int64
-	var targetSHA string
-	if err := tx.QueryRow(ctx, `select repository_id, target_sha from index_jobs where id=$1 and state='running' and lease_owner=$2 and lease_expires_at>now() for update`, id, owner).Scan(&repositoryID, &targetSHA); errors.Is(err, pgx.ErrNoRows) {
+	var targetSHA, desiredSHA, installationStatus string
+	var enabled, archived bool
+	if err := tx.QueryRow(ctx, `select repositories.id, index_jobs.target_sha,
+		coalesce(repositories.desired_sha, ''), repositories.enabled, repositories.archived, installations.status
+		from installations join repositories on repositories.installation_id=installations.id
+		join index_jobs on index_jobs.repository_id=repositories.id
+		where index_jobs.id=$1 and index_jobs.state='running' and index_jobs.lease_owner=$2
+		and index_jobs.lease_expires_at>now()
+		for share of installations for update of repositories, index_jobs`, id, owner).
+		Scan(&repositoryID, &targetSHA, &desiredSHA, &enabled, &archived, &installationStatus); errors.Is(err, pgx.ErrNoRows) {
 		return ErrLeaseLost
 	} else if err != nil {
 		return err
 	}
-	var desiredSHA string
-	if err := tx.QueryRow(ctx, `select desired_sha from repositories where id=$1 for update`, repositoryID).Scan(&desiredSHA); err != nil {
-		return err
-	}
 	state := "superseded"
-	if desiredSHA == targetSHA {
+	errorCode := ""
+	available := enabled && !archived && installationStatus == "active"
+	if available && desiredSHA == targetSHA {
 		state = "succeeded"
 		if _, err := tx.Exec(ctx, `update repositories set indexed_sha=$2, status='ready', error_code=null, last_indexed_at=now(), updated_at=now() where id=$1`, repositoryID, targetSHA); err != nil {
 			return err
 		}
+	} else if !available {
+		errorCode = "repository_unavailable"
 	}
-	if _, err := tx.Exec(ctx, `update index_jobs set state=$2, lease_owner=null, lease_expires_at=null, error_code=null, error_message=null, updated_at=now() where id=$1`, id, state); err != nil {
+	if _, err := tx.Exec(ctx, `update index_jobs set state=$2, lease_owner=null, lease_expires_at=null,
+		error_code=nullif($3, ''), error_message=null, updated_at=now() where id=$1`, id, state, errorCode); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -134,22 +164,27 @@ func (s *Store) finishFailure(ctx context.Context, id int64, owner, errorCode st
 	}
 	defer tx.Rollback(ctx)
 	var repositoryID int64
-	var targetSHA string
-	var attempt int
-	if err := tx.QueryRow(ctx, `select repository_id, target_sha, attempt from index_jobs
-		where id=$1 and state='running' and lease_owner=$2 and lease_expires_at>now() for update`, id, owner).Scan(&repositoryID, &targetSHA, &attempt); errors.Is(err, pgx.ErrNoRows) {
+	var targetSHA, desiredSHA, installationStatus string
+	var enabled, archived bool
+	var attempt, maxAttempts int
+	if err := tx.QueryRow(ctx, `select repositories.id, index_jobs.target_sha, repositories.desired_sha,
+		repositories.enabled, repositories.archived, installations.status, index_jobs.attempt, index_jobs.max_attempts
+		from installations join repositories on repositories.installation_id=installations.id
+		join index_jobs on index_jobs.repository_id=repositories.id
+		where index_jobs.id=$1 and index_jobs.state='running' and index_jobs.lease_owner=$2
+		and index_jobs.lease_expires_at>now()
+		for share of installations for update of repositories, index_jobs`, id, owner).
+		Scan(&repositoryID, &targetSHA, &desiredSHA, &enabled, &archived, &installationStatus, &attempt, &maxAttempts); errors.Is(err, pgx.ErrNoRows) {
 		return ErrLeaseLost
 	} else if err != nil {
 		return err
 	}
-	var desiredSHA string
-	if err := tx.QueryRow(ctx, `select desired_sha from repositories where id=$1 for update`, repositoryID).Scan(&desiredSHA); err != nil {
-		return err
-	}
 	state := "failed"
-	if desiredSHA != targetSHA {
+	if !enabled || archived || installationStatus != "active" {
+		state, errorCode = "superseded", "repository_unavailable"
+	} else if desiredSHA != targetSHA {
 		state = "superseded"
-	} else if retry && attempt < 5 {
+	} else if retry && attempt < maxAttempts {
 		state = "queued"
 	}
 	if _, err := tx.Exec(ctx, `update index_jobs set state=$2, lease_owner=null, lease_expires_at=null,
@@ -160,7 +195,7 @@ func (s *Store) finishFailure(ctx context.Context, id int64, owner, errorCode st
 		return err
 	}
 	if state == "failed" {
-		if _, err := tx.Exec(ctx, `update repositories set status='failed', error_code=$2, updated_at=now() where id=$1`, repositoryID, errorCode); err != nil {
+		if _, err := tx.Exec(ctx, `update repositories set status='failed', error_code=$2, updated_at=now() where id=$1 and enabled`, repositoryID, errorCode); err != nil {
 			return err
 		}
 	}
@@ -176,19 +211,23 @@ func (s *Store) ReapExpired(ctx context.Context, limit int) (int64, error) {
 	type expiredJob struct {
 		id, repositoryID int64
 		target, desired  string
-		attempt          int
+		attempt, maximum int
+		available        bool
 	}
-	rows, err := tx.Query(ctx, `select j.id, j.repository_id, j.target_sha, r.desired_sha, j.attempt
-		from index_jobs j join repositories r on r.id=j.repository_id
+	rows, err := tx.Query(ctx, `select j.id, j.repository_id, j.target_sha, r.desired_sha, j.attempt,
+		j.max_attempts, r.enabled and not r.archived and i.status='active'
+		from installations i join repositories r on r.installation_id=i.id
+		join index_jobs j on j.repository_id=r.id
 		where j.state='running' and j.lease_expires_at<=now()
-		order by j.lease_expires_at, j.id for update of j, r skip locked limit $1`, limit)
+		order by j.lease_expires_at, j.id
+		for share of i for update of r, j skip locked limit $1`, limit)
 	if err != nil {
 		return 0, err
 	}
 	var jobs []expiredJob
 	for rows.Next() {
 		var job expiredJob
-		if err := rows.Scan(&job.id, &job.repositoryID, &job.target, &job.desired, &job.attempt); err != nil {
+		if err := rows.Scan(&job.id, &job.repositoryID, &job.target, &job.desired, &job.attempt, &job.maximum, &job.available); err != nil {
 			rows.Close()
 			return 0, err
 		}
@@ -201,20 +240,23 @@ func (s *Store) ReapExpired(ctx context.Context, limit int) (int64, error) {
 	rows.Close()
 	for _, job := range jobs {
 		state := "failed"
-		if job.desired != job.target {
+		errorCode := "lease_expired"
+		if !job.available {
+			state, errorCode = "superseded", "repository_unavailable"
+		} else if job.desired != job.target {
 			state = "superseded"
-		} else if job.attempt < 5 {
+		} else if job.attempt < job.maximum {
 			state = "queued"
 		}
 		if _, err := tx.Exec(ctx, `update index_jobs set state=$2, lease_owner=null, lease_expires_at=null,
-			error_code='lease_expired', error_message=null,
+			error_code=$3, error_message=null,
 			run_after=case when $2::varchar='queued' then now()+interval '1 second'*
 				least(5*power(2::double precision, attempt-1), 300)*random() else run_after end,
-			updated_at=now() where id=$1`, job.id, state); err != nil {
+			updated_at=now() where id=$1`, job.id, state, errorCode); err != nil {
 			return 0, err
 		}
 		if state == "failed" {
-			if _, err := tx.Exec(ctx, `update repositories set status='failed', error_code='lease_expired', updated_at=now() where id=$1`, job.repositoryID); err != nil {
+			if _, err := tx.Exec(ctx, `update repositories set status='failed', error_code='lease_expired', updated_at=now() where id=$1 and enabled`, job.repositoryID); err != nil {
 				return 0, err
 			}
 		}

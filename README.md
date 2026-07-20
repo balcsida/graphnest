@@ -1,14 +1,15 @@
 # GrepNest
 
-GrepNest is a pre-pilot code-search service. Only Milestones 0-1 exist: a
-pinned Zoekt-backed search path, bearer authorization, REST, and MCP. It is not
-production-ready. PostgreSQL is present only in the development Compose stack
-and is unused until Milestone 2.
+GrepNest is a pre-pilot code-search service. Milestones 0-2 provide a pinned
+Zoekt-backed search path, bearer authorization, REST and MCP, PostgreSQL-backed
+repository state, GitHub App reconciliation, verified webhooks, indexed-SHA
+file reads, and sequential default-branch indexing. The local GHES-compatible
+HTTPS smart-Git-to-Zoekt proof passes.
+It is not production-ready.
 
 The [Helm chart](deploy/helm/grepnest/README.md) is structurally lintable and
 renderable, but not currently deployable. This repository does not build or
-publish the required images, and Milestone 2 `grepnest-indexer` and
-`grepnest-migrate` behavior is unfinished. The chart has not been cluster-tested.
+publish the required images, and the chart has not been cluster-tested.
 
 ## Local quick start
 
@@ -17,7 +18,7 @@ Prerequisites: Go 1.26, Git, Docker Compose, and an internet connection for
 
 ```sh
 make tools
-docker compose -f deploy/compose/compose.yml up -d --wait
+docker compose -f deploy/compose/compose.yml --profile fixture up -d --wait
 ```
 
 Compose copies `test/fixtures/repository`, initializes it as a Git repository,
@@ -84,11 +85,30 @@ The proxy appends `/mcp`; do not set Zoekt or server configuration on the proxy.
 
 ## Server environment
 
-Required: `GREPNEST_ZOEKT_URL` (HTTP(S)), `GREPNEST_REPOSITORIES_FILE`, and
-distinct non-empty `GREPNEST_USER_TOKEN` and `GREPNEST_ADMIN_TOKEN`.
+All modes require `GREPNEST_ZOEKT_URL` (HTTP(S)) and distinct non-empty
+`GREPNEST_USER_TOKEN` and `GREPNEST_ADMIN_TOKEN`.
 `GREPNEST_LISTEN_ADDRESS` defaults to `:8080`. Repository lists are
 comma-separated: `GREPNEST_USER_REPOSITORIES` and
 `GREPNEST_ADMIN_REPOSITORIES`.
+
+Static fixture mode additionally requires `GREPNEST_REPOSITORIES_FILE` and uses
+the name-based repository lists above. Durable mode is selected by
+`GREPNEST_DATABASE_URL` and does not read the static repository file or any
+indexer-only setting. It requires these server settings:
+
+- `GREPNEST_GITHUB_WEB_URL`, `GREPNEST_GITHUB_API_URL`,
+  `GREPNEST_GITHUB_UPLOAD_URL`, and `GREPNEST_GITHUB_GIT_URL` as HTTPS URLs;
+- `GREPNEST_GITHUB_APP_ID`, `GREPNEST_GITHUB_PRIVATE_KEY_FILE`, and
+  `GREPNEST_GITHUB_WEBHOOK_SECRET_FILE`;
+- `GREPNEST_USER_INSTALLATION_ID`, `GREPNEST_USER_REPOSITORY_IDS`,
+  `GREPNEST_ADMIN_INSTALLATION_ID`, and `GREPNEST_ADMIN_REPOSITORY_IDS`.
+
+`GREPNEST_GITHUB_API_VERSION` defaults to `2022-11-28` and
+`GREPNEST_GITHUB_CA_FILE` optionally extends system trust. Startup pings and
+migrates PostgreSQL, records the singleton Zoekt node as `primary`, reconciles
+GitHub synchronously, then refreshes reconciliation and queue metrics every five
+minutes. `POST /webhooks/github` is public but requires a valid GitHub HMAC;
+search, repository, file-read, and MCP routes require bearer authentication.
 
 Optional limits are positive and cannot exceed their server caps:
 
@@ -103,8 +123,10 @@ Optional limits are positive and cannot exceed their server caps:
 | `GREPNEST_MAX_REQUEST_BYTES` | 65536 | 65536 |
 | `GREPNEST_MAX_RESPONSE_BYTES` | 262144 | 262144 |
 
-Run `make fmt lint test test-race integration e2e build` before proposing a
-change. `make helm-lint helm-test` validates the chart structure without
+Run `make fmt lint staticcheck govulncheck test test-race postgres-integration
+integration e2e build` before proposing a change. `make e2e` starts its pinned
+PostgreSQL dependency and runs real TLS smart-Git and Zoekt processes. `make
+helm-lint helm-test` validates the chart structure without
 contacting a cluster. `make image` intentionally fails with
 `image: milestone not implemented`; no deployable image is produced.
 

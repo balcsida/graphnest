@@ -58,10 +58,7 @@ create table index_jobs (
     error_message varchar(1024),
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
-    check (
-        (state = 'running' and lease_owner is not null and lease_expires_at is not null)
-        or (state <> 'running' and lease_owner is null and lease_expires_at is null)
-    )
+    check ((state = 'running') = (lease_owner is not null and lease_expires_at is not null))
 );
 
 create table search_nodes (
