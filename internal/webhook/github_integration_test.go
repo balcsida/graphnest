@@ -313,10 +313,18 @@ func TestGitHubProcessorRecordsTerminalMetricsOnce(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	invalid := Delivery{ID: "invalid", Event: "push", Body: []byte(`{}`)}
+	if inserted, err := processor.Process(t.Context(), invalid); !inserted {
+		t.Fatalf("invalid: inserted=%v err=%v", inserted, err)
+	}
+	if inserted, err := processor.Process(t.Context(), invalid); err != nil || inserted {
+		t.Fatalf("invalid duplicate: inserted=%v err=%v", inserted, err)
+	}
 
 	body := scrapeWebhookMetrics(t, metrics)
 	for _, want := range []string{
 		`grepnest_webhook_deliveries_total{event="push",result="accepted"} 1`,
+		`grepnest_webhook_deliveries_total{event="push",result="duplicate"} 1`,
 		`grepnest_webhook_deliveries_total{event="unknown",result="ignored"} 1`,
 		`grepnest_webhook_deliveries_total{event="unknown",result="duplicate"} 1`,
 	} {

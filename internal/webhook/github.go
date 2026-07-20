@@ -96,7 +96,11 @@ func (processor *GitHubProcessor) Process(ctx context.Context, delivery Delivery
 	}
 	var payload eventPayload
 	if err := json.Unmarshal(delivery.Body, &payload); err != nil || !validPayload(delivery.Event, payload) {
-		return processor.invalidDelivery(ctx, delivery)
+		inserted, resultErr = processor.invalidDelivery(ctx, delivery)
+		if resultErr == nil && !inserted {
+			result = "duplicate"
+		}
+		return inserted, resultErr
 	}
 	var installationID *int64
 	if payload.Installation.ID > 0 {
