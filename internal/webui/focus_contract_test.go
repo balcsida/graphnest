@@ -6,10 +6,18 @@ import (
 )
 
 func TestConsoleUsesSignalBlueForSharedFocusOutline(t *testing.T) {
-	if !bytes.Contains(document, []byte(`:focus-visible{outline:3px solid var(--signal);outline-offset:3px}`)) {
-		t.Fatal("shared focus outline does not use Signal blue")
+	for _, want := range []string{
+		`:focus-visible{outline:3px solid var(--signal);outline-offset:3px}`,
+		`.match-block{border-top:1px solid var(--border);border-left:4px solid var(--match)}`,
+		`@media(forced-colors: active){button,input,summary,fieldset,.file-result,.match-block{border:1px solid CanvasText}.match-block{border-left-width:4px}}`,
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console is missing grouped result style %q", want)
+		}
 	}
-	if !bytes.Contains(document, []byte(`border-left:4px solid var(--match)`)) {
-		t.Fatal("result emphasis no longer uses Match amber")
+	for _, obsolete := range []string{`.result{`, `.result a{`} {
+		if bytes.Contains(document, []byte(obsolete)) {
+			t.Fatalf("console retains obsolete result style %q", obsolete)
+		}
 	}
 }
