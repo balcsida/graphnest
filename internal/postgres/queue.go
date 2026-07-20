@@ -80,9 +80,13 @@ func (s *Store) ClaimIndex(ctx context.Context, owner string) (IndexJob, error) 
 	var job IndexJob
 	err = tx.QueryRow(ctx, `
 		with next as (
-			select id from index_jobs j where state='queued' and run_after<=now()
+			select j.id from index_jobs j
+			join repositories on repositories.id=j.repository_id
+			join installations on installations.id=repositories.installation_id
+			where j.state='queued' and j.run_after<=now() and repositories.enabled
+			and not repositories.archived and installations.status='active'
 			and not exists(select 1 from index_jobs running where running.repository_id=j.repository_id and running.state='running')
-			order by priority desc, run_after, id for update skip locked limit 1
+			order by j.priority desc, j.run_after, j.id for update of j skip locked limit 1
 		)
 		update index_jobs set state='running', attempt=attempt+1, lease_owner=$1,
 			lease_expires_at=now()+interval '2 minutes', updated_at=now()
@@ -122,18 +126,28 @@ func (s *Store) CompleteIndex(ctx context.Context, id int64, owner string) error
 	} else if err != nil {
 		return err
 	}
-	var desiredSHA string
-	if err := tx.QueryRow(ctx, `select desired_sha from repositories where id=$1 for update`, repositoryID).Scan(&desiredSHA); err != nil {
+	var desiredSHA, installationStatus string
+	var enabled, archived bool
+	if err := tx.QueryRow(ctx, `select coalesce(repositories.desired_sha, ''), repositories.enabled,
+		repositories.archived, installations.status from repositories
+		join installations on installations.id=repositories.installation_id
+		where repositories.id=$1 for update of repositories`, repositoryID).
+		Scan(&desiredSHA, &enabled, &archived, &installationStatus); err != nil {
 		return err
 	}
 	state := "superseded"
-	if desiredSHA == targetSHA {
+	errorCode := ""
+	available := enabled && !archived && installationStatus == "active"
+	if available && desiredSHA == targetSHA {
 		state = "succeeded"
-		if _, err := tx.Exec(ctx, `update repositories set indexed_sha=$2, status='ready', error_code=null, last_indexed_at=now(), updated_at=now() where id=$1 and enabled`, repositoryID, targetSHA); err != nil {
+		if _, err := tx.Exec(ctx, `update repositories set indexed_sha=$2, status='ready', error_code=null, last_indexed_at=now(), updated_at=now() where id=$1`, repositoryID, targetSHA); err != nil {
 			return err
 		}
+	} else if !available {
+		errorCode = "repository_unavailable"
 	}
-	if _, err := tx.Exec(ctx, `update index_jobs set state=$2, lease_owner=null, lease_expires_at=null, error_code=null, error_message=null, updated_at=now() where id=$1`, id, state); err != nil {
+	if _, err := tx.Exec(ctx, `update index_jobs set state=$2, lease_owner=null, lease_expires_at=null,
+		error_code=nullif($3, ''), error_message=null, updated_at=now() where id=$1`, id, state, errorCode); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

@@ -42,6 +42,8 @@ func TestPostgresConcurrency(t *testing.T) {
 	t.Run("completion wins repository lock", func(t *testing.T) { testCompletionPushOrder(t, true) })
 	t.Run("push wins repository lock", func(t *testing.T) { testCompletionPushOrder(t, false) })
 	t.Run("rename preserves numeric authorization", testRenameAuthorization)
+	t.Run("disabled push and queue are inert", testDisabledPushAndQueue)
+	t.Run("unavailable pushes are inert", testUnavailablePushes)
 	t.Run("disabled state blocks authorization", testDisabledAuthorization)
 	t.Run("re-enabled unchanged desired remains claimable", testReenabledRepository)
 	t.Run("retention is bounded", testRetention)
@@ -452,6 +454,96 @@ func testRenameAuthorization(t *testing.T) {
 	}
 }
 
+func testDisabledPushAndQueue(t *testing.T) {
+	h := newPostgresHarness(t)
+	repositoryID := h.seedRepository(t, 10, 101)
+	if err := h.store.EnqueueIndex(t.Context(), postgres.IndexRequest{RepositoryID: repositoryID, TargetSHA: postgresSHAA}); err != nil {
+		t.Fatal(err)
+	}
+	var jobID int64
+	if err := h.pool.QueryRow(t.Context(), "select id from index_jobs where repository_id=$1", repositoryID).Scan(&jobID); err != nil {
+		t.Fatal(err)
+	}
+	processor := webhook.NewGitHubProcessor(h.store, nil)
+	body := []byte(`{"action":"deleted","installation":{"id":10},"repository":{"id":101}}`)
+	if inserted, err := processor.Process(t.Context(), webhook.Delivery{ID: "disable-before-claim", Event: "repository", Body: body}); err != nil || !inserted {
+		t.Fatalf("disable inserted=%v err=%v", inserted, err)
+	}
+	var state, code string
+	if err := h.pool.QueryRow(t.Context(), "select state, coalesce(error_code, '') from index_jobs where id=$1", jobID).Scan(&state, &code); err != nil {
+		t.Fatal(err)
+	}
+	if state != "superseded" || code != "repository_unavailable" {
+		t.Errorf("disabled queued job state=%q code=%q", state, code)
+	}
+	if inserted, err := processor.Process(t.Context(), pushDeliveryWithSize("disabled-push", 10, 101, postgresSHAB, 7)); err != nil || !inserted {
+		t.Fatalf("push inserted=%v err=%v", inserted, err)
+	}
+	var sizeBytes int64
+	var desiredSHA string
+	if err := h.pool.QueryRow(t.Context(), "select size_bytes, desired_sha from repositories where id=$1", repositoryID).Scan(&sizeBytes, &desiredSHA); err != nil {
+		t.Fatal(err)
+	}
+	var activeJobs int
+	if err := h.pool.QueryRow(t.Context(), "select count(*) from index_jobs where repository_id=$1 and state in ('queued','running')", repositoryID).Scan(&activeJobs); err != nil {
+		t.Fatal(err)
+	}
+	if sizeBytes != 0 || desiredSHA != postgresSHAA || activeJobs != 0 {
+		t.Errorf("size=%d desired=%q active_jobs=%d", sizeBytes, desiredSHA, activeJobs)
+	}
+	var tokenCalls, fetchCalls atomic.Int64
+	worker := &indexer.Worker{
+		ID: "disabled-worker", Queue: h.store, Store: h.store,
+		Tokens: integrationTokens{calls: &tokenCalls}, Git: integrationGit{prepares: &fetchCalls}, Zoekt: integrationPublisher{},
+		RenewEvery: time.Hour,
+	}
+	worked, err := worker.RunOne(t.Context())
+	if err != nil || worked || tokenCalls.Load() != 0 || fetchCalls.Load() != 0 {
+		t.Errorf("worker worked=%v err=%v tokens=%d fetches=%d", worked, err, tokenCalls.Load(), fetchCalls.Load())
+	}
+	if _, err := h.store.ClaimIndex(t.Context(), "disabled-claim"); !errors.Is(err, postgres.ErrNoJob) {
+		t.Errorf("disabled claim err=%v", err)
+	}
+}
+
+func testUnavailablePushes(t *testing.T) {
+	for _, variant := range []string{"archived repository", "inactive installation"} {
+		t.Run(variant, func(t *testing.T) {
+			h := newPostgresHarness(t)
+			repositoryID := h.seedRepository(t, 10, 101)
+			if _, err := h.pool.Exec(t.Context(), "update repositories set desired_sha=$2 where id=$1", repositoryID, postgresSHAA); err != nil {
+				t.Fatal(err)
+			}
+			if variant == "archived repository" {
+				if _, err := h.pool.Exec(t.Context(), "update repositories set archived=true where id=$1", repositoryID); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := h.pool.Exec(t.Context(), "update installations set status='suspended' where github_id=10"); err != nil {
+				t.Fatal(err)
+			}
+			processor := webhook.NewGitHubProcessor(h.store, nil)
+			if inserted, err := processor.Process(t.Context(), pushDeliveryWithSize("unavailable-push", 10, 101, postgresSHAB, 7)); err != nil || !inserted {
+				t.Fatalf("push inserted=%v err=%v", inserted, err)
+			}
+			var sizeBytes int64
+			var desiredSHA string
+			var jobs, deliveries int
+			if err := h.pool.QueryRow(t.Context(), "select size_bytes, desired_sha from repositories where id=$1", repositoryID).Scan(&sizeBytes, &desiredSHA); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.pool.QueryRow(t.Context(), "select count(*) from index_jobs").Scan(&jobs); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.pool.QueryRow(t.Context(), "select count(*) from webhook_deliveries where delivery_id='unavailable-push'").Scan(&deliveries); err != nil {
+				t.Fatal(err)
+			}
+			if sizeBytes != 0 || desiredSHA != postgresSHAA || jobs != 0 || deliveries != 1 {
+				t.Fatalf("size=%d desired=%q jobs=%d deliveries=%d", sizeBytes, desiredSHA, jobs, deliveries)
+			}
+		})
+	}
+}
+
 func testDisabledAuthorization(t *testing.T) {
 	h := newPostgresHarness(t)
 	repositoryID := h.seedRepository(t, 10, 101)
@@ -480,12 +572,15 @@ func testDisabledAuthorization(t *testing.T) {
 		t.Fatal(err)
 	}
 	var enabled bool
-	var status string
-	if err := h.pool.QueryRow(t.Context(), "select enabled, status from repositories where id=$1", repositoryID).Scan(&enabled, &status); err != nil {
+	var status, indexedSHA, jobState, errorCode string
+	if err := h.pool.QueryRow(t.Context(), "select enabled, status, coalesce(indexed_sha, '') from repositories where id=$1", repositoryID).Scan(&enabled, &status, &indexedSHA); err != nil {
 		t.Fatal(err)
 	}
-	if enabled || status != "disabled" {
-		t.Fatalf("enabled=%v status=%q", enabled, status)
+	if err := h.pool.QueryRow(t.Context(), "select state, coalesce(error_code, '') from index_jobs where id=$1", job.ID).Scan(&jobState, &errorCode); err != nil {
+		t.Fatal(err)
+	}
+	if enabled || status != "disabled" || indexedSHA != "" || jobState != "superseded" || errorCode != "repository_unavailable" {
+		t.Fatalf("enabled=%v status=%q indexed=%q job_state=%q code=%q", enabled, status, indexedSHA, jobState, errorCode)
 	}
 	installationBody := []byte(`{"action":"deleted","installation":{"id":10}}`)
 	if inserted, err := processor.Process(t.Context(), webhook.Delivery{ID: "delete-installation", Event: "installation", Body: installationBody}); err != nil || !inserted {

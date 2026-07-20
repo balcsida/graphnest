@@ -103,7 +103,8 @@ func TestReconcileInstallationCoalescesQuietDefaultHeads(t *testing.T) {
 	if err := store.ReconcileInstallation(t.Context(), installation, []githubapp.Repository{repository}); err != nil {
 		t.Fatal(err)
 	}
-	assertReconciledRepository(t, store, 101, "renamed", "quiet", "trunk", testSHA('c'), false, true, 1)
+	assertReconciledRepository(t, store, 101, "renamed", "quiet", "trunk", testSHA('c'), false, true, 0)
+	assertUnavailableJobs(t, store, 101, 1)
 	repository.Archived = false
 	if err := store.ReconcileInstallation(t.Context(), installation, []githubapp.Repository{repository}); err != nil {
 		t.Fatal(err)
@@ -113,7 +114,8 @@ func TestReconcileInstallationCoalescesQuietDefaultHeads(t *testing.T) {
 	if err := store.ReconcileInstallation(t.Context(), installation, nil); err != nil {
 		t.Fatal(err)
 	}
-	assertReconciledRepository(t, store, 101, "renamed", "quiet", "trunk", testSHA('c'), false, false, 1)
+	assertReconciledRepository(t, store, 101, "renamed", "quiet", "trunk", testSHA('c'), false, false, 0)
+	assertUnavailableJobs(t, store, 101, 2)
 	recreated := githubapp.Repository{ID: 103, InstallationID: 10, Owner: "acme", Name: "one", CloneURL: "recreated-clone", HTMLURL: "recreated-web", DefaultBranch: "main", DefaultSHA: testSHA('e')}
 	if err := store.ReconcileInstallation(t.Context(), installation, []githubapp.Repository{recreated}); err != nil {
 		t.Fatal(err)
@@ -125,7 +127,8 @@ func TestReconcileInstallationCoalescesQuietDefaultHeads(t *testing.T) {
 	if err := store.ReconcileInstallation(t.Context(), installation, []githubapp.Repository{repository}); err != nil {
 		t.Fatal(err)
 	}
-	assertReconciledRepository(t, store, 101, "renamed", "quiet", "trunk", testSHA('c'), false, false, 1)
+	assertReconciledRepository(t, store, 101, "renamed", "quiet", "trunk", testSHA('c'), false, false, 0)
+	assertUnavailableJobs(t, store, 101, 2)
 
 	ids, err := store.InstallationIDs(t.Context())
 	if err != nil || len(ids) != 1 || ids[0] != 10 {
@@ -173,6 +176,19 @@ func assertRepositoryState(t *testing.T, store *Store, githubID int64, status, e
 	}
 	if gotStatus != status || gotError != errorCode {
 		t.Fatalf("status=%q error=%q", gotStatus, gotError)
+	}
+}
+
+func assertUnavailableJobs(t *testing.T, store *Store, githubID int64, want int) {
+	t.Helper()
+	var got int
+	if err := store.pool.QueryRow(t.Context(), `select count(*) from index_jobs
+		where repository_id=(select id from repositories where github_id=$1)
+		and state='superseded' and error_code='repository_unavailable'`, githubID).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("unavailable jobs=%d want=%d", got, want)
 	}
 }
 

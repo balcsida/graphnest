@@ -116,7 +116,7 @@ func (processor *GitHubProcessor) Process(ctx context.Context, delivery Delivery
 	}, func(ctx context.Context, tx *postgres.DeliveryTx) error {
 		switch delivery.Event {
 		case "push":
-			repository, err := tx.RepositoryForPush(ctx, payload.Repository.ID)
+			repository, err := tx.RepositoryForPush(ctx, payload.Installation.ID, payload.Repository.ID)
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil
 			}

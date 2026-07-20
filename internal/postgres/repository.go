@@ -132,6 +132,12 @@ func (s *Store) ReconcileInstallation(ctx context.Context, installation githubap
 		where installation_id=(select id from installations where github_id=$1) and not (github_id=any($2))`, installation.ID, ids); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(ctx, `update index_jobs set state='superseded', error_code='repository_unavailable',
+		error_message=null, updated_at=now() from repositories join installations on installations.id=repositories.installation_id
+		where index_jobs.repository_id=repositories.id and index_jobs.state='queued'
+		and installations.github_id=$1 and (not repositories.enabled or repositories.archived or installations.status<>'active')`, installation.ID); err != nil {
+		return err
+	}
 	return tx.Commit(ctx)
 }
 
@@ -146,6 +152,11 @@ func (s *Store) DisableInstallation(ctx context.Context, githubID int64, status 
 	}
 	if _, err := tx.Exec(ctx, `update repositories set enabled=false, status='disabled', updated_at=now()
 		where installation_id=(select id from installations where github_id=$1)`, githubID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `update index_jobs set state='superseded', error_code='repository_unavailable',
+		error_message=null, updated_at=now() where state='queued' and repository_id in
+		(select id from repositories where installation_id=(select id from installations where github_id=$1))`, githubID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

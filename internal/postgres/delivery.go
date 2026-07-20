@@ -43,10 +43,12 @@ func (tx *DeliveryTx) EnqueueIndex(ctx context.Context, request IndexRequest) er
 	return enqueueIndex(ctx, tx.tx, request)
 }
 
-func (tx *DeliveryTx) RepositoryForPush(ctx context.Context, githubID int64) (repository.Repository, error) {
+func (tx *DeliveryTx) RepositoryForPush(ctx context.Context, installationID, githubID int64) (repository.Repository, error) {
 	return scanRepository(tx.tx.QueryRow(ctx, `select `+repositoryColumns+`
 		from repositories join installations on installations.id=repositories.installation_id
-		where repositories.github_id=$1 for update of repositories`, githubID))
+		where installations.github_id=$1 and repositories.github_id=$2
+		and installations.status='active' and repositories.enabled and not repositories.archived
+		for update of repositories`, installationID, githubID))
 }
 
 func (tx *DeliveryTx) UpdateRepositorySize(ctx context.Context, repositoryID, sizeBytes int64) error {
@@ -60,7 +62,12 @@ func (tx *DeliveryTx) RenameRepository(ctx context.Context, githubID int64, owne
 }
 
 func (tx *DeliveryTx) DisableRepository(ctx context.Context, githubID int64, errorCode string) error {
-	_, err := tx.tx.Exec(ctx, `update repositories set enabled=false, status='disabled', error_code=nullif($2, ''), updated_at=now() where github_id=$1`, githubID, errorCode)
+	if _, err := tx.tx.Exec(ctx, `update repositories set enabled=false, status='disabled', error_code=nullif($2, ''), updated_at=now() where github_id=$1`, githubID, errorCode); err != nil {
+		return err
+	}
+	_, err := tx.tx.Exec(ctx, `update index_jobs set state='superseded', error_code='repository_unavailable',
+		error_message=null, updated_at=now() where state='queued'
+		and repository_id=(select id from repositories where github_id=$1)`, githubID)
 	return err
 }
 
@@ -68,7 +75,12 @@ func (tx *DeliveryTx) DisableInstallation(ctx context.Context, githubID int64, s
 	if _, err := tx.tx.Exec(ctx, `update installations set status=$2::varchar, suspended_at=case when $2::varchar='suspended' then now() else suspended_at end, updated_at=now() where github_id=$1`, githubID, status); err != nil {
 		return err
 	}
-	_, err := tx.tx.Exec(ctx, `update repositories set enabled=false, status='disabled', updated_at=now()
-		where installation_id=(select id from installations where github_id=$1)`, githubID)
+	if _, err := tx.tx.Exec(ctx, `update repositories set enabled=false, status='disabled', updated_at=now()
+		where installation_id=(select id from installations where github_id=$1)`, githubID); err != nil {
+		return err
+	}
+	_, err := tx.tx.Exec(ctx, `update index_jobs set state='superseded', error_code='repository_unavailable',
+		error_message=null, updated_at=now() where state='queued' and repository_id in
+		(select id from repositories where installation_id=(select id from installations where github_id=$1))`, githubID)
 	return err
 }
