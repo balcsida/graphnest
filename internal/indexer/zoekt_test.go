@@ -77,7 +77,13 @@ func TestZoektWaitVisibleRequiresExactRepositoryBranchAndVersion(t *testing.T) {
 		`{"List":{"ReposMap":{"7":{"Branches":[{"Name":"main","Version":"target"}]}}}}`,
 	}
 	calls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+	searchCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/api/search" {
+			searchCalls++
+			_, _ = writer.Write([]byte(`{"Result":{"Files":[]}}`))
+			return
+		}
 		index := calls
 		calls++
 		if index >= len(responses) {
@@ -96,6 +102,9 @@ func TestZoektWaitVisibleRequiresExactRepositoryBranchAndVersion(t *testing.T) {
 	}
 	if calls != 3 {
 		t.Fatalf("calls = %d, want 3", calls)
+	}
+	if searchCalls != 1 {
+		t.Fatalf("readiness search calls = %d, want 1", searchCalls)
 	}
 }
 

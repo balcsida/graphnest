@@ -6,9 +6,11 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/grepnest/grepnest/internal/search"
 	"github.com/grepnest/grepnest/internal/zoekt"
 )
 
@@ -53,7 +55,10 @@ func (indexer *ZoektIndexer) WaitVisible(ctx context.Context, repositoryID uint3
 		}
 		for _, repo := range repositories {
 			if repo.RepoID == repositoryID && repo.Branch == branch && repo.Version == version {
-				return nil
+				_, err := indexer.Client.Search(ctx, search.BackendRequest{
+					Query: "repoid:" + strconv.FormatUint(uint64(repositoryID), 10), RepositoryIDs: []uint32{repositoryID}, Limit: 1, Timeout: time.Second,
+				})
+				return err
 			}
 		}
 		timer := time.NewTimer(delay)
