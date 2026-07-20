@@ -66,7 +66,11 @@ func (service *Service) Search(ctx context.Context, principal authn.Principal, r
 	metadata := make(map[uint32]api.Repository, len(repositories))
 	for index, repository := range repositories {
 		backendRequest.RepositoryIDs[index] = repository.ZoektID
-		metadata[repository.ZoektID] = api.Repository{ID: repository.ID, Name: repository.Name, Branch: repository.Branch, IndexedSHA: repository.IndexedSHA, WebURL: repository.WebURL}
+		publicID := repository.GitHubID
+		if publicID == 0 {
+			publicID = repository.ID
+		}
+		metadata[repository.ZoektID] = api.Repository{ID: publicID, Name: repository.Name, Branch: repository.Branch, IndexedSHA: repository.IndexedSHA, WebURL: repository.WebURL}
 	}
 	response, err := service.backend.Search(ctx, backendRequest)
 	if err != nil {

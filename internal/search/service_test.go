@@ -65,9 +65,9 @@ func TestSearchSuppressesUnknownRepoID(t *testing.T) {
 func TestSearchReturnsExactIndexedRevision(t *testing.T) {
 	const sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	backend := &recordingBackend{response: api.SearchResponse{Matches: []api.SearchMatch{{ZoektID: 7, SHA: sha, Branches: []string{"main"}}}}}
-	service := NewService(backend, authorizerWith(repository.Repository{ID: 1, ZoektID: 7, Name: "acme/one", Branch: "main", IndexedSHA: sha}), Limits{})
+	service := NewService(backend, authorizerWith(repository.Repository{ID: 1, GitHubID: 101, ZoektID: 7, Name: "acme/one", Branch: "main", IndexedSHA: sha}), Limits{})
 	response, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{Query: "needle"})
-	if err != nil || len(response.Matches) != 1 {
+	if err != nil || len(response.Matches) != 1 || response.Matches[0].Repository.ID != 101 {
 		t.Fatalf("matches=%#v err=%v", response.Matches, err)
 	}
 }

@@ -734,9 +734,10 @@ func assertPublished(t *testing.T, pool *pgxpool.Pool, githubID int64, sha strin
 func assertRESTSurface(t *testing.T, server *httptest.Server, repositoryID int64, sha, blobSHA string) {
 	t.Helper()
 	searchResponse := restSearch(t, server, api.SearchRequest{Query: milestoneNeedle})
-	if len(searchResponse.Matches) != 1 || searchResponse.Matches[0].SHA != sha {
+	if len(searchResponse.Matches) != 1 || searchResponse.Matches[0].SHA != sha || searchResponse.Matches[0].Repository.ID != repositoryID {
 		t.Fatalf("REST search=%#v", searchResponse)
 	}
+	repositoryID = searchResponse.Matches[0].Repository.ID
 	var list struct {
 		Repositories []api.RepositorySummary `json:"repositories"`
 	}
@@ -774,9 +775,10 @@ func assertMCPSurface(t *testing.T, server *httptest.Server, repositoryID int64,
 	}
 	var searched api.SearchResponse
 	call("search_code", map[string]any{"query": milestoneNeedle}, &searched)
-	if len(searched.Matches) != 1 || searched.Matches[0].SHA != sha {
+	if len(searched.Matches) != 1 || searched.Matches[0].SHA != sha || searched.Matches[0].Repository.ID != repositoryID {
 		t.Fatalf("MCP search=%#v", searched)
 	}
+	repositoryID = searched.Matches[0].Repository.ID
 	var list struct {
 		Repositories []api.RepositorySummary `json:"repositories"`
 	}
