@@ -284,11 +284,11 @@ func TestListUsesPinnedBoundedContract(t *testing.T) {
 		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		want := map[string]any{"Q": "repoid:7", "Opts": map[string]any{"Field": float64(2)}}
+		want := map[string]any{"Q": "", "Opts": map[string]any{"Field": float64(2)}}
 		if !equalJSON(body, want) {
 			t.Fatalf("body = %#v, want %#v", body, want)
 		}
-		_, _ = io.WriteString(writer, `{"List":{"ReposMap":{"7":{"Branches":[{"Name":"main","Version":"abc123"}]}}}}`)
+		_, _ = io.WriteString(writer, `{"List":{"ReposMap":{"7":{"Branches":[{"Name":"main","Version":"abc123"}]},"8":{"Branches":[{"Name":"main","Version":"other"}]}}}}`)
 	}))
 	defer server.Close()
 	client, err := New(server.URL, server.Client(), 1024, observability.New())

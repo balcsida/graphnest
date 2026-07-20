@@ -1,6 +1,6 @@
 # GrepNest Implementation Plan
 
-## Completed: Milestones 0 and 1
+## Completed: Milestones 0-2
 
 Work proceeds in this order, with a runnable check and atomic commit after each
 logical change:
@@ -21,9 +21,9 @@ logical change:
 The completed task plan is in
 `docs/superpowers/plans/2026-07-18-milestones-0-1.md`.
 
-## Current Pass: Milestone 2
+## Completed Pass: Milestone 2
 
-Milestones 0-1 passed every gate. Work now proceeds in this order:
+Milestones 0-2 passed their local gates in this order:
 
 1. Add `pgx/v5`, embedded PostgreSQL migrations, and transactional repository,
    delivery, and leased-job operations.
@@ -39,22 +39,23 @@ Milestones 0-1 passed every gate. Work now proceeds in this order:
 7. Prove fake-GHES, PostgreSQL concurrency, Git safety, Zoekt visibility, REST,
    MCP, and authorization behavior end to end.
 
-The approved design is in
-`docs/superpowers/specs/2026-07-18-milestone-2-design.md`. The executable TDD
-plan will be written after this design document is reviewed.
+The approved design and executed TDD plan are in
+`docs/superpowers/specs/2026-07-18-milestone-2-design.md` and
+`docs/superpowers/plans/2026-07-18-milestone-2.md`.
 
 ## Milestone 3 Notes: OpenShift Pilot
 
-Start only after Milestone 2 has its own approved design and passing tests.
+Milestone 2 has passing local tests. Images and cluster implementation still
+require an explicit Milestone 3 pass; the existing Helm chart is structural.
 
 - Build pinned multi-stage images containing only the required Go binaries,
   Zoekt binaries, Git, CA certificates, optional Ctags, and minimal init.
 - Verify arbitrary numeric UID with root group, read-only root filesystem,
   writable `/tmp` and data mounts, dropped capabilities, RuntimeDefault seccomp,
   graceful SIGTERM, and no Java executable or runtime.
-- Add `deploy/helm/grepnest` with a server Deployment, one-replica Zoekt/indexer
-  StatefulSet sharing an RWO PVC, internal services, external PostgreSQL DSN,
-  optional Route and ServiceMonitor, secret references, PDB, and migration Job.
+- Validate the existing `deploy/helm/grepnest` server Deployment, one-replica
+  Zoekt/indexer StatefulSet, services, storage, policies, and migration Job with
+  published images on a real cluster.
 - Default-deny network access where supported; allow only server-to-Zoekt and
   server/indexer-to-PostgreSQL paths.
 - Make registry, pull secrets, CA secret, resources, storage, scheduling, and

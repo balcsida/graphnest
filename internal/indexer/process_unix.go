@@ -31,16 +31,23 @@ func (runner Runner) Run(ctx context.Context, binary string, args, environment [
 	command.Stdout, command.Stderr = output, output
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	killDone := make(chan struct{})
+	runDone := make(chan struct{})
 	var cancelled atomic.Bool
 	command.Cancel = func() error {
 		cancelled.Store(true)
 		err := syscall.Kill(-command.Process.Pid, syscall.SIGTERM)
 		go func(pid int) {
+			defer close(killDone)
 			timer := time.NewTimer(runner.KillGrace)
 			defer timer.Stop()
-			<-timer.C
-			_ = syscall.Kill(-pid, syscall.SIGKILL)
-			close(killDone)
+			select {
+			case <-timer.C:
+				_ = syscall.Kill(-pid, syscall.SIGKILL)
+			case <-runDone:
+				if syscall.Kill(-pid, 0) == nil {
+					_ = syscall.Kill(-pid, syscall.SIGKILL)
+				}
+			}
 		}(command.Process.Pid)
 		if errors.Is(err, syscall.ESRCH) {
 			return os.ErrProcessDone
@@ -48,6 +55,7 @@ func (runner Runner) Run(ctx context.Context, binary string, args, environment [
 		return err
 	}
 	err := command.Run()
+	close(runDone)
 	if cancelled.Load() {
 		<-killDone
 	}

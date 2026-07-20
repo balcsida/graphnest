@@ -1,10 +1,10 @@
 # GrepNest
 
-GrepNest is a pre-pilot code-search service. Milestones 0-1 provide a pinned
-Zoekt-backed search path, bearer authorization, REST, and MCP. The Milestone 2
-server adds PostgreSQL-backed repository state, GitHub App reconciliation, and
-verified webhooks. The sequential indexer is implemented; the end-to-end proof
-is unfinished.
+GrepNest is a pre-pilot code-search service. Milestones 0-2 provide a pinned
+Zoekt-backed search path, bearer authorization, REST and MCP, PostgreSQL-backed
+repository state, GitHub App reconciliation, verified webhooks, indexed-SHA
+file reads, and sequential default-branch indexing. The local GHES-compatible
+HTTPS smart-Git-to-Zoekt proof passes.
 It is not production-ready.
 
 The [Helm chart](deploy/helm/grepnest/README.md) is structurally lintable and
@@ -123,8 +123,10 @@ Optional limits are positive and cannot exceed their server caps:
 | `GREPNEST_MAX_REQUEST_BYTES` | 65536 | 65536 |
 | `GREPNEST_MAX_RESPONSE_BYTES` | 262144 | 262144 |
 
-Run `make fmt lint test test-race integration e2e build` before proposing a
-change. `make helm-lint helm-test` validates the chart structure without
+Run `make fmt lint test test-race postgres-integration integration e2e build`
+before proposing a change. `make e2e` starts its pinned PostgreSQL dependency
+and runs real TLS smart-Git and Zoekt processes. `make helm-lint helm-test`
+validates the chart structure without
 contacting a cluster. `make image` intentionally fails with
 `image: milestone not implemented`; no deployable image is produced.
 

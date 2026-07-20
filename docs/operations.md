@@ -1,15 +1,15 @@
 # Operations
 
-Milestones 0-1 are local development only. Start the pinned fixture stack with:
+Milestones 0-2 are local pilot development only. Start the pinned fixture stack with:
 
 ```sh
 docker compose -f deploy/compose/compose.yml --profile fixture up -d --wait
 docker compose -f deploy/compose/compose.yml --profile fixture ps
 ```
 
-The isolated Compose fixture index uses repository ID `7` and the checked-in registry at
-`deploy/compose/repositories.json`. PostgreSQL must become healthy for Compose,
-but the server does not connect to it until Milestone 2. Stop the stack with:
+The isolated Compose fixture index uses repository ID `7` and the checked-in
+registry at `deploy/compose/repositories.json`. Static mode does not connect to
+PostgreSQL; durable server and indexer modes require it. Stop the stack with:
 
 ```sh
 docker compose -f deploy/compose/compose.yml down
@@ -27,6 +27,12 @@ image runs as `linux/amd64`; this is deliberate for Apple-silicon hosts, where
 Docker's emulation is needed because the pinned image has no arm64 variant.
 
 ## Durable local indexer
+
+`make postgres-integration` runs the real queue/concurrency suites. `make e2e`
+starts the same pinned PostgreSQL service, resolves its reachable Compose
+address, requires the database connection, and runs the GHES-compatible HTTPS
+smart-Git-to-Zoekt proof. Both commands fail rather than skip when their
+required PostgreSQL service is unavailable.
 
 Build the database-only migration and listener-free indexer commands, then
 create the host directories shared with the durable Zoekt profile:

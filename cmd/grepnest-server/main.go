@@ -29,11 +29,12 @@ import (
 )
 
 const (
-	searchNodeID       = "primary"
-	reconcileInterval  = 5 * time.Minute
-	maxPrivateKeyBytes = 64 << 10
-	maxWebhookKeyBytes = 64 << 10
-	maxCABytes         = 1 << 20
+	searchNodeID           = "primary"
+	reconcileInterval      = 5 * time.Minute
+	maxPrivateKeyBytes     = 64 << 10
+	maxWebhookKeyBytes     = 64 << 10
+	maxCABytes             = 1 << 20
+	maxGitHubResponseBytes = 2 << 20
 )
 
 func main() { os.Exit(run()) }
@@ -173,7 +174,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	if err := store.UpsertSearchNode(ctx, searchNodeID, settings.ZoektURL); err != nil {
 		return fail(err)
 	}
-	githubClient := githubapp.NewClient(endpoints, httpClient, signer, settings.GitHub.APIVersion, settings.Limits.MaxResponseBytes, nil, metrics)
+	githubClient := githubapp.NewClient(endpoints, httpClient, signer, settings.GitHub.APIVersion, maxGitHubResponseBytes, nil, metrics)
 	reconciler := githubapp.NewReconciler(githubClient, store)
 	loopCtx, cancel := context.WithCancel(ctx)
 	done, err := startPeriodic(loopCtx, reconcileInterval, reconciler.All, func(ctx context.Context) error {

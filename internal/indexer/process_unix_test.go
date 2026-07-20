@@ -69,6 +69,21 @@ func TestRunnerTerminatesProcessGroup(t *testing.T) {
 	}
 }
 
+func TestRunnerReturnsWhenTermEndsProcess(t *testing.T) {
+	started := time.Now()
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+	err := (Runner{MaxOutput: 64, KillGrace: 5 * time.Second}).Run(ctx, os.Args[0], []string{"-test.run=^TestRunnerTerminatesProcessGroup$"}, []string{
+		"GREPNEST_RUNNER_HELPER=term-exit", "GREPNEST_RUNNER_TERM=" + t.TempDir() + "/term",
+	}, "")
+	if err == nil {
+		t.Fatal("expected cancellation error")
+	}
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("TERM-responsive process waited for KILL grace: %v", elapsed)
+	}
+}
+
 func runnerHelper() {
 	if os.Getenv("GREPNEST_RUNNER_HELPER") == "parent" {
 		command := exec.Command(os.Args[0], "-test.run=^TestRunnerTerminatesProcessGroup$")
@@ -92,7 +107,7 @@ func runnerHelper() {
 		select {
 		case <-signals:
 			_ = os.WriteFile(os.Getenv("GREPNEST_RUNNER_TERM"), []byte("term"), 0o600)
-			if os.Getenv("GREPNEST_RUNNER_HELPER") == "parent" {
+			if mode := os.Getenv("GREPNEST_RUNNER_HELPER"); mode == "parent" || mode == "term-exit" {
 				os.Exit(0)
 			}
 		case <-time.After(10 * time.Millisecond):

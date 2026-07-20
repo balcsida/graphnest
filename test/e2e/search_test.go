@@ -54,7 +54,7 @@ func TestPinnedFixtureSearch(t *testing.T) {
 	run(t, ctx, "git", "-C", repo, "config", "zoekt.repoid", "7")
 	run(t, ctx, "git", "-C", repo, "config", "zoekt.name", fixtureName)
 	run(t, ctx, "git", "-C", repo, "add", ".")
-	run(t, ctx, "git", "-C", repo, "commit", "-m", "fixture")
+	run(t, ctx, "git", "-C", repo, "-c", "commit.gpgsign=false", "commit", "-m", "fixture")
 	shaBytes, err := os.ReadFile(filepath.Join(repo, ".git", "refs", "heads", "main"))
 	if err != nil {
 		t.Fatal(err)

@@ -1,12 +1,20 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,10 +24,46 @@ import (
 
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/config"
+	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/internal/webhook"
 )
+
+func TestDurableGitHubLimitReadsNearMaximumFile(t *testing.T) {
+	content := bytes.Repeat([]byte("x"), (1<<20)-1)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/v3/app/installations/10/access_tokens":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"token": "opaque", "expires_at": time.Now().Add(time.Hour)})
+		case "/api/v3/repos/acme/one/contents/main.go":
+			_ = json.NewEncoder(writer).Encode(githubapp.Content{Type: "file", Encoding: "base64", Content: base64.StdEncoding.EncodeToString(content), SHA: "blob", Size: int64(len(content))})
+		default:
+			writer.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	base, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := *base
+	api.Path = "/api/v3"
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := githubapp.NewSigner(7, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := githubapp.NewClient(githubapp.Endpoints{Web: base, API: &api, Upload: base, Git: base}, server.Client(), signer, "2022-11-28", maxGitHubResponseBytes, nil)
+	got, err := client.ReadContents(t.Context(), 10, "acme", "one", "main.go", strings.Repeat("a", 40), maxGitHubResponseBytes)
+	if err != nil || got.Size != int64(len(content)) {
+		t.Fatalf("content size=%d err=%v", got.Size, err)
+	}
+}
 
 func TestServeHTTPKeepsRuntimeOpenUntilShutdownCompletes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

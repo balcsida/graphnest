@@ -99,7 +99,7 @@ func (client *Client) Health(ctx context.Context) error {
 }
 
 func (client *Client) List(ctx context.Context, repositoryID uint32) ([]IndexedRepository, error) {
-	body, err := json.Marshal(listRequest{Q: fmt.Sprintf("repoid:%d", repositoryID), Opts: listOptions{Field: 2}})
+	body, err := json.Marshal(listRequest{Q: "", Opts: listOptions{Field: 2}})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
@@ -136,6 +136,9 @@ func (client *Client) List(ctx context.Context, repositoryID uint32) ([]IndexedR
 		parsedID, err := strconv.ParseUint(id, 10, 32)
 		if err != nil || parsedID == 0 {
 			return nil, fmt.Errorf("%w: invalid repository ID", ErrUnavailable)
+		}
+		if uint32(parsedID) != repositoryID {
+			continue
 		}
 		for _, branch := range entry.Branches {
 			repositories = append(repositories, IndexedRepository{RepoID: uint32(parsedID), Branch: branch.Name, Version: branch.Version})
