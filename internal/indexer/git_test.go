@@ -78,7 +78,19 @@ func TestGitPrepareFetchesOnlyTargetBranch(t *testing.T) {
 	runGit(t, source, "remote", "add", "origin", origin)
 	runGit(t, source, "push", "origin", "main", "not-fetched")
 
-	server := httptest.NewTLSServer(gitHTTPBackend(projectRoot))
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		username, password, ok := request.BasicAuth()
+		if !ok {
+			writer.Header().Set("WWW-Authenticate", `Basic realm="git"`)
+			writer.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if username != "x-access-token" || password != "token-that-must-not-persist" {
+			writer.WriteHeader(http.StatusForbidden)
+			return
+		}
+		gitHTTPBackend(projectRoot).ServeHTTP(writer, request)
+	}))
 	defer server.Close()
 	certificate := server.Certificate()
 	caFile := filepath.Join(t.TempDir(), "ca.pem")
@@ -89,10 +101,16 @@ func TestGitPrepareFetchesOnlyTargetBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	directory := t.TempDir()
+	promptsFile := filepath.Join(directory, "prompts")
+	askPass := filepath.Join(directory, "askpass")
+	askPassScript := "#!/bin/sh\nprintf '%s\\n' \"$1\" >> '" + promptsFile + "'\ncase \"$1\" in\nUsername*) printf '%s\\n' x-access-token;;\nPassword*) printf '%s\\n' \"$GREPNEST_GIT_TOKEN\";;\n*) exit 1;;\nesac\n"
+	if err := os.WriteFile(askPass, []byte(askPassScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	git := Git{
 		Binary:       gitBinary(t),
 		BaseURL:      server.URL,
-		AskPass:      "/usr/bin/false",
+		AskPass:      askPass,
 		CABundle:     caFile,
 		MirrorsDir:   filepath.Join(directory, "mirrors"),
 		WorktreesDir: filepath.Join(directory, "worktrees"),
@@ -121,6 +139,18 @@ func TestGitPrepareFetchesOnlyTargetBranch(t *testing.T) {
 	if got := strings.TrimSpace(runGit(t, worktree, "rev-parse", "HEAD")); got != target {
 		t.Fatalf("worktree HEAD=%q want=%q", got, target)
 	}
+	prompts, err := os.ReadFile(promptsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	promptOrigin, err := credentialOrigin(server.URL + "/acme/repo.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPrompts := "Username for '" + promptOrigin + "': \nPassword for '" + strings.Replace(promptOrigin, "https://", "https://x-access-token@", 1) + "': \n"
+	if string(prompts) != wantPrompts {
+		t.Fatalf("prompts=%q want=%q", prompts, wantPrompts)
+	}
 	if command := exec.Command(gitBinary(t), "-C", worktree, "symbolic-ref", "-q", "HEAD"); command.Run() == nil {
 		t.Fatal("worktree HEAD is attached")
 	}
@@ -128,7 +158,7 @@ func TestGitPrepareFetchesOnlyTargetBranch(t *testing.T) {
 	missing := job
 	missing.ID++
 	missing.TargetSHA = gitTargetSHA
-	_, _, err = git.Prepare(t.Context(), repo, missing, "secret")
+	_, _, err = git.Prepare(t.Context(), repo, missing, "token-that-must-not-persist")
 	if !errors.Is(err, ErrTargetMissing) || strings.Contains(fmt.Sprint(err), "secret") {
 		t.Fatalf("missing target err=%v", err)
 	}
@@ -221,13 +251,24 @@ func TestGitRejectsMissingCredentialInputsBeforeDiskWrites(t *testing.T) {
 
 func TestGitEnvironmentEnablesFixedAskPassOnlyWithToken(t *testing.T) {
 	git := Git{AskPass: "/proc/self/exe"}
-	withToken := strings.Join(git.environment("secret"), "\n")
-	if !strings.Contains(withToken, "GREPNEST_ASKPASS_MODE=1") || !strings.Contains(withToken, "GREPNEST_GIT_TOKEN=secret") {
+	withToken := strings.Join(git.environment("secret", "https://ghe.example"), "\n")
+	if !strings.Contains(withToken, "GREPNEST_ASKPASS_MODE=1") || !strings.Contains(withToken, "GREPNEST_GIT_TOKEN=secret") || !strings.Contains(withToken, "GREPNEST_ASKPASS_ORIGIN=https://ghe.example") {
 		t.Fatalf("askpass environment = %q", withToken)
 	}
-	withoutToken := strings.Join(git.environment(""), "\n")
+	withoutToken := strings.Join(git.environment("", ""), "\n")
 	if strings.Contains(withoutToken, "ASKPASS") || strings.Contains(withoutToken, "askPass") || strings.Contains(withoutToken, "GREPNEST_GIT_TOKEN") {
 		t.Fatalf("cleanup environment contains credentials = %q", withoutToken)
+	}
+}
+
+func TestGitCredentialOriginUsesValidatedHTTPSRemote(t *testing.T) {
+	if got, err := credentialOrigin("https://ghe.example:8443/acme/repo.git"); err != nil || got != "https://ghe.example:8443" {
+		t.Fatalf("origin=%q error=%v", got, err)
+	}
+	for _, remote := range []string{"http://ghe.example/acme/repo.git", "https://user@ghe.example/acme/repo.git", "not-a-url"} {
+		if _, err := credentialOrigin(remote); err == nil {
+			t.Fatalf("accepted remote %q", remote)
+		}
 	}
 }
 

@@ -33,6 +33,10 @@ func (git *Git) Prepare(ctx context.Context, repo repository.Repository, job pos
 	if err != nil {
 		return "", "", err
 	}
+	origin, err := credentialOrigin(remote)
+	if err != nil {
+		return "", "", err
+	}
 	mirrorBase, err := numericPath(git.MirrorsDir, strconv.FormatInt(repo.ID, 10))
 	if err != nil {
 		return "", "", err
@@ -48,7 +52,7 @@ func (git *Git) Prepare(ctx context.Context, repo repository.Repository, job pos
 	if err := ensureDirectory(filepath.Dir(worktree)); err != nil {
 		return "", "", err
 	}
-	environment := git.environment(token)
+	environment := git.environment(token, origin)
 	if info, err := os.Lstat(mirror); errors.Is(err, os.ErrNotExist) {
 		if err := git.run(ctx, environment, "init", "--bare", mirror); err != nil {
 			return "", "", err
@@ -111,7 +115,7 @@ func (git *Git) Cleanup(ctx context.Context, repositoryID, jobID int64) error {
 	} else if err != nil {
 		return err
 	}
-	return git.run(ctx, git.environment(""), "--git-dir", mirror, "worktree", "prune")
+	return git.run(ctx, git.environment("", ""), "--git-dir", mirror, "worktree", "prune")
 }
 
 func (git *Git) Prune(ctx context.Context, active map[int64]struct{}) error {
@@ -161,7 +165,7 @@ func (git *Git) run(ctx context.Context, environment []string, arguments ...stri
 	return git.Runner.Run(commandCtx, git.Binary, arguments, environment, "")
 }
 
-func (git *Git) environment(token string) []string {
+func (git *Git) environment(token, origin string) []string {
 	values := [][2]string{
 		{"credential.helper", ""},
 		{"http.followRedirects", "false"},
@@ -184,7 +188,7 @@ func (git *Git) environment(token string) []string {
 		"GIT_CONFIG_COUNT=" + strconv.Itoa(len(values)),
 	}
 	if token != "" {
-		environment = append(environment, "GIT_ASKPASS="+git.AskPass, "GREPNEST_ASKPASS_MODE=1", "GREPNEST_GIT_TOKEN="+token)
+		environment = append(environment, "GIT_ASKPASS="+git.AskPass, "GREPNEST_ASKPASS_MODE=1", "GREPNEST_ASKPASS_ORIGIN="+origin, "GREPNEST_GIT_TOKEN="+token)
 	}
 	for index, value := range values {
 		environment = append(environment,
@@ -193,6 +197,14 @@ func (git *Git) environment(token string) []string {
 		)
 	}
 	return environment
+}
+
+func credentialOrigin(remote string) (string, error) {
+	parsed, err := url.Parse(remote)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+		return "", errors.New("invalid Git credential origin")
+	}
+	return (&url.URL{Scheme: parsed.Scheme, Host: parsed.Host}).String(), nil
 }
 
 func (git *Git) remoteURL(name string) (string, error) {

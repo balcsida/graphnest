@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -26,6 +25,7 @@ import (
 
 const (
 	askPassModeEnv    = "GREPNEST_ASKPASS_MODE"
+	askPassOriginEnv  = "GREPNEST_ASKPASS_ORIGIN"
 	gitTokenEnv       = "GREPNEST_GIT_TOKEN"
 	searchNodeID      = "primary"
 	maxPrivateKeySize = 64 << 10
@@ -67,7 +67,7 @@ func runAskPass(args []string, getenv func(string) string, output io.Writer) int
 	if getenv(askPassModeEnv) != "1" || len(args) != 1 {
 		return 1
 	}
-	response := askPass(args[0], getenv(gitTokenEnv))
+	response := askPass(args[0], getenv(gitTokenEnv), getenv(askPassOriginEnv))
 	if response == "" {
 		return 1
 	}
@@ -77,14 +77,20 @@ func runAskPass(args []string, getenv func(string) string, output io.Writer) int
 	return 0
 }
 
-func askPass(prompt, token string) string {
+func askPass(prompt, token, origin string) string {
 	if token == "" {
 		return ""
 	}
-	if strings.HasPrefix(prompt, "Username") {
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.String() != origin {
+		return ""
+	}
+	if prompt == "Username for '"+origin+"': " {
 		return "x-access-token\n"
 	}
-	if strings.HasPrefix(prompt, "Password") {
+	passwordURL := *parsed
+	passwordURL.User = url.User("x-access-token")
+	if prompt == "Password for '"+passwordURL.String()+"': " {
 		return token + "\n"
 	}
 	return ""

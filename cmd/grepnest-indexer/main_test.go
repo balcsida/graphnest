@@ -11,13 +11,19 @@ import (
 )
 
 func TestAskPass(t *testing.T) {
-	for _, test := range []struct{ prompt, token, want string }{
-		{"Username for 'https://ghe.example':", "secret", "x-access-token\n"},
-		{"Password for 'https://ghe.example':", "secret", "secret\n"},
-		{"other", "secret", ""},
-		{"Password for 'https://ghe.example':", "", ""},
+	const origin = "https://ghe.example"
+	for _, test := range []struct{ prompt, token, origin, want string }{
+		{"Username for 'https://ghe.example': ", "secret", origin, "x-access-token\n"},
+		{"Password for 'https://x-access-token@ghe.example': ", "secret", origin, "secret\n"},
+		{"Password for 'https://attacker.example': ", "secret", origin, ""},
+		{"Password supplied by repository", "secret", origin, ""},
+		{"Username for 'https://ghe.example': ", "secret", "http://ghe.example", ""},
+		{"Username for 'https://ghe.example': ", "secret", "https://user@ghe.example", ""},
+		{"Username for 'https://ghe.example': ", "secret", "https://ghe.example/path", ""},
+		{"other", "secret", origin, ""},
+		{"Password for 'https://x-access-token@ghe.example': ", "", origin, ""},
 	} {
-		if got := askPass(test.prompt, test.token); got != test.want {
+		if got := askPass(test.prompt, test.token, test.origin); got != test.want {
 			t.Fatalf("askPass(%q) = %q, want %q", test.prompt, got, test.want)
 		}
 	}
@@ -31,11 +37,13 @@ func TestRunAskPassFailsClosed(t *testing.T) {
 		want string
 		code int
 	}{
-		{name: "username", args: []string{"Username for 'https://ghe.example':"}, env: map[string]string{askPassModeEnv: "1", gitTokenEnv: "secret"}, want: "x-access-token\n"},
-		{name: "password", args: []string{"Password for 'https://ghe.example':"}, env: map[string]string{askPassModeEnv: "1", gitTokenEnv: "secret"}, want: "secret\n"},
-		{name: "wrong mode", args: []string{"Password for 'https://ghe.example':"}, env: map[string]string{askPassModeEnv: "true", gitTokenEnv: "secret"}, code: 1},
-		{name: "unknown prompt", args: []string{"Other"}, env: map[string]string{askPassModeEnv: "1", gitTokenEnv: "secret"}, code: 1},
-		{name: "extra argument", args: []string{"Password:", "extra"}, env: map[string]string{askPassModeEnv: "1", gitTokenEnv: "secret"}, code: 1},
+		{name: "username", args: []string{"Username for 'https://ghe.example': "}, env: map[string]string{askPassModeEnv: "1", gitTokenEnv: "secret", askPassOriginEnv: "https://ghe.example"}, want: "x-access-token\n"},
+		{name: "password", args: []string{"Password for 'https://x-access-token@ghe.example': "}, env: map[string]string{askPassModeEnv: "1", gitTokenEnv: "secret", askPassOriginEnv: "https://ghe.example"}, want: "secret\n"},
+		{name: "wrong mode", args: []string{"Password for 'https://x-access-token@ghe.example': "}, env: map[string]string{askPassModeEnv: "true", gitTokenEnv: "secret", askPassOriginEnv: "https://ghe.example"}, code: 1},
+		{name: "mismatched host", args: []string{"Password for 'https://x-access-token@attacker.example': "}, env: map[string]string{askPassModeEnv: "1", gitTokenEnv: "secret", askPassOriginEnv: "https://ghe.example"}, code: 1},
+		{name: "unknown prompt", args: []string{"Other"}, env: map[string]string{askPassModeEnv: "1", gitTokenEnv: "secret", askPassOriginEnv: "https://ghe.example"}, code: 1},
+		{name: "missing origin", args: []string{"Password for 'https://x-access-token@ghe.example': "}, env: map[string]string{askPassModeEnv: "1", gitTokenEnv: "secret"}, code: 1},
+		{name: "extra argument", args: []string{"Password:", "extra"}, env: map[string]string{askPassModeEnv: "1", gitTokenEnv: "secret", askPassOriginEnv: "https://ghe.example"}, code: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var output strings.Builder
