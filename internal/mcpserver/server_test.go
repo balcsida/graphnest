@@ -57,8 +57,9 @@ func TestRepositoryToolsUseAuthenticatedService(t *testing.T) {
 		}
 	}
 	for toolName, fields := range map[string][]string{
-		"get_repository_status": {"repository_id"},
-		"read_file":             {"repository_id", "start_line", "end_line"},
+		"list_repositories":     {"limit", "max_output_bytes"},
+		"get_repository_status": {"repository_id", "max_output_bytes"},
+		"read_file":             {"repository_id", "start_line", "end_line", "max_output_bytes"},
 	} {
 		schema := repositoryToolSchema(t, tools.Tools, toolName)
 		properties := schema["properties"].(map[string]any)
@@ -123,6 +124,61 @@ func TestRepositoryToolsUseAuthenticatedService(t *testing.T) {
 	if store.calls != 0 {
 		t.Fatalf("invalid tool service calls = %d", store.calls)
 	}
+}
+
+func TestRepositoryToolBudgetsBoundStructuredOutput(t *testing.T) {
+	items := []api.RepositorySummary{
+		{GitHubID: 101, Name: strings.Repeat("a", 80)},
+		{GitHubID: 102, Name: strings.Repeat("b", 80)},
+		{GitHubID: 103, Name: strings.Repeat("c", 80)},
+	}
+	list, err := limitRepositoryList(items, listInput{Limit: 2, MaxOutputBytes: 400}, Limits{MaxItems: 100, MaxOutputBytes: 256 << 10})
+	if err != nil || len(list.Repositories) != 1 || !list.Truncated || structuredSize(t, list) > 400 {
+		t.Fatalf("list=%#v size=%d err=%v", list, structuredSize(t, list), err)
+	}
+
+	file := api.ReadFileResponse{RepositoryID: 101, Path: "main.go", IndexedSHA: strings.Repeat("a", 40), BlobSHA: "blob", Content: "one\ntwo\n" + strings.Repeat("x", 400), StartLine: 1, EndLine: 3}
+	limited, err := limitReadFile(file, 200, Limits{MaxOutputBytes: 256 << 10})
+	if err != nil || limited.Content != "one\ntwo" || limited.EndLine != 2 || !limited.Truncated || structuredSize(t, limited) > 200 {
+		t.Fatalf("file=%#v size=%d err=%v", limited, structuredSize(t, limited), err)
+	}
+	if _, err := limitReadFile(file, 1, Limits{MaxOutputBytes: 256 << 10}); !errors.Is(err, errOutputBudget) {
+		t.Fatalf("tiny budget error=%v", err)
+	}
+	configured, err := limitReadFile(file, 0, Limits{MaxOutputBytes: 200})
+	if err != nil || structuredSize(t, configured) > 200 || !configured.Truncated {
+		t.Fatalf("configured file=%#v size=%d err=%v", configured, structuredSize(t, configured), err)
+	}
+	list, err = limitRepositoryList(items, listInput{}, Limits{MaxItems: 2, MaxOutputBytes: 256 << 10})
+	if err != nil || len(list.Repositories) != 2 || !list.Truncated {
+		t.Fatalf("configured item limit list=%#v err=%v", list, err)
+	}
+}
+
+func TestReadFileBudgetFindsLargestWholeLinePrefix(t *testing.T) {
+	lines := make([]string, 1000)
+	for index := range lines {
+		lines[index] = "x"
+	}
+	file := api.ReadFileResponse{RepositoryID: 101, Path: "main.go", IndexedSHA: strings.Repeat("a", 40), BlobSHA: "blob", Content: strings.Join(lines, "\n"), StartLine: 1, EndLine: len(lines)}
+	want := file
+	want.Content = strings.Join(lines[:537], "\n")
+	want.EndLine = 537
+	want.Truncated = true
+
+	got, err := limitReadFile(file, int64(structuredSize(t, want)), Limits{MaxOutputBytes: 256 << 10})
+	if err != nil || got.Content != want.Content || got.EndLine != want.EndLine || !got.Truncated {
+		t.Fatalf("lines=%d end=%d size=%d err=%v", strings.Count(got.Content, "\n")+1, got.EndLine, structuredSize(t, got), err)
+	}
+}
+
+func structuredSize(t *testing.T, value any) int {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(data)
 }
 
 func TestRepositoryToolErrorsAreSafe(t *testing.T) {

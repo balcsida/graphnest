@@ -2,7 +2,9 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/grepnest/grepnest/internal/httpapi"
 	"github.com/grepnest/grepnest/internal/repository"
@@ -15,7 +17,18 @@ import (
 var (
 	errInvalidSearch = errors.New("search query is invalid")
 	errUnavailable   = errors.New("search service is unavailable")
+	errOutputBudget  = errors.New("tool output exceeds configured budget")
 )
+
+const (
+	maxRepositoryItems = 100
+	maxToolOutputBytes = int64(256 << 10)
+)
+
+type Limits struct {
+	MaxItems       int
+	MaxOutputBytes int64
+}
 
 type searchInput struct {
 	Query          string   `json:"query" jsonschema:"search expression"`
@@ -38,21 +51,38 @@ type output struct {
 }
 
 type repositoryIDInput struct {
-	RepositoryID int64 `json:"repository_id" jsonschema:"GitHub repository ID"`
+	RepositoryID   int64 `json:"repository_id" jsonschema:"GitHub repository ID"`
+	MaxOutputBytes int64 `json:"max_output_bytes,omitempty" jsonschema:"maximum output bytes"`
 }
 
 type readFileInput struct {
-	RepositoryID int64  `json:"repository_id" jsonschema:"GitHub repository ID"`
-	Path         string `json:"path" jsonschema:"repository-relative file path"`
-	StartLine    int    `json:"start_line,omitempty" jsonschema:"first line to return"`
-	EndLine      int    `json:"end_line,omitempty" jsonschema:"last line to return"`
+	RepositoryID   int64  `json:"repository_id" jsonschema:"GitHub repository ID"`
+	Path           string `json:"path" jsonschema:"repository-relative file path"`
+	StartLine      int    `json:"start_line,omitempty" jsonschema:"first line to return"`
+	EndLine        int    `json:"end_line,omitempty" jsonschema:"last line to return"`
+	MaxOutputBytes int64  `json:"max_output_bytes,omitempty" jsonschema:"maximum output bytes"`
+}
+
+type listInput struct {
+	Limit          int   `json:"limit,omitempty" jsonschema:"maximum repositories"`
+	MaxOutputBytes int64 `json:"max_output_bytes,omitempty" jsonschema:"maximum output bytes"`
 }
 
 type repositoryListOutput struct {
 	Repositories []api.RepositorySummary `json:"repositories"`
+	Truncated    bool                    `json:"truncated"`
 }
 
 func New(service *search.Service, repositoryServices ...*repository.Service) *mcp.Server {
+	var repositories *repository.Service
+	if len(repositoryServices) > 0 {
+		repositories = repositoryServices[0]
+	}
+	return NewWithLimits(service, repositories, Limits{})
+}
+
+func NewWithLimits(service *search.Service, repositories *repository.Service, limits Limits) *mcp.Server {
+	limits = normalizeLimits(limits)
 	server := mcp.NewServer(&mcp.Implementation{Name: "grepnest", Version: "0.1.0"}, nil)
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "search_code", Description: "Search code contents when you know a symbol, string, or code expression.",
@@ -70,13 +100,19 @@ func New(service *search.Service, repositoryServices ...*repository.Service) *mc
 			Limit: input.Limit, MaxResponseBytes: input.MaxOutputBytes,
 		})
 	})
-	if len(repositoryServices) == 0 || repositoryServices[0] == nil {
+	if repositories == nil {
 		return server
 	}
-	repositories := repositoryServices[0]
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "list_repositories", Description: "List repositories visible to you and their current index status.",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, repositoryListOutput, error) {
+		InputSchema: map[string]any{
+			"type": "object", "additionalProperties": false,
+			"properties": map[string]any{
+				"limit":            positiveIntegerSchema("maximum repositories"),
+				"max_output_bytes": positiveIntegerSchema("maximum output bytes"),
+			},
+		},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, input listInput) (*mcp.CallToolResult, repositoryListOutput, error) {
 		items, err := repositories.List(ctx, httpapi.PrincipalFromContext(ctx))
 		if err != nil {
 			return nil, repositoryListOutput{}, errors.New(httpapi.RepositoryErrorMessage(err))
@@ -84,18 +120,25 @@ func New(service *search.Service, repositoryServices ...*repository.Service) *mc
 		if items == nil {
 			items = []api.RepositorySummary{}
 		}
-		return nil, repositoryListOutput{Repositories: items}, nil
+		limited, err := limitRepositoryList(items, input, limits)
+		return nil, limited, err
 	})
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "get_repository_status", Description: "Inspect desired and indexed revisions before relying on search results.",
 		InputSchema: map[string]any{
 			"type": "object", "additionalProperties": false, "required": []string{"repository_id"},
-			"properties": map[string]any{"repository_id": positiveIntegerSchema("GitHub repository ID")},
+			"properties": map[string]any{
+				"repository_id":    positiveIntegerSchema("GitHub repository ID"),
+				"max_output_bytes": positiveIntegerSchema("maximum output bytes"),
+			},
 		},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input repositoryIDInput) (*mcp.CallToolResult, api.RepositorySummary, error) {
 		status, err := repositories.Status(ctx, httpapi.PrincipalFromContext(ctx), input.RepositoryID)
 		if err != nil {
 			return nil, api.RepositorySummary{}, errors.New(httpapi.RepositoryErrorMessage(err))
+		}
+		if !fitsOutput(status, outputBudget(input.MaxOutputBytes, limits.MaxOutputBytes)) {
+			return nil, api.RepositorySummary{}, errOutputBudget
 		}
 		return nil, status, nil
 	})
@@ -104,10 +147,11 @@ func New(service *search.Service, repositoryServices ...*repository.Service) *mc
 		InputSchema: map[string]any{
 			"type": "object", "additionalProperties": false, "required": []string{"repository_id", "path"},
 			"properties": map[string]any{
-				"repository_id": positiveIntegerSchema("GitHub repository ID"),
-				"path":          map[string]any{"type": "string", "minLength": 1, "description": "repository-relative file path"},
-				"start_line":    positiveIntegerSchema("first line to return"),
-				"end_line":      positiveIntegerSchema("last line to return"),
+				"repository_id":    positiveIntegerSchema("GitHub repository ID"),
+				"path":             map[string]any{"type": "string", "minLength": 1, "description": "repository-relative file path"},
+				"start_line":       positiveIntegerSchema("first line to return"),
+				"end_line":         positiveIntegerSchema("last line to return"),
+				"max_output_bytes": positiveIntegerSchema("maximum output bytes"),
 			},
 		},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input readFileInput) (*mcp.CallToolResult, api.ReadFileResponse, error) {
@@ -117,9 +161,86 @@ func New(service *search.Service, repositoryServices ...*repository.Service) *mc
 		if err != nil {
 			return nil, api.ReadFileResponse{}, errors.New(httpapi.RepositoryErrorMessage(err))
 		}
-		return nil, file, nil
+		file, err = limitReadFile(file, input.MaxOutputBytes, limits)
+		return nil, file, err
 	})
 	return server
+}
+
+func limitRepositoryList(items []api.RepositorySummary, input listInput, limits Limits) (repositoryListOutput, error) {
+	limits = normalizeLimits(limits)
+	maxItems := input.Limit
+	if maxItems <= 0 || maxItems > limits.MaxItems {
+		maxItems = limits.MaxItems
+	}
+	maxBytes := outputBudget(input.MaxOutputBytes, limits.MaxOutputBytes)
+	limited := repositoryListOutput{Repositories: []api.RepositorySummary{}, Truncated: len(items) > 0}
+	if !fitsOutput(limited, maxBytes) {
+		return repositoryListOutput{}, errOutputBudget
+	}
+	for index, item := range items {
+		if index == maxItems {
+			break
+		}
+		candidate := repositoryListOutput{Repositories: append(limited.Repositories, item), Truncated: index+1 < len(items)}
+		if !fitsOutput(candidate, maxBytes) {
+			break
+		}
+		limited = candidate
+	}
+	return limited, nil
+}
+
+func limitReadFile(file api.ReadFileResponse, requestedBytes int64, limits Limits) (api.ReadFileResponse, error) {
+	maxBytes := outputBudget(requestedBytes, normalizeLimits(limits).MaxOutputBytes)
+	if fitsOutput(file, maxBytes) {
+		return file, nil
+	}
+	lines := strings.Split(file.Content, "\n")
+	best := 0
+	for low, high := 1, len(lines); low <= high; {
+		count := low + (high-low)/2
+		candidate := filePrefix(file, lines, count)
+		if !fitsOutput(candidate, maxBytes) {
+			high = count - 1
+			continue
+		}
+		best = count
+		low = count + 1
+	}
+	if best == 0 {
+		return api.ReadFileResponse{}, errOutputBudget
+	}
+	return filePrefix(file, lines, best), nil
+}
+
+func filePrefix(file api.ReadFileResponse, lines []string, count int) api.ReadFileResponse {
+	file.Content = strings.Join(lines[:count], "\n")
+	file.EndLine = file.StartLine + count - 1
+	file.Truncated = true
+	return file
+}
+
+func normalizeLimits(limits Limits) Limits {
+	if limits.MaxItems <= 0 || limits.MaxItems > maxRepositoryItems {
+		limits.MaxItems = maxRepositoryItems
+	}
+	if limits.MaxOutputBytes <= 0 || limits.MaxOutputBytes > maxToolOutputBytes {
+		limits.MaxOutputBytes = maxToolOutputBytes
+	}
+	return limits
+}
+
+func outputBudget(requested, configured int64) int64 {
+	if requested <= 0 || requested > configured {
+		return configured
+	}
+	return requested
+}
+
+func fitsOutput(value any, maxBytes int64) bool {
+	data, err := json.Marshal(value)
+	return err == nil && int64(len(data)) <= maxBytes
 }
 
 func positiveIntegerSchema(description string) map[string]any {

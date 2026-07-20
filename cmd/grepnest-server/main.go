@@ -215,7 +215,9 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 	if processor != nil {
 		httpapi.RegisterGitHubWebhook(mux, webhookSecret, 1<<20, processor)
 	}
-	mcpServer := mcpserver.New(service, repositories)
+	mcpServer := mcpserver.NewWithLimits(service, repositories, mcpserver.Limits{
+		MaxItems: settings.Limits.MaxResults, MaxOutputBytes: settings.Limits.MaxResponseBytes,
+	})
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer }, nil)
 	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		request.Body = http.MaxBytesReader(writer, request.Body, settings.Limits.MaxRequestBytes)
