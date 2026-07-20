@@ -696,7 +696,7 @@ func sendGitHubWebhook(t *testing.T, server *httptest.Server, delivery, event st
 
 func sendPush(t *testing.T, server *httptest.Server, delivery string, repositoryID int64, sha string) {
 	t.Helper()
-	body := []byte(fmt.Sprintf(`{"installation":{"id":10},"repository":{"id":%d},"ref":"refs/heads/main","after":%q}`, repositoryID, sha))
+	body := []byte(fmt.Sprintf(`{"installation":{"id":10},"repository":{"id":%d,"size":1},"ref":"refs/heads/main","after":%q}`, repositoryID, sha))
 	sendGitHubWebhook(t, server, delivery, "push", body)
 }
 

@@ -49,6 +49,11 @@ func (tx *DeliveryTx) RepositoryForPush(ctx context.Context, githubID int64) (re
 		where repositories.github_id=$1 for update of repositories`, githubID))
 }
 
+func (tx *DeliveryTx) UpdateRepositorySize(ctx context.Context, repositoryID, sizeBytes int64) error {
+	_, err := tx.tx.Exec(ctx, "update repositories set size_bytes=$2, updated_at=now() where id=$1", repositoryID, sizeBytes)
+	return err
+}
+
 func (tx *DeliveryTx) RenameRepository(ctx context.Context, githubID int64, owner, name, cloneURL, webURL string) error {
 	_, err := tx.tx.Exec(ctx, `update repositories set owner=$2, name=$3, clone_url=$4, web_url=$5, updated_at=now() where github_id=$1`, githubID, owner, name, cloneURL, webURL)
 	return err

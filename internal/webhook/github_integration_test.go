@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -62,13 +63,33 @@ func TestGitHubProcessorDurability(t *testing.T) {
 		}
 	})
 
+	t.Run("push size validation", func(t *testing.T) {
+		store, pool := webhookStore(t)
+		seedWebhookRepository(t, store, 101)
+		processor := NewGitHubProcessor(store, nil)
+		for index, body := range [][]byte{
+			[]byte(fmt.Sprintf(`{"installation":{"id":10},"repository":{"id":101},"ref":"refs/heads/main","after":%q}`, webhookSHAA)),
+			pushBodyWithSize(10, 101, "refs/heads/main", webhookSHAA, -1),
+			pushBodyWithSize(10, 101, "refs/heads/main", webhookSHAA, math.MaxInt64/1024+1),
+		} {
+			_, err := processor.Process(t.Context(), Delivery{ID: fmt.Sprintf("invalid-size-%d", index), Event: "push", Body: body})
+			var invalid InvalidDeliveryError
+			if !errors.As(err, &invalid) {
+				t.Fatalf("case %d: err=%v", index, err)
+			}
+		}
+		if got := deliveryCount(t, pool); got != 0 {
+			t.Fatalf("invalid sizes persisted %d deliveries", got)
+		}
+	})
+
 	t.Run("push validation coalescing and duplicate", func(t *testing.T) {
 		store, pool := webhookStore(t)
 		seedWebhookRepository(t, store, 101)
 		processor := NewGitHubProcessor(store, nil)
 		for _, delivery := range []Delivery{
 			{ID: "push-a", Event: "push", Body: pushBody(10, 101, "refs/heads/main", webhookSHAA)},
-			{ID: "push-b", Event: "push", Body: pushBody(10, 101, "refs/heads/main", webhookSHAB)},
+			{ID: "push-b", Event: "push", Body: pushBodyWithSize(10, 101, "refs/heads/main", webhookSHAB, 2048)},
 			{ID: "push-other", Event: "push", Body: pushBody(10, 101, "refs/heads/other", webhookSHAA)},
 		} {
 			if inserted, err := processor.Process(t.Context(), delivery); err != nil || !inserted {
@@ -79,10 +100,11 @@ func TestGitHubProcessorDurability(t *testing.T) {
 			t.Fatalf("duplicate: inserted=%v err=%v", inserted, err)
 		}
 		var desired, target string
+		var sizeBytes int64
 		var jobs int
-		if err := pool.QueryRow(t.Context(), `select coalesce(max(desired_sha), ''), coalesce(max(target_sha), ''), count(index_jobs.id)
-			from repositories left join index_jobs on index_jobs.repository_id=repositories.id where repositories.github_id=101`).Scan(&desired, &target, &jobs); err != nil || desired != webhookSHAB || target != webhookSHAB || jobs != 1 {
-			t.Fatalf("desired=%q target=%q jobs=%d err=%v", desired, target, jobs, err)
+		if err := pool.QueryRow(t.Context(), `select coalesce(max(desired_sha), ''), coalesce(max(target_sha), ''), max(size_bytes), count(index_jobs.id)
+			from repositories left join index_jobs on index_jobs.repository_id=repositories.id where repositories.github_id=101`).Scan(&desired, &target, &sizeBytes, &jobs); err != nil || desired != webhookSHAB || target != webhookSHAB || sizeBytes != 2048*1024 || jobs != 1 {
+			t.Fatalf("desired=%q target=%q size=%d jobs=%d err=%v", desired, target, sizeBytes, jobs, err)
 		}
 
 		before := deliveryCount(t, pool)
@@ -112,13 +134,14 @@ func TestGitHubProcessorDurability(t *testing.T) {
 			create trigger reject_index_job before insert on index_jobs for each row execute function reject_index_job()`); err != nil {
 			t.Fatal(err)
 		}
-		inserted, err := NewGitHubProcessor(store, nil).Process(t.Context(), Delivery{ID: "rollback", Event: "push", Body: pushBody(10, 101, "refs/heads/main", webhookSHAA)})
+		inserted, err := NewGitHubProcessor(store, nil).Process(t.Context(), Delivery{ID: "rollback", Event: "push", Body: pushBodyWithSize(10, 101, "refs/heads/main", webhookSHAA, 2048)})
 		if err == nil || inserted {
 			t.Fatalf("inserted=%v err=%v", inserted, err)
 		}
 		var desired string
-		if err := pool.QueryRow(t.Context(), "select coalesce(desired_sha, '') from repositories where github_id=101").Scan(&desired); err != nil || desired != "" || deliveryCount(t, pool) != 0 {
-			t.Fatalf("desired=%q deliveries=%d err=%v", desired, deliveryCount(t, pool), err)
+		var sizeBytes int64
+		if err := pool.QueryRow(t.Context(), "select coalesce(desired_sha, ''), size_bytes from repositories where github_id=101").Scan(&desired, &sizeBytes); err != nil || desired != "" || sizeBytes != 1024 || deliveryCount(t, pool) != 0 {
+			t.Fatalf("desired=%q size=%d deliveries=%d err=%v", desired, sizeBytes, deliveryCount(t, pool), err)
 		}
 	})
 
@@ -303,7 +326,11 @@ func scrapeWebhookMetrics(t *testing.T, metrics *observability.Metrics) string {
 }
 
 func pushBody(installationID, repositoryID int64, ref, sha string) []byte {
-	return []byte(fmt.Sprintf(`{"installation":{"id":%d},"repository":{"id":%d,"extra":"GitHub"},"ref":%q,"after":%q,"sender":{"login":"ignored"}}`, installationID, repositoryID, ref, sha))
+	return pushBodyWithSize(installationID, repositoryID, ref, sha, 1)
+}
+
+func pushBodyWithSize(installationID, repositoryID int64, ref, sha string, sizeKB int64) []byte {
+	return []byte(fmt.Sprintf(`{"installation":{"id":%d},"repository":{"id":%d,"size":%d,"extra":"GitHub"},"ref":%q,"after":%q,"sender":{"login":"ignored"}}`, installationID, repositoryID, sizeKB, ref, sha))
 }
 
 func seedWebhookRepository(t *testing.T, store *postgres.Store, id int64) {
@@ -311,7 +338,7 @@ func seedWebhookRepository(t *testing.T, store *postgres.Store, id int64) {
 	if err := store.UpsertInstallation(t.Context(), postgres.InstallationUpdate{GitHubID: 10, AccountLogin: "acme", AccountType: "Organization", Status: "active"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.UpsertRepository(t.Context(), postgres.RepositoryUpdate{GitHubID: id, InstallationID: 10, Owner: "acme", Name: fmt.Sprintf("repo-%d", id), CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true}); err != nil {
+	if _, err := store.UpsertRepository(t.Context(), postgres.RepositoryUpdate{GitHubID: id, InstallationID: 10, SizeBytes: 1024, Owner: "acme", Name: fmt.Sprintf("repo-%d", id), CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 }

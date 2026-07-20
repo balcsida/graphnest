@@ -35,6 +35,7 @@ func TestPostgresConcurrency(t *testing.T) {
 	t.Run("delivery dedupe is atomic", testDeliveryDedupe)
 	t.Run("workers claim unique jobs", testConcurrentClaims)
 	t.Run("pushes coalesce behind running work", testRunningCoalescing)
+	t.Run("push size blocks credentials", testPushSizeBlocksCredentials)
 	t.Run("lost owners cannot mutate leases", testLeaseOwnerLoss)
 	t.Run("worker recovers lease expiring after restart", testLeaseRecoveryAfterRestart)
 	t.Run("reapers partition expired work", testConcurrentReapers)
@@ -113,15 +114,21 @@ func (queue *controlledQueue) ClaimIndex(ctx context.Context, owner string) (pos
 	return queue.Store.ClaimIndex(ctx, owner)
 }
 
-type integrationTokens struct{}
+type integrationTokens struct{ calls *atomic.Int64 }
 
-func (integrationTokens) InstallationToken(context.Context, int64, []int64) (githubapp.Token, error) {
+func (tokens integrationTokens) InstallationToken(context.Context, int64, []int64) (githubapp.Token, error) {
+	if tokens.calls != nil {
+		tokens.calls.Add(1)
+	}
 	return githubapp.Token{Value: "token"}, nil
 }
 
-type integrationGit struct{}
+type integrationGit struct{ prepares *atomic.Int64 }
 
-func (integrationGit) Prepare(context.Context, repository.Repository, postgres.IndexJob, string) (string, string, error) {
+func (git integrationGit) Prepare(context.Context, repository.Repository, postgres.IndexJob, string) (string, string, error) {
+	if git.prepares != nil {
+		git.prepares.Add(1)
+	}
 	return "/mirror", "/worktree", nil
 }
 func (integrationGit) Cleanup(context.Context, int64, int64) error     { return nil }
@@ -168,6 +175,35 @@ func testDeliveryDedupe(t *testing.T) {
 	}
 	if inserted.Load() != 1 || deliveries != 1 || jobs != 1 || desired != postgresSHAA {
 		t.Fatalf("inserted=%d deliveries=%d jobs=%d desired=%q", inserted.Load(), deliveries, jobs, desired)
+	}
+}
+
+func testPushSizeBlocksCredentials(t *testing.T) {
+	h := newPostgresHarness(t)
+	h.seedRepository(t, 10, 101)
+	processor := webhook.NewGitHubProcessor(h.store, nil)
+	if inserted, err := processor.Process(t.Context(), pushDeliveryWithSize("oversized", 10, 101, postgresSHAA, 6)); err != nil || !inserted {
+		t.Fatalf("push inserted=%v err=%v", inserted, err)
+	}
+
+	var tokenCalls, fetchCalls atomic.Int64
+	worker := &indexer.Worker{
+		ID: "size-worker", Queue: h.store, Store: h.store,
+		Tokens: integrationTokens{calls: &tokenCalls}, Git: integrationGit{prepares: &fetchCalls}, Zoekt: integrationPublisher{},
+		MaxRepositoryBytes: 5 * 1024, RenewEvery: time.Hour,
+	}
+	worked, err := worker.RunOne(t.Context())
+	if err != nil || !worked {
+		t.Fatalf("worker worked=%v err=%v", worked, err)
+	}
+	var sizeBytes int64
+	var state, code string
+	if err := h.pool.QueryRow(t.Context(), `select repositories.size_bytes, index_jobs.state, coalesce(index_jobs.error_code, '')
+		from repositories join index_jobs on index_jobs.repository_id=repositories.id where repositories.github_id=101`).Scan(&sizeBytes, &state, &code); err != nil {
+		t.Fatal(err)
+	}
+	if sizeBytes != 6*1024 || state != "failed" || code != "repository_too_large" || tokenCalls.Load() != 0 || fetchCalls.Load() != 0 {
+		t.Fatalf("size=%d state=%q code=%q tokens=%d fetches=%d", sizeBytes, state, code, tokenCalls.Load(), fetchCalls.Load())
 	}
 }
 
@@ -647,7 +683,11 @@ func (h *postgresHarness) waitForLockWaiters(t *testing.T, want int) {
 }
 
 func pushDelivery(id string, installationID, repositoryID int64, sha string) webhook.Delivery {
-	return webhook.Delivery{ID: id, Event: "push", Body: []byte(fmt.Sprintf(`{"installation":{"id":%d},"repository":{"id":%d},"ref":"refs/heads/main","after":%q}`, installationID, repositoryID, sha))}
+	return pushDeliveryWithSize(id, installationID, repositoryID, sha, 1)
+}
+
+func pushDeliveryWithSize(id string, installationID, repositoryID int64, sha string, sizeKB int64) webhook.Delivery {
+	return webhook.Delivery{ID: id, Event: "push", Body: []byte(fmt.Sprintf(`{"installation":{"id":%d},"repository":{"id":%d,"size":%d},"ref":"refs/heads/main","after":%q}`, installationID, repositoryID, sizeKB, sha))}
 }
 
 func processPush(t *testing.T, processor *webhook.GitHubProcessor, id string, installationID, repositoryID int64, sha string) {

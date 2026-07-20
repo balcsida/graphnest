@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 
 	"github.com/grepnest/grepnest/internal/observability"
@@ -63,6 +64,7 @@ type eventPayload struct {
 	} `json:"installation"`
 	Repository struct {
 		ID       int64  `json:"id"`
+		SizeKB   *int64 `json:"size"`
 		Name     string `json:"name"`
 		CloneURL string `json:"clone_url"`
 		HTMLURL  string `json:"html_url"`
@@ -119,6 +121,9 @@ func (processor *GitHubProcessor) Process(ctx context.Context, delivery Delivery
 			}
 			if payload.Ref != "refs/heads/"+repository.Branch || !validSHA(payload.After) {
 				return nil
+			}
+			if err := tx.UpdateRepositorySize(ctx, repository.ID, *payload.Repository.SizeKB*1024); err != nil {
+				return err
 			}
 			return tx.EnqueueIndex(ctx, postgres.IndexRequest{RepositoryID: repository.ID, TargetSHA: payload.After, TargetRef: payload.Ref, Reason: "push"})
 		case "installation":
@@ -177,7 +182,8 @@ func validPayload(event string, payload eventPayload) bool {
 	}
 	switch event {
 	case "push":
-		return payload.Repository.ID > 0 && strings.HasPrefix(payload.Ref, "refs/heads/") && payload.Ref != "refs/heads/" && validSHA(payload.After)
+		return payload.Repository.ID > 0 && payload.Repository.SizeKB != nil && *payload.Repository.SizeKB >= 0 && *payload.Repository.SizeKB <= math.MaxInt64/1024 &&
+			strings.HasPrefix(payload.Ref, "refs/heads/") && payload.Ref != "refs/heads/" && validSHA(payload.After)
 	case "installation":
 		return payload.Action != ""
 	case "repository":
