@@ -104,7 +104,22 @@ func TestMilestone2Vertical(t *testing.T) {
 	metrics := observability.New()
 	githubClient := githubapp.NewClient(endpoints, httpClient, signer, "2022-11-28", 2<<20, nil, metrics)
 	reconciler := githubapp.NewReconciler(githubClient, database.store)
-	processor := webhook.NewGitHubProcessor(database.store, reconciler, metrics)
+	reconcileRequests := make(chan int64, 64)
+	reconcileResults := make(chan error, 64)
+	reconcileDone := make(chan struct{})
+	go func() {
+		defer close(reconcileDone)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case installationID := <-reconcileRequests:
+				reconcileResults <- reconciler.Installation(ctx, installationID)
+			}
+		}
+	}()
+	t.Cleanup(func() { <-reconcileDone })
+	processor := webhook.NewGitHubProcessor(database.store, reconcileRequests, metrics)
 
 	indexDir := filepath.Join(root, "index")
 	if err := os.MkdirAll(indexDir, 0o700); err != nil {
@@ -138,6 +153,7 @@ func TestMilestone2Vertical(t *testing.T) {
 
 	installationBody := []byte(`{"action":"created","installation":{"id":10},"audit_secret":"` + milestonePayloadSecret + `"}`)
 	sendGitHubWebhook(t, server, "installation-one", "installation", installationBody)
+	awaitReconciliation(t, reconcileResults)
 	assertQueuedTarget(t, database.pool, milestoneRepositoryID, primary.shas[0], 1)
 	sendGitHubWebhook(t, server, "installation-one", "installation", installationBody)
 	assertQueuedTarget(t, database.pool, milestoneRepositoryID, primary.shas[0], 1)
@@ -196,6 +212,7 @@ func TestMilestone2Vertical(t *testing.T) {
 
 	github.addEmpty()
 	sendGitHubWebhook(t, server, "add-empty", "installation_repositories", []byte(`{"action":"added","installation":{"id":10}}`))
+	awaitReconciliation(t, reconcileResults)
 	queue.block = false
 	if worked, err := worker.RunOne(ctx); err != nil || !worked {
 		t.Fatalf("index empty repository: worked=%v err=%v", worked, err)
@@ -690,6 +707,18 @@ func assertQueuedTarget(t *testing.T, pool *pgxpool.Pool, githubID int64, sha st
 	err := pool.QueryRow(t.Context(), `select min(j.target_sha), count(*) from index_jobs j join repositories r on r.id=j.repository_id where r.github_id=$1 and j.state='queued'`, githubID).Scan(&gotSHA, &gotCount)
 	if err != nil || gotSHA != sha || gotCount != count {
 		t.Fatalf("queued target=%q count=%d err=%v, want %q/%d", gotSHA, gotCount, err, sha, count)
+	}
+}
+
+func awaitReconciliation(t *testing.T, results <-chan error) {
+	t.Helper()
+	select {
+	case err := <-results:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("reconciliation did not complete")
 	}
 }
 

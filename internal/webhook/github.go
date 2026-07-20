@@ -9,7 +9,6 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/jackc/pgx/v5"
@@ -42,17 +41,17 @@ func Verify(secret, body []byte, signature string) bool {
 }
 
 type GitHubProcessor struct {
-	store      *postgres.Store
-	reconciler *githubapp.Reconciler
-	metrics    *observability.Metrics
+	store             *postgres.Store
+	reconcileRequests chan<- int64
+	metrics           *observability.Metrics
 }
 
-func NewGitHubProcessor(store *postgres.Store, reconciler *githubapp.Reconciler, metricSet ...*observability.Metrics) *GitHubProcessor {
+func NewGitHubProcessor(store *postgres.Store, reconcileRequests chan<- int64, metricSet ...*observability.Metrics) *GitHubProcessor {
 	var metrics *observability.Metrics
 	if len(metricSet) > 0 {
 		metrics = metricSet[0]
 	}
-	return &GitHubProcessor{store: store, reconciler: reconciler, metrics: metrics}
+	return &GitHubProcessor{store: store, reconcileRequests: reconcileRequests, metrics: metrics}
 }
 
 type eventPayload struct {
@@ -151,9 +150,10 @@ func (processor *GitHubProcessor) Process(ctx context.Context, delivery Delivery
 		result = "duplicate"
 		return false, nil
 	}
-	if inserted && reconcile && installationID != nil && processor.reconciler != nil {
-		if err := processor.reconciler.Installation(ctx, *installationID); err != nil {
-			return false, err
+	if reconcile && installationID != nil && processor.reconcileRequests != nil {
+		select {
+		case processor.reconcileRequests <- *installationID:
+		default:
 		}
 	}
 	result = state

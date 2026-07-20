@@ -205,6 +205,31 @@ func TestDurableReconciliationStartsSynchronouslyAndStops(t *testing.T) {
 	}
 }
 
+func TestReconcileRequestsAreLifecycleOwned(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	requests := make(chan int64, 1)
+	reconciled := make(chan int64, 1)
+	done := startReconcileRequests(ctx, requests, func(_ context.Context, installationID int64) error {
+		reconciled <- installationID
+		return nil
+	}, func(err error) { t.Errorf("unexpected reconcile error: %v", err) })
+	requests <- 10
+	select {
+	case installationID := <-reconciled:
+		if installationID != 10 {
+			t.Fatalf("reconciled installation = %d", installationID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("reconciliation request was not consumed")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("reconciliation request loop did not stop")
+	}
+}
+
 func TestDurableReadinessRequiresDatabaseAndZoekt(t *testing.T) {
 	database := &healthStub{}
 	backend := &healthStub{}

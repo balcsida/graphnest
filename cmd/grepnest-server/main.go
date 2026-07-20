@@ -184,10 +184,15 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 		cancel()
 		return fail(err)
 	}
+	reconcileRequests := make(chan int64, 64)
+	reconcileDone := startReconcileRequests(loopCtx, reconcileRequests, reconciler.Installation, func(error) {
+		logger.Error("webhook reconciliation failed")
+	})
 	backend, err := zoekt.New(settings.ZoektURL, http.DefaultClient, settings.Limits.MaxResponseBytes, metrics)
 	if err != nil {
 		cancel()
 		<-done
+		<-reconcileDone
 		return fail(err)
 	}
 	authenticator := authn.NewStatic(map[string]authn.Principal{
@@ -196,11 +201,12 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	})
 	searchService := search.NewService(backend, authz.NewPostgres(store), searchLimits(settings))
 	repositoryService := &repository.Service{Store: store, GitHub: githubClient}
-	processor := webhook.NewGitHubProcessor(store, reconciler, metrics)
+	processor := webhook.NewGitHubProcessor(store, reconcileRequests, metrics)
 	handler := newAPIHandler(settings, metrics, authenticator, searchService, repositoryService, webhookSecret, processor, durableReadiness{pool: pool, zoekt: backend})
 	return handler, func() {
 		cancel()
 		<-done
+		<-reconcileDone
 		pool.Close()
 	}, nil
 }
@@ -280,6 +286,24 @@ func startPeriodic(ctx context.Context, interval time.Duration, reconcile, refre
 		}
 	}()
 	return done, nil
+}
+
+func startReconcileRequests(ctx context.Context, requests <-chan int64, reconcile func(context.Context, int64) error, onError func(error)) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case installationID := <-requests:
+				if err := reconcile(ctx, installationID); err != nil {
+					onError(err)
+				}
+			}
+		}
+	}()
+	return done
 }
 
 func refreshQueueDepths(ctx context.Context, store *postgres.Store, metrics *observability.Metrics) error {

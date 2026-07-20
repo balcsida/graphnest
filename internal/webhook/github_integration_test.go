@@ -179,24 +179,89 @@ func TestGitHubProcessorDurability(t *testing.T) {
 		})
 	}
 
-	t.Run("reconcile runs after commit and not for duplicates", func(t *testing.T) {
+	t.Run("accepted delivery does not wait for reconciliation", func(t *testing.T) {
 		store, pool := webhookStore(t)
-		requests := 0
-		reconciler := webhookReconciler(t, store, func() {
-			requests++
-			if deliveryCount(t, pool) != 1 {
-				t.Fatal("reconcile observed an uncommitted delivery")
-			}
+		started := make(chan struct{})
+		release := make(chan struct{})
+		reconciler := webhookReconciler(t, store, func(writer http.ResponseWriter) {
+			close(started)
+			<-release
+			fmt.Fprint(writer, `[{"id":10,"account":{"login":"acme","type":"Organization"},"suspended_at":"2026-07-20T00:00:00Z"}]`)
 		})
-		processor := NewGitHubProcessor(store, reconciler)
+		reconcileRequests := make(chan int64, 1)
+		processor := NewGitHubProcessor(store, reconcileRequests)
 		delivery := Delivery{ID: "reconcile", Event: "installation", Body: []byte(`{"action":"created","installation":{"id":10}}`)}
+		processed := make(chan error, 1)
+		go func() {
+			inserted, err := processor.Process(t.Context(), delivery)
+			if err == nil && !inserted {
+				err = errors.New("delivery was not inserted")
+			}
+			processed <- err
+		}()
+		deadline := time.Now().Add(time.Second)
+		for deliveryCount(t, pool) != 1 && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
+		select {
+		case err := <-processed:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(50 * time.Millisecond):
+			close(release)
+			<-processed
+			t.Fatal("accepted delivery waited for reconciliation")
+		}
+
+		select {
+		case <-started:
+			t.Fatal("webhook processor started reconciliation")
+		default:
+		}
+		select {
+		case installationID := <-reconcileRequests:
+			if installationID != 10 {
+				t.Fatalf("reconcile installation = %d", installationID)
+			}
+		default:
+			t.Fatal("accepted delivery did not schedule reconciliation")
+		}
+		go func() { processed <- reconciler.All(t.Context()) }()
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("background reconciliation did not start")
+		}
+		close(release)
+		if err := <-processed; err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("reconciliation failure remains retryable", func(t *testing.T) {
+		store, _ := webhookStore(t)
+		requests := 0
+		reconciler := webhookReconciler(t, store, func(writer http.ResponseWriter) {
+			requests++
+			if requests == 1 {
+				http.Error(writer, "down", http.StatusServiceUnavailable)
+				return
+			}
+			fmt.Fprint(writer, `[{"id":10,"account":{"login":"acme","type":"Organization"},"suspended_at":"2026-07-20T00:00:00Z"}]`)
+		})
+		processor := NewGitHubProcessor(store, nil)
+		delivery := Delivery{ID: "retry-reconcile", Event: "installation", Body: []byte(`{"action":"created","installation":{"id":10}}`)}
 		if inserted, err := processor.Process(t.Context(), delivery); err != nil || !inserted {
-			t.Fatalf("first: inserted=%v err=%v", inserted, err)
+			t.Fatalf("accepted: inserted=%v err=%v", inserted, err)
 		}
-		if inserted, err := processor.Process(t.Context(), delivery); err != nil || inserted {
-			t.Fatalf("duplicate: inserted=%v err=%v", inserted, err)
+		if err := reconciler.All(t.Context()); err == nil {
+			t.Fatal("first background reconciliation succeeded")
 		}
-		if requests != 1 {
+		if err := reconciler.All(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if requests != 2 {
 			t.Fatalf("reconcile requests=%d", requests)
 		}
 	})
@@ -260,11 +325,10 @@ func deliveryCount(t *testing.T, pool *pgxpool.Pool) int {
 	return count
 }
 
-func webhookReconciler(t *testing.T, store *postgres.Store, observed func()) *githubapp.Reconciler {
+func webhookReconciler(t *testing.T, store *postgres.Store, respond func(http.ResponseWriter)) *githubapp.Reconciler {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		observed()
-		fmt.Fprint(writer, `[{"id":10,"account":{"login":"acme","type":"Organization"},"suspended_at":"2026-07-20T00:00:00Z"}]`)
+		respond(writer)
 	}))
 	t.Cleanup(server.Close)
 	endpoint, err := url.Parse(server.URL)
