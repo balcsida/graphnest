@@ -39,6 +39,7 @@ func TestPostgresConcurrency(t *testing.T) {
 	t.Run("push wins repository lock", func(t *testing.T) { testCompletionPushOrder(t, false) })
 	t.Run("rename preserves numeric authorization", testRenameAuthorization)
 	t.Run("disabled state blocks authorization", testDisabledAuthorization)
+	t.Run("re-enabled unchanged desired remains claimable", testReenabledRepository)
 	t.Run("retention is bounded", testRetention)
 }
 
@@ -367,6 +368,70 @@ func testDisabledAuthorization(t *testing.T) {
 	}
 	if list, err := authorizer.AuthorizedRepositories(t.Context(), principal, authz.RepositorySelection{}); err != nil || len(list) != 0 {
 		t.Fatalf("installation list=%#v err=%v", list, err)
+	}
+}
+
+func testReenabledRepository(t *testing.T) {
+	for _, variant := range []string{"complete", "fail", "reap"} {
+		t.Run(variant, func(t *testing.T) {
+			h := newPostgresHarness(t)
+			repositoryID := h.seedRepository(t, 10, 101)
+			if err := h.store.EnqueueIndex(t.Context(), postgres.IndexRequest{RepositoryID: repositoryID, TargetSHA: postgresSHAA}); err != nil {
+				t.Fatal(err)
+			}
+			job, err := h.store.ClaimIndex(t.Context(), "owner")
+			if err != nil {
+				t.Fatal(err)
+			}
+			processor := webhook.NewGitHubProcessor(h.store, nil)
+			body := []byte(`{"action":"deleted","installation":{"id":10},"repository":{"id":101}}`)
+			if inserted, err := processor.Process(t.Context(), webhook.Delivery{ID: "disable", Event: "repository", Body: body}); err != nil || !inserted {
+				t.Fatalf("disable inserted=%v err=%v", inserted, err)
+			}
+			switch variant {
+			case "complete":
+				err = h.store.CompleteIndex(t.Context(), job.ID, "owner")
+			case "fail":
+				err = h.store.FailIndex(t.Context(), job.ID, "owner", "permanent", false)
+			case "reap":
+				if _, err = h.pool.Exec(t.Context(), "update index_jobs set attempt=5, lease_expires_at=now()-interval '1 second' where id=$1", job.ID); err == nil {
+					var count int64
+					count, err = h.store.ReapExpired(t.Context(), 1)
+					if err == nil && count != 1 {
+						err = fmt.Errorf("reaped=%d", count)
+					}
+				}
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			installation := githubapp.Installation{ID: 10, AccountLogin: "acme", AccountType: "Organization", Status: "active"}
+			repository := githubRepository(101, "acme", "repo-101", postgresSHAA)
+			if err := h.store.ReconcileInstallation(t.Context(), installation, []githubapp.Repository{repository}); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.store.ReconcileInstallation(t.Context(), installation, []githubapp.Repository{repository}); err != nil {
+				t.Fatal(err)
+			}
+			var queued int
+			if err := h.pool.QueryRow(t.Context(), "select count(*) from index_jobs where repository_id=$1 and state='queued'", repositoryID).Scan(&queued); err != nil {
+				t.Fatal(err)
+			}
+			retry, err := h.store.ClaimIndex(t.Context(), "new-owner")
+			if err != nil || retry.TargetSHA != postgresSHAA || queued != 1 {
+				t.Fatalf("queued=%d retry=%#v err=%v", queued, retry, err)
+			}
+			if err := h.store.CompleteIndex(t.Context(), retry.ID, "new-owner"); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.store.ReconcileInstallation(t.Context(), installation, []githubapp.Repository{repository}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := h.store.ClaimIndex(t.Context(), "unwanted"); !errors.Is(err, postgres.ErrNoJob) {
+				t.Fatalf("ready same-SHA claim err=%v", err)
+			}
+		})
 	}
 }
 

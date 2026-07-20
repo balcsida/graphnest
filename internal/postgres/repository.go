@@ -99,6 +99,7 @@ func (s *Store) ReconcileInstallation(ctx context.Context, installation githubap
 		enabled := installation.Status == "active" && installation.SuspendedAt == nil && !repository.Archived && !repository.Disabled
 		var id int64
 		var desiredSHA *string
+		var status string
 		if err := tx.QueryRow(ctx, `
 			insert into repositories (github_id, installation_id, owner, name, clone_url, web_url,
 				default_branch, private, archived, enabled, status)
@@ -115,12 +116,12 @@ func (s *Store) ReconcileInstallation(ctx context.Context, installation githubap
 				error_code=case when excluded.enabled and repositories.status='disabled' then null
 					when not excluded.enabled then null else repositories.error_code end,
 				updated_at=now()
-			returning id, desired_sha`, repository.ID, installation.ID, repository.Owner,
+			returning id, desired_sha, status`, repository.ID, installation.ID, repository.Owner,
 			repository.Name, repository.CloneURL, repository.HTMLURL, repository.DefaultBranch,
-			repository.Private, repository.Archived, enabled).Scan(&id, &desiredSHA); err != nil {
+			repository.Private, repository.Archived, enabled).Scan(&id, &desiredSHA, &status); err != nil {
 			return err
 		}
-		if enabled && (desiredSHA == nil || *desiredSHA != repository.DefaultSHA) {
+		if enabled && (desiredSHA == nil || *desiredSHA != repository.DefaultSHA || status == "pending") {
 			if err := enqueueIndex(ctx, tx, IndexRequest{RepositoryID: id, TargetSHA: repository.DefaultSHA}); err != nil {
 				return err
 			}
