@@ -263,7 +263,7 @@ func (stub *healthStub) Health(context.Context) error {
 
 func TestDurableRoutesKeepWebhookOutsideBearerAuthentication(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
-	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024}}, observability.New(), authenticator, nil, &repository.Service{Store: repositoryStoreStub{}}, []byte("secret"), webhookProcessorStub{}, nil)
+	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), authenticator, nil, &repository.Service{Store: repositoryStoreStub{}}, []byte("secret"), webhookProcessorStub{}, nil)
 
 	webhookResponse := httptest.NewRecorder()
 	handler.ServeHTTP(webhookResponse, httptest.NewRequest(http.MethodPost, "/webhooks/github", nil))
