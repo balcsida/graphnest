@@ -34,3 +34,22 @@ func TestConsoleKeepsTouchTargetsAtLeast44Pixels(t *testing.T) {
 		}
 	}
 }
+
+func TestConsoleKeepsHiddenApplicationStatesAuthoritative(t *testing.T) {
+	for _, want := range []string{
+		`[hidden]{display:none!important}`,
+		`<form id="search-form" class="search-strip" hidden>`,
+		`<section id="workspace" hidden>`,
+		`<section id="token-gate"`,
+		`$("token-gate").hidden=true`,
+		`$("workspace").hidden=false`,
+		`$("search-form").hidden=false`,
+		`$("workspace").hidden=true`,
+		`$("search-form").hidden=true`,
+		`$("token-gate").hidden=false`,
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console is missing authoritative state transition %q", want)
+		}
+	}
+}

@@ -6,22 +6,33 @@
 <title>GrepNest</title>
 <style>
 :root{--night:#132238;--paper:#F4F7FB;--panel:#FFFFFF;--steel:#66758A;--signal:#2F6FEB;--match:#FFE08A;color-scheme:light}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--night);font:16px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,summary{font:inherit}.command-strip{min-height:64px;padding:10px max(20px,calc((100vw - 1240px)/2));display:flex;gap:14px;align-items:center;background:var(--night);color:var(--panel)}.wordmark{color:inherit;font-weight:800;text-decoration:none;letter-spacing:.04em}form{display:flex;gap:10px;align-items:center}#search-form{flex:1}input,button,summary{min-height:44px;border:1px solid var(--steel);border-radius:4px;padding:8px}input{width:100%;background:var(--panel);color:var(--night)}button{background:var(--signal);border-color:var(--signal);color:var(--panel);font-weight:700;cursor:pointer}#sign-out{background:transparent;border-color:var(--paper)}details{position:relative}summary{background:var(--panel);color:var(--night);cursor:pointer;white-space:nowrap}fieldset{position:absolute;z-index:2;right:0;width:min(300px,calc(100vw - 40px));max-width:100%;margin-top:4px;padding:12px;background:var(--panel);color:var(--night);border:1px solid var(--steel);box-shadow:0 8px 24px #09182d40}fieldset label{display:flex;gap:8px;align-items:center;min-height:44px}fieldset input{width:44px;min-width:44px;min-height:44px}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}main{max-width:1240px;margin:auto;padding:32px 20px}#token-gate{display:grid;min-height:calc(100vh - 128px);place-items:center}#token-form{width:min(440px,100%);padding:28px;display:grid;background:var(--panel);border-top:5px solid var(--signal);box-shadow:0 10px 32px #09182d20}#workspace{display:grid;grid-template-columns:minmax(200px,280px) minmax(0,1fr);gap:28px}aside{color:var(--steel)}aside code{display:block;margin:8px 0;color:var(--night)}#results{display:grid;gap:20px}.result{background:var(--panel);padding:18px;border-left:4px solid var(--match);animation:reveal .2s ease-out}.result h2,.result h3{margin:.1em 0}.result h3{font:600 14px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}.result a{color:var(--signal);display:inline-flex;min-height:44px;align-items:center}pre{overflow-x:auto;padding:12px;background:#edf3fa;border:1px solid #c9d5e3}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}#status{min-height:1.5em;color:var(--steel)}#error{margin:12px 0;padding:12px;background:#fff1f0;color:#8b1e18;border-left:4px solid #b42318}:focus-visible{outline:3px solid var(--signal);outline-offset:3px}@keyframes reveal{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}@media(max-width:720px){.command-strip{flex-wrap:wrap}.command-strip form{order:3;flex-basis:100%;flex-wrap:wrap}#workspace{grid-template-columns:1fr}fieldset{right:auto;left:0}}@media(prefers-reduced-motion: reduce){*,*:before,*:after{animation-duration:.01ms!important;scroll-behavior:auto!important}}@media(forced-colors: active){button,input,summary,fieldset,.result{border:1px solid CanvasText}.result{border-left-width:4px}}
+
+:root{--ink:#172033;--canvas:#F6F8FA;--surface:#FFFFFF;--border:#D8DEE8;--signal:#2563EB;--match:#FFE08A;}
+[hidden]{display:none!important}
+body{background:var(--canvas);color:var(--ink)}
+.app-bar{min-height:52px;padding:4px max(20px,calc((100vw - 1240px)/2));display:flex;gap:14px;align-items:center;background:var(--ink);color:var(--surface)}
+.product-label{color:#C8D2E3}.app-bar #sign-out{margin-left:auto;background:transparent;border-color:var(--border)}
+#search-form.search-strip{max-width:1240px;margin:0 auto;padding:12px 20px;display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;background:var(--surface);border-bottom:1px solid var(--border)}
+#token-gate{place-items:start center;padding-top:48px}.token-panel{width:min(400px,100%);padding:28px;display:grid;gap:12px;background:var(--surface);border-top:5px solid var(--signal);box-shadow:0 10px 32px #09182d20}.token-panel>*{min-width:0}.eyebrow{margin:0;color:var(--signal);font-size:.85rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em}.token-panel h1{margin:0}
+#workspace{grid-template-columns:232px minmax(0,1fr)}#workspace>*{min-width:0}.context-rail{color:#5A687B}.context-rail code{color:var(--ink)}.results-panel,.results-summary,#results,.result{min-width:0}.results-summary h1{margin-top:0}
+@media(max-width:760px){#search-form{grid-template-columns:minmax(0,1fr) auto}#search-form.search-strip #query{grid-column:1/-1}#workspace{grid-template-columns:1fr}}
 </style>
 </head>
 <body data-grepnest-app>
-<header class="command-strip">
+<header class="app-bar">
 <a class="wordmark" href="/">GrepNest</a>
-<form id="search-form" hidden>
+<span class="product-label">Code search</span>
+<button id="sign-out" type="button" hidden>Sign out</button>
+</header>
+<form id="search-form" class="search-strip" hidden>
 <label class="sr-only" for="query">Search code</label>
 <input id="query" name="query" type="search" autocomplete="off" spellcheck="false">
 <details id="repository-picker"><summary><span id="repository-summary">All repositories</span></summary><fieldset id="repositories"><legend>Search repositories</legend><label><input id="all-repositories" type="checkbox" checked> All authorized repositories</label><div id="repository-options"></div></fieldset></details>
 <button id="search-button" type="submit">Search</button>
 </form>
-<button id="sign-out" type="button" hidden>Sign out</button>
-</header>
 <main>
-<section id="token-gate" aria-labelledby="token-title"><form id="token-form"><h1 id="token-title">Search your indexed code</h1><label for="token">Bearer token</label><input id="token" type="password" autocomplete="off" required><button type="submit">Open GrepNest</button></form></section>
-<section id="workspace" hidden><aside aria-label="Search context"><strong id="result-count">No search yet</strong><p id="repository-count">All authorized repositories</p><h2>Query examples</h2><code>file:\.go NewService</code><code>case:yes GrepNest</code></aside><section aria-labelledby="results-title"><h1 id="results-title">Code results</h1><p id="status" role="status" aria-live="polite" aria-atomic="true"></p><div id="error" hidden></div><div id="results"></div></section></section>
+<section id="token-gate" aria-labelledby="token-title"><form id="token-form" class="token-panel"><p class="eyebrow">Private code search</p><h1 id="token-title">Connect to GrepNest</h1><p>Use a bearer token for this browser session.</p><label for="token">Bearer token</label><input id="token" type="password" autocomplete="off" required><button type="submit">Open GrepNest</button></form></section>
+<section id="workspace" hidden><aside class="context-rail" aria-label="Search context"><strong id="result-count">No search yet</strong><p id="repository-count">All authorized repositories</p><h2>Query examples</h2><code>file:\.go NewService</code><code>case:yes GrepNest</code></aside><section class="results-panel" aria-labelledby="results-title"><header class="results-summary"><h1 id="results-title">Code results</h1><p id="status" role="status" aria-live="polite" aria-atomic="true"></p></header><div id="error" hidden></div><div id="results"></div></section></section>
 </main>
 <script>
 "use strict";

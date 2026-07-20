@@ -21,14 +21,22 @@ func TestConsoleShowsStructuredAPIErrorWithoutClearingQuery(t *testing.T) {
 	}
 }
 
-func TestConsoleMatchesApprovedResponsiveVisualContract(t *testing.T) {
+func TestConsoleMatchesApprovedSearchWorkspaceContract(t *testing.T) {
 	for _, want := range []string{
-		`:root{--night:#132238;--paper:#F4F7FB;--panel:#FFFFFF;--steel:#66758A;--signal:#2F6FEB;--match:#FFE08A;`,
-		`width:min(300px,calc(100vw - 40px));max-width:100%`,
+		`:root{--ink:#172033;--canvas:#F6F8FA;--surface:#FFFFFF;--border:#D8DEE8;--signal:#2563EB;--match:#FFE08A;`,
+		`[hidden]{display:none!important}`,
+		`class="app-bar"`,
+		`class="search-strip"`,
+		`class="token-panel"`,
+		`class="context-rail"`,
+		`class="results-panel"`,
+		`grid-template-columns:232px minmax(0,1fr)`,
+		`@media(max-width:760px)`,
+		`#search-form{grid-template-columns:minmax(0,1fr) auto`,
 		`link.rel="noopener noreferrer"`,
 	} {
 		if !bytes.Contains(document, []byte(want)) {
-			t.Fatalf("console is missing responsive visual contract %q", want)
+			t.Fatalf("console is missing search workspace contract %q", want)
 		}
 	}
 }
