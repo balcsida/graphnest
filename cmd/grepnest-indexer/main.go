@@ -105,7 +105,7 @@ func (runtime indexRuntime) run(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := runtime.runWorker(ctx); err != nil && !(ctx.Err() != nil && errors.Is(err, ctx.Err())) {
+	if err := runtime.runWorker(ctx); err != nil && err != ctx.Err() {
 		return err
 	}
 	return nil

@@ -119,3 +119,18 @@ func TestRuntimeClosesAfterInitializationFailure(t *testing.T) {
 		t.Fatalf("error=%v closed=%v", err, closed)
 	}
 }
+
+func TestRuntimeSurfacesCleanupFailureJoinedWithCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	cleanupErr := errors.New("cleanup failed")
+	runtime := indexRuntime{
+		ping: func(context.Context) error { return nil }, migrate: func(context.Context) error { return nil },
+		upsertNode: func(context.Context) error { return nil }, reapExpired: func(context.Context) error { return nil },
+		pruneHistory: func(context.Context) error { return nil },
+		runWorker:    func(context.Context) error { return errors.Join(context.Canceled, cleanupErr) },
+	}
+	if err := runtime.run(ctx); !errors.Is(err, cleanupErr) {
+		t.Fatalf("error=%v", err)
+	}
+}
