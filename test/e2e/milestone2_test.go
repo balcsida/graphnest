@@ -57,6 +57,8 @@ const (
 	milestoneNeedle         = "MilestoneTwoNeedle"
 	milestoneGitToken       = "installation-token-value"
 	milestoneWebhookSecret  = "webhook-secret-value"
+	milestonePayloadSecret  = "raw-webhook-payload-secret-value"
+	rawStderrMarker         = "raw-stderr-marker"
 )
 
 func TestMilestone2Vertical(t *testing.T) {
@@ -134,7 +136,7 @@ func TestMilestone2Vertical(t *testing.T) {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	installationBody := []byte(`{"action":"created","installation":{"id":10}}`)
+	installationBody := []byte(`{"action":"created","installation":{"id":10},"audit_secret":"` + milestonePayloadSecret + `"}`)
 	sendGitHubWebhook(t, server, "installation-one", "installation", installationBody)
 	assertQueuedTarget(t, database.pool, milestoneRepositoryID, primary.shas[0], 1)
 	sendGitHubWebhook(t, server, "installation-one", "installation", installationBody)
@@ -228,13 +230,20 @@ func TestMilestone2Vertical(t *testing.T) {
 		t.Fatalf("disabled repository remained searchable: %#v", matches)
 	}
 	assertDisabledRead(t, server, milestoneRepositoryID)
-	forbidden := []string{milestoneGitToken, milestoneWebhookSecret, token, string(privateKeyPEM), string(installationBody), "Authorization:", "x-access-token@", "raw-stderr-marker"}
-	assertNoSecrets(t, database.pool, filepath.Join(root, "data"), forbidden...)
-	for _, secret := range forbidden {
-		if secret != "" && strings.Contains(zoektProcess.logs.String(), secret) {
-			t.Fatalf("secret reached captured logs: %q", secret)
-		}
+	backendLogs := github.backendLogs()
+	if !strings.Contains(backendLogs, rawStderrMarker) {
+		t.Fatalf("git-http-backend stderr marker was not captured: %q", backendLogs)
 	}
+	forbidden := []string{milestoneGitToken, milestoneWebhookSecret, token, string(privateKeyPEM), string(installationBody), "Authorization:", "x-access-token@"}
+	forbidden = append(forbidden, milestonePayloadSecret)
+	assertNoSecrets(t, database.pool, map[string]string{
+		"Git mirrors":        filepath.Join(root, "data", "mirrors"),
+		"Git worktrees":      filepath.Join(root, "data", "worktrees"),
+		"Zoekt index shards": indexDir,
+	}, map[string]string{
+		"git-http-backend stderr": backendLogs,
+		"Zoekt process logs":      zoektProcess.logs.String(),
+	}, forbidden...)
 	remote := strings.TrimSpace(run(t, ctx, "git", "--git-dir", filepath.Join(root, "data", "mirrors", strconv.FormatInt(primaryRepository.ID, 10)+".git"), "config", "--get", "remote.origin.url"))
 	if remote != github.server.URL+"/acme/source.git" || strings.Contains(remote, milestoneGitToken) || strings.Contains(remote, "@") {
 		t.Fatalf("persisted remote contains credentials: %q", remote)
@@ -361,15 +370,16 @@ type fakeRepository struct {
 }
 
 type fakeGHES struct {
-	server       *httptest.Server
-	gitRoot      string
-	mu           sync.Mutex
-	repositories []fakeRepository
-	empty        fakeRepository
-	apiAuth      int
-	gitAuth      int
-	appID        string
-	publicKey    *rsa.PublicKey
+	server        *httptest.Server
+	gitRoot       string
+	mu            sync.Mutex
+	repositories  []fakeRepository
+	empty         fakeRepository
+	apiAuth       int
+	gitAuth       int
+	appID         string
+	publicKey     *rsa.PublicKey
+	backendStderr bytes.Buffer
 }
 
 func newFakeGHES(t *testing.T, gitRoot string, primary, empty smartGitOrigin, appID int64, publicKey *rsa.PublicKey) *fakeGHES {
@@ -524,11 +534,16 @@ func (github *fakeGHES) serveGit(writer http.ResponseWriter, request *http.Reque
 		"REQUEST_METHOD="+request.Method, "QUERY_STRING="+request.URL.RawQuery,
 		"CONTENT_TYPE="+request.Header.Get("Content-Type"), "CONTENT_LENGTH="+strconv.FormatInt(request.ContentLength, 10),
 		"REMOTE_USER=x-access-token", "REMOTE_ADDR=127.0.0.1", "SERVER_PROTOCOL=HTTP/1.1",
+		"GIT_TRACE2_EVENT=1", "GIT_TRACE2_PARENT_SID="+rawStderrMarker,
 	)
 	command.Stdin = request.Body
 	var output, stderr bytes.Buffer
 	command.Stdout, command.Stderr = &output, &stderr
-	if err := command.Run(); err != nil {
+	err := command.Run()
+	github.mu.Lock()
+	_, _ = github.backendStderr.Write(stderr.Bytes())
+	github.mu.Unlock()
+	if err != nil {
 		writer.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -550,6 +565,12 @@ func (github *fakeGHES) serveGit(writer http.ResponseWriter, request *http.Reque
 	}
 	writer.WriteHeader(status)
 	_, _ = io.Copy(writer, reader)
+}
+
+func (github *fakeGHES) backendLogs() string {
+	github.mu.Lock()
+	defer github.mu.Unlock()
+	return github.backendStderr.String()
 }
 
 func (github *fakeGHES) renamePrimary(name string) {
@@ -814,8 +835,18 @@ func assertDisabledRead(t *testing.T, server *httptest.Server, repositoryID int6
 	}
 }
 
-func assertNoSecrets(t *testing.T, pool *pgxpool.Pool, root string, forbidden ...string) {
+func assertNoSecrets(t *testing.T, pool *pgxpool.Pool, roots, logs map[string]string, forbidden ...string) {
 	t.Helper()
+	checked := make(map[string]bool, 1+len(roots)+len(logs))
+	check := func(name string, data []byte) {
+		t.Helper()
+		checked[name] = true
+		for _, secret := range forbidden {
+			if secret != "" && bytes.Contains(data, []byte(secret)) {
+				t.Fatalf("secret found in %s: %q", name, secret)
+			}
+		}
+	}
 	var databaseText string
 	if err := pool.QueryRow(t.Context(), `select concat_ws('|',
 		(select string_agg(concat_ws('|',account_login,account_type,status), '|') from installations),
@@ -825,20 +856,29 @@ func assertNoSecrets(t *testing.T, pool *pgxpool.Pool, root string, forbidden ..
 		(select string_agg(concat_ws('|',node_id,base_url,state), '|') from search_nodes))`).Scan(&databaseText); err != nil {
 		t.Fatal(err)
 	}
-	var persisted bytes.Buffer
-	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if err != nil || entry.IsDir() {
-			return err
+	check("PostgreSQL persisted fields", []byte(databaseText))
+	for name, root := range roots {
+		var persisted bytes.Buffer
+		if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+			if err != nil || entry.IsDir() {
+				return err
+			}
+			data, readErr := os.ReadFile(path)
+			if readErr == nil {
+				persisted.Write(data)
+			}
+			return readErr
+		}); err != nil {
+			t.Fatalf("scan %s: %v", name, err)
 		}
-		data, readErr := os.ReadFile(path)
-		if readErr == nil {
-			persisted.Write(data)
-		}
-		return readErr
-	})
-	for _, secret := range forbidden {
-		if secret != "" && (strings.Contains(databaseText, secret) || bytes.Contains(persisted.Bytes(), []byte(secret))) {
-			t.Fatalf("secret persisted: %q", secret)
+		check(name, persisted.Bytes())
+	}
+	for name, contents := range logs {
+		check(name, []byte(contents))
+	}
+	for _, required := range []string{"PostgreSQL persisted fields", "Git mirrors", "Git worktrees", "Zoekt index shards", "git-http-backend stderr", "Zoekt process logs"} {
+		if !checked[required] {
+			t.Fatalf("secret scanner did not execute surface %q", required)
 		}
 	}
 }
