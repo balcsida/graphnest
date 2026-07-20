@@ -13,7 +13,7 @@ func RegisterGitHubWebhook(mux *http.ServeMux, secret []byte, maxBytes int64, pr
 	if maxBytes > 1024*1024 {
 		maxBytes = 1024 * 1024
 	}
-	mux.Handle("POST /v1/webhooks/github", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	mux.Handle("POST /webhooks/github", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		event, ok := singleHeader(request, "X-GitHub-Event")
 		if !ok {
 			http.Error(writer, "bad request", http.StatusBadRequest)

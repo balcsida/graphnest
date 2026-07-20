@@ -1,9 +1,10 @@
 # GrepNest
 
-GrepNest is a pre-pilot code-search service. Only Milestones 0-1 exist: a
-pinned Zoekt-backed search path, bearer authorization, REST, and MCP. It is not
-production-ready. PostgreSQL is present only in the development Compose stack
-and is unused until Milestone 2.
+GrepNest is a pre-pilot code-search service. Milestones 0-1 provide a pinned
+Zoekt-backed search path, bearer authorization, REST, and MCP. The Milestone 2
+server adds PostgreSQL-backed repository state, GitHub App reconciliation, and
+verified webhooks, but the indexer process and end-to-end proof are unfinished.
+It is not production-ready.
 
 The [Helm chart](deploy/helm/grepnest/README.md) is structurally lintable and
 renderable, but not currently deployable. This repository does not build or
@@ -84,11 +85,30 @@ The proxy appends `/mcp`; do not set Zoekt or server configuration on the proxy.
 
 ## Server environment
 
-Required: `GREPNEST_ZOEKT_URL` (HTTP(S)), `GREPNEST_REPOSITORIES_FILE`, and
-distinct non-empty `GREPNEST_USER_TOKEN` and `GREPNEST_ADMIN_TOKEN`.
+All modes require `GREPNEST_ZOEKT_URL` (HTTP(S)) and distinct non-empty
+`GREPNEST_USER_TOKEN` and `GREPNEST_ADMIN_TOKEN`.
 `GREPNEST_LISTEN_ADDRESS` defaults to `:8080`. Repository lists are
 comma-separated: `GREPNEST_USER_REPOSITORIES` and
 `GREPNEST_ADMIN_REPOSITORIES`.
+
+Static fixture mode additionally requires `GREPNEST_REPOSITORIES_FILE` and uses
+the name-based repository lists above. Durable mode is selected by
+`GREPNEST_DATABASE_URL` and does not read the static repository file or any
+indexer-only setting. It requires these server settings:
+
+- `GREPNEST_GITHUB_WEB_URL`, `GREPNEST_GITHUB_API_URL`,
+  `GREPNEST_GITHUB_UPLOAD_URL`, and `GREPNEST_GITHUB_GIT_URL` as HTTPS URLs;
+- `GREPNEST_GITHUB_APP_ID`, `GREPNEST_GITHUB_PRIVATE_KEY_FILE`, and
+  `GREPNEST_GITHUB_WEBHOOK_SECRET_FILE`;
+- `GREPNEST_USER_INSTALLATION_ID`, `GREPNEST_USER_REPOSITORY_IDS`,
+  `GREPNEST_ADMIN_INSTALLATION_ID`, and `GREPNEST_ADMIN_REPOSITORY_IDS`.
+
+`GREPNEST_GITHUB_API_VERSION` defaults to `2022-11-28` and
+`GREPNEST_GITHUB_CA_FILE` optionally extends system trust. Startup pings and
+migrates PostgreSQL, records the singleton Zoekt node as `primary`, reconciles
+GitHub synchronously, then refreshes reconciliation and queue metrics every five
+minutes. `POST /webhooks/github` is public but requires a valid GitHub HMAC;
+search, repository, file-read, and MCP routes require bearer authentication.
 
 Optional limits are positive and cannot exceed their server caps:
 

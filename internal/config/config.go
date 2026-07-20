@@ -69,8 +69,8 @@ func Load() (Config, error) {
 			MaxResponseBytes:    256 << 10,
 		},
 	}
-	if config.RepositoriesFile == "" || config.UserToken == "" || config.AdminToken == "" || config.UserToken == config.AdminToken {
-		return Config{}, invalid("repository file and distinct tokens are required")
+	if config.UserToken == "" || config.AdminToken == "" || config.UserToken == config.AdminToken {
+		return Config{}, invalid("distinct tokens are required")
 	}
 	if err := loadLimits(&config.Limits); err != nil {
 		return Config{}, err
@@ -82,9 +82,6 @@ func Load() (Config, error) {
 		}
 		config.DatabaseURL = databaseURL
 		if config.GitHub, err = loadGitHub(); err != nil {
-			return Config{}, err
-		}
-		if config.Indexer, err = LoadIndexer(); err != nil {
 			return Config{}, err
 		}
 		if config.UserInstallationID, err = requiredInt64("GREPNEST_USER_INSTALLATION_ID"); err != nil {
@@ -99,6 +96,8 @@ func Load() (Config, error) {
 		if config.AdminRepositoryIDs, err = repositoryIDs("GREPNEST_ADMIN_REPOSITORY_IDS"); err != nil {
 			return Config{}, err
 		}
+	} else if config.RepositoriesFile == "" {
+		return Config{}, invalid("repository file is required in static mode")
 	}
 	return config, nil
 }

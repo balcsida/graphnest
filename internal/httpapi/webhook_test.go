@@ -55,7 +55,7 @@ func TestGitHubWebhookRejectsUntrustedRequests(t *testing.T) {
 			processor := &webhookProcessorStub{}
 			mux := http.NewServeMux()
 			RegisterGitHubWebhook(mux, secret, 1024*1024, processor)
-			request := httptest.NewRequest(http.MethodPost, "/v1/webhooks/github", strings.NewReader(test.body))
+			request := httptest.NewRequest(http.MethodPost, "/webhooks/github", strings.NewReader(test.body))
 			for key, values := range test.headers {
 				for _, value := range values {
 					request.Header.Add(key, value)
@@ -85,7 +85,7 @@ func TestGitHubWebhookMapsProcessorErrors(t *testing.T) {
 			processor := &webhookProcessorStub{err: test.err}
 			mux := http.NewServeMux()
 			RegisterGitHubWebhook(mux, secret, 1024*1024, processor)
-			request := httptest.NewRequest(http.MethodPost, "/v1/webhooks/github", strings.NewReader(string(body)))
+			request := httptest.NewRequest(http.MethodPost, "/webhooks/github", strings.NewReader(string(body)))
 			request.Header.Set("X-GitHub-Event", "installation")
 			request.Header.Set("X-GitHub-Delivery", "one")
 			request.Header.Set("X-Hub-Signature-256", signWebhook(secret, body))
@@ -104,7 +104,7 @@ func TestGitHubWebhookAcceptsVerifiedDelivery(t *testing.T) {
 	processor := &webhookProcessorStub{result: true}
 	mux := http.NewServeMux()
 	RegisterGitHubWebhook(mux, secret, 1024*1024, processor)
-	request := httptest.NewRequest(http.MethodPost, "/v1/webhooks/github", strings.NewReader(string(body)))
+	request := httptest.NewRequest(http.MethodPost, "/webhooks/github", strings.NewReader(string(body)))
 	request.Header.Set("X-GitHub-Event", "installation")
 	request.Header.Set("X-GitHub-Delivery", "one")
 	request.Header.Set("X-Hub-Signature-256", signWebhook(secret, body))
@@ -121,7 +121,7 @@ func TestGitHubWebhookAcceptsExactLimit(t *testing.T) {
 	processor := &webhookProcessorStub{result: true}
 	mux := http.NewServeMux()
 	RegisterGitHubWebhook(mux, secret, 1024*1024, processor)
-	request := httptest.NewRequest(http.MethodPost, "/v1/webhooks/github", strings.NewReader(string(body)))
+	request := httptest.NewRequest(http.MethodPost, "/webhooks/github", strings.NewReader(string(body)))
 	request.Header.Set("X-GitHub-Event", "ping")
 	request.Header.Set("X-GitHub-Delivery", "exact-limit")
 	request.Header.Set("X-Hub-Signature-256", signWebhook(secret, body))
@@ -148,7 +148,7 @@ func TestGitHubWebhookPassesAcceptedIgnoredAndDuplicateEvents(t *testing.T) {
 			processor := &webhookProcessorStub{result: test.result}
 			mux := http.NewServeMux()
 			RegisterGitHubWebhook(mux, secret, 1024*1024, processor)
-			request := httptest.NewRequest(http.MethodPost, "/v1/webhooks/github", strings.NewReader(test.body))
+			request := httptest.NewRequest(http.MethodPost, "/webhooks/github", strings.NewReader(test.body))
 			request.Header.Set("X-GitHub-Event", test.event)
 			request.Header.Set("X-GitHub-Delivery", "one")
 			request.Header.Set("X-Hub-Signature-256", signWebhook(secret, []byte(test.body)))
