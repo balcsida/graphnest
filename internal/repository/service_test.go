@@ -36,7 +36,7 @@ func TestServiceList(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []api.RepositorySummary{{
-		ID: 1, GitHubID: 101, Name: "acme/one", Branch: "main", DesiredSHA: strings.Repeat("b", 40),
+		ID: 101, GitHubID: 101, Name: "acme/one", Branch: "main", DesiredSHA: strings.Repeat("b", 40),
 		IndexedSHA: strings.Repeat("a", 40), Status: "ready", SearchNode: "node-a", LastIndexedAt: &indexedAt,
 	}}
 	if !reflect.DeepEqual(got, want) {
@@ -47,12 +47,31 @@ func TestServiceList(t *testing.T) {
 	}
 }
 
+func TestServiceListReturnsIDReusableByStatus(t *testing.T) {
+	repository := Repository{ID: 1, GitHubID: 101, Name: "acme/one", SearchNode: "node-a"}
+	store := &serviceStore{repositories: []Repository{repository}, repository: repository}
+	service := &Service{Store: store}
+	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}
+
+	repositories, err := service.List(t.Context(), principal)
+	if err != nil || len(repositories) != 1 {
+		t.Fatalf("repositories = %#v, err = %v", repositories, err)
+	}
+	status, err := service.Status(t.Context(), principal, repositories[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.authorizedID != repository.GitHubID || status.ID != repository.GitHubID {
+		t.Fatalf("list ID = %d, status input ID = %d, status ID = %d, want GitHub ID %d", repositories[0].ID, store.authorizedID, status.ID, repository.GitHubID)
+	}
+}
+
 func TestServiceStatus(t *testing.T) {
 	store := &serviceStore{repository: Repository{ID: 1, GitHubID: 101, Name: "acme/one", SearchNode: "node-a"}}
 	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}
 
 	got, err := (&Service{Store: store}).Status(t.Context(), principal, 101)
-	if err != nil || got.ID != 1 || got.GitHubID != 101 || got.SearchNode != "node-a" {
+	if err != nil || got.ID != 101 || got.GitHubID != 101 || got.SearchNode != "node-a" {
 		t.Fatalf("got %#v, err %v", got, err)
 	}
 	if store.authorizedID != 101 || store.installationID != 10 || !reflect.DeepEqual(store.repositoryIDs, []int64{101}) {
