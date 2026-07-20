@@ -24,6 +24,7 @@ import (
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/internal/search"
 	"github.com/grepnest/grepnest/internal/webhook"
+	"github.com/grepnest/grepnest/internal/webui"
 	"github.com/grepnest/grepnest/internal/zoekt"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -213,6 +214,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 
 func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.Authenticator, service *search.Service, repositories *repository.Service, webhookSecret []byte, processor webhook.Processor, checker httpapi.ReadyChecker) http.Handler {
 	mux := http.NewServeMux()
+	webui.Register(mux)
 	httpapi.RegisterSystem(mux, checker, metrics.Handler())
 	httpapi.RegisterSearch(mux, authenticator, service, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
 	if repositories != nil {

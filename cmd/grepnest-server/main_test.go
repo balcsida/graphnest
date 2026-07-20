@@ -329,6 +329,28 @@ func TestStaticHandlerRegistersSystemRoutes(t *testing.T) {
 	}
 }
 
+func TestAPIHandlerMountsWebUIWithoutFallback(t *testing.T) {
+	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
+	handler := newAPIHandler(
+		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}},
+		observability.New(), authenticator, nil, nil, nil, nil, nil,
+	)
+	for _, path := range []string{"/", "/index.html"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s status=%d", path, response.Code)
+		}
+	}
+	for _, path := range []string{"/missing", "/index.html/", "/assets/app.js"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("%s status=%d", path, response.Code)
+		}
+	}
+}
+
 func TestStaticHandlerProtectsMCPRoute(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "repositories.json")
 	if err := os.WriteFile(path, []byte(`[{"id":1,"zoekt_id":7,"name":"acme/one"}]`), 0o600); err != nil {
