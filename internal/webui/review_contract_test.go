@@ -40,3 +40,18 @@ func TestConsoleMatchesApprovedSearchWorkspaceContract(t *testing.T) {
 		}
 	}
 }
+
+func TestConsoleUsesOnlyTheScopedSearchWorkspaceShell(t *testing.T) {
+	for _, obsolete := range []string{
+		`form{display:flex;gap:10px;align-items:center}`,
+		`.command-strip{`,
+		`--night:#132238`,
+		`#token-form{width:min(440px,100%)`,
+		`grid-template-columns:minmax(200px,280px) minmax(0,1fr)`,
+		`@media(max-width:720px)`,
+	} {
+		if bytes.Contains(document, []byte(obsolete)) {
+			t.Fatalf("console retains obsolete shell rule %q", obsolete)
+		}
+	}
+}
