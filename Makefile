@@ -1,6 +1,6 @@
 ZOEKT_VERSION := v0.0.0-20260717095332-3c8b39b1ef4f
 POSTGRES_COMPOSE := docker compose -p grepnest-postgres
-GREPNEST_TEST_POSTGRES_DSN ?= postgres://grepnest:grepnest@127.0.0.1:5432/grepnest?sslmode=disable
+GREPNEST_TEST_POSTGRES_DSN ?= $(GREPNEST_TEST_DATABASE_URL)
 
 .PHONY: fmt lint test test-race integration postgres-test postgres-integration e2e tools build server image helm-lint helm-test
 
@@ -20,7 +20,7 @@ integration:
 	go test -tags=integration ./test/integration
 
 postgres-test:
-	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' go test -count=1 -tags=integration ./internal/postgres
+	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' go test -count=1 -tags=integration ./internal/postgres ./test/integration
 
 postgres-integration:
 	$(POSTGRES_COMPOSE) -f deploy/compose/compose.yml up -d --wait postgres

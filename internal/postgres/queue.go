@@ -113,7 +113,7 @@ func (s *Store) CompleteIndex(ctx context.Context, id int64, owner string) error
 	state := "superseded"
 	if desiredSHA == targetSHA {
 		state = "succeeded"
-		if _, err := tx.Exec(ctx, `update repositories set indexed_sha=$2, status='ready', error_code=null, last_indexed_at=now(), updated_at=now() where id=$1`, repositoryID, targetSHA); err != nil {
+		if _, err := tx.Exec(ctx, `update repositories set indexed_sha=$2, status='ready', error_code=null, last_indexed_at=now(), updated_at=now() where id=$1 and enabled`, repositoryID, targetSHA); err != nil {
 			return err
 		}
 	}
@@ -160,7 +160,7 @@ func (s *Store) finishFailure(ctx context.Context, id int64, owner, errorCode st
 		return err
 	}
 	if state == "failed" {
-		if _, err := tx.Exec(ctx, `update repositories set status='failed', error_code=$2, updated_at=now() where id=$1`, repositoryID, errorCode); err != nil {
+		if _, err := tx.Exec(ctx, `update repositories set status='failed', error_code=$2, updated_at=now() where id=$1 and enabled`, repositoryID, errorCode); err != nil {
 			return err
 		}
 	}
@@ -214,7 +214,7 @@ func (s *Store) ReapExpired(ctx context.Context, limit int) (int64, error) {
 			return 0, err
 		}
 		if state == "failed" {
-			if _, err := tx.Exec(ctx, `update repositories set status='failed', error_code='lease_expired', updated_at=now() where id=$1`, job.repositoryID); err != nil {
+			if _, err := tx.Exec(ctx, `update repositories set status='failed', error_code='lease_expired', updated_at=now() where id=$1 and enabled`, job.repositoryID); err != nil {
 				return 0, err
 			}
 		}
