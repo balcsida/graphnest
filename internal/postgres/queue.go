@@ -164,20 +164,25 @@ func (s *Store) finishFailure(ctx context.Context, id int64, owner, errorCode st
 	}
 	defer tx.Rollback(ctx)
 	var repositoryID int64
-	var targetSHA string
+	var targetSHA, desiredSHA, installationStatus string
+	var enabled, archived bool
 	var attempt, maxAttempts int
-	if err := tx.QueryRow(ctx, `select repository_id, target_sha, attempt, max_attempts from index_jobs
-		where id=$1 and state='running' and lease_owner=$2 and lease_expires_at>now() for update`, id, owner).Scan(&repositoryID, &targetSHA, &attempt, &maxAttempts); errors.Is(err, pgx.ErrNoRows) {
+	if err := tx.QueryRow(ctx, `select repositories.id, index_jobs.target_sha, repositories.desired_sha,
+		repositories.enabled, repositories.archived, installations.status, index_jobs.attempt, index_jobs.max_attempts
+		from installations join repositories on repositories.installation_id=installations.id
+		join index_jobs on index_jobs.repository_id=repositories.id
+		where index_jobs.id=$1 and index_jobs.state='running' and index_jobs.lease_owner=$2
+		and index_jobs.lease_expires_at>now()
+		for share of installations for update of repositories, index_jobs`, id, owner).
+		Scan(&repositoryID, &targetSHA, &desiredSHA, &enabled, &archived, &installationStatus, &attempt, &maxAttempts); errors.Is(err, pgx.ErrNoRows) {
 		return ErrLeaseLost
 	} else if err != nil {
 		return err
 	}
-	var desiredSHA string
-	if err := tx.QueryRow(ctx, `select desired_sha from repositories where id=$1 for update`, repositoryID).Scan(&desiredSHA); err != nil {
-		return err
-	}
 	state := "failed"
-	if desiredSHA != targetSHA {
+	if !enabled || archived || installationStatus != "active" {
+		state, errorCode = "superseded", "repository_unavailable"
+	} else if desiredSHA != targetSHA {
 		state = "superseded"
 	} else if retry && attempt < maxAttempts {
 		state = "queued"
@@ -207,18 +212,22 @@ func (s *Store) ReapExpired(ctx context.Context, limit int) (int64, error) {
 		id, repositoryID int64
 		target, desired  string
 		attempt, maximum int
+		available        bool
 	}
-	rows, err := tx.Query(ctx, `select j.id, j.repository_id, j.target_sha, r.desired_sha, j.attempt, j.max_attempts
-		from index_jobs j join repositories r on r.id=j.repository_id
+	rows, err := tx.Query(ctx, `select j.id, j.repository_id, j.target_sha, r.desired_sha, j.attempt,
+		j.max_attempts, r.enabled and not r.archived and i.status='active'
+		from installations i join repositories r on r.installation_id=i.id
+		join index_jobs j on j.repository_id=r.id
 		where j.state='running' and j.lease_expires_at<=now()
-		order by j.lease_expires_at, j.id for update of j, r skip locked limit $1`, limit)
+		order by j.lease_expires_at, j.id
+		for share of i for update of r, j skip locked limit $1`, limit)
 	if err != nil {
 		return 0, err
 	}
 	var jobs []expiredJob
 	for rows.Next() {
 		var job expiredJob
-		if err := rows.Scan(&job.id, &job.repositoryID, &job.target, &job.desired, &job.attempt, &job.maximum); err != nil {
+		if err := rows.Scan(&job.id, &job.repositoryID, &job.target, &job.desired, &job.attempt, &job.maximum, &job.available); err != nil {
 			rows.Close()
 			return 0, err
 		}
@@ -231,16 +240,19 @@ func (s *Store) ReapExpired(ctx context.Context, limit int) (int64, error) {
 	rows.Close()
 	for _, job := range jobs {
 		state := "failed"
-		if job.desired != job.target {
+		errorCode := "lease_expired"
+		if !job.available {
+			state, errorCode = "superseded", "repository_unavailable"
+		} else if job.desired != job.target {
 			state = "superseded"
 		} else if job.attempt < job.maximum {
 			state = "queued"
 		}
 		if _, err := tx.Exec(ctx, `update index_jobs set state=$2, lease_owner=null, lease_expires_at=null,
-			error_code='lease_expired', error_message=null,
+			error_code=$3, error_message=null,
 			run_after=case when $2::varchar='queued' then now()+interval '1 second'*
 				least(5*power(2::double precision, attempt-1), 300)*random() else run_after end,
-			updated_at=now() where id=$1`, job.id, state); err != nil {
+			updated_at=now() where id=$1`, job.id, state, errorCode); err != nil {
 			return 0, err
 		}
 		if state == "failed" {

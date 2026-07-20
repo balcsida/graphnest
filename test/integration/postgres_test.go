@@ -695,16 +695,21 @@ func testReenabledRepository(t *testing.T) {
 			}
 			processor := webhook.NewGitHubProcessor(h.store, nil)
 			body := []byte(`{"action":"deleted","installation":{"id":10},"repository":{"id":101}}`)
-			if inserted, err := processor.Process(t.Context(), webhook.Delivery{ID: "disable", Event: "repository", Body: body}); err != nil || !inserted {
+			event := "repository"
+			if variant == "fail" {
+				body = []byte(`{"action":"deleted","installation":{"id":10}}`)
+				event = "installation"
+			}
+			if inserted, err := processor.Process(t.Context(), webhook.Delivery{ID: "disable", Event: event, Body: body}); err != nil || !inserted {
 				t.Fatalf("disable inserted=%v err=%v", inserted, err)
 			}
 			switch variant {
 			case "complete":
 				err = h.store.CompleteIndex(t.Context(), job.ID, "owner")
 			case "fail":
-				err = h.store.FailIndex(t.Context(), job.ID, "owner", "permanent", false)
+				err = h.store.FailIndex(t.Context(), job.ID, "owner", "temporary", true)
 			case "reap":
-				if _, err = h.pool.Exec(t.Context(), "update index_jobs set attempt=5, lease_expires_at=now()-interval '1 second' where id=$1", job.ID); err == nil {
+				if _, err = h.pool.Exec(t.Context(), "update index_jobs set lease_expires_at=now()-interval '1 second' where id=$1", job.ID); err == nil {
 					var count int64
 					count, err = h.store.ReapExpired(t.Context(), 1)
 					if err == nil && count != 1 {
@@ -714,6 +719,13 @@ func testReenabledRepository(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatal(err)
+			}
+			var state, errorCode string
+			if err := h.pool.QueryRow(t.Context(), "select state, coalesce(error_code, '') from index_jobs where id=$1", job.ID).Scan(&state, &errorCode); err != nil {
+				t.Fatal(err)
+			}
+			if state != "superseded" || errorCode != "repository_unavailable" {
+				t.Fatalf("disabled job state=%q code=%q", state, errorCode)
 			}
 
 			installation := githubapp.Installation{ID: 10, AccountLogin: "acme", AccountType: "Organization", Status: "active"}
