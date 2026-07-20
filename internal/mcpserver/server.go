@@ -90,7 +90,7 @@ func NewWithLimits(service *search.Service, repositories *repository.Service, li
 		return runSearch(ctx, service, api.SearchRequest{
 			Query: input.Query, Repositories: input.Repositories, Limit: input.Limit,
 			ContextLines: input.ContextLines, MaxResponseBytes: input.MaxOutputBytes,
-		})
+		}, outputBudget(input.MaxOutputBytes, limits.MaxOutputBytes))
 	})
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "find_files", Description: "Find files by path regular expression when file names or paths are known.",
@@ -98,7 +98,7 @@ func NewWithLimits(service *search.Service, repositories *repository.Service, li
 		return runSearch(ctx, service, api.SearchRequest{
 			Query: "file:" + input.Pattern, Repositories: input.Repositories,
 			Limit: input.Limit, MaxResponseBytes: input.MaxOutputBytes,
-		})
+		}, outputBudget(input.MaxOutputBytes, limits.MaxOutputBytes))
 	})
 	if repositories == nil {
 		return server
@@ -121,7 +121,7 @@ func NewWithLimits(service *search.Service, repositories *repository.Service, li
 			items = []api.RepositorySummary{}
 		}
 		limited, err := limitRepositoryList(items, input, limits)
-		return nil, limited, err
+		return structuredResult(), limited, err
 	})
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "get_repository_status", Description: "Inspect desired and indexed revisions before relying on search results.",
@@ -140,7 +140,7 @@ func NewWithLimits(service *search.Service, repositories *repository.Service, li
 		if !fitsOutput(status, outputBudget(input.MaxOutputBytes, limits.MaxOutputBytes)) {
 			return nil, api.RepositorySummary{}, errOutputBudget
 		}
-		return nil, status, nil
+		return structuredResult(), status, nil
 	})
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "read_file", Description: "Read a bounded file or line range at the repository's indexed revision.",
@@ -162,7 +162,7 @@ func NewWithLimits(service *search.Service, repositories *repository.Service, li
 			return nil, api.ReadFileResponse{}, errors.New(httpapi.RepositoryErrorMessage(err))
 		}
 		file, err = limitReadFile(file, input.MaxOutputBytes, limits)
-		return nil, file, err
+		return structuredResult(), file, err
 	})
 	return server
 }
@@ -239,15 +239,23 @@ func outputBudget(requested, configured int64) int64 {
 }
 
 func fitsOutput(value any, maxBytes int64) bool {
-	data, err := json.Marshal(value)
+	// Budgets bound successful structured results; fixed safe tool errors remain
+	// diagnosable even when a caller requests fewer bytes than their envelope.
+	result := structuredResult()
+	result.StructuredContent = value
+	data, err := json.Marshal(result)
 	return err == nil && int64(len(data)) <= maxBytes
+}
+
+func structuredResult() *mcp.CallToolResult {
+	return &mcp.CallToolResult{Content: []mcp.Content{}}
 }
 
 func positiveIntegerSchema(description string) map[string]any {
 	return map[string]any{"type": "integer", "minimum": 1, "description": description}
 }
 
-func runSearch(ctx context.Context, service *search.Service, input api.SearchRequest) (*mcp.CallToolResult, output, error) {
+func runSearch(ctx context.Context, service *search.Service, input api.SearchRequest, maxBytes int64) (*mcp.CallToolResult, output, error) {
 	response, err := service.Search(ctx, httpapi.PrincipalFromContext(ctx), input)
 	if err != nil {
 		if errors.Is(err, search.ErrInvalidQuery) || errors.Is(err, zoekt.ErrInvalidQuery) {
@@ -258,5 +266,21 @@ func runSearch(ctx context.Context, service *search.Service, input api.SearchReq
 	if response.Matches == nil {
 		response.Matches = []api.SearchMatch{}
 	}
-	return nil, output{Matches: response.Matches, Truncated: response.Truncated}, nil
+	limited, err := limitSearchOutput(output{Matches: response.Matches, Truncated: response.Truncated}, maxBytes)
+	return structuredResult(), limited, err
+}
+
+func limitSearchOutput(value output, maxBytes int64) (output, error) {
+	limited := output{Matches: []api.SearchMatch{}, Truncated: value.Truncated || len(value.Matches) > 0}
+	if !fitsOutput(limited, maxBytes) {
+		return output{}, errOutputBudget
+	}
+	for index, match := range value.Matches {
+		candidate := output{Matches: append(limited.Matches, match), Truncated: value.Truncated || index+1 < len(value.Matches)}
+		if !fitsOutput(candidate, maxBytes) {
+			break
+		}
+		limited = candidate
+	}
+	return limited, nil
 }
