@@ -19,6 +19,7 @@ create table repositories (
     name varchar(255) not null,
     clone_url text not null,
     web_url text not null,
+    size_bytes bigint not null default 0 check (size_bytes >= 0),
     default_branch varchar(255) not null,
     private boolean not null,
     archived boolean not null,

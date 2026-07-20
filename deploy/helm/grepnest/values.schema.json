@@ -274,6 +274,7 @@
             "gitExecutable",
             "zoektGitIndexExecutable",
             "minFreeBytes",
+            "maxRepositoryBytes",
             "metricsPort",
             "resources"
           ],
@@ -288,6 +289,9 @@
               "$ref": "#/definitions/path"
             },
             "minFreeBytes": {
+              "$ref": "#/definitions/positiveInteger"
+            },
+            "maxRepositoryBytes": {
               "$ref": "#/definitions/positiveInteger"
             },
             "metricsPort": {

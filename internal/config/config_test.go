@@ -95,7 +95,7 @@ func TestLoadIndexerRequiresOnlyIndexerConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" || got.ZoektURL != "http://127.0.0.1:6070" || got.MetricsListenAddress != ":9090" || got.GitHub.AppID != 123 || got.GitHub.PrivateKeyFile != "/run/secrets/key.pem" || got.GitHub.WebhookSecretFile != "" || got.WorkerID != "worker-1" {
+	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" || got.ZoektURL != "http://127.0.0.1:6070" || got.MetricsListenAddress != ":9090" || got.GitHub.AppID != 123 || got.GitHub.PrivateKeyFile != "/run/secrets/key.pem" || got.GitHub.WebhookSecretFile != "" || got.WorkerID != "worker-1" || got.MaxRepositoryBytes != 5<<30 {
 		t.Fatalf("configuration = %#v", got)
 	}
 }

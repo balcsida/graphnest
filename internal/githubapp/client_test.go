@@ -213,7 +213,7 @@ func TestClientPaginatesRetries401AndEscapesSegments(t *testing.T) {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
-			fmt.Fprint(w, `{"repositories":[{"id":22,"full_name":"o/r","owner":{"login":"o"},"name":"r","clone_url":"https://example/r.git","html_url":"https://example/r","default_branch":"main","private":true}]}`)
+			fmt.Fprint(w, `{"repositories":[{"id":22,"full_name":"o/r","owner":{"login":"o"},"name":"r","clone_url":"https://example/r.git","html_url":"https://example/r","default_branch":"main","private":true,"size":123}]}`)
 		case "/api/v3/repos/space%20owner/repo%2Fname/branches/main%2Fbranch":
 			assertRequest(t, r, http.MethodGet, "Bearer installation-secret-2")
 			fmt.Fprint(w, `{"commit":{"sha":"abc123"}}`)
@@ -238,7 +238,7 @@ func TestClientPaginatesRetries401AndEscapesSegments(t *testing.T) {
 		t.Fatalf("installations = %#v, err = %v", installations, err)
 	}
 	repositories, err := client.InstallationRepositories(context.Background(), 9)
-	if err != nil || len(repositories) != 1 || repositories[0].ID != 22 || repositories[0].InstallationID != 9 {
+	if err != nil || len(repositories) != 1 || repositories[0].ID != 22 || repositories[0].InstallationID != 9 || repositories[0].SizeBytes != 123*1024 {
 		t.Fatalf("repositories = %#v, err = %v", repositories, err)
 	}
 	if repositoryRequests != 2 || tokenRequests != 2 {

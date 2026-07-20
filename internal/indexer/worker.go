@@ -45,18 +45,19 @@ type IndexPublisher interface {
 }
 
 type Worker struct {
-	ID             string
-	Queue          JobQueue
-	Store          IndexStore
-	Tokens         TokenSource
-	Git            GitWorkspace
-	Zoekt          IndexPublisher
-	MinFreeBytes   uint64
-	RenewEvery     time.Duration
-	ReapEvery      time.Duration
-	CleanupTimeout time.Duration
-	Metrics        *observability.Metrics
-	lastReap       time.Time
+	ID                 string
+	Queue              JobQueue
+	Store              IndexStore
+	Tokens             TokenSource
+	Git                GitWorkspace
+	Zoekt              IndexPublisher
+	MinFreeBytes       uint64
+	MaxRepositoryBytes int64
+	RenewEvery         time.Duration
+	ReapEvery          time.Duration
+	CleanupTimeout     time.Duration
+	Metrics            *observability.Metrics
+	lastReap           time.Time
 }
 
 func (worker *Worker) Run(ctx context.Context) error {
@@ -128,6 +129,9 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 	repo, err := worker.Store.RepositoryForIndex(jobCtx, job.RepositoryID)
 	if err != nil {
 		return fail("repository_failed", true)
+	}
+	if worker.MaxRepositoryBytes > 0 && repo.SizeBytes > worker.MaxRepositoryBytes {
+		return fail("repository_too_large", false)
 	}
 	defer func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), worker.cleanupTimeout())

@@ -72,6 +72,9 @@ read-only at the indexes path. The chart derives Zoekt's index and listen
 arguments from `node.paths.indexes` and `node.zoekt.port`; `node.service.port`
 is the internal Service port.
 
+`node.indexer.maxRepositoryBytes` defaults to 5 GiB and rejects oversized
+GHES repositories before the indexer mints credentials or fetches Git data.
+
 `monitoring.serviceMonitor.enabled` requires the
 `monitoring.coreos.com/v1/ServiceMonitor` CRD. Rendering fails clearly if that
 CRD is unavailable. It scrapes the server and the indexer's internal metrics

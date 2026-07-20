@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -132,6 +133,7 @@ func (c *Client) InstallationRepositories(ctx context.Context, installationID in
 		Private       bool   `json:"private"`
 		Archived      bool   `json:"archived"`
 		Disabled      bool   `json:"disabled"`
+		SizeKB        int64  `json:"size"`
 	}
 	var result []Repository
 	next := c.apiURL("installation", "repositories")
@@ -144,7 +146,10 @@ func (c *Client) InstallationRepositories(ctx context.Context, installationID in
 			return nil, err
 		}
 		for _, item := range page.Repositories {
-			result = append(result, Repository{ID: item.ID, InstallationID: installationID, FullName: item.FullName, Owner: item.Owner.Login, Name: item.Name, CloneURL: item.CloneURL, HTMLURL: item.HTMLURL, DefaultBranch: item.DefaultBranch, Private: item.Private, Archived: item.Archived, Disabled: item.Disabled})
+			if item.SizeKB < 0 || item.SizeKB > math.MaxInt64/1024 {
+				return nil, errors.New("GitHub repository size is invalid")
+			}
+			result = append(result, Repository{ID: item.ID, InstallationID: installationID, SizeBytes: item.SizeKB * 1024, FullName: item.FullName, Owner: item.Owner.Login, Name: item.Name, CloneURL: item.CloneURL, HTMLURL: item.HTMLURL, DefaultBranch: item.DefaultBranch, Private: item.Private, Archived: item.Archived, Disabled: item.Disabled})
 		}
 		next, err = c.nextPage(link)
 		if err != nil {

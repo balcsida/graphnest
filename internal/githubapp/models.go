@@ -18,6 +18,7 @@ type Installation struct {
 type Repository struct {
 	ID             int64
 	InstallationID int64
+	SizeBytes      int64
 	FullName       string
 	Owner          string
 	Name           string

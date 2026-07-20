@@ -47,7 +47,8 @@ docker compose -f deploy/compose/compose.yml --profile durable up -d --wait post
 Run `grepnest-migrate` with only `GREPNEST_DATABASE_URL`. Run
 `grepnest-indexer` with the database URL, Zoekt URL, GitHub web/API/upload/Git
 HTTPS URLs, App ID, private-key file, optional CA file, API version, Git and
-`zoekt-git-index` executable paths, worker ID, positive free-space floor, and
+`zoekt-git-index` executable paths, worker ID, positive free-space floor,
+optional `GREPNEST_MAX_REPOSITORY_BYTES` (default 5 GiB), and
 these shared host paths:
 
 ```sh
@@ -58,7 +59,9 @@ GREPNEST_METRICS_LISTEN_ADDRESS=127.0.0.1:9090 \
 .cache/bin/grepnest-indexer
 ```
 
-The indexer never reads the webhook secret or user/admin bearer configuration.
+The indexer rejects repositories whose GHES-reported size exceeds the configured
+cap before minting credentials or fetching Git data. It never reads the webhook
+secret or user/admin bearer configuration.
 It runs migrations, records search node `primary`, reaps expired leases, prunes
 retention and abandoned worktrees, then processes one leased job at a time.
 SIGINT or SIGTERM cancels child process groups and waits for lease renewal and

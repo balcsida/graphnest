@@ -16,6 +16,7 @@ type InstallationUpdate struct {
 
 type RepositoryUpdate struct {
 	GitHubID, InstallationID      int64
+	SizeBytes                     int64
 	Owner, Name, CloneURL, WebURL string
 	DefaultBranch                 string
 	Private, Archived, Enabled    bool
@@ -34,20 +35,20 @@ func (s *Store) UpsertInstallation(ctx context.Context, update InstallationUpdat
 
 func (s *Store) UpsertRepository(ctx context.Context, update RepositoryUpdate) (repository.Repository, error) {
 	row := s.pool.QueryRow(ctx, `
-		insert into repositories (github_id, installation_id, owner, name, clone_url, web_url, default_branch, private, archived, enabled, status)
-		select $1, installations.id, $3, $4, $5, $6, $7, $8, $9, $10,
-			case when $10 then 'pending' else 'disabled' end
+		insert into repositories (github_id, installation_id, owner, name, clone_url, web_url, size_bytes, default_branch, private, archived, enabled, status)
+		select $1, installations.id, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+			case when $11 then 'pending' else 'disabled' end
 		from installations where installations.github_id = $2
 		on conflict (github_id) do update set
 			installation_id = excluded.installation_id, owner = excluded.owner, name = excluded.name,
-			clone_url = excluded.clone_url, web_url = excluded.web_url, default_branch = excluded.default_branch,
+			clone_url = excluded.clone_url, web_url = excluded.web_url, size_bytes = excluded.size_bytes, default_branch = excluded.default_branch,
 			private = excluded.private, archived = excluded.archived, enabled = excluded.enabled,
 			status = case when excluded.enabled then repositories.status else 'disabled' end, updated_at = now()
 		returning id, (select github_id from installations where id = repositories.installation_id), github_id,
-			zoekt_repo_id, owner || '/' || name, default_branch, coalesce(desired_sha, ''), coalesce(indexed_sha, ''),
+			zoekt_repo_id, owner || '/' || name, size_bytes, default_branch, coalesce(desired_sha, ''), coalesce(indexed_sha, ''),
 			web_url, status, coalesce(error_code, ''), coalesce((select node_id from search_nodes where singleton), ''),
 			enabled, last_indexed_at`,
-		update.GitHubID, update.InstallationID, update.Owner, update.Name, update.CloneURL, update.WebURL,
+		update.GitHubID, update.InstallationID, update.Owner, update.Name, update.CloneURL, update.WebURL, update.SizeBytes,
 		update.DefaultBranch, update.Private, update.Archived, update.Enabled)
 	return scanRepository(row)
 }
@@ -101,14 +102,14 @@ func (s *Store) ReconcileInstallation(ctx context.Context, installation githubap
 		var desiredSHA *string
 		var status string
 		if err := tx.QueryRow(ctx, `
-			insert into repositories (github_id, installation_id, owner, name, clone_url, web_url,
+			insert into repositories (github_id, installation_id, owner, name, clone_url, web_url, size_bytes,
 				default_branch, private, archived, enabled, status)
-			select $1, id, $3, $4, $5, $6, $7, $8, $9, $10,
-				case when $10 then 'pending' else 'disabled' end
+			select $1, id, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+				case when $11 then 'pending' else 'disabled' end
 			from installations where github_id=$2
 			on conflict (github_id) do update set installation_id=excluded.installation_id,
 				owner=excluded.owner, name=excluded.name, clone_url=excluded.clone_url,
-				web_url=excluded.web_url, default_branch=excluded.default_branch,
+				web_url=excluded.web_url, size_bytes=excluded.size_bytes, default_branch=excluded.default_branch,
 				private=excluded.private, archived=excluded.archived, enabled=excluded.enabled,
 				status=case when not excluded.enabled then 'disabled'
 					when repositories.status='disabled' and repositories.indexed_sha=repositories.desired_sha then 'ready'
@@ -117,7 +118,7 @@ func (s *Store) ReconcileInstallation(ctx context.Context, installation githubap
 					when not excluded.enabled then null else repositories.error_code end,
 				updated_at=now()
 			returning id, desired_sha, status`, repository.ID, installation.ID, repository.Owner,
-			repository.Name, repository.CloneURL, repository.HTMLURL, repository.DefaultBranch,
+			repository.Name, repository.CloneURL, repository.HTMLURL, repository.SizeBytes, repository.DefaultBranch,
 			repository.Private, repository.Archived, enabled).Scan(&id, &desiredSHA, &status); err != nil {
 			return err
 		}
@@ -194,7 +195,7 @@ func (s *Store) UpsertSearchNode(ctx context.Context, nodeID, baseURL string) er
 }
 
 const repositoryColumns = `repositories.id, installations.github_id, repositories.github_id, repositories.zoekt_repo_id,
-	repositories.owner || '/' || repositories.name, repositories.default_branch, coalesce(repositories.desired_sha, ''),
+	repositories.owner || '/' || repositories.name, repositories.size_bytes, repositories.default_branch, coalesce(repositories.desired_sha, ''),
 	coalesce(repositories.indexed_sha, ''), repositories.web_url, repositories.status, coalesce(repositories.error_code, ''),
 	coalesce((select node_id from search_nodes where singleton), ''), repositories.enabled, repositories.last_indexed_at`
 
@@ -209,7 +210,7 @@ type repositoryScanner interface{ Scan(...any) error }
 func scanRepository(row repositoryScanner) (repository.Repository, error) {
 	var result repository.Repository
 	var zoektID int64
-	err := row.Scan(&result.ID, &result.InstallationID, &result.GitHubID, &zoektID, &result.Name, &result.Branch,
+	err := row.Scan(&result.ID, &result.InstallationID, &result.GitHubID, &zoektID, &result.Name, &result.SizeBytes, &result.Branch,
 		&result.DesiredSHA, &result.IndexedSHA, &result.WebURL, &result.Status, &result.ErrorCode, &result.SearchNode, &result.Enabled, &result.LastIndexedAt)
 	result.ZoektID = uint32(zoektID)
 	return result, err

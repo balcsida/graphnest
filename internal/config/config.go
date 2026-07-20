@@ -31,7 +31,7 @@ type Indexer struct {
 	DatabaseURL, ZoektURL, MetricsListenAddress         string
 	GitHub                                              GitHub
 	DataDir, IndexDir, GitPath, ZoektGitIndex, WorkerID string
-	MinFreeBytes                                        int64
+	MinFreeBytes, MaxRepositoryBytes                    int64
 }
 
 type Config struct {
@@ -165,6 +165,9 @@ func LoadIndexer() (Indexer, error) {
 	}
 	if indexer.MinFreeBytes, err = requiredInt64("GREPNEST_MIN_FREE_BYTES"); err != nil {
 		return Indexer{}, err
+	}
+	if indexer.MaxRepositoryBytes, err = strconv.ParseInt(valueOr("GREPNEST_MAX_REPOSITORY_BYTES", "5368709120"), 10, 64); err != nil || indexer.MaxRepositoryBytes <= 0 {
+		return Indexer{}, invalid("GREPNEST_MAX_REPOSITORY_BYTES must be a positive integer")
 	}
 	_, port, err := net.SplitHostPort(indexer.MetricsListenAddress)
 	portNumber, portErr := strconv.Atoi(port)

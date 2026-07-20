@@ -23,11 +23,11 @@ func TestRepositoryStorePreservesDurableIDs(t *testing.T) {
 	if err := store.UpsertInstallation(t.Context(), InstallationUpdate{GitHubID: 10, AccountLogin: "acme", AccountType: "Organization", Status: "active"}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := store.UpsertRepository(t.Context(), RepositoryUpdate{GitHubID: 101, InstallationID: 10, Owner: "acme", Name: "one", CloneURL: "https://example.invalid/acme/one.git", WebURL: "https://example.invalid/acme/one", DefaultBranch: "main", Enabled: true})
+	got, err := store.UpsertRepository(t.Context(), RepositoryUpdate{GitHubID: 101, InstallationID: 10, Owner: "acme", Name: "one", CloneURL: "https://example.invalid/acme/one.git", WebURL: "https://example.invalid/acme/one", DefaultBranch: "main", SizeBytes: 123456, Enabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.InstallationID != 10 || got.GitHubID != 101 || got.Name != "acme/one" || got.ZoektID == 0 {
+	if got.InstallationID != 10 || got.GitHubID != 101 || got.Name != "acme/one" || got.ZoektID == 0 || got.SizeBytes != 123456 {
 		t.Fatalf("got %#v", got)
 	}
 	for _, check := range []struct {
@@ -36,6 +36,9 @@ func TestRepositoryStorePreservesDurableIDs(t *testing.T) {
 	}{
 		{"index lookup", func() (string, error) {
 			repository, err := store.RepositoryForIndex(t.Context(), got.ID)
+			if err == nil && repository.SizeBytes != 123456 {
+				t.Fatalf("repository size = %d", repository.SizeBytes)
+			}
 			return repository.Name, err
 		}},
 		{"desired sha", func() (string, error) { return store.DesiredSHA(t.Context(), got.ID) }},

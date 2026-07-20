@@ -310,6 +310,19 @@ func TestWorkerRunOneChecksSpaceBeforeGit(t *testing.T) {
 	}
 }
 
+func TestWorkerRejectsOversizedRepositoryBeforeCredentials(t *testing.T) {
+	worker, queue, store, git, publisher := workerFixture()
+	store.repo.SizeBytes = 101
+	worker.MaxRepositoryBytes = 100
+	worked, err := worker.RunOne(t.Context())
+	if err != nil || !worked {
+		t.Fatalf("worked = %v, error = %v", worked, err)
+	}
+	if git.prepared || publisher.indexed || queue.failedCode != "repository_too_large" || queue.failedRetry {
+		t.Fatalf("prepared=%v indexed=%v failure=%q retry=%v", git.prepared, publisher.indexed, queue.failedCode, queue.failedRetry)
+	}
+}
+
 func TestWorkerRunOneSupersedesChangedDesiredSHABeforeZoekt(t *testing.T) {
 	worker, queue, store, git, publisher := workerFixture()
 	store.desired = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

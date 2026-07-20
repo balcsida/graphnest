@@ -50,6 +50,7 @@ node:
     gitExecutable: /usr/bin/git
     zoektGitIndexExecutable: /usr/local/bin/zoekt-git-index
     minFreeBytes: 10737418240
+    maxRepositoryBytes: 5368709120
     metricsPort: 9090
     resources: {requests: {cpu: "1", memory: 2Gi}, limits: {cpu: "4", memory: 8Gi}}
   paths: {data: /data, indexes: /data/index}

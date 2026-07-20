@@ -182,7 +182,7 @@ func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime
 	worker := &indexer.Worker{
 		ID: settings.WorkerID, Queue: store, Store: store, Tokens: githubClient, Git: git,
 		Zoekt:        &indexer.ZoektIndexer{Binary: settings.ZoektGitIndex, IndexDir: settings.IndexDir, Runner: runner, Client: zoektClient, IndexTimeout: 10 * time.Minute, VisibilityTimeout: 2 * time.Minute},
-		MinFreeBytes: uint64(settings.MinFreeBytes), Metrics: metrics,
+		MinFreeBytes: uint64(settings.MinFreeBytes), MaxRepositoryBytes: settings.MaxRepositoryBytes, Metrics: metrics,
 	}
 	listener, err := net.Listen("tcp", settings.MetricsListenAddress)
 	if err != nil {
