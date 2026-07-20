@@ -15,12 +15,15 @@ var ErrLeaseLost = errors.New("index job lease lost")
 type IndexRequest struct {
 	RepositoryID                 int64
 	TargetSHA, TargetRef, Reason string
+	Priority, MaxAttempts        int
 }
 
 type IndexJob struct {
 	ID, RepositoryID             int64
-	TargetSHA, State, LeaseOwner string
-	Attempt                      int
+	TargetSHA, TargetRef, Reason string
+	State, LeaseOwner            string
+	Attempt, Priority            int
+	MaxAttempts                  int
 	LeaseExpiresAt               time.Time
 }
 
@@ -38,8 +41,18 @@ func (s *Store) EnqueueIndex(ctx context.Context, request IndexRequest) error {
 
 func enqueueIndex(ctx context.Context, tx pgx.Tx, request IndexRequest) error {
 	var desiredSHA *string
-	if err := tx.QueryRow(ctx, `select desired_sha from repositories where id=$1 for update`, request.RepositoryID).Scan(&desiredSHA); err != nil {
+	var defaultBranch string
+	if err := tx.QueryRow(ctx, `select desired_sha, default_branch from repositories where id=$1 for update`, request.RepositoryID).Scan(&desiredSHA, &defaultBranch); err != nil {
 		return err
+	}
+	if request.TargetRef == "" {
+		request.TargetRef = "refs/heads/" + defaultBranch
+	}
+	if request.Reason == "" {
+		request.Reason = "reconcile"
+	}
+	if request.MaxAttempts <= 0 || request.MaxAttempts > 5 {
+		request.MaxAttempts = 5
 	}
 	if _, err := tx.Exec(ctx, `update repositories set desired_sha=$2, status='pending', error_code=null, updated_at=now() where id=$1`, request.RepositoryID, request.TargetSHA); err != nil {
 		return err
@@ -53,7 +66,8 @@ func enqueueIndex(ctx context.Context, tx pgx.Tx, request IndexRequest) error {
 	if _, err := tx.Exec(ctx, `delete from index_jobs where repository_id=$1 and state='queued'`, request.RepositoryID); err != nil {
 		return err
 	}
-	_, err := tx.Exec(ctx, `insert into index_jobs(repository_id, target_sha, state) values($1,$2,'queued')`, request.RepositoryID, request.TargetSHA)
+	_, err := tx.Exec(ctx, `insert into index_jobs(repository_id, target_ref, target_sha, reason, priority, max_attempts, state)
+		values($1,$2,$3,$4,$5,$6,'queued')`, request.RepositoryID, request.TargetRef, request.TargetSHA, request.Reason, request.Priority, request.MaxAttempts)
 	return err
 }
 
@@ -68,13 +82,15 @@ func (s *Store) ClaimIndex(ctx context.Context, owner string) (IndexJob, error) 
 		with next as (
 			select id from index_jobs j where state='queued' and run_after<=now()
 			and not exists(select 1 from index_jobs running where running.repository_id=j.repository_id and running.state='running')
-			order by run_after, id for update skip locked limit 1
+			order by priority desc, run_after, id for update skip locked limit 1
 		)
 		update index_jobs set state='running', attempt=attempt+1, lease_owner=$1,
 			lease_expires_at=now()+interval '2 minutes', updated_at=now()
 		where id=(select id from next)
-		returning id, repository_id, target_sha, state, lease_owner, attempt, lease_expires_at`, owner).
-		Scan(&job.ID, &job.RepositoryID, &job.TargetSHA, &job.State, &job.LeaseOwner, &job.Attempt, &job.LeaseExpiresAt)
+		returning id, repository_id, target_ref, target_sha, reason, priority, max_attempts,
+			state, lease_owner, attempt, lease_expires_at`, owner).
+		Scan(&job.ID, &job.RepositoryID, &job.TargetRef, &job.TargetSHA, &job.Reason, &job.Priority, &job.MaxAttempts,
+			&job.State, &job.LeaseOwner, &job.Attempt, &job.LeaseExpiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return IndexJob{}, ErrNoJob
 	}
@@ -135,9 +151,9 @@ func (s *Store) finishFailure(ctx context.Context, id int64, owner, errorCode st
 	defer tx.Rollback(ctx)
 	var repositoryID int64
 	var targetSHA string
-	var attempt int
-	if err := tx.QueryRow(ctx, `select repository_id, target_sha, attempt from index_jobs
-		where id=$1 and state='running' and lease_owner=$2 and lease_expires_at>now() for update`, id, owner).Scan(&repositoryID, &targetSHA, &attempt); errors.Is(err, pgx.ErrNoRows) {
+	var attempt, maxAttempts int
+	if err := tx.QueryRow(ctx, `select repository_id, target_sha, attempt, max_attempts from index_jobs
+		where id=$1 and state='running' and lease_owner=$2 and lease_expires_at>now() for update`, id, owner).Scan(&repositoryID, &targetSHA, &attempt, &maxAttempts); errors.Is(err, pgx.ErrNoRows) {
 		return ErrLeaseLost
 	} else if err != nil {
 		return err
@@ -149,7 +165,7 @@ func (s *Store) finishFailure(ctx context.Context, id int64, owner, errorCode st
 	state := "failed"
 	if desiredSHA != targetSHA {
 		state = "superseded"
-	} else if retry && attempt < 5 {
+	} else if retry && attempt < maxAttempts {
 		state = "queued"
 	}
 	if _, err := tx.Exec(ctx, `update index_jobs set state=$2, lease_owner=null, lease_expires_at=null,
@@ -176,9 +192,9 @@ func (s *Store) ReapExpired(ctx context.Context, limit int) (int64, error) {
 	type expiredJob struct {
 		id, repositoryID int64
 		target, desired  string
-		attempt          int
+		attempt, maximum int
 	}
-	rows, err := tx.Query(ctx, `select j.id, j.repository_id, j.target_sha, r.desired_sha, j.attempt
+	rows, err := tx.Query(ctx, `select j.id, j.repository_id, j.target_sha, r.desired_sha, j.attempt, j.max_attempts
 		from index_jobs j join repositories r on r.id=j.repository_id
 		where j.state='running' and j.lease_expires_at<=now()
 		order by j.lease_expires_at, j.id for update of j, r skip locked limit $1`, limit)
@@ -188,7 +204,7 @@ func (s *Store) ReapExpired(ctx context.Context, limit int) (int64, error) {
 	var jobs []expiredJob
 	for rows.Next() {
 		var job expiredJob
-		if err := rows.Scan(&job.id, &job.repositoryID, &job.target, &job.desired, &job.attempt); err != nil {
+		if err := rows.Scan(&job.id, &job.repositoryID, &job.target, &job.desired, &job.attempt, &job.maximum); err != nil {
 			rows.Close()
 			return 0, err
 		}
@@ -203,7 +219,7 @@ func (s *Store) ReapExpired(ctx context.Context, limit int) (int64, error) {
 		state := "failed"
 		if job.desired != job.target {
 			state = "superseded"
-		} else if job.attempt < 5 {
+		} else if job.attempt < job.maximum {
 			state = "queued"
 		}
 		if _, err := tx.Exec(ctx, `update index_jobs set state=$2, lease_owner=null, lease_expires_at=null,

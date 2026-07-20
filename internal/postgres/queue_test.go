@@ -100,6 +100,68 @@ func TestQueueCoalescesNewestDesiredSHA(t *testing.T) {
 	}
 }
 
+func TestQueuePersistsOperationalMetadata(t *testing.T) {
+	store := migratedStore(t)
+	repositoryID := queueRepository(t, store)
+	request := IndexRequest{
+		RepositoryID: repositoryID, TargetRef: "refs/heads/main", TargetSHA: shaA,
+		Reason: "push", Priority: 7, MaxAttempts: 2,
+	}
+	if err := store.EnqueueIndex(t.Context(), request); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.ClaimIndex(t.Context(), "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.TargetRef != request.TargetRef || job.Reason != request.Reason || job.Priority != request.Priority || job.MaxAttempts != request.MaxAttempts {
+		t.Fatalf("job metadata = %#v, want request %#v", job, request)
+	}
+}
+
+func TestQueueClaimsHigherPriorityFirst(t *testing.T) {
+	store := migratedStore(t)
+	lowRepositoryID := queueRepository(t, store)
+	highRepository, err := store.UpsertRepository(t.Context(), RepositoryUpdate{
+		GitHubID: 102, InstallationID: 10, Owner: "acme", Name: "priority", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.EnqueueIndex(t.Context(), IndexRequest{RepositoryID: lowRepositoryID, TargetSHA: shaA, Priority: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.EnqueueIndex(t.Context(), IndexRequest{RepositoryID: highRepository.ID, TargetSHA: shaB, Priority: 9}); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.ClaimIndex(t.Context(), "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.RepositoryID != highRepository.ID {
+		t.Fatalf("claimed repository = %d, want high-priority repository %d", job.RepositoryID, highRepository.ID)
+	}
+}
+
+func TestQueueStopsAtConfiguredMaxAttempts(t *testing.T) {
+	store := migratedStore(t)
+	repositoryID := queueRepository(t, store)
+	if err := store.EnqueueIndex(t.Context(), IndexRequest{RepositoryID: repositoryID, TargetSHA: shaA, MaxAttempts: 1}); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.ClaimIndex(t.Context(), "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FailIndex(t.Context(), job.ID, "owner", "temporary", true); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	if err := store.pool.QueryRow(t.Context(), "select state from index_jobs where id=$1", job.ID).Scan(&state); err != nil || state != "failed" {
+		t.Fatalf("state = %q, err = %v", state, err)
+	}
+}
+
 func TestQueueClaimsOnceWithSkipLocked(t *testing.T) {
 	store := migratedStore(t)
 	repositoryID := queueRepository(t, store)
@@ -343,7 +405,7 @@ func TestQueuePrunesBoundedHistory(t *testing.T) {
 	}
 	for i := range 102 {
 		sha := fmt.Sprintf("%040x", i+1)
-		if _, err := store.pool.Exec(t.Context(), "insert into index_jobs(repository_id,target_sha,state) values($1,$2,'failed')", repositoryID, sha); err != nil {
+		if _, err := store.pool.Exec(t.Context(), "insert into index_jobs(repository_id,target_ref,target_sha,reason,state) values($1,'refs/heads/main',$2,'test','failed')", repositoryID, sha); err != nil {
 			t.Fatal(err)
 		}
 	}
