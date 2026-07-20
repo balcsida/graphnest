@@ -19,7 +19,6 @@ create table repositories (
     name varchar(255) not null,
     clone_url text not null,
     web_url text not null,
-    size_bytes bigint not null default 0 check (size_bytes >= 0),
     default_branch varchar(255) not null,
     private boolean not null,
     archived boolean not null,
@@ -39,7 +38,7 @@ create table webhook_deliveries (
     id bigint generated always as identity primary key,
     delivery_id varchar(128) not null unique,
     event_name varchar(128) not null,
-    installation_id bigint references installations(id),
+    installation_id bigint not null references installations(id),
     received_at timestamptz not null default now(),
     processed_at timestamptz,
     state varchar(32) not null check (state in ('received', 'accepted', 'ignored', 'failed')),
@@ -49,13 +48,9 @@ create table webhook_deliveries (
 create table index_jobs (
     id bigint generated always as identity primary key,
     repository_id bigint not null references repositories(id),
-    target_ref text not null default '',
     target_sha char(40) not null check (target_sha ~ '^[0-9a-f]{40}$'),
-    reason varchar(128) not null default 'unspecified',
-    priority integer not null default 0,
     state varchar(32) not null check (state in ('queued', 'running', 'succeeded', 'failed', 'superseded')),
     attempt integer not null default 0 check (attempt >= 0 and attempt <= 5),
-    max_attempts integer not null default 5 check (max_attempts between 1 and 5),
     run_after timestamptz not null default now(),
     lease_owner varchar(255),
     lease_expires_at timestamptz,
@@ -63,10 +58,7 @@ create table index_jobs (
     error_message varchar(1024),
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
-    check (
-        (state = 'running' and lease_owner is not null and lease_expires_at is not null)
-        or (state <> 'running' and lease_owner is null and lease_expires_at is null)
-    )
+    check ((state = 'running') = (lease_owner is not null and lease_expires_at is not null))
 );
 
 create table search_nodes (
@@ -81,6 +73,6 @@ create table search_nodes (
 
 create unique index index_jobs_one_queued on index_jobs(repository_id) where state = 'queued';
 create unique index index_jobs_one_running on index_jobs(repository_id) where state = 'running';
-create index index_jobs_claim on index_jobs(priority desc, run_after, id) where state = 'queued';
+create index index_jobs_claim on index_jobs(run_after, id) where state = 'queued';
 create index index_jobs_reaper on index_jobs(lease_expires_at, id) where state = 'running';
 create index webhook_deliveries_retention on webhook_deliveries(received_at);
