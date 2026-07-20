@@ -20,6 +20,14 @@
 - Repository IDs are selected after authorization, not accepted from clients.
 - JSON HTTP remains the adapter pending ADR-0003's identical-query 10% threshold.
 - PostgreSQL is the Milestone 2 metadata store and durable queue.
+- External GHES IDs use `github_id`; full names are derived, the GHES host is
+  deployment configuration, and shard placement remains a Milestone 5 concern.
+- The indexer rejects GHES-reported oversized repositories before credentials
+  or fetch and validates Zoekt with both exact `/api/list` metadata and a
+  RepoID-scoped search.
+- Repository-owned `.sourcegraph/ignore` is supported by pinned Zoekt. Global
+  injected excludes are deferred because synthesizing the file would falsify
+  the indexed commit SHA.
 - Pinned Zoekt runs as `linux/amd64`; Apple-silicon hosts use Docker emulation
   because the pinned image has no arm64 variant.
 

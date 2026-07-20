@@ -148,12 +148,22 @@ Configure stable `zoekt.repoid`, repository name, web URL, and default branch
 on the mirror. Run the pinned `zoekt-git-index` with one worker, the existing
 2 MiB file limit, incremental indexing, submodules disabled, and ctags
 disabled. Poll bounded Zoekt `/api/list` responses until the RepoID, branch,
-and SHA are visible. An indexer exit alone is not completion.
+and SHA are visible, then execute a bounded RepoID-scoped search request as a
+readiness check. An indexer exit or list response alone is not completion.
 
 Git and Zoekt commands have separate deadlines, bounded output, and Unix
 process-group termination. On startup, prune abandoned worktrees that do not
 belong to active leases. A configured free-space floor rejects new work before
-Git can exhaust the data volume.
+Git can exhaust the data volume. GHES-reported repository size is persisted;
+a configurable cap rejects oversized repositories before token minting or
+fetch, while the free-space floor remains a second volume-level guard.
+
+The pinned Zoekt indexer honors a repository's commit-resident
+`.sourcegraph/ignore`. GrepNest does not synthesize or mutate that file because
+doing so would index a different commit and break indexed-SHA consistency.
+Deployment-wide injected exclusion patterns require an upstream indexer input
+that preserves the original commit identity and are deferred from Milestone 2;
+repositories may use `.sourcegraph/ignore` in the meantime.
 
 ## Serving Consistency
 
