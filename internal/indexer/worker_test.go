@@ -6,12 +6,16 @@ import (
 	"context"
 	"errors"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/grepnest/grepnest/internal/githubapp"
+	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/grepnest/grepnest/internal/repository"
 )
@@ -62,6 +66,9 @@ func (queue *fakeQueue) FailIndex(_ context.Context, _ int64, _ string, code str
 func (queue *fakeQueue) ActiveJobIDs(context.Context) (map[int64]struct{}, error) {
 	queue.record("active")
 	return queue.active, nil
+}
+func (queue *fakeQueue) QueueDepths(context.Context) (map[string]int64, error) {
+	return map[string]int64{"queued": 1, "running": 2, "succeeded": 3, "failed": 4, "superseded": 5}, nil
 }
 
 type fakeStore struct {
@@ -178,6 +185,29 @@ func TestWorkerRunOneCompletesOnlyAfterExactVisibility(t *testing.T) {
 	}
 	if !queue.completed || !git.cleaned {
 		t.Fatalf("completed=%v cleaned=%v", queue.completed, git.cleaned)
+	}
+}
+
+func TestWorkerRecordsQueueAndPhaseMetrics(t *testing.T) {
+	worker, _, _, _, _ := workerFixture()
+	metrics := observability.New()
+	worker.Metrics = metrics
+	if worked, err := worker.RunOne(t.Context()); err != nil || !worked {
+		t.Fatalf("worked = %v, error = %v", worked, err)
+	}
+
+	recorder := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := recorder.Body.String()
+	for _, want := range []string{
+		`grepnest_index_queue_depth{state="running"} 2`,
+		`grepnest_index_phase_total{phase="fetch",result="success"} 1`,
+		`grepnest_index_phase_total{phase="index",result="success"} 1`,
+		`grepnest_index_phase_total{phase="visibility",result="success"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics missing %q:\n%s", want, body)
+		}
 	}
 }
 

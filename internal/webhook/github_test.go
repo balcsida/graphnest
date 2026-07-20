@@ -5,8 +5,29 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/grepnest/grepnest/internal/observability"
 )
+
+func TestGitHubProcessorRecordsBoundedDeliveryMetrics(t *testing.T) {
+	metrics := observability.New()
+	processor := NewGitHubProcessor(nil, nil, metrics)
+	_, _ = processor.Process(t.Context(), Delivery{ID: "delivery-secret", Event: "push", Body: []byte(`{}`)})
+
+	recorder := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := recorder.Body.String()
+	if want := `grepnest_webhook_deliveries_total{event="push",result="error"} 1`; !strings.Contains(body, want) {
+		t.Fatalf("metrics missing %q:\n%s", want, body)
+	}
+	if strings.Contains(body, "delivery-secret") {
+		t.Fatalf("metrics expose delivery ID:\n%s", body)
+	}
+}
 
 func TestGitHubProcessorRejectsMalformedKnownEventsBeforeStorage(t *testing.T) {
 	processor := NewGitHubProcessor(nil, nil)

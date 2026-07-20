@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/githubapp"
+	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/grepnest/grepnest/internal/repository"
 	"golang.org/x/sys/unix"
@@ -53,6 +54,7 @@ type Worker struct {
 	MinFreeBytes   uint64
 	RenewEvery     time.Duration
 	CleanupTimeout time.Duration
+	Metrics        *observability.Metrics
 }
 
 func (worker *Worker) Run(ctx context.Context) error {
@@ -88,6 +90,7 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 	if err := worker.validate(); err != nil {
 		return false, err
 	}
+	worker.refreshQueueDepths(ctx)
 	job, err := worker.Queue.ClaimIndex(ctx, worker.ID)
 	if errors.Is(err, postgres.ErrNoJob) {
 		return false, nil
@@ -133,7 +136,9 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 	if enough, err := worker.enoughSpace(); err != nil || !enough {
 		return fail("insufficient_space", true)
 	}
+	started := time.Now()
 	_, worktree, err := worker.Git.Prepare(jobCtx, repo, job, token.Value)
+	worker.observePhase("fetch", started, err)
 	if err != nil {
 		if errors.Is(err, ErrTargetMissing) {
 			return fail("target_missing", false)
@@ -147,12 +152,18 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 	if desired != job.TargetSHA {
 		return fail("superseded", false)
 	}
+	started = time.Now()
 	if err := worker.Zoekt.Index(jobCtx, repo, worktree); err != nil {
+		worker.observePhase("index", started, err)
 		return fail("index_failed", true)
 	}
+	worker.observePhase("index", started, nil)
+	started = time.Now()
 	if err := worker.Zoekt.WaitVisible(jobCtx, repo.ZoektID, repo.Branch, job.TargetSHA); err != nil {
+		worker.observePhase("visibility", started, err)
 		return fail("visibility_failed", true)
 	}
+	worker.observePhase("visibility", started, nil)
 	if leaseErr := readError(renewErrors); leaseErr != nil {
 		return true, leaseErr
 	}
@@ -160,6 +171,33 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 		return true, err
 	}
 	return true, nil
+}
+
+func (worker *Worker) refreshQueueDepths(ctx context.Context) {
+	queue, ok := worker.Queue.(interface {
+		QueueDepths(context.Context) (map[string]int64, error)
+	})
+	if worker.Metrics == nil || !ok {
+		return
+	}
+	depths, err := queue.QueueDepths(ctx)
+	if err != nil {
+		return
+	}
+	for _, state := range []string{"queued", "running", "succeeded", "failed", "superseded"} {
+		worker.Metrics.SetQueueDepth(state, depths[state])
+	}
+}
+
+func (worker *Worker) observePhase(phase string, started time.Time, err error) {
+	if worker.Metrics == nil {
+		return
+	}
+	result := "success"
+	if err != nil {
+		result = "error"
+	}
+	worker.Metrics.ObserveIndexPhase(phase, result, time.Since(started))
 }
 
 func (worker *Worker) renew(ctx context.Context, job postgres.IndexJob, cancel context.CancelFunc, result chan<- error, done chan<- struct{}) {

@@ -16,7 +16,28 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/grepnest/grepnest/internal/observability"
 )
+
+func TestClientRecordsBoundedRequestMetrics(t *testing.T) {
+	now := time.Date(2026, time.July, 18, 12, 0, 0, 0, time.UTC)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `[]`)
+	}))
+	defer server.Close()
+	metrics := observability.New()
+	client := testClient(t, server, &now, 1024, metrics)
+	if _, err := client.Installations(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if want := `grepnest_github_requests_total{operation="installations",result="success"} 1`; !strings.Contains(recorder.Body.String(), want) {
+		t.Fatalf("metrics missing %q:\n%s", want, recorder.Body.String())
+	}
+}
 
 func TestInstallationTokenCachesSortedRestrictionsAndRefreshes(t *testing.T) {
 	now := time.Date(2026, time.July, 18, 12, 0, 0, 0, time.UTC)
@@ -223,7 +244,7 @@ func TestClientBoundsResponsesAndKeepsErrorsSafe(t *testing.T) {
 	}
 }
 
-func testClient(t *testing.T, server *httptest.Server, now *time.Time, maxBytes int64) *Client {
+func testClient(t *testing.T, server *httptest.Server, now *time.Time, maxBytes int64, metrics ...*observability.Metrics) *Client {
 	t.Helper()
 	endpoint, err := url.Parse(server.URL + "/api/v3")
 	if err != nil {
@@ -241,7 +262,7 @@ func testClient(t *testing.T, server *httptest.Server, now *time.Time, maxBytes 
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewClient(Endpoints{Web: endpoint, API: endpoint, Upload: endpoint, Git: endpoint}, httpClient, signer, "2022-11-28", maxBytes, func() time.Time { return *now })
+	return NewClient(Endpoints{Web: endpoint, API: endpoint, Upload: endpoint, Git: endpoint}, httpClient, signer, "2022-11-28", maxBytes, func() time.Time { return *now }, metrics...)
 }
 
 func assertRequest(t *testing.T, r *http.Request, method, authorization string) {

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/grepnest/grepnest/internal/githubapp"
+	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/jackc/pgx/v5"
 )
@@ -43,10 +44,15 @@ func Verify(secret, body []byte, signature string) bool {
 type GitHubProcessor struct {
 	store      *postgres.Store
 	reconciler *githubapp.Reconciler
+	metrics    *observability.Metrics
 }
 
-func NewGitHubProcessor(store *postgres.Store, reconciler *githubapp.Reconciler) *GitHubProcessor {
-	return &GitHubProcessor{store: store, reconciler: reconciler}
+func NewGitHubProcessor(store *postgres.Store, reconciler *githubapp.Reconciler, metricSet ...*observability.Metrics) *GitHubProcessor {
+	var metrics *observability.Metrics
+	if len(metricSet) > 0 {
+		metrics = metricSet[0]
+	}
+	return &GitHubProcessor{store: store, reconciler: reconciler, metrics: metrics}
 }
 
 type eventPayload struct {
@@ -70,9 +76,22 @@ type eventPayload struct {
 	} `json:"repositories_removed"`
 }
 
-func (processor *GitHubProcessor) Process(ctx context.Context, delivery Delivery) (bool, error) {
-	if !knownEvent(delivery.Event) {
-		return processor.store.ApplyDelivery(ctx, postgres.Delivery{ID: delivery.ID, Event: delivery.Event, State: "ignored"}, nil)
+func (processor *GitHubProcessor) Process(ctx context.Context, delivery Delivery) (inserted bool, resultErr error) {
+	event := metricEvent(delivery.Event)
+	result := "error"
+	if processor.metrics != nil {
+		defer func() { processor.metrics.ObserveWebhook(event, result) }()
+	}
+	if event == "unknown" {
+		inserted, resultErr = processor.store.ApplyDelivery(ctx, postgres.Delivery{ID: delivery.ID, Event: delivery.Event, State: "ignored"}, nil)
+		if resultErr == nil {
+			if inserted {
+				result = "ignored"
+			} else {
+				result = "duplicate"
+			}
+		}
+		return inserted, resultErr
 	}
 	var payload eventPayload
 	if err := json.Unmarshal(delivery.Body, &payload); err != nil || !validPayload(delivery.Event, payload) {
@@ -128,12 +147,24 @@ func (processor *GitHubProcessor) Process(ctx context.Context, delivery Delivery
 	if err != nil {
 		return false, err
 	}
+	if !inserted {
+		result = "duplicate"
+		return false, nil
+	}
 	if inserted && reconcile && installationID != nil && processor.reconciler != nil {
 		if err := processor.reconciler.Installation(ctx, *installationID); err != nil {
 			return false, err
 		}
 	}
+	result = state
 	return inserted, nil
+}
+
+func metricEvent(event string) string {
+	if knownEvent(event) {
+		return event
+	}
+	return "unknown"
 }
 
 func knownEvent(event string) bool {
