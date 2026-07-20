@@ -53,6 +53,23 @@ func TestZoektIndexUsesPinnedArgumentsAndSafeEnvironment(t *testing.T) {
 	}
 }
 
+func TestZoektIndexUsesFixedDeadline(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "slow-indexer")
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\n/bin/sleep 5\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	indexer := ZoektIndexer{
+		Binary: binary, IndexDir: t.TempDir(), IndexTimeout: 10 * time.Millisecond,
+		Runner: Runner{MaxOutput: 1024, KillGrace: time.Millisecond},
+	}
+	repo := repository.Repository{ZoektID: 7, Branch: "main"}
+	started := time.Now()
+	err := indexer.Index(t.Context(), repo, "-c")
+	if err == nil || time.Since(started) > time.Second {
+		t.Fatalf("error=%v duration=%s", err, time.Since(started))
+	}
+}
+
 func TestZoektWaitVisibleRequiresExactRepositoryBranchAndVersion(t *testing.T) {
 	responses := []string{
 		`{"List":{"ReposMap":{"8":{"Branches":[{"Name":"main","Version":"target"}]}}}}`,

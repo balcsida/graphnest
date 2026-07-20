@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/grepnest/grepnest/internal/repository"
@@ -21,6 +22,7 @@ var ErrTargetMissing = errors.New("target commit unavailable")
 type Git struct {
 	Binary, BaseURL, AskPass, CABundle, MirrorsDir, WorktreesDir string
 	Runner                                                       Runner
+	CommandTimeout                                               time.Duration
 }
 
 func (git *Git) Prepare(ctx context.Context, repo repository.Repository, job postgres.IndexJob, token string) (string, string, error) {
@@ -150,13 +152,18 @@ func (git *Git) run(ctx context.Context, environment []string, arguments ...stri
 	if git.Binary == "" {
 		return errors.New("Git binary is required")
 	}
-	return git.Runner.Run(ctx, git.Binary, arguments, environment, "")
+	timeout := git.CommandTimeout
+	if timeout <= 0 {
+		timeout = 2 * time.Minute
+	}
+	commandCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return git.Runner.Run(commandCtx, git.Binary, arguments, environment, "")
 }
 
 func (git *Git) environment(token string) []string {
 	values := [][2]string{
 		{"credential.helper", ""},
-		{"core.askPass", git.AskPass},
 		{"http.followRedirects", "false"},
 		{"protocol.file.allow", "never"},
 		{"core.hooksPath", "/dev/null"},
@@ -167,11 +174,17 @@ func (git *Git) environment(token string) []string {
 	if git.CABundle != "" {
 		values = append(values, [2]string{"http.sslCAInfo", git.CABundle})
 	}
+	if token != "" {
+		values = append(values, [2]string{"core.askPass", git.AskPass})
+	}
 	environment := []string{
 		"LANG=C", "LC_ALL=C", "PATH=" + os.Getenv("PATH"), "TMPDIR=" + os.TempDir(),
-		"GIT_ASKPASS=" + git.AskPass, "GIT_TERMINAL_PROMPT=0", "GREPNEST_GIT_TOKEN=" + token,
+		"GIT_TERMINAL_PROMPT=0",
 		"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_SYSTEM=/dev/null", "GIT_CONFIG_GLOBAL=/dev/null",
 		"GIT_CONFIG_COUNT=" + strconv.Itoa(len(values)),
+	}
+	if token != "" {
+		environment = append(environment, "GIT_ASKPASS="+git.AskPass, "GREPNEST_ASKPASS_MODE=1", "GREPNEST_GIT_TOKEN="+token)
 	}
 	for index, value := range values {
 		environment = append(environment,

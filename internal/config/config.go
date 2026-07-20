@@ -27,6 +27,8 @@ type GitHub struct {
 }
 
 type Indexer struct {
+	DatabaseURL, ZoektURL                               string
+	GitHub                                              GitHub
 	DataDir, IndexDir, GitPath, ZoektGitIndex, WorkerID string
 	MinFreeBytes                                        int64
 }
@@ -81,7 +83,7 @@ func Load() (Config, error) {
 			return Config{}, invalid("GREPNEST_DATABASE_URL must be a PostgreSQL URL")
 		}
 		config.DatabaseURL = databaseURL
-		if config.GitHub, err = loadGitHub(); err != nil {
+		if config.GitHub, err = loadGitHub(true); err != nil {
 			return Config{}, err
 		}
 		if config.UserInstallationID, err = requiredInt64("GREPNEST_USER_INSTALLATION_ID"); err != nil {
@@ -102,16 +104,18 @@ func Load() (Config, error) {
 	return config, nil
 }
 
-func loadGitHub() (GitHub, error) {
+func loadGitHub(requireWebhookSecret bool) (GitHub, error) {
 	github := GitHub{
-		WebURL:            os.Getenv("GREPNEST_GITHUB_WEB_URL"),
-		APIURL:            os.Getenv("GREPNEST_GITHUB_API_URL"),
-		UploadURL:         os.Getenv("GREPNEST_GITHUB_UPLOAD_URL"),
-		GitURL:            os.Getenv("GREPNEST_GITHUB_GIT_URL"),
-		PrivateKeyFile:    os.Getenv("GREPNEST_GITHUB_PRIVATE_KEY_FILE"),
-		WebhookSecretFile: os.Getenv("GREPNEST_GITHUB_WEBHOOK_SECRET_FILE"),
-		APIVersion:        valueOr("GREPNEST_GITHUB_API_VERSION", "2022-11-28"),
-		CAFile:            os.Getenv("GREPNEST_GITHUB_CA_FILE"),
+		WebURL:         os.Getenv("GREPNEST_GITHUB_WEB_URL"),
+		APIURL:         os.Getenv("GREPNEST_GITHUB_API_URL"),
+		UploadURL:      os.Getenv("GREPNEST_GITHUB_UPLOAD_URL"),
+		GitURL:         os.Getenv("GREPNEST_GITHUB_GIT_URL"),
+		PrivateKeyFile: os.Getenv("GREPNEST_GITHUB_PRIVATE_KEY_FILE"),
+		APIVersion:     valueOr("GREPNEST_GITHUB_API_VERSION", "2022-11-28"),
+		CAFile:         os.Getenv("GREPNEST_GITHUB_CA_FILE"),
+	}
+	if requireWebhookSecret {
+		github.WebhookSecretFile = os.Getenv("GREPNEST_GITHUB_WEBHOOK_SECRET_FILE")
 	}
 	var err error
 	if github.AppID, err = requiredInt64("GREPNEST_GITHUB_APP_ID"); err != nil {
@@ -126,7 +130,7 @@ func loadGitHub() (GitHub, error) {
 			return GitHub{}, invalid(endpoint.name + " must be an HTTPS URL")
 		}
 	}
-	if github.PrivateKeyFile == "" || github.WebhookSecretFile == "" {
+	if github.PrivateKeyFile == "" || (requireWebhookSecret && github.WebhookSecretFile == "") {
 		return GitHub{}, invalid("GitHub secret file paths are required")
 	}
 	return github, nil
@@ -134,16 +138,29 @@ func loadGitHub() (GitHub, error) {
 
 func LoadIndexer() (Indexer, error) {
 	indexer := Indexer{
+		DatabaseURL:   os.Getenv("GREPNEST_DATABASE_URL"),
+		ZoektURL:      os.Getenv("GREPNEST_ZOEKT_URL"),
 		DataDir:       os.Getenv("GREPNEST_DATA_DIR"),
 		IndexDir:      os.Getenv("GREPNEST_INDEX_DIR"),
 		GitPath:       os.Getenv("GREPNEST_GIT_PATH"),
 		ZoektGitIndex: os.Getenv("GREPNEST_ZOEKT_GIT_INDEX"),
 		WorkerID:      os.Getenv("GREPNEST_WORKER_ID"),
 	}
+	parsedDatabase, databaseErr := url.Parse(indexer.DatabaseURL)
+	if databaseErr != nil || parsedDatabase.Host == "" || (parsedDatabase.Scheme != "postgres" && parsedDatabase.Scheme != "postgresql") {
+		return Indexer{}, invalid("GREPNEST_DATABASE_URL must be a PostgreSQL URL")
+	}
+	parsedZoekt, zoektErr := url.Parse(indexer.ZoektURL)
+	if zoektErr != nil || parsedZoekt.Host == "" || (parsedZoekt.Scheme != "http" && parsedZoekt.Scheme != "https") {
+		return Indexer{}, invalid("GREPNEST_ZOEKT_URL must be an HTTP(S) URL")
+	}
+	var err error
+	if indexer.GitHub, err = loadGitHub(false); err != nil {
+		return Indexer{}, err
+	}
 	if indexer.DataDir == "" || indexer.IndexDir == "" || indexer.GitPath == "" || indexer.ZoektGitIndex == "" || indexer.WorkerID == "" {
 		return Indexer{}, invalid("indexer paths and worker ID are required")
 	}
-	var err error
 	if indexer.MinFreeBytes, err = requiredInt64("GREPNEST_MIN_FREE_BYTES"); err != nil {
 		return Indexer{}, err
 	}

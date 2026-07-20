@@ -219,6 +219,30 @@ func TestGitRejectsMissingCredentialInputsBeforeDiskWrites(t *testing.T) {
 	}
 }
 
+func TestGitEnvironmentEnablesFixedAskPassOnlyWithToken(t *testing.T) {
+	git := Git{AskPass: "/proc/self/exe"}
+	withToken := strings.Join(git.environment("secret"), "\n")
+	if !strings.Contains(withToken, "GREPNEST_ASKPASS_MODE=1") || !strings.Contains(withToken, "GREPNEST_GIT_TOKEN=secret") {
+		t.Fatalf("askpass environment = %q", withToken)
+	}
+	withoutToken := strings.Join(git.environment(""), "\n")
+	if strings.Contains(withoutToken, "ASKPASS") || strings.Contains(withoutToken, "askPass") || strings.Contains(withoutToken, "GREPNEST_GIT_TOKEN") {
+		t.Fatalf("cleanup environment contains credentials = %q", withoutToken)
+	}
+}
+
+func TestGitCommandUsesFixedDeadline(t *testing.T) {
+	git := Git{
+		Binary: "/bin/sh", CommandTimeout: 10 * time.Millisecond,
+		Runner: Runner{MaxOutput: 1024, KillGrace: time.Millisecond},
+	}
+	started := time.Now()
+	err := git.run(t.Context(), []string{"PATH=/usr/bin:/bin"}, "-c", "/bin/sleep 5")
+	if err == nil || time.Since(started) > time.Second {
+		t.Fatalf("error=%v duration=%s", err, time.Since(started))
+	}
+}
+
 func gitHTTPBackend(projectRoot string) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		command := exec.Command("git", "http-backend")

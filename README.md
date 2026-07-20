@@ -3,13 +3,13 @@
 GrepNest is a pre-pilot code-search service. Milestones 0-1 provide a pinned
 Zoekt-backed search path, bearer authorization, REST, and MCP. The Milestone 2
 server adds PostgreSQL-backed repository state, GitHub App reconciliation, and
-verified webhooks, but the indexer process and end-to-end proof are unfinished.
+verified webhooks. The sequential indexer is implemented; the end-to-end proof
+is unfinished.
 It is not production-ready.
 
 The [Helm chart](deploy/helm/grepnest/README.md) is structurally lintable and
 renderable, but not currently deployable. This repository does not build or
-publish the required images, and Milestone 2 `grepnest-indexer` and
-`grepnest-migrate` behavior is unfinished. The chart has not been cluster-tested.
+publish the required images, and the chart has not been cluster-tested.
 
 ## Local quick start
 
@@ -18,7 +18,7 @@ Prerequisites: Go 1.26, Git, Docker Compose, and an internet connection for
 
 ```sh
 make tools
-docker compose -f deploy/compose/compose.yml up -d --wait
+docker compose -f deploy/compose/compose.yml --profile fixture up -d --wait
 ```
 
 Compose copies `test/fixtures/repository`, initializes it as a Git repository,

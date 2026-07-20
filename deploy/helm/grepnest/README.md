@@ -2,8 +2,7 @@
 
 This chart models the generic Kubernetes single-node pilot. It is structurally
 lintable and renderable, but not currently deployable: GrepNest images are not
-built or published, and the required Milestone 2 `grepnest-indexer` and
-`grepnest-migrate` behavior is unfinished. It has not been cluster-tested.
+built or published, and it has not been cluster-tested.
 
 The chart requires an operator-managed PostgreSQL database and never installs
 PostgreSQL or creates Secrets. Supply both image repositories and immutable
