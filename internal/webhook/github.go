@@ -96,7 +96,7 @@ func (processor *GitHubProcessor) Process(ctx context.Context, delivery Delivery
 	}
 	var payload eventPayload
 	if err := json.Unmarshal(delivery.Body, &payload); err != nil || !validPayload(delivery.Event, payload) {
-		return false, InvalidDeliveryError{}
+		return processor.invalidDelivery(ctx, delivery)
 	}
 	var installationID *int64
 	if payload.Installation.ID > 0 {
@@ -163,6 +163,19 @@ func (processor *GitHubProcessor) Process(ctx context.Context, delivery Delivery
 	}
 	result = state
 	return inserted, nil
+}
+
+func (processor *GitHubProcessor) invalidDelivery(ctx context.Context, delivery Delivery) (bool, error) {
+	if processor.store == nil {
+		return false, InvalidDeliveryError{}
+	}
+	inserted, err := processor.store.ApplyDelivery(ctx, postgres.Delivery{
+		ID: delivery.ID, Event: delivery.Event, State: "failed", ErrorCode: "invalid_payload",
+	}, nil)
+	if err != nil || !inserted {
+		return inserted, err
+	}
+	return true, InvalidDeliveryError{}
 }
 
 func metricEvent(event string) string {

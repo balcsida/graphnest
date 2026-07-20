@@ -78,8 +78,12 @@ func TestGitHubProcessorDurability(t *testing.T) {
 				t.Fatalf("case %d: err=%v", index, err)
 			}
 		}
-		if got := deliveryCount(t, pool); got != 0 {
+		if got := deliveryCount(t, pool); got != 3 {
 			t.Fatalf("invalid sizes persisted %d deliveries", got)
+		}
+		var failed int
+		if err := pool.QueryRow(t.Context(), `select count(*) from webhook_deliveries where state='failed' and error_code='invalid_payload'`).Scan(&failed); err != nil || failed != 3 {
+			t.Fatalf("failed=%d err=%v", failed, err)
 		}
 	})
 
@@ -122,8 +126,15 @@ func TestGitHubProcessorDurability(t *testing.T) {
 				t.Fatalf("case %d: err=%v", index, err)
 			}
 		}
-		if got := deliveryCount(t, pool); got != before {
-			t.Fatalf("malformed deliveries persisted: before=%d after=%d", before, got)
+		if got := deliveryCount(t, pool); got != before+6 {
+			t.Fatalf("malformed deliveries: before=%d after=%d", before, got)
+		}
+		var failed int
+		if err := pool.QueryRow(t.Context(), `select count(*) from webhook_deliveries where state='failed' and error_code='invalid_payload'`).Scan(&failed); err != nil || failed != 6 {
+			t.Fatalf("failed=%d err=%v", failed, err)
+		}
+		if inserted, err := processor.Process(t.Context(), Delivery{ID: "malformed-0", Event: "push", Body: pushBody(10, 101, "refs/heads/main", webhookSHAA)}); err != nil || inserted {
+			t.Fatalf("malformed duplicate: inserted=%v err=%v", inserted, err)
 		}
 	})
 

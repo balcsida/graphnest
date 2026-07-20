@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -41,10 +40,6 @@ func RegisterGitHubWebhook(mux *http.ServeMux, secret []byte, maxBytes int64, pr
 		}
 		if !webhook.Verify(secret, body, signature) {
 			http.Error(writer, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		if !json.Valid(body) {
-			http.Error(writer, "bad request", http.StatusBadRequest)
 			return
 		}
 		if _, err := processor.Process(request.Context(), webhook.Delivery{ID: delivery, Event: event, Body: body}); err != nil {

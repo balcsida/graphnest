@@ -48,7 +48,6 @@ func TestGitHubWebhookRejectsUntrustedRequests(t *testing.T) {
 		{"duplicate signature", body, map[string][]string{"X-GitHub-Event": {"push"}, "X-GitHub-Delivery": {"one"}, "X-Hub-Signature-256": {validSignature, validSignature}}, http.StatusBadRequest},
 		{"wrong prefix", body, map[string][]string{"X-GitHub-Event": {"push"}, "X-GitHub-Delivery": {"one"}, "X-Hub-Signature-256": {"sha1=bad"}}, http.StatusUnauthorized},
 		{"invalid signature", body, map[string][]string{"X-GitHub-Event": {"push"}, "X-GitHub-Delivery": {"one"}, "X-Hub-Signature-256": {"sha256=" + strings.Repeat("0", 64)}}, http.StatusUnauthorized},
-		{"invalid json", "{", map[string][]string{"X-GitHub-Event": {"push"}, "X-GitHub-Delivery": {"one"}, "X-Hub-Signature-256": {signWebhook(secret, []byte("{"))}}, http.StatusBadRequest},
 		{"too large", strings.Repeat("x", 1024*1024+1), map[string][]string{"X-GitHub-Event": {"push"}, "X-GitHub-Delivery": {"one"}, "X-Hub-Signature-256": {"sha256=bad"}}, http.StatusRequestEntityTooLarge},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -67,6 +66,23 @@ func TestGitHubWebhookRejectsUntrustedRequests(t *testing.T) {
 				t.Fatalf("status=%d calls=%d", response.Code, processor.calls)
 			}
 		})
+	}
+}
+
+func TestGitHubWebhookPassesVerifiedMalformedJSONToProcessor(t *testing.T) {
+	secret := []byte("webhook-secret")
+	body := []byte("{")
+	processor := &webhookProcessorStub{err: webhook.InvalidDeliveryError{}}
+	mux := http.NewServeMux()
+	RegisterGitHubWebhook(mux, secret, 1024*1024, processor)
+	request := httptest.NewRequest(http.MethodPost, "/webhooks/github", strings.NewReader(string(body)))
+	request.Header.Set("X-GitHub-Event", "push")
+	request.Header.Set("X-GitHub-Delivery", "verified-malformed")
+	request.Header.Set("X-Hub-Signature-256", signWebhook(secret, body))
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || processor.calls != 1 {
+		t.Fatalf("status=%d calls=%d", response.Code, processor.calls)
 	}
 }
 
