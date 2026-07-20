@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,6 +20,88 @@ import (
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/internal/webhook"
 )
+
+func TestServeHTTPKeepsRuntimeOpenUntilShutdownCompletes(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	server := &blockingShutdownServer{
+		listening:       make(chan struct{}),
+		shutdownStarted: make(chan struct{}),
+		releaseShutdown: make(chan struct{}),
+	}
+	runtimeClosed := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		defer close(runtimeClosed)
+		done <- serveHTTP(ctx, server, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}()
+	<-server.listening
+	cancel()
+	<-server.shutdownStarted
+	remaining := time.Until(server.shutdownDeadline)
+	if !server.hasDeadline || remaining < 9*time.Second || remaining > 10*time.Second {
+		t.Fatalf("shutdown deadline remaining=%s present=%t", remaining, server.hasDeadline)
+	}
+	select {
+	case <-runtimeClosed:
+		t.Fatal("runtime closed before shutdown completed")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(server.releaseShutdown)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	<-runtimeClosed
+}
+
+func TestServeHTTPReturnsUnexpectedListenErrorWithoutCancellation(t *testing.T) {
+	want := errors.New("listen failed")
+	server := &failedListenServer{err: want}
+	done := make(chan error, 1)
+	go func() {
+		done <- serveHTTP(context.Background(), server, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, want) {
+			t.Fatalf("error=%v, want %v", err, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("listen error deadlocked without cancellation")
+	}
+	if server.shutdownCalled {
+		t.Fatal("shutdown called after listener failed")
+	}
+}
+
+type blockingShutdownServer struct {
+	listening, shutdownStarted, releaseShutdown chan struct{}
+	shutdownDeadline                            time.Time
+	hasDeadline                                 bool
+}
+
+func (server *blockingShutdownServer) ListenAndServe() error {
+	close(server.listening)
+	<-server.shutdownStarted
+	return http.ErrServerClosed
+}
+
+func (server *blockingShutdownServer) Shutdown(ctx context.Context) error {
+	server.shutdownDeadline, server.hasDeadline = ctx.Deadline()
+	close(server.shutdownStarted)
+	<-server.releaseShutdown
+	return nil
+}
+
+type failedListenServer struct {
+	err            error
+	shutdownCalled bool
+}
+
+func (server *failedListenServer) ListenAndServe() error { return server.err }
+func (server *failedListenServer) Shutdown(context.Context) error {
+	server.shutdownCalled = true
+	return nil
+}
 
 func TestDurableSecretReadsAreBounded(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "secret")

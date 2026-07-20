@@ -58,20 +58,41 @@ func run() int {
 		ReadTimeout: 10 * time.Second, ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout: 10 * time.Second, IdleTimeout: time.Minute,
 	}
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			logger.Error("server shutdown failed", "error", err)
-		}
-	}()
 	logger.Info("server listening", "address", settings.ListenAddress)
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := serveHTTP(ctx, server, logger); err != nil {
 		logger.Error("server listen failed", "error", err)
 		return 1
 	}
 	return 0
+}
+
+type shutdownServer interface {
+	ListenAndServe() error
+	Shutdown(context.Context) error
+}
+
+func serveHTTP(ctx context.Context, server shutdownServer, logger *slog.Logger) error {
+	listenDone := make(chan struct{})
+	shutdownDone := make(chan struct{})
+	go func() {
+		defer close(shutdownDone)
+		select {
+		case <-ctx.Done():
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := server.Shutdown(shutdownCtx); err != nil {
+				logger.Error("server shutdown failed", "error", err)
+			}
+		case <-listenDone:
+		}
+	}()
+	err := server.ListenAndServe()
+	close(listenDone)
+	<-shutdownDone
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
 }
 
 func newHandler(settings config.Config) (http.Handler, error) {
