@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
@@ -71,13 +72,12 @@ func TestMilestone2Vertical(t *testing.T) {
 		"package fixture\nconst Needle = \"" + milestoneNeedle + "\"\n",
 	})
 	empty := newSmartGitOrigin(t, ctx, root, "acme/empty", nil)
-	github := newFakeGHES(t, root, primary, empty)
-
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
 	}
 	privateKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)})
+	github := newFakeGHES(t, root, primary, empty, 7, &privateKey.PublicKey)
 	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: github.server.Certificate().Raw})
 	caFile := filepath.Join(root, "github-ca.pem")
 	if err := os.WriteFile(caFile, caPEM, 0o600); err != nil {
@@ -98,6 +98,7 @@ func TestMilestone2Vertical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	github.assertRejectsMutatedCredentials(t, signer)
 	metrics := observability.New()
 	githubClient := githubapp.NewClient(endpoints, httpClient, signer, "2022-11-28", 2<<20, nil, metrics)
 	reconciler := githubapp.NewReconciler(githubClient, database.store)
@@ -227,7 +228,6 @@ func TestMilestone2Vertical(t *testing.T) {
 		t.Fatalf("disabled repository remained searchable: %#v", matches)
 	}
 	assertDisabledRead(t, server, milestoneRepositoryID)
-
 	forbidden := []string{milestoneGitToken, milestoneWebhookSecret, token, string(privateKeyPEM), string(installationBody), "Authorization:", "x-access-token@", "raw-stderr-marker"}
 	assertNoSecrets(t, database.pool, filepath.Join(root, "data"), forbidden...)
 	for _, secret := range forbidden {
@@ -368,12 +368,14 @@ type fakeGHES struct {
 	empty        fakeRepository
 	apiAuth      int
 	gitAuth      int
+	appID        string
+	publicKey    *rsa.PublicKey
 }
 
-func newFakeGHES(t *testing.T, gitRoot string, primary, empty smartGitOrigin) *fakeGHES {
+func newFakeGHES(t *testing.T, gitRoot string, primary, empty smartGitOrigin, appID int64, publicKey *rsa.PublicKey) *fakeGHES {
 	t.Helper()
 	github := &fakeGHES{
-		gitRoot: gitRoot,
+		gitRoot: gitRoot, appID: strconv.FormatInt(appID, 10), publicKey: publicKey,
 		repositories: []fakeRepository{
 			{id: milestoneRepositoryID, name: primary.name, sha: primary.shas[0], content: primary.content, blobSHA: primary.blobSHA},
 		},
@@ -393,8 +395,8 @@ func (github *fakeGHES) serveHTTP(writer http.ResponseWriter, request *http.Requ
 }
 
 func (github *fakeGHES) serveAPI(writer http.ResponseWriter, request *http.Request) {
-	authorization := request.Header.Get("Authorization")
-	if !strings.HasPrefix(authorization, "Bearer ") {
+	appEndpoint := request.URL.Path == "/api/v3/app/installations" || request.URL.Path == "/api/v3/app/installations/10/access_tokens"
+	if !github.validAPIHeaders(request) || appEndpoint != github.validAppAuthorization(request) || (!appEndpoint && !github.validInstallationAuthorization(request)) {
 		writer.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -447,6 +449,63 @@ func (github *fakeGHES) serveAPI(writer http.ResponseWriter, request *http.Reque
 	default:
 		writer.WriteHeader(http.StatusNotFound)
 	}
+}
+
+func (github *fakeGHES) validAPIHeaders(request *http.Request) bool {
+	return request.Header.Get("Accept") == "application/vnd.github+json" &&
+		request.Header.Get("X-GitHub-Api-Version") == "2022-11-28" &&
+		request.Header.Get("User-Agent") != ""
+}
+
+func (github *fakeGHES) validInstallationAuthorization(request *http.Request) bool {
+	values := request.Header.Values("Authorization")
+	return len(values) == 1 && values[0] == "Bearer "+milestoneGitToken
+}
+
+func (github *fakeGHES) validAppAuthorization(request *http.Request) bool {
+	values := request.Header.Values("Authorization")
+	if len(values) != 1 || !strings.HasPrefix(values[0], "Bearer ") {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(values[0], "Bearer "), ".")
+	if len(parts) != 3 {
+		return false
+	}
+	unsigned := parts[0] + "." + parts[1]
+	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return false
+	}
+	hash := sha256.Sum256([]byte(unsigned))
+	if rsa.VerifyPKCS1v15(github.publicKey, crypto.SHA256, hash[:], signature) != nil {
+		return false
+	}
+	var header struct {
+		Algorithm string `json:"alg"`
+		Type      string `json:"typ"`
+	}
+	var claims struct {
+		IssuedAt  int64  `json:"iat"`
+		ExpiresAt int64  `json:"exp"`
+		Issuer    string `json:"iss"`
+	}
+	if !decodeJWTPart(parts[0], &header) || !decodeJWTPart(parts[1], &claims) || header.Algorithm != "RS256" || header.Type != "JWT" || claims.Issuer != github.appID {
+		return false
+	}
+	now := time.Now().Unix()
+	return claims.IssuedAt >= now-2*60 && claims.IssuedAt <= now && claims.ExpiresAt > now && claims.ExpiresAt <= now+10*60 && claims.ExpiresAt-claims.IssuedAt <= 10*60
+}
+
+func decodeJWTPart(part string, target any) bool {
+	data, err := base64.RawURLEncoding.DecodeString(part)
+	if err != nil {
+		return false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(target); err != nil {
+		return false
+	}
+	return decoder.Decode(&struct{}{}) == io.EOF
 }
 
 func (github *fakeGHES) serveGit(writer http.ResponseWriter, request *http.Request) {
@@ -524,6 +583,54 @@ func (github *fakeGHES) assertRequests(t *testing.T) {
 	defer github.mu.Unlock()
 	if github.apiAuth == 0 || github.gitAuth == 0 {
 		t.Fatalf("authenticated API/Git requests = %d/%d", github.apiAuth, github.gitAuth)
+	}
+}
+
+func (github *fakeGHES) assertRejectsMutatedCredentials(t *testing.T, appSigner *githubapp.Signer) {
+	t.Helper()
+	wrongKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(wrongKey)})
+	wrongSigner, err := githubapp.NewSigner(7, wrongPEM, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongJWT, err := wrongSigner.JWT()
+	if err != nil {
+		t.Fatal(err)
+	}
+	appJWT, err := appSigner.JWT()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name, method, path, credential string
+	}{
+		{"wrong signer", http.MethodGet, "/api/v3/app/installations", wrongJWT},
+		{"installation token on App endpoint", http.MethodGet, "/api/v3/app/installations", milestoneGitToken},
+		{"App JWT on installation endpoint", http.MethodGet, "/api/v3/installation/repositories", appJWT},
+		{"wrong installation token", http.MethodGet, "/api/v3/installation/repositories", "wrong-installation-token"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request, err := http.NewRequestWithContext(t.Context(), test.method, github.server.URL+test.path, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set("Authorization", "Bearer "+test.credential)
+			request.Header.Set("Accept", "application/vnd.github+json")
+			request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+			request.Header.Set("User-Agent", "GrepNest-authenticity-mutation")
+			response, err := github.server.Client().Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusUnauthorized)
+			}
+		})
 	}
 }
 
