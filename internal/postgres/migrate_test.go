@@ -84,14 +84,14 @@ func TestMigrateIsConcurrentAndIdempotent(t *testing.T) {
 	if err := Migrate(t.Context(), pool); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"installations", "repositories", "webhook_deliveries", "index_jobs", "search_nodes"} {
+	for _, name := range []string{"installations", "repositories", "webhook_deliveries", "index_jobs", "search_nodes", "scip_uploads", "scip_occurrences", "scip_relationships", "repository_packages"} {
 		var found bool
 		if err := pool.QueryRow(t.Context(), `select to_regclass($1) is not null`, name).Scan(&found); err != nil || !found {
 			t.Fatalf("relation %s: found=%v err=%v", name, found, err)
 		}
 	}
 	var count int
-	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != 2 {
+	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != 3 {
 		t.Fatalf("migrations=%d err=%v", count, err)
 	}
 }
