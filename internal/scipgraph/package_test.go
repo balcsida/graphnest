@@ -45,3 +45,25 @@ func TestParsePackageURLRejectsUnsupportedValues(t *testing.T) {
 		}
 	}
 }
+
+func TestVersionlessSymbolKey(t *testing.T) {
+	first, err := VersionlessSymbolKey("scip gomod example.com/acme/lib v1 pkg/Item#")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := VersionlessSymbolKey("scip gomod example.com/acme/lib v2 pkg/Item#")
+	if err != nil {
+		t.Fatal(err)
+	}
+	different, err := VersionlessSymbolKey("scip gomod example.com/acme/lib v2 pkg/Other#")
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, err := VersionlessSymbolKey("local 0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(first) != string(second) || string(first) == string(different) || local != nil {
+		t.Fatalf("keys = %x, %x, %x; local = %x", first, second, different, local)
+	}
+}

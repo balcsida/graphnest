@@ -225,15 +225,6 @@ func TestPackageReplacementPreservesOtherSources(t *testing.T) {
 	}
 }
 
-func TestPackageCandidateLimitUsesResultBudget(t *testing.T) {
-	if got := packageCandidateLimit(1); got != 2 {
-		t.Fatalf("packageCandidateLimit(1) = %d, want 2", got)
-	}
-	if got := packageCandidateLimit(10); got != 11 {
-		t.Fatalf("packageCandidateLimit(10) = %d, want 11", got)
-	}
-}
-
 func TestDependencyAssistedLocationsRequireDependencyAndPreferManualProvider(t *testing.T) {
 	store := migratedStore(t)
 	originID := seedReadyRepository(t, store, 101, testSHA('a'))
@@ -281,13 +272,14 @@ func TestDependencyAssistedLocationsAreBoundedAndExactFirst(t *testing.T) {
 	originID := seedReadyRepository(t, store, 201, testSHA('a'))
 	firstProviderID := seedReadyRepository(t, store, 202, testSHA('b'))
 	secondProviderID := seedReadyRepository(t, store, 203, testSHA('c'))
-	unauthorizedID := seedReadyRepository(t, store, 204, testSHA('d'))
-	staleID := seedReadyRepository(t, store, 205, testSHA('e'))
+	thirdProviderID := seedReadyRepository(t, store, 204, testSHA('d'))
+	fourthProviderID := seedReadyRepository(t, store, 205, testSHA('e'))
+	unauthorizedID := seedReadyRepository(t, store, 206, testSHA('f'))
+	staleID := seedReadyRepository(t, store, 207, testSHA('1'))
 	const (
 		originSymbol         = "scip gomod example.com/acme/lib v1 pkg/Item#"
-		firstProviderSymbol  = "scip gomod example.com/acme/lib v2 pkg/Item#"
-		secondProviderSymbol = "scip gomod example.com/acme/lib v3 pkg/Item#"
-		wrongDescriptor      = "scip gomod example.com/acme/lib v2 pkg/Other#"
+		thirdProviderSymbol  = "scip gomod example.com/acme/lib v4 pkg/Item#"
+		fourthProviderSymbol = "scip gomod example.com/acme/lib v5 pkg/Item#"
 	)
 	if err := store.ReplaceSCIP(t.Context(), originID, testSHA('a'), scipgraph.Upload{Occurrences: []scipgraph.Occurrence{
 		{Path: "origin.go", Symbol: originSymbol, EndCharacter: 2},
@@ -301,15 +293,14 @@ func TestDependencyAssistedLocationsAreBoundedAndExactFirst(t *testing.T) {
 		version string
 		symbol  string
 	}{
-		{firstProviderID, testSHA('b'), "v2", firstProviderSymbol},
-		{secondProviderID, testSHA('c'), "v3", secondProviderSymbol},
-		{unauthorizedID, testSHA('d'), "v4", "scip gomod example.com/acme/lib v4 pkg/Item#"},
-		{staleID, testSHA('e'), "v5", "scip gomod example.com/acme/lib v5 pkg/Item#"},
+		{firstProviderID, testSHA('b'), "v2", "scip gomod example.com/acme/lib v2 pkg/Other#"},
+		{secondProviderID, testSHA('c'), "v3", "scip gomod example.com/acme/lib v3 pkg/Another#"},
+		{thirdProviderID, testSHA('d'), "v4", thirdProviderSymbol},
+		{fourthProviderID, testSHA('e'), "v5", fourthProviderSymbol},
+		{unauthorizedID, testSHA('f'), "v6", "scip gomod example.com/acme/lib v6 pkg/Item#"},
+		{staleID, testSHA('1'), "v7", "scip gomod example.com/acme/lib v7 pkg/Item#"},
 	} {
 		upload := uploadWith(provider.version+".go", provider.symbol, definitionRole)
-		if provider.id == firstProviderID {
-			upload.Occurrences = append(upload.Occurrences, scipgraph.Occurrence{Path: "wrong.go", Symbol: wrongDescriptor, EndCharacter: 2, Roles: definitionRole})
-		}
 		if err := store.ReplaceSCIP(t.Context(), provider.id, provider.sha, upload); err != nil {
 			t.Fatal(err)
 		}
@@ -320,7 +311,7 @@ func TestDependencyAssistedLocationsAreBoundedAndExactFirst(t *testing.T) {
 	if err := store.ReplacePackages(t.Context(), originID, "manual", []scipgraph.PackageMapping{packageMapping("pkg:golang/example.com/acme/lib@v1", "depends_on", "manual")}); err != nil {
 		t.Fatal(err)
 	}
-	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{201, 202, 203, 205}}
+	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{201, 202, 203, 204, 205, 207}}
 	origin, err := store.OccurrenceAt(t.Context(), originID, testSHA('a'), "origin.go", 0, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -332,7 +323,7 @@ func TestDependencyAssistedLocationsAreBoundedAndExactFirst(t *testing.T) {
 	if err := store.ReplaceSCIP(t.Context(), originID, testSHA('a'), uploadWith("origin.go", originSymbol, 0)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.pool.Exec(t.Context(), "update repositories set indexed_sha=$2 where id=$1", staleID, testSHA('f')); err != nil {
+	if _, err := store.pool.Exec(t.Context(), "update repositories set indexed_sha=$2 where id=$1", staleID, testSHA('2')); err != nil {
 		t.Fatal(err)
 	}
 	origin, err = store.OccurrenceAt(t.Context(), originID, testSHA('a'), "origin.go", 0, 1)
@@ -340,7 +331,7 @@ func TestDependencyAssistedLocationsAreBoundedAndExactFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	locations, truncated, err = store.Locations(t.Context(), principal, origin, "definitions", 1)
-	if err != nil || !truncated || len(locations) != 1 || !locations[0].Approximate || locations[0].Symbol != firstProviderSymbol {
+	if err != nil || !truncated || len(locations) != 1 || !locations[0].Approximate || locations[0].Symbol != thirdProviderSymbol {
 		t.Fatalf("bounded approximate locations = %#v, truncated = %v, err = %v", locations, truncated, err)
 	}
 }

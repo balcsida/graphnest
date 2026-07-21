@@ -4,6 +4,9 @@ import (
 	"errors"
 	"net/url"
 	"strings"
+
+	"github.com/scip-code/scip/bindings/go/scip"
+	"google.golang.org/protobuf/proto"
 )
 
 var errInvalidPackageURL = errors.New("invalid package URL")
@@ -56,4 +59,19 @@ func escapePackageName(value string) string {
 
 func escapePackageComponent(value string) string {
 	return strings.ReplaceAll(url.PathEscape(value), "@", "%40")
+}
+
+func VersionlessSymbolKey(symbol string) ([]byte, error) {
+	parsed, err := scip.ParseSymbol(symbol)
+	if err != nil || parsed.Package == nil {
+		return nil, err
+	}
+	return proto.MarshalOptions{Deterministic: true}.Marshal(&scip.Symbol{
+		Scheme: parsed.Scheme,
+		Package: &scip.Package{
+			Manager: parsed.Package.Manager,
+			Name:    parsed.Package.Name,
+		},
+		Descriptors: parsed.Descriptors,
+	})
 }

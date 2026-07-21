@@ -91,18 +91,28 @@ func TestMigrateIsConcurrentAndIdempotent(t *testing.T) {
 		}
 	}
 	var count int
-	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != 3 {
+	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != 4 {
 		t.Fatalf("migrations=%d err=%v", count, err)
 	}
 	for _, index := range []string{
-		"scip_occurrences_position", "scip_occurrences_symbol",
-		"scip_relationships_source", "scip_relationships_target",
+		"scip_occurrences_position", "scip_occurrences_symbol", "scip_occurrences_global_symbol_key",
+		"scip_relationships_source", "scip_relationships_target", "scip_relationships_target_global_symbol_key",
 		"repository_packages_lookup",
 	} {
 		var found bool
 		if err := pool.QueryRow(t.Context(), `select exists(
 			select 1 from pg_indexes where schemaname=current_schema() and indexname=$1)`, index).Scan(&found); err != nil || !found {
 			t.Fatalf("index %s: found=%v err=%v", index, found, err)
+		}
+	}
+	for _, column := range []struct{ table, name string }{
+		{"scip_occurrences", "global_symbol_key"},
+		{"scip_relationships", "target_global_symbol_key"},
+	} {
+		var found bool
+		if err := pool.QueryRow(t.Context(), `select exists(select 1 from information_schema.columns
+			where table_schema=current_schema() and table_name=$1 and column_name=$2)`, column.table, column.name).Scan(&found); err != nil || !found {
+			t.Fatalf("column %s.%s: found=%v err=%v", column.table, column.name, found, err)
 		}
 	}
 	for _, constraint := range []string{

@@ -29,18 +29,20 @@ func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit stri
 		return err
 	}
 	if _, err := tx.CopyFrom(ctx, pgx.Identifier{"scip_occurrences"},
-		[]string{"upload_id", "path", "start_line", "start_character", "end_line", "end_character", "symbol", "roles", "local"},
+		[]string{"upload_id", "path", "start_line", "start_character", "end_line", "end_character", "symbol", "global_symbol_key", "roles", "local"},
 		pgx.CopyFromSlice(len(upload.Occurrences), func(index int) ([]any, error) {
 			occurrence := upload.Occurrences[index]
-			return []any{uploadID, occurrence.Path, occurrence.StartLine, occurrence.StartCharacter, occurrence.EndLine, occurrence.EndCharacter, occurrence.Symbol, occurrence.Roles, occurrence.Local}, nil
+			key, err := scipgraph.VersionlessSymbolKey(occurrence.Symbol)
+			return []any{uploadID, occurrence.Path, occurrence.StartLine, occurrence.StartCharacter, occurrence.EndLine, occurrence.EndCharacter, occurrence.Symbol, key, occurrence.Roles, occurrence.Local}, err
 		})); err != nil {
 		return err
 	}
 	if _, err := tx.CopyFrom(ctx, pgx.Identifier{"scip_relationships"},
-		[]string{"upload_id", "source_symbol", "target_symbol", "is_definition", "is_reference", "is_implementation", "is_type_definition"},
+		[]string{"upload_id", "source_symbol", "target_symbol", "target_global_symbol_key", "is_definition", "is_reference", "is_implementation", "is_type_definition"},
 		pgx.CopyFromSlice(len(upload.Relationships), func(index int) ([]any, error) {
 			relationship := upload.Relationships[index]
-			return []any{uploadID, relationship.Source, relationship.Target, relationship.Definition, relationship.Reference, relationship.Implementation, relationship.TypeDefinition}, nil
+			key, err := scipgraph.VersionlessSymbolKey(relationship.Target)
+			return []any{uploadID, relationship.Source, relationship.Target, key, relationship.Definition, relationship.Reference, relationship.Implementation, relationship.TypeDefinition}, err
 		})); err != nil {
 		return err
 	}
@@ -168,8 +170,13 @@ func (s *Store) approximateLocations(ctx context.Context, principal authn.Princi
 	if err != nil || parsed.Package == nil || len(principal.RepositoryIDs) == 0 {
 		return []scipgraph.Location{}, false, nil
 	}
+	key, err := scipgraph.VersionlessSymbolKey(origin.Symbol)
+	if err != nil || key == nil {
+		return []scipgraph.Location{}, false, err
+	}
 	rows, err := s.pool.Query(ctx, `with authorized_uploads as (
-		select uploads.id, uploads.repository_id
+		select uploads.id, uploads.repository_id, repositories.github_id,
+			repositories.owner || '/' || repositories.name repository_name, uploads.commit
 		from scip_uploads uploads
 		join repositories on repositories.id=uploads.repository_id and repositories.indexed_sha=uploads.commit
 		join installations on installations.id=repositories.installation_id
@@ -177,81 +184,48 @@ func (s *Store) approximateLocations(ctx context.Context, principal authn.Princi
 		and installations.status='active' and repositories.enabled and not repositories.archived
 	), origin_authorized as (
 		select id from authorized_uploads where id=$3 and repository_id=$4
-	)
-	select distinct uploads.id, provider.version
-	from authorized_uploads uploads
-	join repository_packages provider on provider.repository_id=uploads.repository_id and provider.relation='provides'
-	join repository_packages dependency on dependency.repository_id=$4 and dependency.relation='depends_on'
-		and dependency.manager=$5 and dependency.name=$6 and dependency.version=$7
-	join origin_authorized on true
-	where provider.manager=$5 and provider.name=$6
-	and (provider.source='manual' or not exists (
-		select 1 from authorized_uploads manual_uploads
-		join repository_packages manual on manual.repository_id=manual_uploads.repository_id
-		where manual.source='manual' and manual.relation='provides'
-		and manual.manager=$5 and manual.name=$6
-	))
-	order by uploads.id, provider.version
-	limit $8`, principal.InstallationID, principal.RepositoryIDs, origin.UploadID, origin.RepositoryID,
-		parsed.Package.Manager, parsed.Package.Name, parsed.Package.Version, packageCandidateLimit(max))
-	if err != nil {
-		return nil, false, err
-	}
-	var uploadIDs []int64
-	var symbols []string
-	for rows.Next() {
-		var uploadID int64
-		var version string
-		if err := rows.Scan(&uploadID, &version); err != nil {
-			rows.Close()
-			return nil, false, err
-		}
-		candidate := &scip.Symbol{
-			Scheme:      parsed.Scheme,
-			Package:     &scip.Package{Manager: parsed.Package.Manager, Name: parsed.Package.Name, Version: version},
-			Descriptors: parsed.Descriptors,
-		}
-		uploadIDs = append(uploadIDs, uploadID)
-		symbols = append(symbols, scip.VerboseSymbolFormatter.FormatSymbol(candidate))
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return nil, false, err
-	}
-	rows.Close()
-	if len(uploadIDs) == 0 {
-		return []scipgraph.Location{}, false, nil
-	}
-	rows, err = s.pool.Query(ctx, `with candidates as (
-		select * from unnest($1::bigint[], $2::text[]) candidate(upload_id, symbol)
-	), authorized_uploads as (
-		select uploads.id, repositories.github_id, repositories.owner || '/' || repositories.name repository_name, uploads.commit
-		from scip_uploads uploads
-		join repositories on repositories.id=uploads.repository_id and repositories.indexed_sha=uploads.commit
-		join installations on installations.id=repositories.installation_id
-		where installations.github_id=$3 and repositories.github_id=any($4)
-		and installations.status='active' and repositories.enabled and not repositories.archived
+	), dependency as (
+		select 1 from repository_packages
+		where repository_id=$4 and relation='depends_on'
+		and manager=$5 and name=$6 and version=$7
+	), providers as (
+		select distinct uploads.id
+		from authorized_uploads uploads
+		join repository_packages provider on provider.repository_id=uploads.repository_id and provider.relation='provides'
+		join dependency on true
+		join origin_authorized on true
+		where provider.manager=$5 and provider.name=$6
+		and (provider.source='manual' or not exists (
+			select 1 from authorized_uploads manual_uploads
+			join repository_packages manual on manual.repository_id=manual_uploads.repository_id
+			where manual.source='manual' and manual.relation='provides'
+			and manual.manager=$5 and manual.name=$6
+		))
 	), matches as (
-		select occurrences.* from scip_occurrences occurrences
-		join candidates on candidates.upload_id=occurrences.upload_id and candidates.symbol=occurrences.symbol
-		where $5 in ('definitions', 'references')
+		select occurrences.* from providers
+		join scip_occurrences occurrences on occurrences.upload_id=providers.id
+			and occurrences.global_symbol_key=$8
+		where $9 in ('definitions', 'references')
 		union all
-		select occurrences.* from scip_relationships relationships
-		join candidates on candidates.upload_id=relationships.upload_id and candidates.symbol=relationships.target_symbol
-		join scip_occurrences occurrences on occurrences.upload_id=relationships.upload_id and occurrences.symbol=relationships.source_symbol
-		where $5='implementations' and relationships.is_implementation
+		select occurrences.* from providers
+		join scip_relationships relationships on relationships.upload_id=providers.id
+			and relationships.target_global_symbol_key=$8 and relationships.is_implementation
+		join scip_occurrences occurrences on occurrences.upload_id=relationships.upload_id
+			and occurrences.symbol=relationships.source_symbol
+		where $9='implementations'
 	)
 	select authorized_uploads.github_id, authorized_uploads.repository_name, authorized_uploads.commit,
 		matches.path, matches.start_line, matches.start_character, matches.end_line,
 		matches.end_character, matches.symbol, matches.roles
 	from matches join authorized_uploads on authorized_uploads.id=matches.upload_id
-	where case $5 when 'definitions' then matches.roles & 1 <> 0
+	where case $9 when 'definitions' then matches.roles & 1 <> 0
 		when 'references' then matches.roles & 1 = 0
 		when 'implementations' then matches.roles & 1 <> 0
 		else false end
 	order by authorized_uploads.github_id, matches.path, matches.start_line, matches.start_character,
 		matches.end_line, matches.end_character, matches.symbol, matches.id
-	limit $6`, uploadIDs, symbols, principal.InstallationID, principal.RepositoryIDs, operation, max+1)
+	limit $10`, principal.InstallationID, principal.RepositoryIDs, origin.UploadID, origin.RepositoryID,
+		parsed.Package.Manager, parsed.Package.Name, parsed.Package.Version, key, operation, max+1)
 	if err != nil {
 		return nil, false, err
 	}
@@ -275,8 +249,4 @@ func (s *Store) approximateLocations(ctx context.Context, principal authn.Princi
 		locations = locations[:max]
 	}
 	return locations, truncated, nil
-}
-
-func packageCandidateLimit(max int) int {
-	return max + 1
 }
