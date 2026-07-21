@@ -9,6 +9,7 @@ import (
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/jackc/pgx/v5"
 )
 
 const defaultMaxResults = 100
@@ -47,7 +48,11 @@ func (service *Service) Upload(ctx context.Context, principal authn.Principal, r
 	if err != nil {
 		return err
 	}
-	return service.Store.ReplaceSCIP(ctx, repository.ID, commit, upload)
+	err = service.Store.ReplaceSCIP(ctx, repository.ID, commit, upload)
+	if errors.Is(err, ErrStaleIndex) {
+		return ErrNotIndexed
+	}
+	return err
 }
 
 func (service *Service) Navigate(ctx context.Context, principal authn.Principal, request api.SCIPNavigationRequest) (api.SCIPNavigationResponse, error) {
@@ -62,8 +67,11 @@ func (service *Service) Navigate(ctx context.Context, principal authn.Principal,
 		return api.SCIPNavigationResponse{}, ErrNotIndexed
 	}
 	origin, err := service.Store.OccurrenceAt(ctx, repository.ID, repository.IndexedSHA, request.Path, request.Line-1, request.Character)
-	if err != nil {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return api.SCIPNavigationResponse{}, ErrNotIndexed
+	}
+	if err != nil {
+		return api.SCIPNavigationResponse{}, err
 	}
 	locations, truncated, err := service.Store.Locations(ctx, principal, origin, request.Operation, service.maxResults())
 	if err != nil {

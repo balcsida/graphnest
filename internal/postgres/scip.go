@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/scipgraph"
@@ -17,6 +18,9 @@ func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit stri
 	defer tx.Rollback(ctx)
 
 	if err := tx.QueryRow(ctx, `select id from repositories where id=$1 and indexed_sha=$2 for update`, repositoryID, commit).Scan(&repositoryID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return scipgraph.ErrStaleIndex
+		}
 		return err
 	}
 	if _, err := tx.Exec(ctx, `delete from scip_uploads where repository_id=$1`, repositoryID); err != nil {

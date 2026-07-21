@@ -35,7 +35,7 @@ func TestReplaceSCIPIsAtomicAndCurrent(t *testing.T) {
 		t.Fatalf("stale occurrence err = %v", err)
 	}
 
-	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('b'), uploadWith("stale.go", globalSymbol, definitionRole)); !errors.Is(err, pgx.ErrNoRows) {
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('b'), uploadWith("stale.go", globalSymbol, definitionRole)); !errors.Is(err, scipgraph.ErrStaleIndex) {
 		t.Fatalf("stale replacement err = %v", err)
 	}
 	if occurrence, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "b.go", 0, 1); err != nil || occurrence.Path != "b.go" {
@@ -48,6 +48,26 @@ func TestReplaceSCIPIsAtomicAndCurrent(t *testing.T) {
 	}
 	if occurrence, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "b.go", 0, 1); err != nil || occurrence.Path != "b.go" {
 		t.Fatalf("occurrence after rollback = %#v, err = %v", occurrence, err)
+	}
+}
+
+func TestOccurrenceAtReturnsSmallestContainingRange(t *testing.T) {
+	store := migratedStore(t)
+	repositoryID := seedReadyRepository(t, store, 101, testSHA('a'))
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), scipgraph.Upload{Occurrences: []scipgraph.Occurrence{
+		{Path: "a.go", Symbol: globalSymbol, StartLine: 0, StartCharacter: 0, EndLine: 10, EndCharacter: 0},
+		{Path: "a.go", Symbol: globalSymbol, StartLine: 2, StartCharacter: 1, EndLine: 2, EndCharacter: 8},
+		{Path: "a.go", Symbol: globalSymbol, StartLine: 2, StartCharacter: 2, EndLine: 2, EndCharacter: 6},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	occurrence, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "a.go", 2, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if occurrence.StartLine != 2 || occurrence.StartCharacter != 2 || occurrence.EndLine != 2 || occurrence.EndCharacter != 6 {
+		t.Fatalf("OccurrenceAt() = %#v", occurrence)
 	}
 }
 

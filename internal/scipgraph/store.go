@@ -1,5 +1,9 @@
 package scipgraph
 
+import "errors"
+
+var ErrStaleIndex = errors.New("stale SCIP index")
+
 type StoredOccurrence struct {
 	UploadID, RepositoryID                           int64
 	Commit, Path, Symbol                             string
