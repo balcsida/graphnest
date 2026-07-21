@@ -31,7 +31,7 @@ button,input,summary{font:inherit}input,button,summary{min-height:44px;border:1p
 </form>
 <main>
 <section id="token-gate" aria-labelledby="token-title"><form id="token-form" class="token-panel"><p class="eyebrow">Private code search</p><h1 id="token-title">Connect to GrepNest</h1><p>Use a bearer token for this browser session.</p><label for="token">Bearer token</label><input id="token" type="password" autocomplete="off" required><button type="submit">Open GrepNest</button></form></section>
-<section id="workspace" hidden><aside class="context-rail" aria-label="Search context"><strong id="result-count">No search yet</strong><p id="repository-count">All authorized repositories</p><h2>Query examples</h2><code>file:\.go NewService</code><code>case:yes GrepNest</code></aside><section class="results-panel" aria-labelledby="results-title"><header class="results-summary"><h1 id="results-title">Code results</h1><p id="status" role="status" aria-live="polite" aria-atomic="true"></p></header><div id="error" hidden></div><div id="results"></div></section></section>
+<section id="workspace" hidden><aside class="context-rail" aria-label="Search context"><strong id="result-count">No search yet</strong><p id="repository-count">All authorized repositories</p><h2>Query examples</h2><code>file:\.go NewService</code><code>case:yes GrepNest</code></aside><section class="results-panel" aria-labelledby="results-title"><header class="results-summary"><h1 id="results-title">Code results</h1><p id="status" role="status" aria-live="polite" aria-atomic="true"></p></header><div id="error" role="alert" aria-live="assertive" aria-atomic="true" hidden></div><div id="results"></div></section></section>
 </main>
 <script>
 "use strict";

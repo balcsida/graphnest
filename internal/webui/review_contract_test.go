@@ -26,6 +26,13 @@ func TestConsoleShowsStructuredAPIErrorWithoutClearingQuery(t *testing.T) {
 	}
 }
 
+func TestConsoleAnnouncesSearchErrors(t *testing.T) {
+	want := `<div id="error" role="alert" aria-live="assertive" aria-atomic="true" hidden></div>`
+	if !bytes.Contains(document, []byte(want)) {
+		t.Fatalf("console is missing assertive atomic error announcement %q", want)
+	}
+}
+
 func TestConsoleMatchesApprovedSearchWorkspaceContract(t *testing.T) {
 	for _, want := range []string{
 		`:root{--ink:#172033;--canvas:#F6F8FA;--surface:#FFFFFF;--border:#D8DEE8;--signal:#2563EB;--match:#FFE08A;`,
