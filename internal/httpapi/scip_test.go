@@ -3,7 +3,6 @@ package httpapi
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -14,7 +13,6 @@ import (
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/internal/scipgraph"
-	"github.com/grepnest/grepnest/pkg/api"
 	"github.com/jackc/pgx/v5"
 	"github.com/scip-code/scip/bindings/go/scip"
 	"google.golang.org/protobuf/proto"
@@ -62,40 +60,65 @@ func TestSCIPUploadAcceptsValidIndex(t *testing.T) {
 	}
 }
 
-func TestSCIPJSONRoutesAreStrictAndAuthenticated(t *testing.T) {
+func TestSCIPUploadRejectsNonAdministratorWithoutReadingBody(t *testing.T) {
+	reader := &recordingReader{}
+	request := httptest.NewRequest(http.MethodPost, "/v1/scip/uploads?repository_id=101&commit="+scipTestSHA, reader)
+	request.Header.Set("Authorization", "Bearer user")
+	request.Header.Set("Content-Type", "application/vnd.scip+protobuf")
+	response := httptest.NewRecorder()
+	scipHandler(&scipStoreStub{repository: scipRepository()}, 64).ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || reader.reads != 0 {
+		t.Fatalf("status = %d, body reads = %d", response.Code, reader.reads)
+	}
+}
+
+func TestSCIPJSONRouteContracts(t *testing.T) {
 	store := &scipStoreStub{repository: scipRepository(), locations: []scipgraph.Location{{
 		RepositoryID: 101, RepositoryName: "acme/one", Commit: scipTestSHA, Path: "target.go", Symbol: "sym", StartLine: 4,
 	}}}
-	handler := scipHandler(store, 64)
-
-	navigation := []byte(`{"repository_id":101,"path":"main.go","line":1,"character":0,"operation":"definitions"}`)
-	response := scipRequest(handler, http.MethodPost, "/v1/scip/navigation", navigation, "user", "application/json")
-	if response.Code != http.StatusOK {
-		t.Fatalf("navigation status = %d, body = %q", response.Code, response.Body.String())
+	reader := &scipDependencyReader{}
+	handler := newSCIPHandler(store, reader, 256, 64)
+	routes := []struct {
+		name, path, method, token, valid, unknown string
+		want                                      int
+	}{
+		{"navigation", "/v1/scip/navigation", http.MethodPost, "user", `{"repository_id":101,"path":"main.go","line":1,"character":0,"operation":"definitions"}`, `{"repository_id":101,"path":"main.go","line":1,"character":0,"operation":"definitions","extra":true}`, http.StatusOK},
+		{"manual dependencies", "/v1/scip/dependencies", http.MethodPut, "admin", `{"repository_id":101,"provides":[],"depends_on":[]}`, `{"repository_id":101,"provides":[],"depends_on":[],"extra":true}`, http.StatusNoContent},
+		{"GitHub dependencies", "/v1/scip/dependencies/github", http.MethodPost, "admin", `{"repository_id":101}`, `{"repository_id":101,"extra":true}`, http.StatusOK},
 	}
-	var got api.SCIPNavigationResponse
-	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil || len(got.Locations) != 1 || got.Locations[0].Path != "target.go" {
-		t.Fatalf("navigation = %#v, err = %v", got, err)
+	for _, route := range routes {
+		t.Run(route.name, func(t *testing.T) {
+			for _, test := range []struct {
+				name, method, token, contentType, body string
+				want                                   int
+			}{
+				{"allowed method", route.method, route.token, "application/json", route.valid, route.want},
+				{"rejected method", alternateMethod(route.method), route.token, "application/json", route.valid, http.StatusMethodNotAllowed},
+				{"exact content type", route.method, route.token, "application/json; charset=utf-8", route.valid, http.StatusUnsupportedMediaType},
+				{"unknown JSON", route.method, route.token, "application/json", route.unknown, http.StatusBadRequest},
+				{"trailing JSON", route.method, route.token, "application/json", route.valid + ` {}`, http.StatusBadRequest},
+				{"body cap", route.method, route.token, "application/json", strings.Repeat(" ", 257), http.StatusRequestEntityTooLarge},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					response := scipRequest(handler, test.method, route.path, []byte(test.body), test.token, test.contentType)
+					if response.Code != test.want {
+						t.Fatalf("status = %d, want %d, body = %q", response.Code, test.want, response.Body.String())
+					}
+					if test.want == http.StatusMethodNotAllowed && response.Header().Get("Allow") != route.method {
+						t.Fatalf("Allow = %q, want %q", response.Header().Get("Allow"), route.method)
+					}
+				})
+			}
+		})
 	}
-
-	for _, body := range [][]byte{
-		[]byte(`{"repository_id":101,"path":"main.go","line":1,"character":0,"operation":"definitions","extra":true}`),
-		append(navigation, []byte(` {}`)...),
-	} {
-		response = scipRequest(handler, http.MethodPost, "/v1/scip/navigation", body, "user", "application/json")
-		if response.Code != http.StatusBadRequest {
-			t.Fatalf("strict JSON status = %d, body = %q", response.Code, response.Body.String())
+	if store.replacePackagesCalls != 2 || reader.calls != 1 {
+		t.Fatalf("metadata writes = %d, GitHub reads = %d", store.replacePackagesCalls, reader.calls)
+	}
+	for _, route := range routes[1:] {
+		response := scipRequest(handler, route.method, route.path, []byte(`{`), "user", "application/json")
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("non-admin %s status = %d", route.name, response.Code)
 		}
-	}
-
-	dependencies := []byte(`{"repository_id":101,"provides":[],"depends_on":[]}`)
-	response = scipRequest(handler, http.MethodPut, "/v1/scip/dependencies", dependencies, "user", "application/json")
-	if response.Code != http.StatusForbidden {
-		t.Fatalf("dependencies status = %d", response.Code)
-	}
-	response = scipRequest(handler, http.MethodPost, "/v1/scip/dependencies/github", []byte(`{"repository_id":101}`), "user", "application/json")
-	if response.Code != http.StatusForbidden {
-		t.Fatalf("GitHub dependencies status = %d", response.Code)
 	}
 }
 
@@ -123,6 +146,7 @@ func TestSCIPErrorClassification(t *testing.T) {
 		{"invalid request", scipgraph.ErrInvalidRequest, http.StatusBadRequest},
 		{"invalid index", scipgraph.ErrInvalidIndex, http.StatusBadRequest},
 		{"not indexed", scipgraph.ErrNotIndexed, http.StatusConflict},
+		{"stale index", scipgraph.ErrStaleIndex, http.StatusConflict},
 		{"missing repository", pgx.ErrNoRows, http.StatusNotFound},
 		{"backend", errors.New("secret backend"), http.StatusServiceUnavailable},
 	} {
@@ -137,12 +161,30 @@ func TestSCIPErrorClassification(t *testing.T) {
 }
 
 func scipHandler(store *scipStoreStub, maxUpload int64) http.Handler {
+	return newSCIPHandler(store, &scipDependencyReader{}, 1024, maxUpload)
+}
+
+func newSCIPHandler(store *scipStoreStub, reader *scipDependencyReader, maxJSON, maxUpload int64) http.Handler {
 	mux := http.NewServeMux()
 	RegisterSCIP(mux, authn.NewStatic(map[string]authn.Principal{
 		"user":  {InstallationID: 10, RepositoryIDs: []int64{101}},
 		"admin": {InstallationID: 10, RepositoryIDs: []int64{101}, Administrator: true},
-	}), &scipgraph.Service{Store: store, GitHub: scipDependencyReader{}}, 1024, maxUpload, 1024)
+	}), &scipgraph.Service{Store: store, GitHub: reader}, maxJSON, maxUpload, 1024)
 	return mux
+}
+
+func alternateMethod(method string) string {
+	if method == http.MethodPost {
+		return http.MethodPut
+	}
+	return http.MethodPost
+}
+
+type recordingReader struct{ reads int }
+
+func (reader *recordingReader) Read([]byte) (int, error) {
+	reader.reads++
+	return 0, errors.New("body must not be read")
 }
 
 func scipRequest(handler http.Handler, method, target string, body []byte, token, contentType string) *httptest.ResponseRecorder {
@@ -159,9 +201,10 @@ func scipRepository() repository.Repository {
 }
 
 type scipStoreStub struct {
-	repository     repository.Repository
-	locations      []scipgraph.Location
-	replacedCommit string
+	repository           repository.Repository
+	locations            []scipgraph.Location
+	replacedCommit       string
+	replacePackagesCalls int
 }
 
 func (store *scipStoreStub) AuthorizedRepository(_ context.Context, _ int64, ids []int64, id int64) (repository.Repository, error) {
@@ -180,12 +223,15 @@ func (*scipStoreStub) OccurrenceAt(context.Context, int64, string, string, int, 
 func (store *scipStoreStub) Locations(context.Context, authn.Principal, scipgraph.StoredOccurrence, string, int) ([]scipgraph.Location, bool, error) {
 	return store.locations, false, nil
 }
-func (*scipStoreStub) ReplacePackages(context.Context, int64, string, []scipgraph.PackageMapping) error {
+
+func (store *scipStoreStub) ReplacePackages(context.Context, int64, string, []scipgraph.PackageMapping) error {
+	store.replacePackagesCalls++
 	return nil
 }
 
-type scipDependencyReader struct{}
+type scipDependencyReader struct{ calls int }
 
-func (scipDependencyReader) DependencySBOM(context.Context, int64, string, string) (githubapp.SBOM, bool, error) {
-	return githubapp.SBOM{}, false, nil
+func (reader *scipDependencyReader) DependencySBOM(context.Context, int64, string, string) (githubapp.SBOM, bool, error) {
+	reader.calls++
+	return githubapp.SBOM{}, true, nil
 }

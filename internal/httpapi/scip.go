@@ -27,7 +27,7 @@ type scipRepositoryRequest struct {
 }
 
 func RegisterSCIP(mux *http.ServeMux, authenticator authn.Authenticator, service *scipgraph.Service, maxRequestBytes, maxUploadBytes, maxResponseBytes int64) {
-	mux.Handle("/v1/scip/uploads", exactMethod(http.MethodPost, AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	mux.Handle("/v1/scip/uploads", exactMethod(http.MethodPost, AuthenticateBearer(authenticator, administratorOnly(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Header.Get("Content-Type") != "application/vnd.scip+protobuf" {
 			writeError(writer, http.StatusUnsupportedMediaType, "invalid_request", "request is invalid", false)
 			return
@@ -53,7 +53,7 @@ func RegisterSCIP(mux *http.ServeMux, authenticator authn.Authenticator, service
 			return
 		}
 		writer.WriteHeader(http.StatusNoContent)
-	}))))
+	})))))
 
 	mux.Handle("/v1/scip/navigation", exactMethod(http.MethodPost, AuthenticateBearer(authenticator, jsonSCIPHandler(maxRequestBytes, func(writer http.ResponseWriter, request *http.Request, input api.SCIPNavigationRequest) {
 		response, err := service.Navigate(request.Context(), PrincipalFromContext(request.Context()), input)
@@ -63,7 +63,7 @@ func RegisterSCIP(mux *http.ServeMux, authenticator authn.Authenticator, service
 		}
 		writeBoundedJSON(writer, response, maxResponseBytes)
 	}))))
-	mux.Handle("/v1/scip/dependencies", exactMethod(http.MethodPut, AuthenticateBearer(authenticator, jsonSCIPHandler(maxRequestBytes, func(writer http.ResponseWriter, request *http.Request, input scipDependenciesRequest) {
+	mux.Handle("/v1/scip/dependencies", exactMethod(http.MethodPut, AuthenticateBearer(authenticator, administratorOnly(jsonSCIPHandler(maxRequestBytes, func(writer http.ResponseWriter, request *http.Request, input scipDependenciesRequest) {
 		if input.RepositoryID < 1 {
 			writeSCIPError(writer, scipgraph.ErrInvalidRequest)
 			return
@@ -73,8 +73,8 @@ func RegisterSCIP(mux *http.ServeMux, authenticator authn.Authenticator, service
 			return
 		}
 		writer.WriteHeader(http.StatusNoContent)
-	}))))
-	mux.Handle("/v1/scip/dependencies/github", exactMethod(http.MethodPost, AuthenticateBearer(authenticator, jsonSCIPHandler(maxRequestBytes, func(writer http.ResponseWriter, request *http.Request, input scipRepositoryRequest) {
+	})))))
+	mux.Handle("/v1/scip/dependencies/github", exactMethod(http.MethodPost, AuthenticateBearer(authenticator, administratorOnly(jsonSCIPHandler(maxRequestBytes, func(writer http.ResponseWriter, request *http.Request, input scipRepositoryRequest) {
 		if input.RepositoryID < 1 {
 			writeSCIPError(writer, scipgraph.ErrInvalidRequest)
 			return
@@ -85,7 +85,17 @@ func RegisterSCIP(mux *http.ServeMux, authenticator authn.Authenticator, service
 			return
 		}
 		writeBoundedJSON(writer, response, maxResponseBytes)
-	}))))
+	})))))
+}
+
+func administratorOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if !PrincipalFromContext(request.Context()).Administrator {
+			writeSCIPError(writer, scipgraph.ErrForbidden)
+			return
+		}
+		next.ServeHTTP(writer, request)
+	})
 }
 
 func jsonSCIPHandler[T any](maxBytes int64, handle func(http.ResponseWriter, *http.Request, T)) http.Handler {

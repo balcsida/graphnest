@@ -108,6 +108,17 @@ func NewWithLimits(service *search.Service, repositories *repository.Service, li
 	if scip != nil {
 		mcp.AddTool(server, &mcp.Tool{
 			Name: "navigate_symbol", Description: "Navigate to definitions, references, or implementations for a source symbol.",
+			InputSchema: map[string]any{
+				"type": "object", "additionalProperties": false,
+				"required": []string{"repository_id", "path", "line", "character", "operation"},
+				"properties": map[string]any{
+					"repository_id": positiveIntegerSchema("GitHub repository ID"),
+					"path":          map[string]any{"type": "string", "minLength": 1, "description": "repository-relative source path"},
+					"line":          positiveIntegerSchema("one-based source line"),
+					"character":     map[string]any{"type": "integer", "minimum": 0, "description": "zero-based source character"},
+					"operation":     map[string]any{"type": "string", "enum": []string{"definitions", "references", "implementations"}},
+				},
+			},
 		}, func(ctx context.Context, _ *mcp.CallToolRequest, input api.SCIPNavigationRequest) (*mcp.CallToolResult, api.SCIPNavigationResponse, error) {
 			response, err := scip.Navigate(ctx, httpapi.PrincipalFromContext(ctx), input)
 			if err != nil {
