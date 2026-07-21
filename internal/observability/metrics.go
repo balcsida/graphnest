@@ -81,7 +81,7 @@ func (metrics *Metrics) ObserveBackend(duration time.Duration, err error) {
 }
 
 func (metrics *Metrics) ObserveGitHub(operation, result string) {
-	metrics.githubRequests.WithLabelValues(fixed(operation, "installation_token", "installations", "repositories", "default_branch", "contents"), successOrError(result)).Inc()
+	metrics.githubRequests.WithLabelValues(fixed(operation, "installation_token", "installations", "repositories", "default_branch", "contents", "dependency_sbom"), successOrError(result)).Inc()
 }
 
 func (metrics *Metrics) ObserveWebhook(event, result string) {

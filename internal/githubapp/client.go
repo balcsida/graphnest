@@ -192,7 +192,8 @@ func (c *Client) doInstallationJSON(ctx context.Context, operation string, insta
 			return "", err
 		}
 		link, err := c.doJSON(ctx, operation, http.MethodGet, endpoint, nil, "Bearer "+token.Value, limit, target)
-		if !errors.Is(err, errUnauthorized) || attempt == 1 {
+		var statusError HTTPStatusError
+		if !errors.As(err, &statusError) || statusError.StatusCode != http.StatusUnauthorized || attempt == 1 {
 			return link, err
 		}
 		c.mu.Lock()
@@ -202,7 +203,13 @@ func (c *Client) doInstallationJSON(ctx context.Context, operation string, insta
 	panic("unreachable")
 }
 
-var errUnauthorized = errors.New("GitHub API status 401")
+type HTTPStatusError struct {
+	StatusCode int
+}
+
+func (err HTTPStatusError) Error() string {
+	return fmt.Sprintf("GitHub API status %d", err.StatusCode)
+}
 
 func (c *Client) doJSON(ctx context.Context, operation, method string, endpoint *url.URL, body []byte, authorization string, limit int64, target any) (link string, resultErr error) {
 	result := "error"
@@ -225,10 +232,7 @@ func (c *Client) doJSON(ctx context.Context, operation, method string, endpoint 
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		if response.StatusCode == http.StatusUnauthorized {
-			return "", errUnauthorized
-		}
-		return "", fmt.Errorf("GitHub API status %d", response.StatusCode)
+		return "", HTTPStatusError{StatusCode: response.StatusCode}
 	}
 	reader := io.LimitReader(response.Body, limit+1)
 	data, err := io.ReadAll(reader)

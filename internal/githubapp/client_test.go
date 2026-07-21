@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -40,7 +41,7 @@ func TestClientRecordsBoundedRequestMetrics(t *testing.T) {
 }
 
 func TestClientRecordsEveryFixedOperationResultOnce(t *testing.T) {
-	for _, operation := range []string{"installation_token", "installations", "repositories", "default_branch", "contents"} {
+	for _, operation := range []string{"installation_token", "installations", "repositories", "default_branch", "contents", "dependency_sbom"} {
 		for _, result := range []string{"success", "error"} {
 			t.Run(operation+" "+result, func(t *testing.T) {
 				now := time.Date(2026, time.July, 18, 12, 0, 0, 0, time.UTC)
@@ -61,6 +62,8 @@ func TestClientRecordsEveryFixedOperationResultOnce(t *testing.T) {
 						fmt.Fprint(w, `{"commit":{"sha":"abc"}}`)
 					case "contents":
 						fmt.Fprint(w, `{"type":"file","encoding":"base64","content":"YQ==","sha":"blob","size":1}`)
+					case "dependency_sbom":
+						fmt.Fprint(w, `{"sbom":{"SPDXID":"SPDXRef-DOCUMENT"}}`)
 					default:
 						t.Fatalf("unexpected path %q", r.URL.EscapedPath())
 					}
@@ -99,6 +102,8 @@ func githubRequestOperation(path string) string {
 		return "default_branch"
 	case strings.Contains(path, "/contents/"):
 		return "contents"
+	case strings.HasSuffix(path, "/dependency-graph/sbom"):
+		return "dependency_sbom"
 	default:
 		return ""
 	}
@@ -120,6 +125,9 @@ func callGitHubOperation(ctx context.Context, client *Client, operation string) 
 		return err
 	case "contents":
 		_, err := client.ReadContents(ctx, 9, "owner", "repo", "README.md", "abc", 1024)
+		return err
+	case "dependency_sbom":
+		_, _, err := client.DependencySBOM(ctx, 9, "owner", "repo")
 		return err
 	default:
 		return fmt.Errorf("unknown operation %q", operation)
@@ -308,13 +316,17 @@ func TestClientBoundsResponsesAndKeepsErrorsSafe(t *testing.T) {
 	}))
 	defer server.Close()
 	now := time.Date(2026, time.July, 18, 12, 0, 0, 0, time.UTC)
-	client := testClient(t, server, &now, 32)
+	client := testClient(t, server, &now, 1024)
 	_, err := client.DefaultBranchSHA(context.Background(), 9, "o", "r", "main")
 	if err == nil {
 		t.Fatal("expected error")
 	}
 	if strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), bodySecret) {
 		t.Fatalf("unsafe error = %q", err)
+	}
+	var statusError HTTPStatusError
+	if !errors.As(err, &statusError) || statusError.StatusCode != http.StatusForbidden || err.Error() != "GitHub API status 403" {
+		t.Fatalf("status error = %#v, %v", statusError, err)
 	}
 
 	large := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

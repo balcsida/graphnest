@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/pkg/api"
 )
@@ -27,9 +28,66 @@ type ServiceStore interface {
 	ReplacePackages(context.Context, int64, string, []PackageMapping) error
 }
 
+type DependencyReader interface {
+	DependencySBOM(context.Context, int64, string, string) (githubapp.SBOM, bool, error)
+}
+
 type Service struct {
 	Store      ServiceStore
+	GitHub     DependencyReader
 	MaxResults int
+}
+
+func (service *Service) RefreshGitHubDependencies(ctx context.Context, principal authn.Principal, repositoryID int64) (api.DependencyRefreshResponse, error) {
+	if !principal.Administrator {
+		return api.DependencyRefreshResponse{}, ErrForbidden
+	}
+	repository, err := service.authorizedRepository(ctx, principal, repositoryID)
+	if err != nil {
+		return api.DependencyRefreshResponse{}, err
+	}
+	owner, name, ok := strings.Cut(repository.Name, "/")
+	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
+		return api.DependencyRefreshResponse{}, ErrInvalidRequest
+	}
+	sbom, available, err := service.GitHub.DependencySBOM(ctx, repository.InstallationID, owner, name)
+	if err != nil || !available {
+		return api.DependencyRefreshResponse{Available: available}, err
+	}
+
+	packages := make(map[string][]Package, len(sbom.Packages))
+	for _, item := range sbom.Packages {
+		for _, purl := range item.PURLs {
+			pkg, err := ParsePackageURL(purl)
+			if err == nil {
+				packages[item.SPDXID] = append(packages[item.SPDXID], pkg)
+			}
+		}
+	}
+	seen := make(map[string]struct{})
+	mappings := make([]PackageMapping, 0)
+	add := func(ids []string, relation string) {
+		for _, id := range ids {
+			for _, pkg := range packages[id] {
+				key := relation + "\x00" + pkg.PURL
+				if _, ok := seen[key]; ok {
+					continue
+				}
+				seen[key] = struct{}{}
+				mappings = append(mappings, PackageMapping{Package: pkg, Relation: relation, Source: "github"})
+			}
+		}
+	}
+	add(sbom.DocumentDescribes, "provides")
+	for _, relationship := range sbom.Relationships {
+		if relationship.Type == "DEPENDS_ON" {
+			add([]string{relationship.RelatedSPDXElement}, "depends_on")
+		}
+	}
+	if err := service.Store.ReplacePackages(ctx, repository.ID, "github", mappings); err != nil {
+		return api.DependencyRefreshResponse{}, err
+	}
+	return api.DependencyRefreshResponse{Available: true, Packages: len(mappings)}, nil
 }
 
 func (service *Service) Upload(ctx context.Context, principal authn.Principal, repositoryID int64, commit string, data []byte) error {

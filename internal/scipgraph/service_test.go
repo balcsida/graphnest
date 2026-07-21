@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/pkg/api"
 	"github.com/scip-code/scip/bindings/go/scip"
@@ -175,6 +176,76 @@ func TestSetDependenciesRequiresScopedAdministratorAndMapsPURLs(t *testing.T) {
 	}
 }
 
+func TestRefreshGitHubDependenciesAuthorizesAndMapsSBOM(t *testing.T) {
+	repo := serviceRepository
+	repo.InstallationID, repo.Name = 10, "acme/repo"
+	store := &fakeStore{repositories: map[int64]repository.Repository{101: repo}}
+	reader := &dependencyReader{sbom: githubapp.SBOM{
+		DocumentSPDXID:    "SPDXRef-DOCUMENT",
+		DocumentDescribes: []string{"SPDXRef-root"},
+		Packages: []githubapp.SBOMPackage{
+			{SPDXID: "SPDXRef-root", PURLs: []string{"pkg:golang/example.com/acme/app@v1", "bad"}},
+			{SPDXID: "SPDXRef-dep", PURLs: []string{"pkg:npm/acme@1.0.0", "pkg:npm/acme@1.0.0"}},
+		},
+		Relationships: []githubapp.SBOMRelationship{{SPDXElementID: "SPDXRef-root", Type: "DEPENDS_ON", RelatedSPDXElement: "SPDXRef-dep"}},
+	}, available: true}
+	service := Service{Store: store, GitHub: reader}
+
+	if _, err := service.RefreshGitHubDependencies(t.Context(), userPrincipal, 101); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("ordinary refresh error = %v", err)
+	}
+	if _, err := service.RefreshGitHubDependencies(t.Context(), adminPrincipal, 102); !errors.Is(err, errUnauthorizedRepository) {
+		t.Fatalf("unscoped refresh error = %v", err)
+	}
+	response, err := service.RefreshGitHubDependencies(t.Context(), adminPrincipal, 101)
+	if err != nil || !response.Available || response.Packages != 2 {
+		t.Fatalf("RefreshGitHubDependencies() = %#v, %v", response, err)
+	}
+	if reader.installationID != 10 || reader.owner != "acme" || reader.name != "repo" {
+		t.Fatalf("DependencySBOM() = installation %d %q/%q", reader.installationID, reader.owner, reader.name)
+	}
+	if store.packagesRepositoryID != 1 || store.packagesSource != "github" || len(store.packages) != 2 || store.packages[0].Relation != "provides" || store.packages[1].Relation != "depends_on" {
+		t.Fatalf("ReplacePackages() = repository %d source %q mappings %#v", store.packagesRepositoryID, store.packagesSource, store.packages)
+	}
+}
+
+func TestRefreshGitHubDependenciesPreservesRowsWhenUnavailable(t *testing.T) {
+	repo := serviceRepository
+	repo.InstallationID, repo.Name = 10, "acme/repo"
+	store := &fakeStore{repositories: map[int64]repository.Repository{101: repo}}
+	response, err := (&Service{Store: store, GitHub: &dependencyReader{}}).RefreshGitHubDependencies(t.Context(), adminPrincipal, 101)
+	if err != nil || response.Available || response.Packages != 0 {
+		t.Fatalf("RefreshGitHubDependencies() = %#v, %v", response, err)
+	}
+	if store.replacePackagesCalls != 0 {
+		t.Fatalf("ReplacePackages() calls = %d", store.replacePackagesCalls)
+	}
+}
+
+func TestRefreshGitHubDependenciesPreservesRowsOnGitHubError(t *testing.T) {
+	repo := serviceRepository
+	repo.InstallationID, repo.Name = 10, "acme/repo"
+	store := &fakeStore{repositories: map[int64]repository.Repository{101: repo}}
+	githubError := errors.New("GitHub unavailable")
+	_, err := (&Service{Store: store, GitHub: &dependencyReader{err: githubError}}).RefreshGitHubDependencies(t.Context(), adminPrincipal, 101)
+	if !errors.Is(err, githubError) || store.replacePackagesCalls != 0 {
+		t.Fatalf("error = %v, ReplacePackages() calls = %d", err, store.replacePackagesCalls)
+	}
+}
+
+type dependencyReader struct {
+	sbom           githubapp.SBOM
+	available      bool
+	err            error
+	installationID int64
+	owner, name    string
+}
+
+func (reader *dependencyReader) DependencySBOM(_ context.Context, installationID int64, owner, name string) (githubapp.SBOM, bool, error) {
+	reader.installationID, reader.owner, reader.name = installationID, owner, name
+	return reader.sbom, reader.available, reader.err
+}
+
 var errUnauthorizedRepository = errors.New("unauthorized repository")
 
 type fakeStore struct {
@@ -193,6 +264,7 @@ type fakeStore struct {
 	replaceErr, occurrenceErr                         error
 	authorizationCalls                                []authorizationCall
 	locationsPrincipal                                authn.Principal
+	replacePackagesCalls                              int
 }
 
 type authorizationCall struct {
@@ -228,6 +300,7 @@ func (store *fakeStore) Locations(_ context.Context, principal authn.Principal, 
 }
 
 func (store *fakeStore) ReplacePackages(_ context.Context, repositoryID int64, source string, packages []PackageMapping) error {
+	store.replacePackagesCalls++
 	store.packagesRepositoryID, store.packagesSource = repositoryID, source
 	store.packages = packages
 	return nil

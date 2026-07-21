@@ -31,3 +31,8 @@ type RepositoryPackages struct {
 	Provides  []string `json:"provides"`
 	DependsOn []string `json:"depends_on"`
 }
+
+type DependencyRefreshResponse struct {
+	Available bool `json:"available"`
+	Packages  int  `json:"packages"`
+}
