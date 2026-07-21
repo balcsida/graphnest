@@ -28,10 +28,10 @@ func TestReplaceSCIPIsAtomicAndCurrent(t *testing.T) {
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("b.go", globalSymbol, definitionRole)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "a.go", 0, 1); !errors.Is(err, pgx.ErrNoRows) {
+	if _, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "a.go", 0, 1); !errors.Is(err, scipgraph.ErrOccurrenceNotFound) || errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("removed occurrence err = %v", err)
 	}
-	if _, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('b'), "b.go", 0, 1); !errors.Is(err, pgx.ErrNoRows) {
+	if _, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('b'), "b.go", 0, 1); !errors.Is(err, scipgraph.ErrOccurrenceNotFound) || errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("stale occurrence err = %v", err)
 	}
 

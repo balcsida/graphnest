@@ -9,7 +9,6 @@ import (
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/pkg/api"
-	"github.com/jackc/pgx/v5"
 	"github.com/scip-code/scip/bindings/go/scip"
 )
 
@@ -132,7 +131,7 @@ func TestNavigateMapsOnlyMissingOccurrence(t *testing.T) {
 		storeErr error
 		wantErr  error
 	}{
-		{name: "missing occurrence", storeErr: pgx.ErrNoRows, wantErr: ErrNotIndexed},
+		{name: "missing occurrence", storeErr: ErrOccurrenceNotFound, wantErr: ErrNotIndexed},
 		{name: "canceled", storeErr: context.Canceled, wantErr: context.Canceled},
 		{name: "deadline", storeErr: context.DeadlineExceeded, wantErr: context.DeadlineExceeded},
 		{name: "backend failure", storeErr: backendError, wantErr: backendError},

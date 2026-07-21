@@ -9,7 +9,6 @@ import (
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/pkg/api"
-	"github.com/jackc/pgx/v5"
 )
 
 const defaultMaxResults = 100
@@ -67,7 +66,7 @@ func (service *Service) Navigate(ctx context.Context, principal authn.Principal,
 		return api.SCIPNavigationResponse{}, ErrNotIndexed
 	}
 	origin, err := service.Store.OccurrenceAt(ctx, repository.ID, repository.IndexedSHA, request.Path, request.Line-1, request.Character)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, ErrOccurrenceNotFound) {
 		return api.SCIPNavigationResponse{}, ErrNotIndexed
 	}
 	if err != nil {

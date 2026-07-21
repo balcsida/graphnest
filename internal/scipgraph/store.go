@@ -2,7 +2,10 @@ package scipgraph
 
 import "errors"
 
-var ErrStaleIndex = errors.New("stale SCIP index")
+var (
+	ErrOccurrenceNotFound = errors.New("SCIP occurrence not found")
+	ErrStaleIndex         = errors.New("stale SCIP index")
+)
 
 type StoredOccurrence struct {
 	UploadID, RepositoryID                           int64

@@ -92,6 +92,9 @@ func (s *Store) OccurrenceAt(ctx context.Context, repositoryID int64, commit, pa
 		&occurrence.Path, &occurrence.StartLine, &occurrence.StartCharacter,
 		&occurrence.EndLine, &occurrence.EndCharacter, &occurrence.Symbol,
 		&occurrence.Roles, &occurrence.Local)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return scipgraph.StoredOccurrence{}, scipgraph.ErrOccurrenceNotFound
+	}
 	return occurrence, err
 }
 
