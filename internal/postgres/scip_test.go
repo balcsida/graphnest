@@ -81,6 +81,7 @@ func TestSCIPLocationsAuthorizeAndScopeSymbols(t *testing.T) {
 	firstID := seedReadyRepository(t, store, 101, testSHA('a'))
 	secondID := seedReadyRepository(t, store, 102, testSHA('b'))
 	thirdID := seedReadyRepository(t, store, 103, testSHA('c'))
+	fourthID := seedReadyRepository(t, store, 104, testSHA('d'))
 
 	if err := store.ReplaceSCIP(t.Context(), firstID, testSHA('a'), scipgraph.Upload{Occurrences: []scipgraph.Occurrence{
 		{Path: "origin.go", Symbol: globalSymbol, EndCharacter: 2},
@@ -92,10 +93,13 @@ func TestSCIPLocationsAuthorizeAndScopeSymbols(t *testing.T) {
 		{Path: "definition.go", Symbol: globalSymbol, EndCharacter: 2, Roles: definitionRole},
 		{Path: "local.go", Symbol: localSymbol, EndCharacter: 2, Roles: definitionRole},
 		{Path: "implementation.go", Symbol: implementationSymbol, EndCharacter: 2, Roles: definitionRole},
-	}, Relationships: []scipgraph.Relationship{{Source: globalSymbol, Target: implementationSymbol, Implementation: true}}}); err != nil {
+	}, Relationships: []scipgraph.Relationship{{Source: implementationSymbol, Target: globalSymbol, Implementation: true}}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ReplaceSCIP(t.Context(), thirdID, testSHA('c'), uploadWith("forbidden.go", globalSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReplaceSCIP(t.Context(), fourthID, testSHA('d'), uploadWith("forbidden-origin.go", globalSymbol, 0)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -128,6 +132,53 @@ func TestSCIPLocationsAuthorizeAndScopeSymbols(t *testing.T) {
 	locations, truncated, err := store.Locations(t.Context(), principal, localOrigin, "definitions", 10)
 	if err != nil || truncated || len(locations) != 0 {
 		t.Fatalf("local definitions = %#v, truncated = %v, err = %v", locations, truncated, err)
+	}
+
+	unauthorizedOrigin, err := store.OccurrenceAt(t.Context(), fourthID, testSHA('d'), "forbidden-origin.go", 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	locations, truncated, err = store.Locations(t.Context(), principal, unauthorizedOrigin, "definitions", 10)
+	if err != nil || truncated || len(locations) != 0 {
+		t.Fatalf("unauthorized-origin definitions = %#v, truncated = %v, err = %v", locations, truncated, err)
+	}
+}
+
+func TestSCIPLocationsUseDeterministicTotalOrder(t *testing.T) {
+	store := migratedStore(t)
+	repositoryID := seedReadyRepository(t, store, 101, testSHA('a'))
+	const (
+		firstImplementation  = "scip go example.com/grepnest v1 pkg/A#"
+		secondImplementation = "scip go example.com/grepnest v1 pkg/B#"
+		lastImplementation   = "scip go example.com/grepnest v1 pkg/Z#"
+	)
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), scipgraph.Upload{
+		Occurrences: []scipgraph.Occurrence{
+			{Path: "origin.go", Symbol: globalSymbol, EndCharacter: 2},
+			{Path: "implementations.go", Symbol: lastImplementation, EndLine: 1, Roles: definitionRole},
+			{Path: "implementations.go", Symbol: secondImplementation, EndCharacter: 5, Roles: definitionRole},
+			{Path: "implementations.go", Symbol: firstImplementation, EndCharacter: 5, Roles: definitionRole},
+		},
+		Relationships: []scipgraph.Relationship{
+			{Source: lastImplementation, Target: globalSymbol, Implementation: true},
+			{Source: secondImplementation, Target: globalSymbol, Implementation: true},
+			{Source: firstImplementation, Target: globalSymbol, Implementation: true},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	origin, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "origin.go", 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	locations, truncated, err := store.Locations(t.Context(), authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}, origin, "implementations", 10)
+	if err != nil || truncated || len(locations) != 3 {
+		t.Fatalf("locations = %#v, truncated = %v, err = %v", locations, truncated, err)
+	}
+	for index, symbol := range []string{firstImplementation, secondImplementation, lastImplementation} {
+		if locations[index].Symbol != symbol {
+			t.Fatalf("locations[%d].Symbol = %q, want %q", index, locations[index].Symbol, symbol)
+		}
 	}
 }
 

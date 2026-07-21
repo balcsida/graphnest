@@ -73,25 +73,28 @@ func (s *Store) Locations(ctx context.Context, principal authn.Principal, origin
 		return []scipgraph.Location{}, false, nil
 	}
 	rows, err := s.pool.Query(ctx, `with authorized_uploads as (
-		select uploads.id, repositories.github_id, repositories.owner || '/' || repositories.name repository_name, uploads.commit
+		select uploads.id, uploads.repository_id, repositories.github_id, repositories.owner || '/' || repositories.name repository_name, uploads.commit
 		from scip_uploads uploads
 		join repositories on repositories.id=uploads.repository_id and repositories.indexed_sha=uploads.commit
 		join installations on installations.id=repositories.installation_id
 		where installations.github_id=$1 and repositories.github_id=any($2)
 		and installations.status='active' and repositories.enabled and not repositories.archived
+	), origin_authorized as (
+		select id from authorized_uploads where id=$4 and repository_id=$8
 	), targets as (
 		select case when $5 then $4::text || ':' || $3 else $3 end symbol
-		where $6 in ('definitions', 'references')
+		from origin_authorized where $6 in ('definitions', 'references')
 		union
-		select case when left(relationships.target_symbol, 6)='local '
-			then relationships.upload_id::text || ':' || relationships.target_symbol
-			else relationships.target_symbol end
+		select case when left(relationships.source_symbol, 6)='local '
+			then relationships.upload_id::text || ':' || relationships.source_symbol
+			else relationships.source_symbol end
 		from scip_relationships relationships
 		join authorized_uploads on authorized_uploads.id=relationships.upload_id
+		cross join origin_authorized
 		where $6='implementations' and relationships.is_implementation
-		and (case when left(relationships.source_symbol, 6)='local '
-			then relationships.upload_id::text || ':' || relationships.source_symbol
-			else relationships.source_symbol end)=case when $5 then $4::text || ':' || $3 else $3 end
+		and (case when left(relationships.target_symbol, 6)='local '
+			then relationships.upload_id::text || ':' || relationships.target_symbol
+			else relationships.target_symbol end)=case when $5 then $4::text || ':' || $3 else $3 end
 	)
 	select authorized_uploads.github_id, authorized_uploads.repository_name, authorized_uploads.commit,
 		occurrences.path, occurrences.start_line, occurrences.start_character,
@@ -104,8 +107,9 @@ func (s *Store) Locations(ctx context.Context, principal authn.Principal, origin
 		when 'references' then occurrences.roles & 1 = 0
 		when 'implementations' then occurrences.roles & 1 <> 0
 		else false end
-	order by authorized_uploads.github_id, occurrences.path, occurrences.start_line, occurrences.start_character
-	limit $7`, principal.InstallationID, principal.RepositoryIDs, origin.Symbol, origin.UploadID, origin.Local, operation, max+1)
+	order by authorized_uploads.github_id, occurrences.path, occurrences.start_line, occurrences.start_character,
+		occurrences.end_line, occurrences.end_character, occurrences.symbol, occurrences.id
+	limit $7`, principal.InstallationID, principal.RepositoryIDs, origin.Symbol, origin.UploadID, origin.Local, operation, max+1, origin.RepositoryID)
 	if err != nil {
 		return nil, false, err
 	}

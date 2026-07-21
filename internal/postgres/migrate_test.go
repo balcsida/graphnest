@@ -94,6 +94,30 @@ func TestMigrateIsConcurrentAndIdempotent(t *testing.T) {
 	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != 3 {
 		t.Fatalf("migrations=%d err=%v", count, err)
 	}
+	for _, index := range []string{
+		"scip_occurrences_position", "scip_occurrences_symbol",
+		"scip_relationships_source", "scip_relationships_target",
+		"repository_packages_lookup",
+	} {
+		var found bool
+		if err := pool.QueryRow(t.Context(), `select exists(
+			select 1 from pg_indexes where schemaname=current_schema() and indexname=$1)`, index).Scan(&found); err != nil || !found {
+			t.Fatalf("index %s: found=%v err=%v", index, found, err)
+		}
+	}
+	for _, constraint := range []string{
+		"scip_uploads_repository_unique", "scip_uploads_commit_sha",
+		"scip_occurrences_start_line_nonnegative", "scip_occurrences_start_character_nonnegative",
+		"scip_occurrences_end_line_order", "scip_occurrences_end_character_nonnegative",
+		"scip_occurrences_range", "scip_occurrences_unique", "scip_relationships_unique",
+		"repository_packages_source", "repository_packages_relation", "repository_packages_unique",
+	} {
+		var found bool
+		if err := pool.QueryRow(t.Context(), `select exists(
+			select 1 from pg_constraint where connamespace=current_schema()::regnamespace and conname=$1)`, constraint).Scan(&found); err != nil || !found {
+			t.Fatalf("constraint %s: found=%v err=%v", constraint, found, err)
+		}
+	}
 }
 
 func TestMigrateUpgradesAppliedV1(t *testing.T) {
