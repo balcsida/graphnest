@@ -22,6 +22,7 @@ import (
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/grepnest/grepnest/internal/scipgraph"
 	"github.com/grepnest/grepnest/internal/search"
 	"github.com/grepnest/grepnest/internal/webhook"
 	"github.com/grepnest/grepnest/internal/webui"
@@ -120,7 +121,7 @@ func newHandler(settings config.Config) (http.Handler, error) {
 		DefaultTimeout: settings.Limits.DefaultTimeout, MaxTimeout: settings.Limits.MaxTimeout,
 		MaxResponseBytes: settings.Limits.MaxResponseBytes,
 	})
-	return newAPIHandler(settings, metrics, authenticator, service, nil, nil, nil, backend), nil
+	return newAPIHandler(settings, metrics, authenticator, service, nil, nil, nil, nil, backend), nil
 }
 
 func newRuntime(ctx context.Context, settings config.Config, logger *slog.Logger) (http.Handler, func(), error) {
@@ -202,8 +203,9 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	})
 	searchService := search.NewService(backend, authz.NewPostgres(store), searchLimits(settings))
 	repositoryService := &repository.Service{Store: store, GitHub: githubClient}
+	scipService := &scipgraph.Service{Store: store, GitHub: githubClient, MaxResults: settings.Limits.MaxResults}
 	processor := webhook.NewGitHubProcessor(store, reconcileRequests, metrics)
-	handler := newAPIHandler(settings, metrics, authenticator, searchService, repositoryService, webhookSecret, processor, durableReadiness{pool: pool, zoekt: backend})
+	handler := newAPIHandler(settings, metrics, authenticator, searchService, repositoryService, scipService, webhookSecret, processor, durableReadiness{pool: pool, zoekt: backend})
 	return handler, func() {
 		cancel()
 		<-done
@@ -212,7 +214,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	}, nil
 }
 
-func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.Authenticator, service *search.Service, repositories *repository.Service, webhookSecret []byte, processor webhook.Processor, checker httpapi.ReadyChecker) http.Handler {
+func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.Authenticator, service *search.Service, repositories *repository.Service, scip *scipgraph.Service, webhookSecret []byte, processor webhook.Processor, checker httpapi.ReadyChecker) http.Handler {
 	mux := http.NewServeMux()
 	webui.Register(mux)
 	httpapi.RegisterSystem(mux, checker, metrics.Handler())
@@ -220,12 +222,15 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 	if repositories != nil {
 		httpapi.RegisterRepositories(mux, authenticator, repositories, settings.Limits.MaxRequestBytes, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
 	}
+	if scip != nil {
+		httpapi.RegisterSCIP(mux, authenticator, scip, settings.Limits.MaxRequestBytes, settings.Limits.SCIPMaxUploadBytes, settings.Limits.MaxResponseBytes)
+	}
 	if processor != nil {
 		httpapi.RegisterGitHubWebhook(mux, webhookSecret, 1<<20, processor)
 	}
 	mcpServer := mcpserver.NewWithLimits(service, repositories, mcpserver.Limits{
 		MaxItems: settings.Limits.MaxResults, MaxOutputBytes: settings.Limits.MaxResponseBytes,
-	})
+	}, scip)
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer }, nil)
 	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		request.Body = http.MaxBytesReader(writer, request.Body, settings.Limits.MaxRequestBytes)

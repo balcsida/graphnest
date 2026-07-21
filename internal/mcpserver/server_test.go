@@ -17,6 +17,7 @@ import (
 	"github.com/grepnest/grepnest/internal/httpapi"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/grepnest/grepnest/internal/scipgraph"
 	"github.com/grepnest/grepnest/internal/search"
 	"github.com/grepnest/grepnest/internal/zoekt"
 	"github.com/grepnest/grepnest/pkg/api"
@@ -153,6 +154,84 @@ func TestRepositoryToolsUseAuthenticatedService(t *testing.T) {
 	if store.calls != 0 {
 		t.Fatalf("invalid tool service calls = %d", store.calls)
 	}
+}
+
+func TestNavigateSymbolMatchesSCIPServiceResponse(t *testing.T) {
+	store := &mcpSCIPStore{repository: repository.Repository{ID: 1, GitHubID: 101, InstallationID: 10, Name: "acme/one", IndexedSHA: strings.Repeat("a", 40)}}
+	store.locations = []scipgraph.Location{{RepositoryID: 101, RepositoryName: "acme/one", Commit: store.repository.IndexedSHA, Path: "target.go", Symbol: "sym", StartLine: 2}}
+	scipService := &scipgraph.Service{Store: store}
+	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}
+	request := api.SCIPNavigationRequest{RepositoryID: 101, Path: "main.go", Line: 1, Character: 0, Operation: "definitions"}
+	want, err := scipService.Navigate(t.Context(), principal, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewWithLimits(testService(t, &recordingBackend{}), nil, Limits{MaxOutputBytes: 256 << 10}, scipService)
+	handler := httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{"secret": principal}), mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: httpServer.URL, HTTPClient: bearerClient(httpServer.Client(), "secret"), DisableStandaloneSSE: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	tools, err := session.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, len(tools.Tools))
+	for index, tool := range tools.Tools {
+		names[index] = tool.Name
+	}
+	if !slices.Contains(names, "navigate_symbol") || slices.Contains(names, "scip_upload") || slices.Contains(names, "set_dependencies") {
+		t.Fatalf("tools = %v", names)
+	}
+
+	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "navigate_symbol", Arguments: map[string]any{
+		"repository_id": 101, "path": "main.go", "line": 1, "character": 0, "operation": "definitions",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got api.SCIPNavigationResponse
+	decodeStructured(t, result.StructuredContent, &got)
+	if !slices.Equal(got.Locations, want.Locations) || got.Truncated != want.Truncated || len(result.Content) != 0 {
+		t.Fatalf("output = %#v, want %#v", got, want)
+	}
+
+	tinyServer := NewWithLimits(testService(t, &recordingBackend{}), nil, Limits{MaxOutputBytes: 1}, scipService)
+	tinyHTTPServer := httptest.NewServer(httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{"secret": principal}), mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return tinyServer }, nil)))
+	defer tinyHTTPServer.Close()
+	tinySession, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: tinyHTTPServer.URL, HTTPClient: bearerClient(tinyHTTPServer.Client(), "secret"), DisableStandaloneSSE: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tinySession.Close()
+	result, err = tinySession.CallTool(t.Context(), &mcp.CallToolParams{Name: "navigate_symbol", Arguments: map[string]any{
+		"repository_id": 101, "path": "main.go", "line": 1, "character": 0, "operation": "definitions",
+	}})
+	if err != nil || !result.IsError {
+		t.Fatalf("bounded result = %#v, err = %v", result, err)
+	}
+}
+
+type mcpSCIPStore struct {
+	repository repository.Repository
+	locations  []scipgraph.Location
+}
+
+func (store *mcpSCIPStore) AuthorizedRepository(_ context.Context, _ int64, _ []int64, _ int64) (repository.Repository, error) {
+	return store.repository, nil
+}
+func (*mcpSCIPStore) ReplaceSCIP(context.Context, int64, string, scipgraph.Upload) error { return nil }
+func (*mcpSCIPStore) OccurrenceAt(context.Context, int64, string, string, int, int) (scipgraph.StoredOccurrence, error) {
+	return scipgraph.StoredOccurrence{}, nil
+}
+func (store *mcpSCIPStore) Locations(context.Context, authn.Principal, scipgraph.StoredOccurrence, string, int) ([]scipgraph.Location, bool, error) {
+	return store.locations, false, nil
+}
+func (*mcpSCIPStore) ReplacePackages(context.Context, int64, string, []scipgraph.PackageMapping) error {
+	return nil
 }
 
 func TestRepositoryToolBudgetsBoundActualCallToolResult(t *testing.T) {

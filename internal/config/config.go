@@ -18,6 +18,7 @@ type Limits struct {
 	DefaultContextLines, MaxContextLines int
 	DefaultTimeout, MaxTimeout           time.Duration
 	MaxRequestBytes, MaxResponseBytes    int64
+	SCIPMaxUploadBytes                   int64
 }
 
 type GitHub struct {
@@ -70,6 +71,7 @@ func Load() (Config, error) {
 			MaxTimeout:          5 * time.Second,
 			MaxRequestBytes:     64 << 10,
 			MaxResponseBytes:    256 << 10,
+			SCIPMaxUploadBytes:  64 << 20,
 		},
 	}
 	if config.UserToken == "" || config.AdminToken == "" || config.UserToken == config.AdminToken {
@@ -202,7 +204,10 @@ func loadLimits(limits *Limits) error {
 	if err := int64Value("GREPNEST_MAX_RESPONSE_BYTES", &limits.MaxResponseBytes); err != nil {
 		return err
 	}
-	if limits.MaxResults > 100 || limits.MaxContextLines > 20 || limits.MaxTimeout > 5*time.Second || limits.MaxRequestBytes > 64<<10 || limits.MaxResponseBytes > 256<<10 {
+	if err := int64Value("GREPNEST_SCIP_MAX_UPLOAD_BYTES", &limits.SCIPMaxUploadBytes); err != nil {
+		return err
+	}
+	if limits.MaxResults > 100 || limits.MaxContextLines > 20 || limits.MaxTimeout > 5*time.Second || limits.MaxRequestBytes > 64<<10 || limits.MaxResponseBytes > 256<<10 || limits.SCIPMaxUploadBytes > 256<<20 {
 		return invalid("maximums exceed server safety caps")
 	}
 	if limits.DefaultResults > limits.MaxResults || limits.DefaultContextLines > limits.MaxContextLines || limits.DefaultTimeout > limits.MaxTimeout {

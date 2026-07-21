@@ -27,6 +27,7 @@ import (
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/grepnest/grepnest/internal/scipgraph"
 	"github.com/grepnest/grepnest/internal/webhook"
 )
 
@@ -263,7 +264,7 @@ func (stub *healthStub) Health(context.Context) error {
 
 func TestDurableRoutesKeepWebhookOutsideBearerAuthentication(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
-	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), authenticator, nil, &repository.Service{Store: repositoryStoreStub{}}, []byte("secret"), webhookProcessorStub{}, nil)
+	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), authenticator, nil, &repository.Service{Store: repositoryStoreStub{}}, nil, []byte("secret"), webhookProcessorStub{}, nil)
 
 	webhookResponse := httptest.NewRecorder()
 	handler.ServeHTTP(webhookResponse, httptest.NewRequest(http.MethodPost, "/webhooks/github", nil))
@@ -320,7 +321,7 @@ func TestStaticHandlerRegistersSystemRoutes(t *testing.T) {
 	if response.Code != http.StatusOK || response.Body.String() != "ok\n" {
 		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
 	}
-	for _, route := range []string{"/v1/repositories", "/webhooks/github"} {
+	for _, route := range []string{"/v1/repositories", "/v1/scip/navigation", "/webhooks/github"} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, route, nil))
 		if response.Code != http.StatusNotFound {
@@ -329,11 +330,29 @@ func TestStaticHandlerRegistersSystemRoutes(t *testing.T) {
 	}
 }
 
+func TestSCIPRoutesRegisterOnlyWithDurableService(t *testing.T) {
+	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
+	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, SCIPMaxUploadBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}
+	without := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, nil, nil)
+	with := newAPIHandler(settings, observability.New(), authenticator, nil, nil, &scipgraph.Service{}, nil, nil, nil)
+	for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/scip/navigation", nil))
+		want := http.StatusNotFound
+		if name == "durable" {
+			want = http.StatusUnauthorized
+		}
+		if response.Code != want {
+			t.Fatalf("%s status = %d, want %d", name, response.Code, want)
+		}
+	}
+}
+
 func TestAPIHandlerMountsWebUIWithoutFallback(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	handler := newAPIHandler(
 		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}},
-		observability.New(), authenticator, nil, nil, nil, nil, nil,
+		observability.New(), authenticator, nil, nil, nil, nil, nil, nil,
 	)
 	for _, path := range []string{"/", "/index.html"} {
 		response := httptest.NewRecorder()
