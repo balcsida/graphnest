@@ -85,13 +85,13 @@ func TestSCIPLocationsAuthorizeAndScopeSymbols(t *testing.T) {
 
 	if err := store.ReplaceSCIP(t.Context(), firstID, testSHA('a'), scipgraph.Upload{Occurrences: []scipgraph.Occurrence{
 		{Path: "origin.go", Symbol: globalSymbol, EndCharacter: 2},
-		{Path: "local.go", Symbol: localSymbol, EndCharacter: 2},
+		{Path: "local.go", Symbol: localSymbol, EndCharacter: 2, Local: true},
 	}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ReplaceSCIP(t.Context(), secondID, testSHA('b'), scipgraph.Upload{Occurrences: []scipgraph.Occurrence{
 		{Path: "definition.go", Symbol: globalSymbol, EndCharacter: 2, Roles: definitionRole},
-		{Path: "local.go", Symbol: localSymbol, EndCharacter: 2, Roles: definitionRole},
+		{Path: "local.go", Symbol: localSymbol, EndCharacter: 2, Roles: definitionRole, Local: true},
 		{Path: "implementation.go", Symbol: implementationSymbol, EndCharacter: 2, Roles: definitionRole},
 	}, Relationships: []scipgraph.Relationship{{Source: implementationSymbol, Target: globalSymbol, Implementation: true}}}); err != nil {
 		t.Fatal(err)
