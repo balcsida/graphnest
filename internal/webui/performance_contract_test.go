@@ -2,6 +2,7 @@ package webui
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
@@ -22,6 +23,9 @@ func TestPerformanceBudgetRejectsResourceVariants(t *testing.T) {
 		{"stylesheet attributes", `<LiNk href='app.css' REL = "StyleSheet">`},
 		{"font preload", `<link href="font.woff2" as = 'FONT' rel='preload'>`},
 		{"image tag", `<IMG alt='' SRC = 'hero.png'>`},
+		{"script preload", `<link rel = 'PRELOAD' href="app.js" as='SCRIPT'>`},
+		{"iframe source", `<iframe title="help" SRC = 'help.html'></iframe>`},
+		{"video poster", `<video POSTER = "preview.png"></video>`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			doc := strings.Replace(validPerformanceDocument, "</head>", test.resource+"</head>", 1)
@@ -43,6 +47,8 @@ func TestPerformanceBudgetRejectsSteadyStateVariants(t *testing.T) {
 		{"animation frame whitespace", `requestAnimationFrame (() => {})`, false},
 		{"scroll listener quotes", `addEventListener ( 'scroll', onScroll)`, false},
 		{"resize listener case", `addEventListener("RESIZE", onResize)`, false},
+		{"scroll property", `window . onScroll = update`, false},
+		{"resize property", `document [ 'ONRESIZE' ] = update`, false},
 		{"result animation", `#results { ANIMATION : fade 1s; }`, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -55,6 +61,25 @@ func TestPerformanceBudgetRejectsSteadyStateVariants(t *testing.T) {
 				t.Fatalf("steady-state variant was accepted: %s", test.behavior)
 			}
 		})
+	}
+}
+
+func TestPerformanceBudgetAcceptsRendererFormattingVariants(t *testing.T) {
+	formatted := strings.Replace(
+		validPerformanceDocument,
+		"function renderResults(response){",
+		"function\nrenderResults ( response ) {\nconst ignored=\"}\",template=`{}`;",
+		1,
+	)
+	if err := performanceBudgetError([]byte(formatted)); err != nil {
+		t.Fatalf("harmless renderer formatting was rejected: %v", err)
+	}
+
+	help := "function blobURL(match){return match.path}\n"
+	reordered := strings.Replace(validPerformanceDocument, help, "", 1)
+	reordered = strings.Replace(reordered, "function renderResults(response){", help+"function renderResults(response){", 1)
+	if err := performanceBudgetError([]byte(reordered)); err != nil {
+		t.Fatalf("harmless helper reordering was rejected: %v", err)
 	}
 }
 
@@ -85,14 +110,26 @@ func performanceBudgetError(doc []byte) error {
 	tags := parseStartTags(string(doc))
 	styleCount, scriptCount := 0, 0
 	for _, tag := range tags {
+		for name, value := range tag.attributes {
+			if name == "onscroll" || name == "onresize" {
+				return fmt.Errorf("console contains a scroll or resize handler")
+			}
+			if name == "style" && strings.Contains(compactSource(value), "url(") {
+				return fmt.Errorf("console contains an external style resource")
+			}
+			if !networkBearingAttribute(name) {
+				continue
+			}
+			if tag.name == "a" && name == "href" && legitimateAnchorHref(value) {
+				continue
+			}
+			return fmt.Errorf("console contains network-bearing %s attribute on %s", name, tag.name)
+		}
 		switch tag.name {
 		case "style":
 			styleCount++
 		case "script":
 			scriptCount++
-			if _, external := tag.attributes["src"]; external {
-				return fmt.Errorf("console contains an external script")
-			}
 		case "link":
 			rel := strings.Fields(tag.attributes["rel"])
 			as := tag.attributes["as"]
@@ -127,7 +164,7 @@ func performanceBudgetError(doc []byte) error {
 	if !normalizedContains(script, `state.controller.abort()`) {
 		return fmt.Errorf("console is missing request cancellation")
 	}
-	renderer, err := functionBody(script, "function renderResults(response){", "function blobURL(")
+	renderer, err := functionBody(script, "renderResults")
 	if err != nil {
 		return err
 	}
@@ -146,6 +183,7 @@ var (
 	startTagPattern             = regexp.MustCompile(`(?is)<\s*([a-z][a-z0-9:-]*)\b([^>]*)>`)
 	attributePattern            = regexp.MustCompile(`(?is)([a-z_:][a-z0-9_:.-]*)\s*(?:=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+)))?`)
 	listenerPattern             = regexp.MustCompile(`(?i)\baddEventListener\s*\(\s*["']\s*(scroll|resize)\s*["']`)
+	handlerAssignmentPattern    = regexp.MustCompile(`(?i)(?:\.on(?:scroll|resize)|\[["']on(?:scroll|resize)["']\])=`)
 	resultRulePattern           = regexp.MustCompile(`(?is)([^{}]+)\{([^{}]*)\}`)
 	animationDeclarationPattern = regexp.MustCompile(`(?i)(?:^|;)\s*animation(?:-name)?\s*:`)
 	transitionOpacityPattern    = regexp.MustCompile(`(?i)(?:^|;)\s*transition(?:-property)?\s*:[^;]*opacity`)
@@ -184,6 +222,28 @@ func containsAny(values []string, wants ...string) bool {
 		}
 	}
 	return false
+}
+
+func networkBearingAttribute(name string) bool {
+	switch name {
+	case "src", "srcset", "imagesrcset", "href", "xlink:href", "poster",
+		"data", "ping", "action", "formaction", "background", "manifest",
+		"archive", "code", "codebase", "longdesc", "profile", "usemap":
+		return true
+	default:
+		return false
+	}
+}
+
+func legitimateAnchorHref(value string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil {
+		return false
+	}
+	if parsed.IsAbs() {
+		return parsed.Scheme == "https" && parsed.Host != ""
+	}
+	return parsed.Host == "" && (strings.HasPrefix(parsed.Path, "/") || parsed.Fragment != "")
 }
 
 func elementBody(doc, name string) (string, error) {
@@ -240,23 +300,79 @@ func steadyStateScriptError(script string) error {
 	if listenerPattern.MatchString(script) {
 		return fmt.Errorf("console contains a scroll or resize listener")
 	}
+	if handlerAssignmentPattern.MatchString(compactSource(script)) {
+		return fmt.Errorf("console contains a scroll or resize handler assignment")
+	}
 	if regexp.MustCompile(`(?i)sourceMappingURL`).MatchString(script) {
 		return fmt.Errorf("console contains a source map reference")
 	}
 	return nil
 }
 
-func functionBody(script, start, next string) (string, error) {
-	startAt := strings.Index(script, start)
-	if startAt < 0 {
-		return "", fmt.Errorf("console is missing %s", start)
+func functionBody(script, name string) (string, error) {
+	declaration := regexp.MustCompile(`\bfunction\s+` + regexp.QuoteMeta(name) + `\s*\([^)]*\)\s*\{`)
+	location := declaration.FindStringIndex(script)
+	if location == nil {
+		return "", fmt.Errorf("console is missing function %s", name)
 	}
-	endAt := strings.Index(script[startAt+len(start):], next)
-	if endAt < 0 {
-		return "", fmt.Errorf("console is missing stable boundary %s", next)
+	openBrace := location[1] - 1
+	closeBrace, err := balancedFunctionEnd(script, openBrace)
+	if err != nil {
+		return "", fmt.Errorf("function %s: %w", name, err)
 	}
-	endAt += startAt + len(start)
-	return script[startAt:endAt], nil
+	return script[location[0] : closeBrace+1], nil
+}
+
+// balancedFunctionEnd is deliberately a small scanner for the checked-in
+// renderer. It skips quoted strings, template text, and JavaScript comments;
+// the renderer has no regular-expression literal containing a brace.
+func balancedFunctionEnd(script string, openBrace int) (int, error) {
+	depth := 0
+	for index := openBrace; index < len(script); index++ {
+		switch script[index] {
+		case '\'', '"', '`':
+			index = skipQuoted(script, index, script[index])
+		case '/':
+			if index+1 >= len(script) {
+				continue
+			}
+			switch script[index+1] {
+			case '/':
+				if newline := strings.IndexByte(script[index+2:], '\n'); newline >= 0 {
+					index += newline + 2
+				} else {
+					return 0, fmt.Errorf("unterminated line comment")
+				}
+			case '*':
+				if end := strings.Index(script[index+2:], "*/"); end >= 0 {
+					index += end + 3
+				} else {
+					return 0, fmt.Errorf("unterminated block comment")
+				}
+			}
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return index, nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("unbalanced braces")
+}
+
+func skipQuoted(source string, start int, quote byte) int {
+	for index := start + 1; index < len(source); index++ {
+		if source[index] == '\\' {
+			index++
+			continue
+		}
+		if source[index] == quote {
+			return index
+		}
+	}
+	return len(source) - 1
 }
 
 func rendererBudgetError(renderer string) error {
