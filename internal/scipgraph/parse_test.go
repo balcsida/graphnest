@@ -60,6 +60,8 @@ func TestParseRejectsInvalidIndex(t *testing.T) {
 			index.Documents = append(index.Documents, proto.Clone(index.Documents[0]).(*scip.Document))
 		}},
 		{"unclean path", func(index *scip.Index) { index.Documents[0].RelativePath = "pkg/../a.go" }},
+		{"parent path", func(index *scip.Index) { index.Documents[0].RelativePath = ".." }},
+		{"parent descendant path", func(index *scip.Index) { index.Documents[0].RelativePath = "../a.go" }},
 		{"invalid symbol", func(index *scip.Index) {
 			index.Documents[0].Occurrences = []*scip.Occurrence{{Range: []int32{0, 0, 1}, Symbol: "invalid"}}
 		}},

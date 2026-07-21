@@ -84,7 +84,7 @@ func validDocument(document *scip.Document, paths map[string]struct{}) bool {
 		return false
 	}
 	clean := path.Clean(document.RelativePath)
-	if document.RelativePath == "" || clean != document.RelativePath || clean == "." || strings.HasPrefix(clean, "/") || strings.Contains(document.RelativePath, "\\") {
+	if document.RelativePath == "" || clean != document.RelativePath || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") || strings.Contains(document.RelativePath, "\\") {
 		return false
 	}
 	_, exists := paths[document.RelativePath]
