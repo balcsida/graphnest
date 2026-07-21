@@ -202,6 +202,79 @@ func TestSCIPLocationsReportTruncation(t *testing.T) {
 	}
 }
 
+func TestPackageReplacementPreservesOtherSources(t *testing.T) {
+	store := migratedStore(t)
+	repositoryID := seedReadyRepository(t, store, 101, testSHA('a'))
+	manual := packageMapping("pkg:golang/example.com/acme/lib@v2", "provides", "manual")
+	github := packageMapping("pkg:golang/example.com/acme/lib@v1", "provides", "github")
+	if err := store.ReplacePackages(t.Context(), repositoryID, "manual", []scipgraph.PackageMapping{manual}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReplacePackages(t.Context(), repositoryID, "github", []scipgraph.PackageMapping{github}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReplacePackages(t.Context(), repositoryID, "github", nil); err != nil {
+		t.Fatal(err)
+	}
+	var source, purl string
+	if err := store.pool.QueryRow(t.Context(), `select source, purl from repository_packages where repository_id=$1`, repositoryID).Scan(&source, &purl); err != nil {
+		t.Fatal(err)
+	}
+	if source != "manual" || purl != manual.Package.PURL {
+		t.Fatalf("remaining package = %q %q", source, purl)
+	}
+}
+
+func TestDependencyAssistedLocationsRequireDependencyAndPreferManualProvider(t *testing.T) {
+	store := migratedStore(t)
+	originID := seedReadyRepository(t, store, 101, testSHA('a'))
+	manualID := seedReadyRepository(t, store, 102, testSHA('b'))
+	githubID := seedReadyRepository(t, store, 103, testSHA('c'))
+	const (
+		originSymbol   = "scip gomod example.com/acme/lib v1 pkg/Item#"
+		providerSymbol = "scip gomod example.com/acme/lib v2 pkg/Item#"
+	)
+	if err := store.ReplaceSCIP(t.Context(), originID, testSHA('a'), uploadWith("origin.go", originSymbol, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReplaceSCIP(t.Context(), manualID, testSHA('b'), uploadWith("manual.go", providerSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReplaceSCIP(t.Context(), githubID, testSHA('c'), uploadWith("github.go", providerSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReplacePackages(t.Context(), manualID, "manual", []scipgraph.PackageMapping{packageMapping("pkg:golang/example.com/acme/lib@v2", "provides", "manual")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReplacePackages(t.Context(), githubID, "github", []scipgraph.PackageMapping{packageMapping("pkg:golang/example.com/acme/lib@v2", "provides", "github")}); err != nil {
+		t.Fatal(err)
+	}
+	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101, 102, 103}}
+	origin, err := store.OccurrenceAt(t.Context(), originID, testSHA('a'), "origin.go", 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	locations, _, err := store.Locations(t.Context(), principal, origin, "definitions", 10)
+	if err != nil || len(locations) != 0 {
+		t.Fatalf("locations without dependency = %#v, err = %v", locations, err)
+	}
+	if err := store.ReplacePackages(t.Context(), originID, "manual", []scipgraph.PackageMapping{packageMapping("pkg:golang/example.com/acme/lib@v1", "depends_on", "manual")}); err != nil {
+		t.Fatal(err)
+	}
+	locations, truncated, err := store.Locations(t.Context(), principal, origin, "definitions", 10)
+	if err != nil || truncated || len(locations) != 1 || locations[0].RepositoryID != 102 || !locations[0].Approximate {
+		t.Fatalf("dependency-assisted locations = %#v, truncated = %v, err = %v", locations, truncated, err)
+	}
+}
+
+func packageMapping(purl, relation, source string) scipgraph.PackageMapping {
+	pkg, err := scipgraph.ParsePackageURL(purl)
+	if err != nil {
+		panic(err)
+	}
+	return scipgraph.PackageMapping{Package: pkg, Relation: relation, Source: source}
+}
+
 func uploadWith(path, symbol string, roles int32) scipgraph.Upload {
 	return scipgraph.Upload{ProjectRoot: "file:///src", IndexerName: "test", IndexerVersion: "1", Occurrences: []scipgraph.Occurrence{{
 		Path: path, Symbol: symbol, EndCharacter: 2, Roles: roles,

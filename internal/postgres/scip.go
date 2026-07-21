@@ -6,6 +6,7 @@ import (
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/scipgraph"
 	"github.com/jackc/pgx/v5"
+	"github.com/scip-code/scip/bindings/go/scip"
 )
 
 func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit string, upload scipgraph.Upload) error {
@@ -46,6 +47,26 @@ func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit stri
 	return tx.Commit(ctx)
 }
 
+func (s *Store) ReplacePackages(ctx context.Context, repositoryID int64, source string, mappings []scipgraph.PackageMapping) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `delete from repository_packages where repository_id=$1 and source=$2`, repositoryID, source); err != nil {
+		return err
+	}
+	if _, err := tx.CopyFrom(ctx, pgx.Identifier{"repository_packages"},
+		[]string{"repository_id", "source", "relation", "purl", "manager", "name", "version"},
+		pgx.CopyFromSlice(len(mappings), func(index int) ([]any, error) {
+			mapping := mappings[index]
+			return []any{repositoryID, source, mapping.Relation, mapping.Package.PURL, mapping.Package.Manager, mapping.Package.Name, mapping.Package.Version}, nil
+		})); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func (s *Store) OccurrenceAt(ctx context.Context, repositoryID int64, commit, path string, line, character int) (scipgraph.StoredOccurrence, error) {
 	var occurrence scipgraph.StoredOccurrence
 	err := s.pool.QueryRow(ctx, `select uploads.id, uploads.repository_id, uploads.commit,
@@ -69,6 +90,14 @@ func (s *Store) OccurrenceAt(ctx context.Context, repositoryID int64, commit, pa
 }
 
 func (s *Store) Locations(ctx context.Context, principal authn.Principal, origin scipgraph.StoredOccurrence, operation string, max int) ([]scipgraph.Location, bool, error) {
+	locations, truncated, err := s.exactLocations(ctx, principal, origin, operation, max)
+	if err != nil || len(locations) != 0 {
+		return locations, truncated, err
+	}
+	return s.approximateLocations(ctx, principal, origin, operation, max)
+}
+
+func (s *Store) exactLocations(ctx context.Context, principal authn.Principal, origin scipgraph.StoredOccurrence, operation string, max int) ([]scipgraph.Location, bool, error) {
 	if len(principal.RepositoryIDs) == 0 {
 		return []scipgraph.Location{}, false, nil
 	}
@@ -122,6 +151,118 @@ func (s *Store) Locations(ctx context.Context, principal authn.Principal, origin
 			&location.EndCharacter, &location.Symbol, &location.Roles); err != nil {
 			return nil, false, err
 		}
+		locations = append(locations, location)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	truncated := len(locations) > max
+	if truncated {
+		locations = locations[:max]
+	}
+	return locations, truncated, nil
+}
+
+func (s *Store) approximateLocations(ctx context.Context, principal authn.Principal, origin scipgraph.StoredOccurrence, operation string, max int) ([]scipgraph.Location, bool, error) {
+	parsed, err := scip.ParseSymbol(origin.Symbol)
+	if err != nil || parsed.Package == nil || len(principal.RepositoryIDs) == 0 {
+		return []scipgraph.Location{}, false, nil
+	}
+	rows, err := s.pool.Query(ctx, `with authorized_uploads as (
+		select uploads.id, uploads.repository_id
+		from scip_uploads uploads
+		join repositories on repositories.id=uploads.repository_id and repositories.indexed_sha=uploads.commit
+		join installations on installations.id=repositories.installation_id
+		where installations.github_id=$1 and repositories.github_id=any($2)
+		and installations.status='active' and repositories.enabled and not repositories.archived
+	), origin_authorized as (
+		select id from authorized_uploads where id=$3 and repository_id=$4
+	)
+	select distinct uploads.id, provider.version
+	from authorized_uploads uploads
+	join repository_packages provider on provider.repository_id=uploads.repository_id and provider.relation='provides'
+	join repository_packages dependency on dependency.repository_id=$4 and dependency.relation='depends_on'
+		and dependency.manager=$5 and dependency.name=$6 and dependency.version=$7
+	join origin_authorized on true
+	where provider.manager=$5 and provider.name=$6
+	and (provider.source='manual' or not exists (
+		select 1 from authorized_uploads manual_uploads
+		join repository_packages manual on manual.repository_id=manual_uploads.repository_id
+		where manual.source='manual' and manual.relation='provides'
+		and manual.manager=$5 and manual.name=$6
+	))`, principal.InstallationID, principal.RepositoryIDs, origin.UploadID, origin.RepositoryID,
+		parsed.Package.Manager, parsed.Package.Name, parsed.Package.Version)
+	if err != nil {
+		return nil, false, err
+	}
+	var uploadIDs []int64
+	var symbols []string
+	for rows.Next() {
+		var uploadID int64
+		var version string
+		if err := rows.Scan(&uploadID, &version); err != nil {
+			rows.Close()
+			return nil, false, err
+		}
+		candidate := &scip.Symbol{
+			Scheme:      parsed.Scheme,
+			Package:     &scip.Package{Manager: parsed.Package.Manager, Name: parsed.Package.Name, Version: version},
+			Descriptors: parsed.Descriptors,
+		}
+		uploadIDs = append(uploadIDs, uploadID)
+		symbols = append(symbols, scip.VerboseSymbolFormatter.FormatSymbol(candidate))
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, false, err
+	}
+	rows.Close()
+	if len(uploadIDs) == 0 {
+		return []scipgraph.Location{}, false, nil
+	}
+	rows, err = s.pool.Query(ctx, `with candidates as (
+		select * from unnest($1::bigint[], $2::text[]) candidate(upload_id, symbol)
+	), authorized_uploads as (
+		select uploads.id, repositories.github_id, repositories.owner || '/' || repositories.name repository_name, uploads.commit
+		from scip_uploads uploads
+		join repositories on repositories.id=uploads.repository_id and repositories.indexed_sha=uploads.commit
+		join installations on installations.id=repositories.installation_id
+		where installations.github_id=$3 and repositories.github_id=any($4)
+		and installations.status='active' and repositories.enabled and not repositories.archived
+	), matches as (
+		select occurrences.* from scip_occurrences occurrences
+		join candidates on candidates.upload_id=occurrences.upload_id and candidates.symbol=occurrences.symbol
+		where $5 in ('definitions', 'references')
+		union all
+		select occurrences.* from scip_relationships relationships
+		join candidates on candidates.upload_id=relationships.upload_id and candidates.symbol=relationships.target_symbol
+		join scip_occurrences occurrences on occurrences.upload_id=relationships.upload_id and occurrences.symbol=relationships.source_symbol
+		where $5='implementations' and relationships.is_implementation
+	)
+	select authorized_uploads.github_id, authorized_uploads.repository_name, authorized_uploads.commit,
+		matches.path, matches.start_line, matches.start_character, matches.end_line,
+		matches.end_character, matches.symbol, matches.roles
+	from matches join authorized_uploads on authorized_uploads.id=matches.upload_id
+	where case $5 when 'definitions' then matches.roles & 1 <> 0
+		when 'references' then matches.roles & 1 = 0
+		when 'implementations' then matches.roles & 1 <> 0
+		else false end
+	order by authorized_uploads.github_id, matches.path, matches.start_line, matches.start_character,
+		matches.end_line, matches.end_character, matches.symbol, matches.id
+	limit $6`, uploadIDs, symbols, principal.InstallationID, principal.RepositoryIDs, operation, max+1)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	locations := make([]scipgraph.Location, 0, max+1)
+	for rows.Next() {
+		var location scipgraph.Location
+		if err := rows.Scan(&location.RepositoryID, &location.RepositoryName, &location.Commit,
+			&location.Path, &location.StartLine, &location.StartCharacter, &location.EndLine,
+			&location.EndCharacter, &location.Symbol, &location.Roles); err != nil {
+			return nil, false, err
+		}
+		location.Approximate = true
 		locations = append(locations, location)
 	}
 	if err := rows.Err(); err != nil {
