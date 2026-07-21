@@ -60,6 +60,65 @@ curl -sS http://127.0.0.1:8080/v1/search \
   --data '{"query":"GrepNestFixtureNeedle","repositories":["fixture/repository"]}'
 ```
 
+## SCIP code navigation
+
+GrepNest stores pre-generated SCIP indexes; it does not run or manage language
+indexers. Generate a `.scip` file in each repository's CI at the same 40-character
+lowercase commit SHA that GrepNest reports as `indexed_sha`, then upload it with
+an administrator token:
+
+```sh
+scip-go
+curl --fail-with-body -X POST \
+  "https://grepnest.example/v1/scip/uploads?repository_id=101&commit=$GITHUB_SHA" \
+  -H "Authorization: Bearer $GREPNEST_ADMIN_TOKEN" \
+  -H 'Content-Type: application/vnd.scip+protobuf' \
+  --data-binary @index.scip
+```
+
+The upload is rejected with `409` when `commit` differs from the repository's
+exact indexed SHA. `GREPNEST_SCIP_MAX_UPLOAD_BYTES` defaults to 67108864 (64
+MiB) and is capped at 268435456 (256 MiB). Indexes may use SCIP UTF-8, UTF-16,
+or UTF-32 code-unit positions; navigation lines are one-based and characters
+are zero-based in the index's declared unit.
+
+Navigate from an indexed occurrence with a token authorized for the origin and
+any returned target repositories:
+
+```sh
+curl --fail-with-body https://grepnest.example/v1/scip/navigation \
+  -H "Authorization: Bearer $GREPNEST_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data '{"repository_id":102,"path":"main.go","line":12,"character":4,"operation":"definitions"}'
+```
+
+Targets outside the caller's authorized repositories are omitted. Administrative
+upload and metadata requests return `403` for a non-administrator; an unknown or
+unauthorized repository may return `404` without revealing whether it exists.
+
+Cross-repository navigation can use manually supplied package URLs:
+
+```sh
+curl --fail-with-body -X PUT https://grepnest.example/v1/scip/dependencies \
+  -H "Authorization: Bearer $GREPNEST_ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data '{"repository_id":101,"provides":["pkg:golang/example.com/acme/lib@v1.0.0"],"depends_on":[]}'
+```
+
+Or refresh package metadata from GitHub's dependency graph:
+
+```sh
+curl --fail-with-body -X POST https://grepnest.example/v1/scip/dependencies/github \
+  -H "Authorization: Bearer $GREPNEST_ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data '{"repository_id":101}'
+```
+
+The GitHub App must have read access to repository metadata and the dependency
+graph. GitHub deployments without dependency-graph data degrade gracefully:
+the refresh reports `available: false`; inaccessible repositories return 403 or
+404 and existing manual metadata remains usable.
+
 An unlisted repository is deliberately not searched; the response is a normal
 empty result:
 
@@ -128,6 +187,7 @@ Optional limits are positive and cannot exceed their server caps:
 | `GREPNEST_MAX_TIMEOUT` | 5s | 5s |
 | `GREPNEST_MAX_REQUEST_BYTES` | 65536 | 65536 |
 | `GREPNEST_MAX_RESPONSE_BYTES` | 262144 | 262144 |
+| `GREPNEST_SCIP_MAX_UPLOAD_BYTES` | 67108864 | 268435456 |
 
 Run `make fmt lint staticcheck govulncheck test test-race postgres-integration
 integration e2e build` before proposing a change. `make e2e` starts its pinned

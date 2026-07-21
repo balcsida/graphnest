@@ -13,6 +13,7 @@
 | 6 | `internal/postgres`, `internal/githubapp`, `internal/webhook` | Embedded migrations, durable numeric identity, verified deliveries, reconciliation, coalescing, leases, and retention are covered against real PostgreSQL. |
 | 7 | `internal/indexer`, `cmd/grepnest-indexer` | Bounded HTTPS Git fetches use fixed askpass, numeric paths, one leased worker, real Zoekt indexing, and exact `/api/list` publication checks. |
 | 8 | repository REST/MCP services and `test/e2e/milestone2_test.go` | A GHES-compatible TLS fixture proves signed webhook through indexed-SHA search/read/list/status, including stale suppression, rename isolation, disablement, and an empty-tree repository. |
+| 9 | `internal/scipgraph`, SCIP HTTP/MCP adapters, PostgreSQL graph storage, and `test/e2e/scip_test.go` | Pre-generated indexes provide exact-SHA cross-repository navigation while suppressing unauthorized targets; no managed indexer was added. |
 
 ## Decisions
 
@@ -30,6 +31,8 @@
   the indexed commit SHA.
 - Pinned Zoekt runs as `linux/amd64`; Apple-silicon hosts use Docker emulation
   because the pinned image has no arm64 variant.
+- SCIP generation remains repository CI's responsibility. GrepNest accepts
+  bounded protobuf uploads only for the exact currently indexed commit.
 
 ## Verification commands and results
 

@@ -197,9 +197,26 @@ func run(t *testing.T, ctx context.Context, name string, args ...string) string 
 
 type managedProcess struct {
 	command *exec.Cmd
-	logs    bytes.Buffer
+	logs    synchronizedBuffer
 	done    chan struct{}
 	err     error
+}
+
+type synchronizedBuffer struct {
+	sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (buffer *synchronizedBuffer) Write(data []byte) (int, error) {
+	buffer.Lock()
+	defer buffer.Unlock()
+	return buffer.buffer.Write(data)
+}
+
+func (buffer *synchronizedBuffer) String() string {
+	buffer.Lock()
+	defer buffer.Unlock()
+	return buffer.buffer.String()
 }
 
 func startProcess(t *testing.T, command *exec.Cmd) *managedProcess {

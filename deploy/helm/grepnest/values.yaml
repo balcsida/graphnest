@@ -31,6 +31,7 @@ server:
     maxTimeout: 5s
     maxRequestBytes: 65536
     maxResponseBytes: 262144
+    scipMaxUploadBytes: 67108864
   resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
   nodeSelector: {}
   affinity: {}

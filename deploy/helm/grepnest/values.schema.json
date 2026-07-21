@@ -112,7 +112,8 @@
             "defaultTimeout",
             "maxTimeout",
             "maxRequestBytes",
-            "maxResponseBytes"
+            "maxResponseBytes",
+            "scipMaxUploadBytes"
           ],
           "properties": {
             "githubWebURL": {
@@ -183,6 +184,11 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 262144
+            },
+            "scipMaxUploadBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 268435456
             }
           }
         },

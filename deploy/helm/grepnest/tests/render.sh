@@ -104,6 +104,7 @@ for pattern in \
   'GREPNEST_INDEX_DIR: "/srv/grepnest-data/zoekt/index"' \
   'GREPNEST_MIN_FREE_BYTES: "10737418240"' \
   'GREPNEST_MAX_REPOSITORY_BYTES: "5368709120"' \
+	'GREPNEST_SCIP_MAX_UPLOAD_BYTES: "67108864"' \
   'containerPort: 16070' 'port: 16071, targetPort: zoekt' \
   'GREPNEST_METRICS_LISTEN_ADDRESS: ":19090"' \
   'name: metrics, containerPort: 19090' \
@@ -313,6 +314,10 @@ expect_failure "$tmp/repository.err" helm template bad "$chart" -f "$minimal" \
   --set-string=images.application.repository=
 expect_failure "$tmp/digest.err" helm template bad "$chart" -f "$minimal" \
   --set=images.node.digest=latest
+expect_failure "$tmp/scip-upload-min.err" helm template bad "$chart" -f "$minimal" \
+  --set=server.config.scipMaxUploadBytes=0
+expect_failure "$tmp/scip-upload-max.err" helm template bad "$chart" -f "$minimal" \
+  --set=server.config.scipMaxUploadBytes=268435457
 for field in nameOverride fullnameOverride; do
   for value in Bad bad_name -bad bad- \
     aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; do
@@ -348,6 +353,8 @@ expect_failure "$tmp/dns-selectors.err" helm template bad "$chart" -f "$minimal"
 
 require "/images/application/repository.*minLength: got 0, want 1" "$tmp/repository.err"
 require "/images/node/digest.*'latest'.*does not match pattern" "$tmp/digest.err"
+require '/server/config/scipMaxUploadBytes.*minimum: got 0, want 1' "$tmp/scip-upload-min.err"
+require '/server/config/scipMaxUploadBytes.*maximum:' "$tmp/scip-upload-max.err"
 require "/secrets/runtime/name.*'bad name'.*does not match pattern" "$tmp/runtime-secret-name.err"
 require "/secrets/runtime/databaseURLKey.*'bad/key'.*does not match pattern" "$tmp/runtime-secret-key.err"
 require '/ingress/className.*minLength: got 0, want 1' "$tmp/ingress-class-name.err"
