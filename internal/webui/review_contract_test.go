@@ -16,7 +16,12 @@ func TestConsoleShowsStructuredAPIErrorWithoutClearingQuery(t *testing.T) {
 			t.Fatalf("console is missing safe API error behavior %q", want)
 		}
 	}
-	if bytes.Contains(document, []byte(`$("query").value=""`)) {
+	start := bytes.Index(document, []byte("function showError("))
+	end := bytes.Index(document[start:], []byte("function updateRepositorySummary("))
+	if start < 0 || end < 0 {
+		t.Fatal("console is missing bounded error-rendering function")
+	}
+	if bytes.Contains(document[start:start+end], []byte(`$("query").value=""`)) {
 		t.Fatal("API error handling clears the submitted query")
 	}
 }

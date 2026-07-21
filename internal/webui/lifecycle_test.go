@@ -23,6 +23,28 @@ func TestConsoleInvalidatesCredentialScopedRepositoryState(t *testing.T) {
 	}
 }
 
+func TestConsoleClearsPrincipalSearchStateOnSignOut(t *testing.T) {
+	for _, want := range []string{
+		"function resetSearchState()",
+		`$("query").value=""`,
+		`$("result-count").textContent="No search yet"`,
+		`$("repository-count").textContent="All authorized repositories"`,
+		`$("status").textContent=""`,
+		`$("error").replaceChildren()`,
+		`$("error").hidden=true`,
+		`$("results").replaceChildren()`,
+		`$("repository-picker").open=false`,
+		"state.controller=null",
+		"state.retry=null",
+		"resetSearchState();resetRepositories()",
+		`if(response.status===401){signOut()`,
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console is missing principal search-state reset %q", want)
+		}
+	}
+}
+
 func TestConsoleKeepsTouchTargetsAtLeast44Pixels(t *testing.T) {
 	for _, want := range []string{
 		"fieldset label{display:flex;gap:8px;align-items:center;min-height:44px}",
