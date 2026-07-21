@@ -47,7 +47,7 @@ func TestConsoleClearsPrincipalSearchStateOnSignOut(t *testing.T) {
 
 func TestConsoleKeepsTouchTargetsAtLeast44Pixels(t *testing.T) {
 	for _, want := range []string{
-		"fieldset label{display:flex;gap:8px;align-items:center;min-height:44px}",
+		"fieldset label{display:flex;gap:8px;align-items:center;min-width:0;min-height:44px;overflow-wrap:anywhere}",
 		"fieldset input{width:44px;min-width:44px;min-height:44px}",
 		".file-header a{color:var(--signal);display:inline-flex;min-height:44px;align-items:center}",
 	} {
