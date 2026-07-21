@@ -45,7 +45,15 @@ func ParsePackageURL(value string) (Package, error) {
 		return Package{}, errInvalidPackageURL
 	}
 	return Package{
-		PURL:    "pkg:" + packageType + "/" + name + "@" + version,
+		PURL:    "pkg:" + packageType + "/" + escapePackageName(name) + "@" + escapePackageComponent(version),
 		Manager: manager, Name: name, Version: version,
 	}, nil
+}
+
+func escapePackageName(value string) string {
+	return strings.ReplaceAll(escapePackageComponent(value), "%2F", "/")
+}
+
+func escapePackageComponent(value string) string {
+	return strings.ReplaceAll(url.PathEscape(value), "@", "%40")
 }

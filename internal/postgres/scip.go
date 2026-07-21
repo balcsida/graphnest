@@ -190,8 +190,10 @@ func (s *Store) approximateLocations(ctx context.Context, principal authn.Princi
 		join repository_packages manual on manual.repository_id=manual_uploads.repository_id
 		where manual.source='manual' and manual.relation='provides'
 		and manual.manager=$5 and manual.name=$6
-	))`, principal.InstallationID, principal.RepositoryIDs, origin.UploadID, origin.RepositoryID,
-		parsed.Package.Manager, parsed.Package.Name, parsed.Package.Version)
+	))
+	order by uploads.id, provider.version
+	limit $8`, principal.InstallationID, principal.RepositoryIDs, origin.UploadID, origin.RepositoryID,
+		parsed.Package.Manager, parsed.Package.Name, parsed.Package.Version, packageCandidateLimit(max))
 	if err != nil {
 		return nil, false, err
 	}
@@ -273,4 +275,8 @@ func (s *Store) approximateLocations(ctx context.Context, principal authn.Princi
 		locations = locations[:max]
 	}
 	return locations, truncated, nil
+}
+
+func packageCandidateLimit(max int) int {
+	return max + 1
 }
