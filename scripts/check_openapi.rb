@@ -6,7 +6,7 @@ class OpenAPIError < StandardError; end
 
 def load_document(path, documents)
   path = File.expand_path(path)
-  documents[path] ||= YAML.load_file(path, aliases: false)
+  documents[path] ||= YAML.safe_load(File.read(path))
 rescue Errno::ENOENT, Psych::Exception => error
   raise OpenAPIError, "cannot load #{path}: #{error.message}"
 end
