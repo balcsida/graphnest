@@ -5,6 +5,7 @@ package postgres
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/grepnest/grepnest/internal/authn"
@@ -55,9 +56,9 @@ func TestOccurrenceAtReturnsSmallestContainingRange(t *testing.T) {
 	store := migratedStore(t)
 	repositoryID := seedReadyRepository(t, store, 101, testSHA('a'))
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), scipgraph.Upload{Occurrences: []scipgraph.Occurrence{
-		{Path: "a.go", Symbol: globalSymbol, StartLine: 0, StartCharacter: 0, EndLine: 10, EndCharacter: 0},
-		{Path: "a.go", Symbol: globalSymbol, StartLine: 2, StartCharacter: 1, EndLine: 2, EndCharacter: 8},
-		{Path: "a.go", Symbol: globalSymbol, StartLine: 2, StartCharacter: 2, EndLine: 2, EndCharacter: 6},
+		{Path: "a.go", Symbol: globalSymbol, StartLine: 0, StartCharacter: 0, EndLine: 10, EndCharacter: 0, PositionEncoding: 1},
+		{Path: "a.go", Symbol: globalSymbol, StartLine: 2, StartCharacter: 1, EndLine: 2, EndCharacter: 8, PositionEncoding: 1},
+		{Path: "a.go", Symbol: globalSymbol, StartLine: 2, StartCharacter: 2, EndLine: 2, EndCharacter: 6, PositionEncoding: 2},
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +67,7 @@ func TestOccurrenceAtReturnsSmallestContainingRange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if occurrence.StartLine != 2 || occurrence.StartCharacter != 2 || occurrence.EndLine != 2 || occurrence.EndCharacter != 6 {
+	if occurrence.StartLine != 2 || occurrence.StartCharacter != 2 || occurrence.EndLine != 2 || occurrence.EndCharacter != 6 || occurrence.PositionEncoding != 2 {
 		t.Fatalf("OccurrenceAt() = %#v", occurrence)
 	}
 }
@@ -75,7 +76,7 @@ func TestSCIPTablesCascadeWithRepository(t *testing.T) {
 	store := migratedStore(t)
 	repositoryID := seedReadyRepository(t, store, 101, testSHA('a'))
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), scipgraph.Upload{
-		Occurrences:   []scipgraph.Occurrence{{Path: "a.go", Symbol: globalSymbol, EndCharacter: 2}},
+		Occurrences:   []scipgraph.Occurrence{{Path: "a.go", Symbol: globalSymbol, EndCharacter: 2, PositionEncoding: 1}},
 		Relationships: []scipgraph.Relationship{{Source: globalSymbol, Target: implementationSymbol, Implementation: true}},
 	}); err != nil {
 		t.Fatal(err)
@@ -104,15 +105,15 @@ func TestSCIPLocationsAuthorizeAndScopeSymbols(t *testing.T) {
 	fourthID := seedReadyRepository(t, store, 104, testSHA('d'))
 
 	if err := store.ReplaceSCIP(t.Context(), firstID, testSHA('a'), scipgraph.Upload{Occurrences: []scipgraph.Occurrence{
-		{Path: "origin.go", Symbol: globalSymbol, EndCharacter: 2},
-		{Path: "local.go", Symbol: localSymbol, EndCharacter: 2, Local: true},
+		{Path: "origin.go", Symbol: globalSymbol, EndCharacter: 2, PositionEncoding: 1},
+		{Path: "local.go", Symbol: localSymbol, EndCharacter: 2, PositionEncoding: 1, Local: true},
 	}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ReplaceSCIP(t.Context(), secondID, testSHA('b'), scipgraph.Upload{Occurrences: []scipgraph.Occurrence{
-		{Path: "definition.go", Symbol: globalSymbol, EndCharacter: 2, Roles: definitionRole},
-		{Path: "local.go", Symbol: localSymbol, EndCharacter: 2, Roles: definitionRole, Local: true},
-		{Path: "implementation.go", Symbol: implementationSymbol, EndCharacter: 2, Roles: definitionRole},
+		{Path: "definition.go", Symbol: globalSymbol, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
+		{Path: "local.go", Symbol: localSymbol, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole, Local: true},
+		{Path: "implementation.go", Symbol: implementationSymbol, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
 	}, Relationships: []scipgraph.Relationship{{Source: implementationSymbol, Target: globalSymbol, Implementation: true}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -164,6 +165,148 @@ func TestSCIPLocationsAuthorizeAndScopeSymbols(t *testing.T) {
 	}
 }
 
+func TestSCIPLocalSymbolsAreDocumentScoped(t *testing.T) {
+	store := migratedStore(t)
+	repositoryID := seedReadyRepository(t, store, 101, testSHA('a'))
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), scipgraph.Upload{
+		Occurrences: []scipgraph.Occurrence{
+			{Path: "a.go", Symbol: localSymbol, EndCharacter: 2, PositionEncoding: 1, Local: true},
+			{Path: "a.go", Symbol: localSymbol, StartCharacter: 3, EndCharacter: 5, PositionEncoding: 1, Roles: definitionRole, Local: true},
+			{Path: "b.go", Symbol: localSymbol, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole, Local: true},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	origin, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "a.go", 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	locations, truncated, err := store.Locations(
+		t.Context(),
+		authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}},
+		origin,
+		"definitions",
+		10,
+	)
+	if err != nil || truncated || len(locations) != 1 || locations[0].Path != "a.go" || locations[0].StartCharacter != 3 {
+		t.Fatalf("local definitions = %#v, truncated = %v, err = %v", locations, truncated, err)
+	}
+}
+
+func TestSCIPRelationshipsNavigateDefinitionsAndReferences(t *testing.T) {
+	store := migratedStore(t)
+	repositoryID := seedReadyRepository(t, store, 101, testSHA('a'))
+	const (
+		definitionSource = "scip go example.com/grepnest v1 pkg/Source#"
+		definition       = "scip go example.com/grepnest v1 pkg/Definition#"
+		referenceSource  = "scip go example.com/grepnest v1 pkg/Reference#"
+		referenceTarget  = "scip go example.com/grepnest v1 pkg/Target#"
+	)
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), scipgraph.Upload{
+		Occurrences: []scipgraph.Occurrence{
+			{Path: "definition-source.go", Symbol: definitionSource, EndCharacter: 2, PositionEncoding: 1},
+			{Path: "definition.go", Symbol: definition, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
+			{Path: "definition-reference.go", Symbol: definition, EndCharacter: 2, PositionEncoding: 1},
+			{Path: "reference-source.go", Symbol: referenceSource, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
+			{Path: "reference-target.go", Symbol: referenceTarget, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
+		},
+		Relationships: []scipgraph.Relationship{
+			{Path: "definition-source.go", Source: definitionSource, Target: definition, Definition: true},
+			{Path: "reference-source.go", Source: referenceSource, Target: referenceTarget, Reference: true},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}
+	for _, test := range []struct {
+		originPath, operation, path string
+	}{
+		{"definition-source.go", "definitions", "definition.go"},
+		{"reference-target.go", "references", "reference-source.go"},
+		{"reference-source.go", "references", "reference-target.go"},
+	} {
+		origin, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), test.originPath, 0, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		locations, truncated, err := store.Locations(t.Context(), principal, origin, test.operation, 10)
+		if err != nil || truncated || len(locations) != 1 || locations[0].Path != test.path {
+			t.Fatalf("%s = %#v, truncated = %v, err = %v", test.operation, locations, truncated, err)
+		}
+	}
+}
+
+func TestSCIPLocalRelationshipsAreDocumentScoped(t *testing.T) {
+	store := migratedStore(t)
+	repositoryID := seedReadyRepository(t, store, 101, testSHA('a'))
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), scipgraph.Upload{
+		Occurrences: []scipgraph.Occurrence{
+			{Path: "a.go", Symbol: "local 0", EndCharacter: 2, PositionEncoding: 1, Local: true},
+			{Path: "a.go", Symbol: "local 1", StartCharacter: 3, EndCharacter: 5, PositionEncoding: 1, Roles: definitionRole, Local: true},
+			{Path: "b.go", Symbol: "local 2", EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole, Local: true},
+		},
+		Relationships: []scipgraph.Relationship{
+			{Path: "a.go", Source: "local 0", Target: "local 1", Definition: true},
+			{Path: "b.go", Source: "local 0", Target: "local 2", Definition: true},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	origin, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "a.go", 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	locations, truncated, err := store.Locations(
+		t.Context(),
+		authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}},
+		origin,
+		"definitions",
+		10,
+	)
+	if err != nil || truncated || len(locations) != 1 || locations[0].Path != "a.go" || locations[0].Symbol != "local 1" {
+		t.Fatalf("local relationship definitions = %#v, truncated = %v, err = %v", locations, truncated, err)
+	}
+}
+
+func TestExactSCIPSymbolLookupUsesIndex(t *testing.T) {
+	store := migratedStore(t)
+	tx, err := store.pool.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(t.Context())
+	if _, err := tx.Exec(t.Context(), "set local enable_seqscan=off"); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := tx.Query(t.Context(), "explain (costs off) "+exactLocationsSQL,
+		int64(10), []int64{101}, globalSymbol, int64(1), false, "references", 11, int64(1), "a.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var plan strings.Builder
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			t.Fatal(err)
+		}
+		plan.WriteString(line)
+		plan.WriteByte('\n')
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	for _, index := range []string{
+		"scip_occurrences_symbol_lookup",
+		"scip_relationships_source_lookup",
+		"scip_relationships_target_lookup",
+	} {
+		if !strings.Contains(plan.String(), index) {
+			t.Fatalf("plan does not use %s:\n%s", index, plan.String())
+		}
+	}
+}
+
 func TestSCIPLocationsUseDeterministicTotalOrder(t *testing.T) {
 	store := migratedStore(t)
 	repositoryID := seedReadyRepository(t, store, 101, testSHA('a'))
@@ -174,10 +317,10 @@ func TestSCIPLocationsUseDeterministicTotalOrder(t *testing.T) {
 	)
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), scipgraph.Upload{
 		Occurrences: []scipgraph.Occurrence{
-			{Path: "origin.go", Symbol: globalSymbol, EndCharacter: 2},
-			{Path: "implementations.go", Symbol: lastImplementation, EndLine: 1, Roles: definitionRole},
-			{Path: "implementations.go", Symbol: secondImplementation, EndCharacter: 5, Roles: definitionRole},
-			{Path: "implementations.go", Symbol: firstImplementation, EndCharacter: 5, Roles: definitionRole},
+			{Path: "origin.go", Symbol: globalSymbol, EndCharacter: 2, PositionEncoding: 1},
+			{Path: "implementations.go", Symbol: lastImplementation, EndLine: 1, PositionEncoding: 1, Roles: definitionRole},
+			{Path: "implementations.go", Symbol: secondImplementation, EndCharacter: 5, PositionEncoding: 1, Roles: definitionRole},
+			{Path: "implementations.go", Symbol: firstImplementation, EndCharacter: 5, PositionEncoding: 1, Roles: definitionRole},
 		},
 		Relationships: []scipgraph.Relationship{
 			{Source: lastImplementation, Target: globalSymbol, Implementation: true},
@@ -206,9 +349,9 @@ func TestSCIPLocationsReportTruncation(t *testing.T) {
 	store := migratedStore(t)
 	repositoryID := seedReadyRepository(t, store, 101, testSHA('a'))
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), scipgraph.Upload{Occurrences: []scipgraph.Occurrence{
-		{Path: "origin.go", Symbol: globalSymbol, EndCharacter: 2},
-		{Path: "one.go", Symbol: globalSymbol, EndCharacter: 2, Roles: definitionRole},
-		{Path: "two.go", Symbol: globalSymbol, EndCharacter: 2, Roles: definitionRole},
+		{Path: "origin.go", Symbol: globalSymbol, EndCharacter: 2, PositionEncoding: 1},
+		{Path: "one.go", Symbol: globalSymbol, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
+		{Path: "two.go", Symbol: globalSymbol, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -287,6 +430,68 @@ func TestDependencyAssistedLocationsRequireDependencyAndPreferManualProvider(t *
 	}
 }
 
+func TestDependencyAssistedLocationsTraverseRelationships(t *testing.T) {
+	store := migratedStore(t)
+	originID := seedReadyRepository(t, store, 101, testSHA('a'))
+	providerID := seedReadyRepository(t, store, 102, testSHA('b'))
+	const (
+		originSymbol            = "scip gomod example.com/acme/lib v1 pkg/Item#"
+		providerSymbol          = "scip gomod example.com/acme/lib v2 pkg/Item#"
+		definitionSymbol        = "scip gomod example.com/acme/lib v2 pkg/Definition#"
+		originReferenceSource   = "scip gomod example.com/acme/lib v1 pkg/Reference#"
+		providerReferenceSource = "scip gomod example.com/acme/lib v2 pkg/Reference#"
+		originReferenceTarget   = "scip gomod example.com/acme/lib v1 pkg/Target#"
+		providerReferenceTarget = "scip gomod example.com/acme/lib v2 pkg/Target#"
+	)
+	if err := store.ReplaceSCIP(t.Context(), originID, testSHA('a'), scipgraph.Upload{Occurrences: []scipgraph.Occurrence{
+		{Path: "origin.go", Symbol: originSymbol, EndCharacter: 2, PositionEncoding: 1},
+		{Path: "reference-source-origin.go", Symbol: originReferenceSource, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
+		{Path: "reference-target-origin.go", Symbol: originReferenceTarget, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReplaceSCIP(t.Context(), providerID, testSHA('b'), scipgraph.Upload{
+		Occurrences: []scipgraph.Occurrence{
+			{Path: "definition.go", Symbol: definitionSymbol, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
+			{Path: "reference-source.go", Symbol: providerReferenceSource, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
+			{Path: "reference-target.go", Symbol: providerReferenceTarget, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
+		},
+		Relationships: []scipgraph.Relationship{
+			{Path: "definition.go", Source: providerSymbol, Target: definitionSymbol, Definition: true},
+			{Path: "reference-source.go", Source: providerReferenceSource, Target: providerReferenceTarget, Reference: true},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReplacePackages(t.Context(), originID, "manual", []scipgraph.PackageMapping{
+		packageMapping("pkg:golang/example.com/acme/lib@v1", "depends_on", "manual"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReplacePackages(t.Context(), providerID, "manual", []scipgraph.PackageMapping{
+		packageMapping("pkg:golang/example.com/acme/lib@v2", "provides", "manual"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101, 102}}
+	for _, test := range []struct {
+		originPath, operation, path string
+	}{
+		{"origin.go", "definitions", "definition.go"},
+		{"reference-target-origin.go", "references", "reference-source.go"},
+		{"reference-source-origin.go", "references", "reference-target.go"},
+	} {
+		origin, err := store.OccurrenceAt(t.Context(), originID, testSHA('a'), test.originPath, 0, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		locations, truncated, err := store.Locations(t.Context(), principal, origin, test.operation, 10)
+		if err != nil || truncated || len(locations) != 1 || locations[0].Path != test.path || !locations[0].Approximate {
+			t.Fatalf("%s = %#v, truncated = %v, err = %v", test.operation, locations, truncated, err)
+		}
+	}
+}
+
 func TestDependencyAssistedLocationsAreBoundedAndExactFirst(t *testing.T) {
 	store := migratedStore(t)
 	originID := seedReadyRepository(t, store, 201, testSHA('a'))
@@ -302,8 +507,8 @@ func TestDependencyAssistedLocationsAreBoundedAndExactFirst(t *testing.T) {
 		fourthProviderSymbol = "scip gomod example.com/acme/lib v5 pkg/Item#"
 	)
 	if err := store.ReplaceSCIP(t.Context(), originID, testSHA('a'), scipgraph.Upload{Occurrences: []scipgraph.Occurrence{
-		{Path: "origin.go", Symbol: originSymbol, EndCharacter: 2},
-		{Path: "exact.go", Symbol: originSymbol, EndCharacter: 2, Roles: definitionRole},
+		{Path: "origin.go", Symbol: originSymbol, EndCharacter: 2, PositionEncoding: 1},
+		{Path: "exact.go", Symbol: originSymbol, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +571,7 @@ func packageMapping(purl, relation, source string) scipgraph.PackageMapping {
 
 func uploadWith(path, symbol string, roles int32) scipgraph.Upload {
 	return scipgraph.Upload{ProjectRoot: "file:///src", IndexerName: "test", IndexerVersion: "1", Occurrences: []scipgraph.Occurrence{{
-		Path: path, Symbol: symbol, EndCharacter: 2, Roles: roles,
+		Path: path, Symbol: symbol, EndCharacter: 2, PositionEncoding: 1, Roles: roles,
 	}}}
 }
 

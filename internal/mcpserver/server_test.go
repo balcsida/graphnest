@@ -162,7 +162,10 @@ func TestRepositoryToolsUseAuthenticatedService(t *testing.T) {
 
 func TestNavigateSymbolMatchesSCIPServiceResponse(t *testing.T) {
 	store := &mcpSCIPStore{repository: repository.Repository{ID: 1, GitHubID: 101, InstallationID: 10, Name: "acme/one", IndexedSHA: strings.Repeat("a", 40)}}
-	store.locations = []scipgraph.Location{{RepositoryID: 101, RepositoryName: "acme/one", Commit: store.repository.IndexedSHA, Path: "target.go", Symbol: "sym", StartLine: 2}}
+	store.locations = []scipgraph.Location{{
+		RepositoryID: 101, RepositoryName: "acme/one", Commit: store.repository.IndexedSHA,
+		Path: "target.go", Symbol: "sym", StartLine: 2, PositionEncoding: 2,
+	}}
 	scipService := &scipgraph.Service{Store: store}
 	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}
 	request := api.SCIPNavigationRequest{RepositoryID: 101, Path: "main.go", Line: 1, Character: 0, Operation: "definitions"}
@@ -216,6 +219,9 @@ func TestNavigateSymbolMatchesSCIPServiceResponse(t *testing.T) {
 	decodeStructured(t, result.StructuredContent, &got)
 	if !slices.Equal(got.Locations, want.Locations) || got.Truncated != want.Truncated || len(result.Content) != 0 || marshaledSize(t, result) > budget {
 		t.Fatalf("output = %#v, want %#v", got, want)
+	}
+	if got.Locations[0].PositionEncoding != "UTF16CodeUnitOffsetFromLineStart" {
+		t.Fatalf("position encoding = %q", got.Locations[0].PositionEncoding)
 	}
 
 	store.occurrenceErr = errors.New("secret backend")

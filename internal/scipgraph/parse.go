@@ -21,11 +21,13 @@ type Upload struct {
 type Occurrence struct {
 	Path, Symbol                                     string
 	StartLine, StartCharacter, EndLine, EndCharacter int32
+	PositionEncoding                                 int32
 	Roles                                            int32
 	Local                                            bool
 }
 
 type Relationship struct {
+	Path                                                  string
 	Source, Target                                        string
 	Definition, Reference, Implementation, TypeDefinition bool
 }
@@ -57,7 +59,8 @@ func Parse(data []byte) (Upload, error) {
 				Path: document.RelativePath, Symbol: occurrence.Symbol,
 				StartLine: sourceRange.Start.Line, StartCharacter: sourceRange.Start.Character,
 				EndLine: sourceRange.End.Line, EndCharacter: sourceRange.End.Character,
-				Roles: occurrence.SymbolRoles, Local: scip.IsLocalSymbol(occurrence.Symbol),
+				PositionEncoding: int32(document.PositionEncoding),
+				Roles:            occurrence.SymbolRoles, Local: scip.IsLocalSymbol(occurrence.Symbol),
 			})
 		}
 
@@ -70,7 +73,7 @@ func Parse(data []byte) (Upload, error) {
 					return Upload{}, ErrInvalidIndex
 				}
 				upload.Relationships = append(upload.Relationships, Relationship{
-					Source: symbol.Symbol, Target: relationship.Symbol,
+					Path: document.RelativePath, Source: symbol.Symbol, Target: relationship.Symbol,
 					Definition: relationship.IsDefinition, Reference: relationship.IsReference,
 					Implementation: relationship.IsImplementation, TypeDefinition: relationship.IsTypeDefinition,
 				})

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/internal/scipgraph"
+	"github.com/grepnest/grepnest/pkg/api"
 	"github.com/jackc/pgx/v5"
 	"github.com/scip-code/scip/bindings/go/scip"
 	"google.golang.org/protobuf/proto"
@@ -119,6 +121,29 @@ func TestSCIPJSONRouteContracts(t *testing.T) {
 		if response.Code != http.StatusForbidden {
 			t.Fatalf("non-admin %s status = %d", route.name, response.Code)
 		}
+	}
+}
+
+func TestSCIPNavigationReturnsPositionEncoding(t *testing.T) {
+	store := &scipStoreStub{repository: scipRepository(), locations: []scipgraph.Location{{
+		RepositoryID: 101, RepositoryName: "acme/one", Commit: scipTestSHA,
+		Path: "target.go", PositionEncoding: 3,
+	}}}
+	response := scipRequest(
+		newSCIPHandler(store, nil, 1024, 1024),
+		http.MethodPost,
+		"/v1/scip/navigation",
+		[]byte(`{"repository_id":101,"path":"main.go","line":1,"character":0,"operation":"definitions"}`),
+		"user",
+		"application/json",
+	)
+	var got api.SCIPNavigationResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusOK || len(got.Locations) != 1 ||
+		got.Locations[0].PositionEncoding != "UTF32CodeUnitOffsetFromLineStart" {
+		t.Fatalf("status = %d, response = %#v", response.Code, got)
 	}
 }
 

@@ -14,17 +14,18 @@ type SCIPNavigationResponse struct {
 }
 
 type SCIPLocation struct {
-	RepositoryID   int64  `json:"repository_id"`
-	RepositoryName string `json:"repository_name"`
-	Commit         string `json:"commit"`
-	Path           string `json:"path"`
-	Symbol         string `json:"symbol"`
-	StartLine      int    `json:"start_line"`
-	StartCharacter int    `json:"start_character"`
-	EndLine        int    `json:"end_line"`
-	EndCharacter   int    `json:"end_character"`
-	Roles          int32  `json:"roles"`
-	Approximate    bool   `json:"approximate"`
+	RepositoryID     int64  `json:"repository_id"`
+	RepositoryName   string `json:"repository_name"`
+	Commit           string `json:"commit"`
+	Path             string `json:"path"`
+	Symbol           string `json:"symbol"`
+	StartLine        int    `json:"start_line"`
+	StartCharacter   int    `json:"start_character"`
+	EndLine          int    `json:"end_line"`
+	EndCharacter     int    `json:"end_character"`
+	PositionEncoding string `json:"position_encoding"`
+	Roles            int32  `json:"roles"`
+	Approximate      bool   `json:"approximate"`
 }
 
 type RepositoryPackages struct {

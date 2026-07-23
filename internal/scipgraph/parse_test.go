@@ -34,10 +34,11 @@ func TestParseNormalizesSCIP(t *testing.T) {
 	if upload.ProjectRoot != "file:///workspace" || upload.IndexerName != "scip-go" || upload.IndexerVersion != "1" {
 		t.Fatalf("metadata = %#v", upload)
 	}
-	if len(upload.Occurrences) != 2 || upload.Occurrences[0].StartLine != 2 || upload.Occurrences[0].EndLine != 2 || upload.Occurrences[0].EndCharacter != 9 || !upload.Occurrences[1].Local {
+	if len(upload.Occurrences) != 2 || upload.Occurrences[0].StartLine != 2 || upload.Occurrences[0].EndLine != 2 || upload.Occurrences[0].EndCharacter != 9 ||
+		upload.Occurrences[0].PositionEncoding != int32(scip.PositionEncoding_UTF8CodeUnitOffsetFromLineStart) || !upload.Occurrences[1].Local {
 		t.Fatalf("occurrences = %#v", upload.Occurrences)
 	}
-	if len(upload.Relationships) != 1 || upload.Relationships[0] != (Relationship{Source: "scip-go gomod example.com/a v1.0.0 B#", Target: "scip-go gomod example.com/a v1.0.0 A#", Definition: true, Reference: true, Implementation: true, TypeDefinition: true}) {
+	if len(upload.Relationships) != 1 || upload.Relationships[0] != (Relationship{Path: "pkg/a.go", Source: "scip-go gomod example.com/a v1.0.0 B#", Target: "scip-go gomod example.com/a v1.0.0 A#", Definition: true, Reference: true, Implementation: true, TypeDefinition: true}) {
 		t.Fatalf("relationships = %#v", upload.Relationships)
 	}
 }

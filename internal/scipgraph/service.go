@@ -10,6 +10,7 @@ import (
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/scip-code/scip/bindings/go/scip"
 )
 
 const defaultMaxResults = 100
@@ -145,7 +146,8 @@ func (service *Service) Navigate(ctx context.Context, principal authn.Principal,
 			Commit: location.Commit, Path: location.Path, Symbol: location.Symbol,
 			StartLine: int(location.StartLine) + 1, StartCharacter: int(location.StartCharacter),
 			EndLine: int(location.EndLine) + 1, EndCharacter: int(location.EndCharacter),
-			Roles: location.Roles, Approximate: location.Approximate,
+			PositionEncoding: scip.PositionEncoding(location.PositionEncoding).String(),
+			Roles:            location.Roles, Approximate: location.Approximate,
 		})
 	}
 	return response, nil

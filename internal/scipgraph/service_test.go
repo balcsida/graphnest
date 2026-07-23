@@ -97,7 +97,7 @@ func TestNavigateAuthorizesEveryLocationAndConvertsLines(t *testing.T) {
 		repositories: map[int64]repository.Repository{101: serviceRepository},
 		origin:       StoredOccurrence{RepositoryID: 1, Commit: serviceSHA},
 		locations: []Location{
-			{RepositoryID: 101, RepositoryName: "acme/one", Commit: serviceSHA, Path: "allowed.go", StartLine: 2, EndLine: 3, Approximate: true},
+			{RepositoryID: 101, RepositoryName: "acme/one", Commit: serviceSHA, Path: "allowed.go", StartLine: 2, EndLine: 3, PositionEncoding: 2, Approximate: true},
 			{RepositoryID: 102, RepositoryName: "acme/two", Commit: serviceSHA, Path: "forbidden.go"},
 			{RepositoryID: 101, RepositoryName: "acme/one", Commit: strings.Repeat("b", 40), Path: "stale.go"},
 		},
@@ -106,7 +106,8 @@ func TestNavigateAuthorizesEveryLocationAndConvertsLines(t *testing.T) {
 	service := Service{Store: store, MaxResults: 100}
 
 	got, err := service.Navigate(t.Context(), principal, api.SCIPNavigationRequest{RepositoryID: 101, Path: "a.go", Line: 3, Character: 4, Operation: "definitions"})
-	if err != nil || len(got.Locations) != 1 || got.Locations[0].RepositoryID != 101 || got.Locations[0].StartLine != 3 || got.Locations[0].EndLine != 4 || !got.Locations[0].Approximate || !got.Truncated {
+	if err != nil || len(got.Locations) != 1 || got.Locations[0].RepositoryID != 101 || got.Locations[0].StartLine != 3 || got.Locations[0].EndLine != 4 ||
+		got.Locations[0].PositionEncoding != "UTF16CodeUnitOffsetFromLineStart" || !got.Locations[0].Approximate || !got.Truncated {
 		t.Fatalf("Navigate() = %#v, %v", got, err)
 	}
 	if len(store.authorizationCalls) != 4 {
