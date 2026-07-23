@@ -208,8 +208,10 @@ func TestSCIPRelationshipsNavigateDefinitionsAndReferences(t *testing.T) {
 			{Path: "definition-source.go", Symbol: definitionSource, EndCharacter: 2, PositionEncoding: 1},
 			{Path: "definition.go", Symbol: definition, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
 			{Path: "definition-reference.go", Symbol: definition, EndCharacter: 2, PositionEncoding: 1},
-			{Path: "reference-source.go", Symbol: referenceSource, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
-			{Path: "reference-target.go", Symbol: referenceTarget, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
+			{Path: "reference-source-definition.go", Symbol: referenceSource, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
+			{Path: "reference-source.go", Symbol: referenceSource, EndCharacter: 2, PositionEncoding: 1},
+			{Path: "reference-target-definition.go", Symbol: referenceTarget, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
+			{Path: "reference-target.go", Symbol: referenceTarget, EndCharacter: 2, PositionEncoding: 1},
 		},
 		Relationships: []scipgraph.Relationship{
 			{Path: "definition-source.go", Source: definitionSource, Target: definition, Definition: true},
@@ -220,20 +222,45 @@ func TestSCIPRelationshipsNavigateDefinitionsAndReferences(t *testing.T) {
 	}
 	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}
 	for _, test := range []struct {
-		originPath, operation, path string
+		originPath, operation string
+		paths                 []string
 	}{
-		{"definition-source.go", "definitions", "definition.go"},
-		{"reference-target.go", "references", "reference-source.go"},
-		{"reference-source.go", "references", "reference-target.go"},
+		{"definition-source.go", "definitions", []string{"definition.go"}},
+		{"reference-target.go", "references", []string{"reference-source.go", "reference-target.go"}},
+		{"reference-source.go", "references", []string{"reference-source.go", "reference-target.go"}},
 	} {
 		origin, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), test.originPath, 0, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
 		locations, truncated, err := store.Locations(t.Context(), principal, origin, test.operation, 10)
-		if err != nil || truncated || len(locations) != 1 || locations[0].Path != test.path {
+		if err != nil || truncated || len(locations) != len(test.paths) {
 			t.Fatalf("%s = %#v, truncated = %v, err = %v", test.operation, locations, truncated, err)
 		}
+		for index, location := range locations {
+			if location.Path != test.paths[index] || test.operation == "references" && location.Roles&definitionRole != 0 {
+				t.Fatalf("%s = %#v", test.operation, locations)
+			}
+		}
+	}
+}
+
+func TestSCIPLocationsRejectStaleOrigin(t *testing.T) {
+	store := migratedStore(t)
+	repositoryID := seedReadyRepository(t, store, 101, testSHA('a'))
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("origin.go", globalSymbol, 0)); err != nil {
+		t.Fatal(err)
+	}
+	origin, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "origin.go", 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("replacement.go", globalSymbol, 0)); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = store.Locations(t.Context(), authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}, origin, "definitions", 10)
+	if !errors.Is(err, scipgraph.ErrStaleIndex) {
+		t.Fatalf("Locations() error = %v", err)
 	}
 }
 
@@ -486,16 +513,18 @@ func TestDependencyAssistedLocationsTraverseRelationships(t *testing.T) {
 	)
 	if err := store.ReplaceSCIP(t.Context(), originID, testSHA('a'), scipgraph.Upload{Occurrences: []scipgraph.Occurrence{
 		{Path: "origin.go", Symbol: originSymbol, EndCharacter: 2, PositionEncoding: 1},
-		{Path: "reference-source-origin.go", Symbol: originReferenceSource, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
-		{Path: "reference-target-origin.go", Symbol: originReferenceTarget, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
+		{Path: "reference-source-origin-definition.go", Symbol: originReferenceSource, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
+		{Path: "reference-target-origin-definition.go", Symbol: originReferenceTarget, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
 	}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ReplaceSCIP(t.Context(), providerID, testSHA('b'), scipgraph.Upload{
 		Occurrences: []scipgraph.Occurrence{
 			{Path: "definition.go", Symbol: definitionSymbol, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
-			{Path: "reference-source.go", Symbol: providerReferenceSource, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
-			{Path: "reference-target.go", Symbol: providerReferenceTarget, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
+			{Path: "reference-source-definition.go", Symbol: providerReferenceSource, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
+			{Path: "reference-source.go", Symbol: providerReferenceSource, EndCharacter: 2, PositionEncoding: 1},
+			{Path: "reference-target-definition.go", Symbol: providerReferenceTarget, EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole},
+			{Path: "reference-target.go", Symbol: providerReferenceTarget, EndCharacter: 2, PositionEncoding: 1},
 		},
 		Relationships: []scipgraph.Relationship{
 			{Path: "definition.go", Source: providerSymbol, Target: definitionSymbol, Definition: true},
@@ -516,19 +545,25 @@ func TestDependencyAssistedLocationsTraverseRelationships(t *testing.T) {
 	}
 	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101, 102}}
 	for _, test := range []struct {
-		originPath, operation, path string
+		originPath, operation string
+		paths                 []string
 	}{
-		{"origin.go", "definitions", "definition.go"},
-		{"reference-target-origin.go", "references", "reference-source.go"},
-		{"reference-source-origin.go", "references", "reference-target.go"},
+		{"origin.go", "definitions", []string{"definition.go"}},
+		{"reference-target-origin-definition.go", "references", []string{"reference-source.go", "reference-target.go"}},
+		{"reference-source-origin-definition.go", "references", []string{"reference-source.go", "reference-target.go"}},
 	} {
 		origin, err := store.OccurrenceAt(t.Context(), originID, testSHA('a'), test.originPath, 0, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
 		locations, truncated, err := store.Locations(t.Context(), principal, origin, test.operation, 10)
-		if err != nil || truncated || len(locations) != 1 || locations[0].Path != test.path || !locations[0].Approximate {
+		if err != nil || truncated || len(locations) != len(test.paths) {
 			t.Fatalf("%s = %#v, truncated = %v, err = %v", test.operation, locations, truncated, err)
+		}
+		for index, location := range locations {
+			if location.Path != test.paths[index] || !location.Approximate || test.operation == "references" && location.Roles&definitionRole != 0 {
+				t.Fatalf("%s = %#v", test.operation, locations)
+			}
 		}
 	}
 }

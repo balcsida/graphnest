@@ -109,11 +109,27 @@ func (s *Store) OccurrenceAt(ctx context.Context, repositoryID int64, commit, pa
 }
 
 func (s *Store) Locations(ctx context.Context, principal authn.Principal, origin scipgraph.StoredOccurrence, operation string, max int) ([]scipgraph.Location, bool, error) {
-	locations, truncated, err := s.exactLocations(ctx, principal, origin, operation, max)
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
+	if err != nil {
+		return nil, false, err
+	}
+	defer tx.Rollback(ctx)
+	var current bool
+	if err := tx.QueryRow(ctx, `select exists (
+		select 1 from scip_uploads uploads
+		join repositories on repositories.id=uploads.repository_id and repositories.indexed_sha=uploads.commit
+		where uploads.id=$1 and uploads.repository_id=$2 and uploads.commit=$3
+	)`, origin.UploadID, origin.RepositoryID, origin.Commit).Scan(&current); err != nil {
+		return nil, false, err
+	}
+	if !current {
+		return nil, false, scipgraph.ErrStaleIndex
+	}
+	locations, truncated, err := s.exactLocations(ctx, tx, principal, origin, operation, max)
 	if err != nil || len(locations) != 0 {
 		return locations, truncated, err
 	}
-	return s.approximateLocations(ctx, principal, origin, operation, max)
+	return s.approximateLocations(ctx, tx, principal, origin, operation, max)
 }
 
 const exactLocationsSQL = `with authorized_uploads as (
@@ -132,7 +148,7 @@ const exactLocationsSQL = `with authorized_uploads as (
 		union
 		select relationships.upload_id, relationships.document_path, relationships.target_symbol,
 			left(relationships.target_symbol, 6)='local ',
-			case when $6='definitions' then 1 else -1 end
+			case when $6='definitions' then 1 when $6='references' then 0 else -1 end
 		from scip_relationships relationships
 		join authorized_uploads on authorized_uploads.id=relationships.upload_id
 		cross join origin_authorized
@@ -143,7 +159,7 @@ const exactLocationsSQL = `with authorized_uploads as (
 		union
 		select relationships.upload_id, relationships.document_path, relationships.source_symbol,
 			left(relationships.source_symbol, 6)='local ',
-			case when $6='implementations' then 1 else -1 end
+			case when $6='implementations' then 1 when $6='references' then 0 else -1 end
 		from scip_relationships relationships
 		join authorized_uploads on authorized_uploads.id=relationships.upload_id
 		cross join origin_authorized
@@ -170,11 +186,11 @@ const exactLocationsSQL = `with authorized_uploads as (
 		matches.end_line, matches.end_character, matches.symbol, matches.id
 	limit $7`
 
-func (s *Store) exactLocations(ctx context.Context, principal authn.Principal, origin scipgraph.StoredOccurrence, operation string, max int) ([]scipgraph.Location, bool, error) {
+func (s *Store) exactLocations(ctx context.Context, tx pgx.Tx, principal authn.Principal, origin scipgraph.StoredOccurrence, operation string, max int) ([]scipgraph.Location, bool, error) {
 	if len(principal.RepositoryIDs) == 0 {
 		return []scipgraph.Location{}, false, nil
 	}
-	rows, err := s.pool.Query(ctx, exactLocationsSQL,
+	rows, err := tx.Query(ctx, exactLocationsSQL,
 		principal.InstallationID, principal.RepositoryIDs, origin.Symbol, origin.UploadID,
 		origin.Local, operation, max+1, origin.RepositoryID, origin.Path)
 	if err != nil {
@@ -201,7 +217,7 @@ func (s *Store) exactLocations(ctx context.Context, principal authn.Principal, o
 	return locations, truncated, nil
 }
 
-func (s *Store) approximateLocations(ctx context.Context, principal authn.Principal, origin scipgraph.StoredOccurrence, operation string, max int) ([]scipgraph.Location, bool, error) {
+func (s *Store) approximateLocations(ctx context.Context, tx pgx.Tx, principal authn.Principal, origin scipgraph.StoredOccurrence, operation string, max int) ([]scipgraph.Location, bool, error) {
 	parsed, err := scip.ParseSymbol(origin.Symbol)
 	if err != nil || parsed.Package == nil || len(principal.RepositoryIDs) == 0 {
 		return []scipgraph.Location{}, false, nil
@@ -210,7 +226,7 @@ func (s *Store) approximateLocations(ctx context.Context, principal authn.Princi
 	if err != nil || key == nil {
 		return []scipgraph.Location{}, false, err
 	}
-	rows, err := s.pool.Query(ctx, `with authorized_uploads as (
+	rows, err := tx.Query(ctx, `with authorized_uploads as (
 		select uploads.id, uploads.repository_id, repositories.github_id,
 			repositories.owner || '/' || repositories.name repository_name, uploads.commit
 		from scip_uploads uploads
@@ -252,7 +268,7 @@ func (s *Store) approximateLocations(ctx context.Context, principal authn.Princi
 			and occurrences.local=(left(relationships.target_symbol, 6)='local ')
 			and (left(relationships.target_symbol, 6)<>'local ' or occurrences.path=relationships.document_path)
 		where ($9='definitions' and relationships.is_definition and occurrences.roles & 1 <> 0)
-			or ($9='references' and relationships.is_reference)
+			or ($9='references' and relationships.is_reference and occurrences.roles & 1 = 0)
 		union
 		select occurrences.* from providers
 		join scip_relationships relationships on relationships.upload_id=providers.id
@@ -261,7 +277,7 @@ func (s *Store) approximateLocations(ctx context.Context, principal authn.Princi
 			and occurrences.symbol=relationships.source_symbol
 			and occurrences.local=(left(relationships.source_symbol, 6)='local ')
 			and (left(relationships.source_symbol, 6)<>'local ' or occurrences.path=relationships.document_path)
-		where ($9='references' and relationships.is_reference)
+		where ($9='references' and relationships.is_reference and occurrences.roles & 1 = 0)
 			or ($9='implementations' and relationships.is_implementation and occurrences.roles & 1 <> 0)
 	)
 	select authorized_uploads.github_id, authorized_uploads.repository_name, authorized_uploads.commit,

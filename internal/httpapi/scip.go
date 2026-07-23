@@ -136,8 +136,10 @@ func classifySCIPError(err error) (int, string, string, bool) {
 		return http.StatusForbidden, "forbidden", "administrator access required", false
 	case errors.Is(err, scipgraph.ErrInvalidRequest), errors.Is(err, scipgraph.ErrInvalidIndex):
 		return http.StatusBadRequest, "invalid_request", "request is invalid", false
-	case errors.Is(err, scipgraph.ErrNotIndexed), errors.Is(err, scipgraph.ErrStaleIndex):
+	case errors.Is(err, scipgraph.ErrNotIndexed):
 		return http.StatusConflict, "not_indexed", "repository is not indexed", false
+	case errors.Is(err, scipgraph.ErrStaleIndex):
+		return http.StatusConflict, "not_indexed", "repository is not indexed", true
 	case errors.Is(err, pgx.ErrNoRows):
 		return http.StatusNotFound, "not_found", "repository not found", false
 	case errors.Is(err, context.DeadlineExceeded):

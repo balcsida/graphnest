@@ -163,22 +163,26 @@ func TestSCIPNavigationResponseIsBounded(t *testing.T) {
 
 func TestSCIPErrorClassification(t *testing.T) {
 	for _, test := range []struct {
-		name string
-		err  error
-		want int
+		name      string
+		err       error
+		want      int
+		code      string
+		message   string
+		retryable bool
 	}{
-		{"forbidden", scipgraph.ErrForbidden, http.StatusForbidden},
-		{"invalid request", scipgraph.ErrInvalidRequest, http.StatusBadRequest},
-		{"invalid index", scipgraph.ErrInvalidIndex, http.StatusBadRequest},
-		{"not indexed", scipgraph.ErrNotIndexed, http.StatusConflict},
-		{"stale index", scipgraph.ErrStaleIndex, http.StatusConflict},
-		{"missing repository", pgx.ErrNoRows, http.StatusNotFound},
-		{"backend", errors.New("secret backend"), http.StatusServiceUnavailable},
+		{"forbidden", scipgraph.ErrForbidden, http.StatusForbidden, "forbidden", "administrator access required", false},
+		{"invalid request", scipgraph.ErrInvalidRequest, http.StatusBadRequest, "invalid_request", "request is invalid", false},
+		{"invalid index", scipgraph.ErrInvalidIndex, http.StatusBadRequest, "invalid_request", "request is invalid", false},
+		{"not indexed", scipgraph.ErrNotIndexed, http.StatusConflict, "not_indexed", "repository is not indexed", false},
+		{"stale index", scipgraph.ErrStaleIndex, http.StatusConflict, "not_indexed", "repository is not indexed", true},
+		{"missing repository", pgx.ErrNoRows, http.StatusNotFound, "not_found", "repository not found", false},
+		{"backend", errors.New("secret backend"), http.StatusServiceUnavailable, "unavailable", "SCIP service is unavailable", true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			response := httptest.NewRecorder()
 			writeSCIPError(response, test.err)
-			if response.Code != test.want || strings.Contains(response.Body.String(), "secret") {
+			assertSafeError(t, response.Body.String(), "secret", test.code, test.message, test.retryable)
+			if response.Code != test.want {
 				t.Fatalf("status = %d, body = %q", response.Code, response.Body.String())
 			}
 		})
