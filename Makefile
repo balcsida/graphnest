@@ -4,7 +4,7 @@ GOVULNCHECK_VERSION := v1.1.4
 POSTGRES_COMPOSE := docker compose -p grepnest-postgres
 GREPNEST_TEST_POSTGRES_DSN ?= $(GREPNEST_TEST_DATABASE_URL)
 
-.PHONY: fmt lint staticcheck govulncheck test test-race integration postgres-test postgres-integration e2e e2e-test tools build server image helm-lint helm-test compose-test
+.PHONY: fmt lint staticcheck govulncheck test test-race integration postgres-test postgres-integration e2e e2e-test tools build server image helm-lint helm-test compose-test openapi-check
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
@@ -27,6 +27,9 @@ test:
 
 test-race:
 	@if test -n "$$(go list ./... 2>/dev/null)"; then go test -race ./...; fi
+
+openapi-check:
+	ruby scripts/check_openapi.rb
 
 integration: postgres-integration
 

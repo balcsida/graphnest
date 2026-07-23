@@ -103,7 +103,12 @@ paths:
         required: true
         content:
           application/vnd.scip+protobuf:
-            schema: {type: string, format: binary}
+            schema:
+              type: string
+              format: binary
+              description: Default upload limit is 67108864 bytes; server maximum is 268435456 bytes.
+              x-default-max-bytes: 67108864
+              x-server-max-bytes: 268435456
       responses:
         '204': {description: SCIP index replaced}
         '400': {$ref: '#/components/responses/InvalidRequest'}
@@ -298,7 +303,7 @@ components:
       additionalProperties: false
       required: [locations, truncated]
       properties:
-        locations: {type: array, items: {$ref: '#/components/schemas/SCIPLocation'}}
+        locations: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/SCIPLocation'}}
         truncated: {type: boolean}
     SCIPLocation:
       type: object
