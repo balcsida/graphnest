@@ -130,6 +130,8 @@ type responseWriter struct {
 	wrote  bool
 }
 
+func (writer *responseWriter) Unwrap() http.ResponseWriter { return writer.ResponseWriter }
+
 func (writer *responseWriter) WriteHeader(status int) {
 	if writer.wrote {
 		return

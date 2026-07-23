@@ -30,6 +30,8 @@ import (
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/internal/scipgraph"
 	"github.com/grepnest/grepnest/internal/webhook"
+	"github.com/scip-code/scip/bindings/go/scip"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestDurableGitHubLimitReadsNearMaximumFile(t *testing.T) {
@@ -119,18 +121,21 @@ func TestServeHTTPReturnsUnexpectedListenErrorWithoutCancellation(t *testing.T) 
 	}
 }
 
-func TestServerAllowsSlowBoundedSCIPUpload(t *testing.T) {
-	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if _, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 2)); err != nil {
-			t.Errorf("read bounded upload: %v", err)
-			return
-		}
-		writer.WriteHeader(http.StatusNoContent)
+func TestServerDeadlinesIsolateSCIPUploads(t *testing.T) {
+	commit := strings.Repeat("a", 40)
+	store := &deadlineSCIPStore{repository: repository.Repository{ID: 1, GitHubID: 101, InstallationID: 10, IndexedSHA: commit}}
+	authenticator := authn.NewStatic(map[string]authn.Principal{
+		"user":  {Subject: "user", InstallationID: 10, RepositoryIDs: []int64{101}},
+		"admin": {Subject: "admin", Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}},
 	})
+	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, SCIPMaxUploadBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}
+	handler := newAPIHandler(settings, observability.New(), authenticator, nil, nil, &scipgraph.Service{Store: store}, nil, nil, nil)
 	server := newHTTPServer("127.0.0.1:0", handler)
-	if server.ReadTimeout != 0 || server.WriteTimeout != 0 {
-		t.Fatalf("body deadlines = %s/%s", server.ReadTimeout, server.WriteTimeout)
+	if server.ReadTimeout != 10*time.Second || server.WriteTimeout != 10*time.Second || server.ReadHeaderTimeout != 5*time.Second || server.IdleTimeout != time.Minute {
+		t.Fatalf("deadlines = read %s, write %s, header %s, idle %s", server.ReadTimeout, server.WriteTimeout, server.ReadHeaderTimeout, server.IdleTimeout)
 	}
+	server.ReadTimeout = 20 * time.Millisecond
+	server.WriteTimeout = 20 * time.Millisecond
 	listener, err := net.Listen("tcp4", server.Addr)
 	if err != nil {
 		t.Fatal(err)
@@ -140,19 +145,25 @@ func TestServerAllowsSlowBoundedSCIPUpload(t *testing.T) {
 	}()
 	defer server.Close()
 
-	bodyReader, bodyWriter := io.Pipe()
-	go func() {
-		_, _ = bodyWriter.Write([]byte{0})
-		time.Sleep(10*time.Second + 250*time.Millisecond)
-		_, _ = bodyWriter.Write([]byte{1})
-		_ = bodyWriter.Close()
-	}()
-	request, err := http.NewRequest(http.MethodPost, "http://"+listener.Addr().String()+"/v1/scip/uploads", bodyReader)
+	data, err := proto.Marshal(&scip.Index{Metadata: &scip.Metadata{ToolInfo: &scip.ToolInfo{Name: "test"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	request.ContentLength = 2
-	response, err := (&http.Client{Timeout: 15 * time.Second}).Do(request)
+	bodyReader, bodyWriter := io.Pipe()
+	go func() {
+		_, _ = bodyWriter.Write(data[:1])
+		time.Sleep(2 * server.ReadTimeout)
+		_, _ = bodyWriter.Write(data[1:])
+		_ = bodyWriter.Close()
+	}()
+	request, err := http.NewRequest(http.MethodPost, "http://"+listener.Addr().String()+"/v1/scip/uploads?repository_id=101&commit="+commit, bodyReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.ContentLength = int64(len(data))
+	request.Header.Set("Authorization", "Bearer admin")
+	request.Header.Set("Content-Type", "application/vnd.scip+protobuf")
+	response, err := (&http.Client{Timeout: time.Second}).Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,6 +171,45 @@ func TestServerAllowsSlowBoundedSCIPUpload(t *testing.T) {
 	if response.StatusCode != http.StatusNoContent {
 		t.Fatalf("status = %d", response.StatusCode)
 	}
+
+	slowReader, slowWriter := io.Pipe()
+	go func() {
+		_, _ = io.WriteString(slowWriter, `{`)
+		time.Sleep(2 * server.ReadTimeout)
+		_, _ = io.WriteString(slowWriter, `"repository_id":101,"path":"main.go","line":1,"character":0,"operation":"definitions"}`)
+		_ = slowWriter.Close()
+	}()
+	slowRequest, err := http.NewRequest(http.MethodPost, "http://"+listener.Addr().String()+"/v1/scip/navigation", slowReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slowRequest.Header.Set("Authorization", "Bearer user")
+	slowRequest.Header.Set("Content-Type", "application/json")
+	if response, err := (&http.Client{Timeout: time.Second}).Do(slowRequest); err == nil {
+		response.Body.Close()
+		t.Fatalf("slow JSON response = %s, want timeout", response.Status)
+	}
+}
+
+type deadlineSCIPStore struct{ repository repository.Repository }
+
+func (store *deadlineSCIPStore) AuthorizedRepository(_ context.Context, _ int64, _ []int64, id int64) (repository.Repository, error) {
+	if id == store.repository.GitHubID {
+		return store.repository, nil
+	}
+	return repository.Repository{}, errors.New("not found")
+}
+func (*deadlineSCIPStore) ReplaceSCIP(context.Context, int64, string, scipgraph.Upload) error {
+	return nil
+}
+func (*deadlineSCIPStore) OccurrenceAt(context.Context, int64, string, string, int, int) (scipgraph.StoredOccurrence, error) {
+	return scipgraph.StoredOccurrence{}, errors.New("not found")
+}
+func (*deadlineSCIPStore) Locations(context.Context, authn.Principal, scipgraph.StoredOccurrence, string, int) ([]scipgraph.Location, bool, error) {
+	return nil, false, nil
+}
+func (*deadlineSCIPStore) ReplacePackages(context.Context, int64, string, []scipgraph.PackageMapping) error {
+	return nil
 }
 
 type blockingShutdownServer struct {

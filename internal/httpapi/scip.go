@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/scipgraph"
@@ -43,7 +44,10 @@ func RegisterSCIP(mux *http.ServeMux, authenticator authn.Authenticator, service
 			writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
 			return
 		}
+		controller := http.NewResponseController(writer)
+		_ = controller.SetReadDeadline(time.Time{})
 		data, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, maxUploadBytes))
+		_ = controller.SetWriteDeadline(time.Now().Add(10 * time.Second))
 		if err != nil {
 			writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
 			return
