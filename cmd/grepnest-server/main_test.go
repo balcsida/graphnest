@@ -135,7 +135,7 @@ func TestServerDeadlinesIsolateSCIPUploads(t *testing.T) {
 		t.Fatalf("deadlines = read %s, write %s, header %s, idle %s", server.ReadTimeout, server.WriteTimeout, server.ReadHeaderTimeout, server.IdleTimeout)
 	}
 	server.ReadTimeout = 20 * time.Millisecond
-	server.WriteTimeout = 20 * time.Millisecond
+	server.WriteTimeout = server.ReadTimeout / 4
 	listener, err := net.Listen("tcp4", server.Addr)
 	if err != nil {
 		t.Fatal(err)
@@ -185,10 +185,48 @@ func TestServerDeadlinesIsolateSCIPUploads(t *testing.T) {
 	}
 	slowRequest.Header.Set("Authorization", "Bearer user")
 	slowRequest.Header.Set("Content-Type", "application/json")
-	if response, err := (&http.Client{Timeout: time.Second}).Do(slowRequest); err == nil {
+	clientTimeout := time.Second
+	started := time.Now()
+	response, err = (&http.Client{Timeout: clientTimeout}).Do(slowRequest)
+	elapsed := time.Since(started)
+	if response != nil {
 		response.Body.Close()
-		t.Fatalf("slow JSON response = %s, want timeout", response.Status)
 	}
+	if !expectedServerDeadlineFailure(err) {
+		t.Fatalf("slow JSON error = %v after %s, want server deadline", err, elapsed)
+	}
+	if elapsed < server.ReadTimeout || elapsed >= clientTimeout/2 {
+		t.Fatalf("slow JSON elapsed = %s, want [%s, %s)", elapsed, server.ReadTimeout, clientTimeout/2)
+	}
+}
+
+func TestExpectedServerDeadlineFailure(t *testing.T) {
+	for _, test := range []struct {
+		err  error
+		want bool
+	}{
+		{os.ErrDeadlineExceeded, true},
+		{net.ErrClosed, true},
+		{&net.DNSError{IsTimeout: true}, true},
+		{io.EOF, true},
+		{io.ErrUnexpectedEOF, true},
+		{errors.New("unexpected"), false},
+	} {
+		if got := expectedServerDeadlineFailure(test.err); got != test.want {
+			t.Errorf("expectedServerDeadlineFailure(%v) = %t, want %t", test.err, got, test.want)
+		}
+	}
+}
+
+func expectedServerDeadlineFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var networkErr net.Error
+	return errors.As(err, &networkErr) && networkErr.Timeout()
 }
 
 type deadlineSCIPStore struct{ repository repository.Repository }
