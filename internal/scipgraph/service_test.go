@@ -177,6 +177,22 @@ func TestSetDependenciesRequiresScopedAdministratorAndMapsPURLs(t *testing.T) {
 	}
 }
 
+func TestSetDependenciesDeduplicatesCanonicalPURLs(t *testing.T) {
+	store := &fakeStore{repositories: map[int64]repository.Repository{101: serviceRepository}}
+	err := (&Service{Store: store}).SetDependencies(t.Context(), adminPrincipal, 101, api.RepositoryPackages{
+		Provides: []string{
+			"pkg:PyPI/acme%2Dlib@V1",
+			"pkg:pypi/acme-lib@V1",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(store.packages) != 1 || store.packages[0].Package.PURL != "pkg:pypi/acme-lib@V1" {
+		t.Fatalf("packages = %#v", store.packages)
+	}
+}
+
 func TestRefreshGitHubDependenciesAuthorizesAndMapsSBOM(t *testing.T) {
 	repo := serviceRepository
 	repo.InstallationID, repo.Name = 10, "acme/repo"

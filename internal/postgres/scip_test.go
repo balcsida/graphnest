@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/grepnest/grepnest/internal/authn"
@@ -385,6 +386,46 @@ func TestPackageReplacementPreservesOtherSources(t *testing.T) {
 	}
 	if source != "manual" || purl != manual.Package.PURL {
 		t.Fatalf("remaining package = %q %q", source, purl)
+	}
+}
+
+func TestPackageReplacementIsSerialized(t *testing.T) {
+	store := migratedStore(t)
+	repositoryID := seedReadyRepository(t, store, 101, testSHA('a'))
+	const writers = 8
+	for round := 0; round < 3; round++ {
+		if err := store.ReplacePackages(t.Context(), repositoryID, "manual", nil); err != nil {
+			t.Fatal(err)
+		}
+		start := make(chan struct{})
+		errors := make(chan error, writers)
+		var group sync.WaitGroup
+		for writer := 0; writer < writers; writer++ {
+			group.Add(1)
+			go func(writer int) {
+				defer group.Done()
+				<-start
+				errors <- store.ReplacePackages(t.Context(), repositoryID, "manual", []scipgraph.PackageMapping{
+					packageMapping(fmt.Sprintf("pkg:npm/acme-%d@1.0.0", writer), "provides", "manual"),
+				})
+			}(writer)
+		}
+		close(start)
+		group.Wait()
+		close(errors)
+		for err := range errors {
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		var count int
+		if err := store.pool.QueryRow(t.Context(), `select count(*) from repository_packages
+			where repository_id=$1 and source='manual'`, repositoryID).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("round %d committed %d replacements", round, count)
+		}
 	}
 }
 

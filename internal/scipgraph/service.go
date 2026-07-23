@@ -162,6 +162,7 @@ func (service *Service) SetDependencies(ctx context.Context, principal authn.Pri
 		return err
 	}
 	mappings := make([]PackageMapping, 0, len(purls.Provides)+len(purls.DependsOn))
+	seen := make(map[string]struct{}, cap(mappings))
 	for _, group := range []struct {
 		values   []string
 		relation string
@@ -171,6 +172,11 @@ func (service *Service) SetDependencies(ctx context.Context, principal authn.Pri
 			if err != nil {
 				return ErrInvalidRequest
 			}
+			key := group.relation + "\x00" + pkg.PURL
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
 			mappings = append(mappings, PackageMapping{Package: pkg, Relation: group.relation, Source: "manual"})
 		}
 	}

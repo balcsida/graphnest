@@ -66,6 +66,9 @@ func (s *Store) ReplacePackages(ctx context.Context, repositoryID int64, source 
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if err := tx.QueryRow(ctx, `select id from repositories where id=$1 for update`, repositoryID).Scan(&repositoryID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `delete from repository_packages where repository_id=$1 and source=$2`, repositoryID, source); err != nil {
 		return err
 	}
