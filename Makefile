@@ -4,7 +4,7 @@ GOVULNCHECK_VERSION := v1.1.4
 POSTGRES_COMPOSE := docker compose -p grepnest-postgres
 GREPNEST_TEST_POSTGRES_DSN ?= $(GREPNEST_TEST_DATABASE_URL)
 
-.PHONY: fmt lint staticcheck govulncheck test test-race integration postgres-test postgres-integration e2e e2e-test tools build server image helm-lint helm-test
+.PHONY: fmt lint staticcheck govulncheck test test-race integration postgres-test postgres-integration e2e e2e-test tools build server image helm-lint helm-test compose-test
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
@@ -78,3 +78,6 @@ helm-lint:
 
 helm-test:
 	sh deploy/helm/grepnest/tests/render.sh
+
+compose-test:
+	sh deploy/compose/test.sh

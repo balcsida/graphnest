@@ -175,6 +175,32 @@ GitHub synchronously, then refreshes reconciliation and queue metrics every five
 minutes. `POST /webhooks/github` is public but requires a valid GitHub HMAC;
 search, repository, file-read, and MCP routes require bearer authentication.
 
+### Durable Compose
+
+The durable Compose profile runs the server with PostgreSQL and Zoekt. Set
+`GREPNEST_APPLICATION_IMAGE` (or accept `grepnest/application:local`) plus the
+GitHub and token/repository-scope variables listed above. It also requires
+`GREPNEST_GITHUB_PRIVATE_KEY_FILE` and `GREPNEST_GITHUB_WEBHOOK_SECRET_FILE`
+to be readable host-file paths; Compose mounts both read-only into the server.
+
+```sh
+GREPNEST_APPLICATION_IMAGE=registry.example/grepnest/application:2026-07-22 \
+GREPNEST_GITHUB_PRIVATE_KEY_FILE=$PWD/github-app-private-key.pem \
+GREPNEST_GITHUB_WEBHOOK_SECRET_FILE=$PWD/github-webhook-secret \
+GREPNEST_GITHUB_WEB_URL=https://github.example \
+GREPNEST_GITHUB_API_URL=https://github.example/api/v3 \
+GREPNEST_GITHUB_UPLOAD_URL=https://github.example/api/uploads \
+GREPNEST_GITHUB_GIT_URL=https://github.example \
+GREPNEST_GITHUB_APP_ID=123 \
+GREPNEST_USER_TOKEN=replace-user-token \
+GREPNEST_USER_INSTALLATION_ID=456 \
+GREPNEST_USER_REPOSITORY_IDS=789 \
+GREPNEST_ADMIN_TOKEN=replace-admin-token \
+GREPNEST_ADMIN_INSTALLATION_ID=456 \
+GREPNEST_ADMIN_REPOSITORY_IDS=789 \
+docker compose -f deploy/compose/compose.yml --profile durable up -d --wait
+```
+
 Optional limits are positive and cannot exceed their server caps:
 
 | Variable | Default | Maximum |
