@@ -56,17 +56,20 @@ func run() int {
 		return 1
 	}
 	defer closeRuntime()
-	server := &http.Server{
-		Addr: settings.ListenAddress, Handler: handler,
-		ReadTimeout: 10 * time.Second, ReadHeaderTimeout: 5 * time.Second,
-		WriteTimeout: 10 * time.Second, IdleTimeout: time.Minute,
-	}
+	server := newHTTPServer(settings.ListenAddress, handler)
 	logger.Info("server listening", "address", settings.ListenAddress)
 	if err := serveHTTP(ctx, server, logger); err != nil {
 		logger.Error("server listen failed", "error", err)
 		return 1
 	}
 	return 0
+}
+
+func newHTTPServer(address string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr: address, Handler: handler,
+		ReadHeaderTimeout: 5 * time.Second, IdleTimeout: time.Minute,
+	}
 }
 
 type shutdownServer interface {

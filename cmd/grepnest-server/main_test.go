@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -115,6 +116,49 @@ func TestServeHTTPReturnsUnexpectedListenErrorWithoutCancellation(t *testing.T) 
 	}
 	if server.shutdownCalled {
 		t.Fatal("shutdown called after listener failed")
+	}
+}
+
+func TestServerAllowsSlowBoundedSCIPUpload(t *testing.T) {
+	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if _, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 2)); err != nil {
+			t.Errorf("read bounded upload: %v", err)
+			return
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	})
+	server := newHTTPServer("127.0.0.1:0", handler)
+	if server.ReadTimeout != 0 || server.WriteTimeout != 0 {
+		t.Fatalf("body deadlines = %s/%s", server.ReadTimeout, server.WriteTimeout)
+	}
+	listener, err := net.Listen("tcp4", server.Addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	defer server.Close()
+
+	bodyReader, bodyWriter := io.Pipe()
+	go func() {
+		_, _ = bodyWriter.Write([]byte{0})
+		time.Sleep(10*time.Second + 250*time.Millisecond)
+		_, _ = bodyWriter.Write([]byte{1})
+		_ = bodyWriter.Close()
+	}()
+	request, err := http.NewRequest(http.MethodPost, "http://"+listener.Addr().String()+"/v1/scip/uploads", bodyReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.ContentLength = 2
+	response, err := (&http.Client{Timeout: 15 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d", response.StatusCode)
 	}
 }
 
