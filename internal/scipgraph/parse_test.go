@@ -42,6 +42,43 @@ func TestParseNormalizesSCIP(t *testing.T) {
 	}
 }
 
+func TestParseUsesTypedRanges(t *testing.T) {
+	data := marshalIndex(t, &scip.Index{
+		Metadata: &scip.Metadata{ToolInfo: &scip.ToolInfo{Name: "scip-go"}},
+		Documents: []*scip.Document{{
+			RelativePath:     "a.go",
+			PositionEncoding: scip.PositionEncoding_UTF8CodeUnitOffsetFromLineStart,
+			Occurrences: []*scip.Occurrence{
+				{
+					Range: []int32{9, 9, 10},
+					TypedRange: &scip.Occurrence_SingleLineRange{SingleLineRange: &scip.SingleLineRange{
+						Line: 1, StartCharacter: 2, EndCharacter: 3,
+					}},
+					Symbol: "local 0",
+				},
+				{
+					TypedRange: &scip.Occurrence_MultiLineRange{MultiLineRange: &scip.MultiLineRange{
+						StartLine: 4, StartCharacter: 5, EndLine: 6, EndCharacter: 7,
+					}},
+					Symbol: "local 1",
+				},
+			},
+		}},
+	})
+
+	upload, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, second := upload.Occurrences[0], upload.Occurrences[1]
+	if first.StartLine != 1 || first.StartCharacter != 2 || first.EndLine != 1 || first.EndCharacter != 3 {
+		t.Fatalf("single-line typed range = %#v", first)
+	}
+	if second.StartLine != 4 || second.StartCharacter != 5 || second.EndLine != 6 || second.EndCharacter != 7 {
+		t.Fatalf("multi-line typed range = %#v", second)
+	}
+}
+
 func TestParseRejectsInvalidIndex(t *testing.T) {
 	valid := func() *scip.Index {
 		return &scip.Index{Metadata: &scip.Metadata{ProjectRoot: "file:///workspace", ToolInfo: &scip.ToolInfo{Name: "scip-go", Version: "1"}}, Documents: []*scip.Document{{RelativePath: "pkg/a.go", PositionEncoding: scip.PositionEncoding_UTF8CodeUnitOffsetFromLineStart}}}
@@ -55,6 +92,9 @@ func TestParseRejectsInvalidIndex(t *testing.T) {
 		{"missing tool info", func(index *scip.Index) { index.Metadata.ToolInfo = nil }},
 		{"unspecified position encoding", func(index *scip.Index) {
 			index.Documents[0].PositionEncoding = scip.PositionEncoding_UnspecifiedPositionEncoding
+		}},
+		{"unknown position encoding", func(index *scip.Index) {
+			index.Documents[0].PositionEncoding = scip.PositionEncoding(99)
 		}},
 		{"duplicate document", func(index *scip.Index) {
 			index.Documents = append(index.Documents, proto.Clone(index.Documents[0]).(*scip.Document))

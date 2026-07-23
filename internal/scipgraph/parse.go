@@ -49,13 +49,14 @@ func Parse(data []byte) (Upload, error) {
 		paths[document.RelativePath] = struct{}{}
 
 		for _, occurrence := range document.Occurrences {
-			startLine, startCharacter, endLine, endCharacter, ok := normalizedRange(occurrence.Range)
-			if !ok || !validSymbol(occurrence.Symbol) {
+			sourceRange, ok := occurrence.SourceRange()
+			if !ok || sourceRange.Validate() != nil || !validSymbol(occurrence.Symbol) {
 				return Upload{}, ErrInvalidIndex
 			}
 			upload.Occurrences = append(upload.Occurrences, Occurrence{
 				Path: document.RelativePath, Symbol: occurrence.Symbol,
-				StartLine: startLine, StartCharacter: startCharacter, EndLine: endLine, EndCharacter: endCharacter,
+				StartLine: sourceRange.Start.Line, StartCharacter: sourceRange.Start.Character,
+				EndLine: sourceRange.End.Line, EndCharacter: sourceRange.End.Character,
 				Roles: occurrence.SymbolRoles, Local: scip.IsLocalSymbol(occurrence.Symbol),
 			})
 		}
@@ -80,7 +81,14 @@ func Parse(data []byte) (Upload, error) {
 }
 
 func validDocument(document *scip.Document, paths map[string]struct{}) bool {
-	if document == nil || document.PositionEncoding == scip.PositionEncoding_UnspecifiedPositionEncoding {
+	if document == nil {
+		return false
+	}
+	switch document.PositionEncoding {
+	case scip.PositionEncoding_UTF8CodeUnitOffsetFromLineStart,
+		scip.PositionEncoding_UTF16CodeUnitOffsetFromLineStart,
+		scip.PositionEncoding_UTF32CodeUnitOffsetFromLineStart:
+	default:
 		return false
 	}
 	clean := path.Clean(document.RelativePath)
@@ -94,20 +102,4 @@ func validDocument(document *scip.Document, paths map[string]struct{}) bool {
 func validSymbol(symbol string) bool {
 	_, err := scip.ParseSymbol(symbol)
 	return err == nil
-}
-
-func normalizedRange(value []int32) (int32, int32, int32, int32, bool) {
-	var startLine, startCharacter, endLine, endCharacter int32
-	switch len(value) {
-	case 3:
-		startLine, startCharacter, endLine, endCharacter = value[0], value[1], value[0], value[2]
-	case 4:
-		startLine, startCharacter, endLine, endCharacter = value[0], value[1], value[2], value[3]
-	default:
-		return 0, 0, 0, 0, false
-	}
-	if startLine < 0 || startCharacter < 0 || endLine < startLine || endCharacter < 0 || (endLine == startLine && endCharacter < startCharacter) {
-		return 0, 0, 0, 0, false
-	}
-	return startLine, startCharacter, endLine, endCharacter, true
 }
