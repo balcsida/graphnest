@@ -45,17 +45,28 @@ func RegisterSCIP(mux *http.ServeMux, authenticator authn.Authenticator, service
 			return
 		}
 		controller := http.NewResponseController(writer)
-		_ = controller.SetReadDeadline(time.Time{})
-		data, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, maxUploadBytes))
-		_ = controller.SetWriteDeadline(time.Now().Add(10 * time.Second))
-		if err != nil {
-			writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
-			return
+		setWriteDeadline := func() {
+			_ = controller.SetWriteDeadline(time.Now().Add(10 * time.Second))
 		}
-		if err := service.Upload(request.Context(), PrincipalFromContext(request.Context()), repositoryID, commit, data); err != nil {
+		principal := PrincipalFromContext(request.Context())
+		if err := service.ValidateUpload(request.Context(), principal, repositoryID, commit); err != nil {
+			setWriteDeadline()
 			writeSCIPError(writer, err)
 			return
 		}
+		_ = controller.SetReadDeadline(time.Time{})
+		data, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, maxUploadBytes))
+		if err != nil {
+			setWriteDeadline()
+			writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
+			return
+		}
+		if err := service.Upload(request.Context(), principal, repositoryID, commit, data); err != nil {
+			setWriteDeadline()
+			writeSCIPError(writer, err)
+			return
+		}
+		setWriteDeadline()
 		writer.WriteHeader(http.StatusNoContent)
 	})))))
 

@@ -135,7 +135,7 @@ func TestServerDeadlinesIsolateSCIPUploads(t *testing.T) {
 		t.Fatalf("deadlines = read %s, write %s, header %s, idle %s", server.ReadTimeout, server.WriteTimeout, server.ReadHeaderTimeout, server.IdleTimeout)
 	}
 	server.ReadTimeout = 20 * time.Millisecond
-	server.WriteTimeout = server.ReadTimeout / 4
+	server.WriteTimeout = 50 * time.Millisecond
 	listener, err := net.Listen("tcp4", server.Addr)
 	if err != nil {
 		t.Fatal(err)
@@ -149,6 +149,49 @@ func TestServerDeadlinesIsolateSCIPUploads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	staleResponse := &deadlineResponseRecorder{ResponseRecorder: httptest.NewRecorder()}
+	store.readDeadlineCleared = &staleResponse.readDeadlineCleared
+	store.writeDeadlineSet = &staleResponse.writeDeadlineSet
+	staleRequest := httptest.NewRequest(http.MethodPost, "/v1/scip/uploads?repository_id=101&commit="+strings.Repeat("b", 40), bytes.NewReader(data))
+	staleRequest.Header.Set("Authorization", "Bearer admin")
+	staleRequest.Header.Set("Content-Type", "application/vnd.scip+protobuf")
+	handler.ServeHTTP(staleResponse, staleRequest)
+	if staleResponse.Code != http.StatusConflict {
+		t.Fatalf("stale preflight status = %d", staleResponse.Code)
+	}
+	if staleResponse.readDeadlineCleared.Load() {
+		t.Fatal("stale upload cleared the read deadline before validating the current commit")
+	}
+	if !staleResponse.writeDeadlineSet.Load() {
+		t.Fatal("stale upload response deadline was not bounded")
+	}
+	store.authorizedBeforeDeadlineClear.Store(false)
+	store.authorizationCalls.Store(0)
+
+	deadlineResponse := &deadlineResponseRecorder{ResponseRecorder: httptest.NewRecorder()}
+	store.readDeadlineCleared = &deadlineResponse.readDeadlineCleared
+	store.writeDeadlineSet = &deadlineResponse.writeDeadlineSet
+	preflightRequest := httptest.NewRequest(http.MethodPost, "/v1/scip/uploads?repository_id=101&commit="+commit, bytes.NewReader(data))
+	preflightRequest.Header.Set("Authorization", "Bearer admin")
+	preflightRequest.Header.Set("Content-Type", "application/vnd.scip+protobuf")
+	handler.ServeHTTP(deadlineResponse, preflightRequest)
+	store.readDeadlineCleared = nil
+	store.writeDeadlineSet = nil
+	if deadlineResponse.Code != http.StatusNoContent {
+		t.Fatalf("preflight upload status = %d", deadlineResponse.Code)
+	}
+	if !store.authorizedBeforeDeadlineClear.Load() {
+		t.Fatal("upload repository was not authorized before clearing the read deadline")
+	}
+	if calls := store.authorizationCalls.Load(); calls != 2 {
+		t.Fatalf("upload repository authorization calls = %d, want preflight and post-body validation", calls)
+	}
+	if store.writeDeadlineSetDuringReplace.Load() {
+		t.Fatal("upload response deadline was set before SCIP replacement finished")
+	}
+	store.replaceStarted = make(chan struct{})
+	store.releaseReplace = make(chan struct{})
+
 	bodyReader, bodyWriter := io.Pipe()
 	go func() {
 		_, _ = bodyWriter.Write(data[:1])
@@ -163,10 +206,29 @@ func TestServerDeadlinesIsolateSCIPUploads(t *testing.T) {
 	request.ContentLength = int64(len(data))
 	request.Header.Set("Authorization", "Bearer admin")
 	request.Header.Set("Content-Type", "application/vnd.scip+protobuf")
-	response, err := (&http.Client{Timeout: time.Second}).Do(request)
-	if err != nil {
-		t.Fatal(err)
+	uploadResult := make(chan struct {
+		response *http.Response
+		err      error
+	}, 1)
+	go func() {
+		response, err := (&http.Client{Timeout: time.Second}).Do(request)
+		uploadResult <- struct {
+			response *http.Response
+			err      error
+		}{response, err}
+	}()
+	select {
+	case <-store.replaceStarted:
+	case <-time.After(time.Second):
+		t.Fatal("SCIP replacement did not start")
 	}
+	time.Sleep(2 * server.WriteTimeout)
+	close(store.releaseReplace)
+	result := <-uploadResult
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	response := result.response
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusNoContent {
 		t.Fatalf("status = %d", response.StatusCode)
@@ -189,55 +251,63 @@ func TestServerDeadlinesIsolateSCIPUploads(t *testing.T) {
 	started := time.Now()
 	response, err = (&http.Client{Timeout: clientTimeout}).Do(slowRequest)
 	elapsed := time.Since(started)
-	if response != nil {
-		response.Body.Close()
+	if err != nil {
+		t.Fatalf("slow JSON request failed after %s: %v", elapsed, err)
 	}
-	if !expectedServerDeadlineFailure(err) {
-		t.Fatalf("slow JSON error = %v after %s, want server deadline", err, elapsed)
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("slow JSON status = %d", response.StatusCode)
 	}
-	if elapsed < server.ReadTimeout || elapsed >= clientTimeout/2 {
-		t.Fatalf("slow JSON elapsed = %s, want [%s, %s)", elapsed, server.ReadTimeout, clientTimeout/2)
-	}
-}
-
-func TestExpectedServerDeadlineFailure(t *testing.T) {
-	for _, test := range []struct {
-		err  error
-		want bool
-	}{
-		{os.ErrDeadlineExceeded, true},
-		{net.ErrClosed, true},
-		{&net.DNSError{IsTimeout: true}, true},
-		{io.EOF, true},
-		{io.ErrUnexpectedEOF, true},
-		{errors.New("unexpected"), false},
-	} {
-		if got := expectedServerDeadlineFailure(test.err); got != test.want {
-			t.Errorf("expectedServerDeadlineFailure(%v) = %t, want %t", test.err, got, test.want)
-		}
+	if elapsed < server.ReadTimeout || elapsed >= server.WriteTimeout {
+		t.Fatalf("slow JSON elapsed = %s, want [%s, %s)", elapsed, server.ReadTimeout, server.WriteTimeout)
 	}
 }
 
-func expectedServerDeadlineFailure(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-		return true
-	}
-	var networkErr net.Error
-	return errors.As(err, &networkErr) && networkErr.Timeout()
+type deadlineResponseRecorder struct {
+	*httptest.ResponseRecorder
+	readDeadlineCleared atomic.Bool
+	writeDeadlineSet    atomic.Bool
 }
 
-type deadlineSCIPStore struct{ repository repository.Repository }
+func (recorder *deadlineResponseRecorder) SetReadDeadline(deadline time.Time) error {
+	recorder.readDeadlineCleared.Store(deadline.IsZero())
+	return nil
+}
+
+func (recorder *deadlineResponseRecorder) SetWriteDeadline(deadline time.Time) error {
+	recorder.writeDeadlineSet.Store(!deadline.IsZero())
+	return nil
+}
+
+type deadlineSCIPStore struct {
+	repository                    repository.Repository
+	readDeadlineCleared           *atomic.Bool
+	authorizedBeforeDeadlineClear atomic.Bool
+	authorizationCalls            atomic.Int32
+	writeDeadlineSet              *atomic.Bool
+	writeDeadlineSetDuringReplace atomic.Bool
+	replaceStarted                chan struct{}
+	releaseReplace                chan struct{}
+}
 
 func (store *deadlineSCIPStore) AuthorizedRepository(_ context.Context, _ int64, _ []int64, id int64) (repository.Repository, error) {
+	store.authorizationCalls.Add(1)
+	if store.readDeadlineCleared != nil && !store.readDeadlineCleared.Load() {
+		store.authorizedBeforeDeadlineClear.Store(true)
+	}
 	if id == store.repository.GitHubID {
 		return store.repository, nil
 	}
 	return repository.Repository{}, errors.New("not found")
 }
-func (*deadlineSCIPStore) ReplaceSCIP(context.Context, int64, string, scipgraph.Upload) error {
+func (store *deadlineSCIPStore) ReplaceSCIP(context.Context, int64, string, scipgraph.Upload) error {
+	if store.writeDeadlineSet != nil && store.writeDeadlineSet.Load() {
+		store.writeDeadlineSetDuringReplace.Store(true)
+	}
+	if store.replaceStarted != nil {
+		close(store.replaceStarted)
+		<-store.releaseReplace
+	}
 	return nil
 }
 func (*deadlineSCIPStore) OccurrenceAt(context.Context, int64, string, string, int, int) (scipgraph.StoredOccurrence, error) {

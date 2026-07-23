@@ -92,15 +92,9 @@ func (service *Service) RefreshGitHubDependencies(ctx context.Context, principal
 }
 
 func (service *Service) Upload(ctx context.Context, principal authn.Principal, repositoryID int64, commit string, data []byte) error {
-	if !principal.Administrator {
-		return ErrForbidden
-	}
-	repository, err := service.authorizedRepository(ctx, principal, repositoryID)
+	repository, err := service.validateUpload(ctx, principal, repositoryID, commit)
 	if err != nil {
 		return err
-	}
-	if repository.IndexedSHA == "" || commit != repository.IndexedSHA {
-		return ErrNotIndexed
 	}
 	upload, err := Parse(data)
 	if err != nil {
@@ -111,6 +105,25 @@ func (service *Service) Upload(ctx context.Context, principal authn.Principal, r
 		return ErrNotIndexed
 	}
 	return err
+}
+
+func (service *Service) ValidateUpload(ctx context.Context, principal authn.Principal, repositoryID int64, commit string) error {
+	_, err := service.validateUpload(ctx, principal, repositoryID, commit)
+	return err
+}
+
+func (service *Service) validateUpload(ctx context.Context, principal authn.Principal, repositoryID int64, commit string) (repository.Repository, error) {
+	if !principal.Administrator {
+		return repository.Repository{}, ErrForbidden
+	}
+	repository, err := service.authorizedRepository(ctx, principal, repositoryID)
+	if err != nil {
+		return repository, err
+	}
+	if repository.IndexedSHA == "" || commit != repository.IndexedSHA {
+		return repository, ErrNotIndexed
+	}
+	return repository, nil
 }
 
 func (service *Service) Navigate(ctx context.Context, principal authn.Principal, request api.SCIPNavigationRequest) (api.SCIPNavigationResponse, error) {
