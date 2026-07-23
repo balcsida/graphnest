@@ -1,36 +1,4 @@
 services:
-  grepnest-server:
-    profiles: [durable]
-    image: ${GREPNEST_APPLICATION_IMAGE:-grepnest/application:local}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      zoekt-durable:
-        condition: service_healthy
-    environment:
-      GREPNEST_DATABASE_URL: postgres://grepnest:grepnest@postgres:5432/grepnest?sslmode=disable
-      GREPNEST_ZOEKT_URL: http://zoekt-durable:6070
-      GREPNEST_GITHUB_WEB_URL: ${GREPNEST_GITHUB_WEB_URL:?GREPNEST_GITHUB_WEB_URL is required}
-      GREPNEST_GITHUB_API_URL: ${GREPNEST_GITHUB_API_URL:?GREPNEST_GITHUB_API_URL is required}
-      GREPNEST_GITHUB_UPLOAD_URL: ${GREPNEST_GITHUB_UPLOAD_URL:?GREPNEST_GITHUB_UPLOAD_URL is required}
-      GREPNEST_GITHUB_GIT_URL: ${GREPNEST_GITHUB_GIT_URL:?GREPNEST_GITHUB_GIT_URL is required}
-      GREPNEST_GITHUB_APP_ID: ${GREPNEST_GITHUB_APP_ID:?GREPNEST_GITHUB_APP_ID is required}
-      GREPNEST_GITHUB_PRIVATE_KEY_FILE: /run/secrets/grepnest/private-key.pem
-      GREPNEST_GITHUB_WEBHOOK_SECRET_FILE: /run/secrets/grepnest/webhook-secret
-      GREPNEST_USER_TOKEN: ${GREPNEST_USER_TOKEN:?GREPNEST_USER_TOKEN is required}
-      GREPNEST_USER_INSTALLATION_ID: ${GREPNEST_USER_INSTALLATION_ID:?GREPNEST_USER_INSTALLATION_ID is required}
-      GREPNEST_USER_REPOSITORY_IDS: ${GREPNEST_USER_REPOSITORY_IDS:?GREPNEST_USER_REPOSITORY_IDS is required}
-      GREPNEST_ADMIN_TOKEN: ${GREPNEST_ADMIN_TOKEN:?GREPNEST_ADMIN_TOKEN is required}
-      GREPNEST_ADMIN_INSTALLATION_ID: ${GREPNEST_ADMIN_INSTALLATION_ID:?GREPNEST_ADMIN_INSTALLATION_ID is required}
-      GREPNEST_ADMIN_REPOSITORY_IDS: ${GREPNEST_ADMIN_REPOSITORY_IDS:?GREPNEST_ADMIN_REPOSITORY_IDS is required}
-      GREPNEST_SCIP_MAX_UPLOAD_BYTES: ${GREPNEST_SCIP_MAX_UPLOAD_BYTES:-67108864}
-    volumes:
-      - ${GREPNEST_GITHUB_PRIVATE_KEY_FILE:?GREPNEST_GITHUB_PRIVATE_KEY_FILE is required}:/run/secrets/grepnest/private-key.pem:ro
-      - ${GREPNEST_GITHUB_WEBHOOK_SECRET_FILE:?GREPNEST_GITHUB_WEBHOOK_SECRET_FILE is required}:/run/secrets/grepnest/webhook-secret:ro
-    ports:
-      - "127.0.0.1:8080:8080"
-    networks: [internal, loopback]
-
   postgres:
     image: postgres:18.3@sha256:7e32e9833a6fb1c92c32552794cb6ed569d51b445a54907d35fc112ef39684db
     environment:

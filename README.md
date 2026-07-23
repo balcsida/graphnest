@@ -13,8 +13,9 @@ publish the required images, and the chart has not been cluster-tested.
 
 ## Local quick start
 
-Prerequisites: Go 1.26, Git, Docker Compose, and an internet connection for
-`make tools` and Docker image pulls. Run the checked-in fixture with Compose:
+Prerequisites: Go 1.26, Git, Docker Compose, `jq`, and an internet connection
+for `make tools` and Docker image pulls. Run the checked-in fixture with
+Compose:
 
 ```sh
 make tools
@@ -135,7 +136,9 @@ The hosted Streamable HTTP MCP endpoint is `http://127.0.0.1:8080/mcp` and
 requires the same `Authorization: Bearer <token>` header. It offers
 `search_code` (`query`, optional `repositories`, `limit`, `context_lines`, and
 `max_output_bytes`) and `find_files` (`pattern`, optional `repositories`,
-`limit`, and `max_output_bytes`).
+`limit`, and `max_output_bytes`). Durable mode also exposes `navigate_symbol`
+with `repository_id`, `path`, one-based `line`, zero-based `character`, and
+`definitions`, `references`, or `implementations` as the `operation`.
 
 For a stdio MCP client, build the proxy and configure only these two variables:
 
@@ -177,16 +180,20 @@ search, repository, file-read, and MCP routes require bearer authentication.
 
 ### Durable Compose
 
-The durable Compose profile runs the server with PostgreSQL and Zoekt. Set
-`GREPNEST_APPLICATION_IMAGE` (or accept `grepnest/application:local`) plus the
-GitHub and token/repository-scope variables listed above. It also requires
+The durable Compose overlay runs the server with PostgreSQL and Zoekt. Set
+`GREPNEST_APPLICATION_IMAGE` to an existing image plus the GitHub and
+token/repository-scope variables listed above. The image must provide
+`grepnest-server` and `wget` on `PATH`. The overlay also requires
 `GREPNEST_GITHUB_PRIVATE_KEY_FILE` and `GREPNEST_GITHUB_WEBHOOK_SECRET_FILE`
 to be readable host-file paths; Compose mounts both read-only into the server.
+Set `GREPNEST_GITHUB_CA_FILE` to an optional private-CA host file; Compose mounts
+it read-only.
 
 ```sh
 GREPNEST_APPLICATION_IMAGE=registry.example/grepnest/application:2026-07-22 \
 GREPNEST_GITHUB_PRIVATE_KEY_FILE=$PWD/github-app-private-key.pem \
 GREPNEST_GITHUB_WEBHOOK_SECRET_FILE=$PWD/github-webhook-secret \
+GREPNEST_GITHUB_CA_FILE=$PWD/github-ca.pem \
 GREPNEST_GITHUB_WEB_URL=https://github.example \
 GREPNEST_GITHUB_API_URL=https://github.example/api/v3 \
 GREPNEST_GITHUB_UPLOAD_URL=https://github.example/api/uploads \
@@ -198,7 +205,11 @@ GREPNEST_USER_REPOSITORY_IDS=789 \
 GREPNEST_ADMIN_TOKEN=replace-admin-token \
 GREPNEST_ADMIN_INSTALLATION_ID=456 \
 GREPNEST_ADMIN_REPOSITORY_IDS=789 \
-docker compose -f deploy/compose/compose.yml --profile durable up -d --wait
+docker compose \
+  -f deploy/compose/compose.yml \
+  -f deploy/compose/durable.yml \
+  --profile durable \
+  up -d --wait
 ```
 
 Optional limits are positive and cannot exceed their server caps:
@@ -216,7 +227,7 @@ Optional limits are positive and cannot exceed their server caps:
 | `GREPNEST_SCIP_MAX_UPLOAD_BYTES` | 67108864 | 268435456 |
 
 Run `make fmt lint staticcheck govulncheck test test-race postgres-integration
-integration e2e build` before proposing a change. `make e2e` starts its pinned
+integration e2e build compose-test` before proposing a change. `make e2e` starts its pinned
 PostgreSQL dependency and runs real TLS smart-Git and Zoekt processes. `make
 helm-lint helm-test` validates the chart structure without
 contacting a cluster. `make image` intentionally fails with

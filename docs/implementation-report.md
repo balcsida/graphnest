@@ -50,9 +50,8 @@ make e2e
 make build
 make helm-lint
 make helm-test
-docker compose -f deploy/compose/compose.yml config
-docker compose -f deploy/compose/compose.yml up -d --wait
-docker compose -f deploy/compose/compose.yml ps
+make compose-test
+docker compose -f deploy/compose/compose.yml --profile fixture config
 rg -n 'github\\.com|latest|Authorization|token|RepoIDs|java|jvm|maven|gradle' --glob '!go.sum' .
 git diff --check HEAD
 git status --short
@@ -61,12 +60,15 @@ git status --short
 Results are recorded in the Task 17 report. The E2E gate requires PostgreSQL,
 builds the pinned Zoekt tools, and exercises authenticated HTTPS smart-Git and
 real Zoekt search/list processes. `make image` remains an intentionally failing
-Milestone 3 boundary. Helm lint/render gates pass, but no image or cluster
-deployment has been tested.
+Milestone 3 boundary. Helm lint/render gates, fixture Compose rendering, and
+durable Compose configuration validation pass, but the durable server container
+and cluster deployment have not been tested because no application image is
+built.
 
 ## Risks and next milestone
 
-Local E2E and live Compose prove Milestones 0-2 only; they do not establish
+Local E2E and live Compose dependencies prove Milestones 0-2 only; the durable
+Compose profile has configuration-only validation and does not establish
 production readiness. The implementation uses the GHES 3.17-compatible default
 REST API version `2022-11-28`; the version and CA bundle are configurable.
 Indexing is default-branch-only. Images, secret delivery, cluster deployment,
