@@ -29,8 +29,8 @@ directly to `main`, as explicitly authorized:
 4. Direct security reports to GitHub private vulnerability reporting and use
    the existing commit email for private Code of Conduct reports.
 
-Keep the documented Helm 3.18.4 pin. The unrelated Helm version change on the
-feature branch is not part of either failing job's root-cause fix.
+CI is pinned to Helm v4.2.3 because its schema error paths match the render
+harness.
 
 Enable vulnerability alerts and Dependabot security updates when authenticated
 GitHub settings access is available. Do not add scheduled dependency-update

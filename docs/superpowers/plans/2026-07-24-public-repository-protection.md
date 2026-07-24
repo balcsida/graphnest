@@ -13,7 +13,7 @@
 - Keep `balcsida/grep-nest` private until the owner changes visibility.
 - Commit directly to `main` as explicitly authorized.
 - Every commit must be signed, atomic, conventional, single-line, and at most 72 characters.
-- Keep Helm pinned to v3.18.4.
+- Keep Helm pinned to v4.2.3.
 - Add no dependency, CODEOWNERS file, scheduled release workflow, or artifact publishing.
 - Require the `verify`, `integration`, `e2e`, and `helm` check names on public `main`.
 - Require zero approving reviews for the solo-maintainer pull-request rule.
@@ -98,12 +98,12 @@ Run:
 ```bash
 sh -n deploy/helm/grepnest/tests/render.sh
 make helm-lint helm-test
-rg -n 'version: v3\.18\.4' .github/workflows/ci.yml
+rg -n 'version: v4\.2\.3' .github/workflows/ci.yml
 ! rg -n '\brg\b' deploy/helm/grepnest/tests/render.sh
 git diff HEAD^ --check
 ```
 
-Expected: shell syntax and both Helm targets pass, Helm remains v3.18.4, the
+Expected: shell syntax and both Helm targets pass, Helm remains v4.2.3, the
 script contains no `rg` command, and the diff has no whitespace errors.
 
 ### Task 3: Ignore common local secret files
