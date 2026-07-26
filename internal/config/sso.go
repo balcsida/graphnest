@@ -58,7 +58,7 @@ func loadSSO(databaseURL string) (SSO, error) {
 		return SSO{}, err
 	}
 	issuer, err := url.ParseRequestURI(issuerURL)
-	if err != nil || issuer.Scheme != "https" || issuer.Host == "" || issuer.User != nil || issuer.RawQuery != "" || issuer.Fragment != "" {
+	if err != nil || issuer.Scheme != "https" || issuer.Hostname() == "" || issuer.User != nil || issuer.ForceQuery || issuer.RawQuery != "" || issuer.Fragment != "" {
 		return SSO{}, invalid("GREPNEST_OIDC_ISSUER_URL must be an HTTPS URL without userinfo, query, or fragment")
 	}
 	scopes, err := parseCSV("GREPNEST_OIDC_SCOPES", valueOr("GREPNEST_OIDC_SCOPES", "openid,profile,email"), "openid")
@@ -85,7 +85,7 @@ func loadSSO(databaseURL string) (SSO, error) {
 
 func parseHTTPSOrigin(name, value string) (*url.URL, error) {
 	parsed, err := url.ParseRequestURI(value)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+	if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" || parsed.User != nil || parsed.ForceQuery || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
 		return nil, invalid(name + " must be an HTTPS origin")
 	}
 	if parsed.Path == "" {

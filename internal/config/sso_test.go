@@ -34,7 +34,7 @@ func TestLoadOIDCRequiresCompleteDurableConfiguration(t *testing.T) {
 
 func TestLoadOIDCRequiresDurableHTTPSOrigin(t *testing.T) {
 	setValidOIDCEnvironment(t)
-	for _, value := range []string{"", "http://grepnest.example.test", "https://user@grepnest.example.test", "https://grepnest.example.test/path", "https://grepnest.example.test/?query=1", "https://grepnest.example.test/#fragment"} {
+	for _, value := range []string{"", "http://grepnest.example.test", "https://:443", "https://user@grepnest.example.test", "https://grepnest.example.test/path", "https://grepnest.example.test?", "https://grepnest.example.test/?query=1", "https://grepnest.example.test/#fragment"} {
 		t.Run(value, func(t *testing.T) {
 			t.Setenv("GREPNEST_PUBLIC_URL", value)
 			if _, err := Load(); err == nil || !strings.Contains(err.Error(), "GREPNEST_PUBLIC_URL") {
@@ -45,7 +45,7 @@ func TestLoadOIDCRequiresDurableHTTPSOrigin(t *testing.T) {
 }
 
 func TestLoadOIDCValidatesIssuer(t *testing.T) {
-	for _, value := range []string{"http://idp.example.test", "https://idp.example.test?query=1", "https://idp.example.test#fragment"} {
+	for _, value := range []string{"http://idp.example.test", "https://:443", "https://idp.example.test?", "https://idp.example.test?query=1", "https://idp.example.test#fragment"} {
 		t.Run(value, func(t *testing.T) {
 			setValidOIDCEnvironment(t)
 			t.Setenv("GREPNEST_OIDC_ISSUER_URL", value)
