@@ -15,7 +15,7 @@ GrepNest is a Go code-search service. Executables live in `cmd/` (`grepnest-serv
 - `make fmt lint staticcheck govulncheck` checks formatting, `go vet`, static analysis, and known vulnerabilities.
 - `make helm-lint helm-test` validates and renders the Helm chart.
 
-Go 1.26, Git, and Docker Compose are required.
+Go 1.26.5, Git, Docker Compose, and Helm 4.2.3 are required.
 
 ## Coding Style & Naming Conventions
 
