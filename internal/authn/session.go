@@ -17,7 +17,7 @@ type SessionManager struct {
 }
 
 func (m *SessionManager) Create(ctx context.Context, identity Identity, principal Principal) (string, time.Time, error) {
-	if !validIdentity(identity) || !validSessionPrincipal(principal) {
+	if !validIdentity(identity) || principal.Administrator {
 		return "", time.Time{}, ErrInvalidIdentity
 	}
 	random := make([]byte, 32)
@@ -33,8 +33,10 @@ func (m *SessionManager) Create(ctx context.Context, identity Identity, principa
 		now = m.Now()
 	}
 	expiresAt := now.Add(m.TTL)
-	principal.DisplayName = ""
-	principal.RepositoryIDs = append([]int64(nil), principal.RepositoryIDs...)
+	principal = Principal{Subject: identitySubject(identity), Method: identity.Provider, InstallationID: principal.InstallationID, RepositoryIDs: append([]int64(nil), principal.RepositoryIDs...)}
+	if !validSessionPrincipal(principal) {
+		return "", time.Time{}, ErrInvalidIdentity
+	}
 	if err := m.Store.CreateSession(ctx, SessionRecord{TokenHash: sha256.Sum256(random), Provider: identity.Provider, DisplayName: identity.DisplayName, Principal: principal, CreatedAt: now, ExpiresAt: expiresAt}); err != nil {
 		return "", time.Time{}, err
 	}

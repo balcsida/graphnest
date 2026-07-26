@@ -30,9 +30,8 @@ func (m ScopeMapper) Map(identity Identity) (Principal, error) {
 	if len(allowed) > 0 && !hasAllowedGroup(allowed, identity.Groups) {
 		return Principal{}, ErrIdentityForbidden
 	}
-	sum := sha256.Sum256([]byte(identity.Issuer + "\x00" + identity.Subject))
 	return Principal{
-		Subject:        identity.Provider + ":" + hex.EncodeToString(sum[:]),
+		Subject:        identitySubject(identity),
 		Method:         identity.Provider,
 		DisplayName:    identity.DisplayName,
 		InstallationID: m.InstallationID,
@@ -41,7 +40,7 @@ func (m ScopeMapper) Map(identity Identity) (Principal, error) {
 }
 
 func validIdentity(identity Identity) bool {
-	if identity.Provider == "" || identity.Issuer == "" || identity.Subject == "" || !utf8.ValidString(identity.Provider) || !utf8.ValidString(identity.Issuer) || !utf8.ValidString(identity.Subject) || !utf8.ValidString(identity.DisplayName) || len(identity.Issuer) > 2<<10 || len(identity.Subject) > 1<<10 || len(identity.DisplayName) > 256 || len(identity.Groups) > 256 {
+	if !validIdentityField(identity.Provider, 256) || !validIdentityField(identity.Issuer, 2<<10) || !validIdentityField(identity.Subject, 1<<10) || !utf8.ValidString(identity.DisplayName) || len(identity.DisplayName) > 256 || len(identity.Groups) > 256 {
 		return false
 	}
 	total := 0
@@ -60,6 +59,23 @@ func validIdentity(identity Identity) bool {
 		}
 	}
 	return true
+}
+
+func validIdentityField(value string, limit int) bool {
+	if value == "" || !utf8.ValidString(value) || len(value) > limit {
+		return false
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func identitySubject(identity Identity) string {
+	sum := sha256.Sum256([]byte(identity.Issuer + "\x00" + identity.Subject))
+	return identity.Provider + ":" + hex.EncodeToString(sum[:])
 }
 
 func hasAllowedGroup(allowed, groups []string) bool {

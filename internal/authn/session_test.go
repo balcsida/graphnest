@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -25,7 +26,19 @@ func TestSessionManagerStoresOpaqueTokenAndPrincipal(t *testing.T) {
 	if err != nil || len(raw) != 32 {
 		t.Fatalf("token decode = %x, %v", raw, err)
 	}
-	if want := sha256.Sum256(raw); store.created.TokenHash != want || store.created.DisplayName != "Ada" || store.created.Principal.Subject != "opaque-subject" || store.created.Principal.DisplayName != "" {
+	if want := sha256.Sum256(raw); store.created.TokenHash != want || store.created.DisplayName != "Ada" || store.created.Principal.Subject != identitySubject(testIdentity()) || store.created.Principal.DisplayName != "" {
+		t.Fatalf("stored = %#v", store.created)
+	}
+}
+
+func TestSessionManagerDerivesStoredIdentityFromClaims(t *testing.T) {
+	store := &recordingSessionStore{}
+	manager := SessionManager{Store: store, TTL: time.Hour, Rand: bytes.NewReader(bytes.Repeat([]byte{0x42}, 32))}
+	identity := Identity{Provider: "oidc", Issuer: "https://idp.example", Subject: "raw-idp-subject", DisplayName: "Ada"}
+	if _, _, err := manager.Create(t.Context(), identity, Principal{Subject: "raw-idp-subject", Method: "saml", DisplayName: "Mallory", InstallationID: 10, RepositoryIDs: []int64{102, 101}}); err != nil {
+		t.Fatal(err)
+	}
+	if want := sha256.Sum256([]byte("https://idp.example\x00raw-idp-subject")); store.created.Principal.Subject != "oidc:"+fmt.Sprintf("%x", want) || store.created.Principal.Method != "oidc" || store.created.Principal.DisplayName != "" || store.created.DisplayName != "Ada" || !reflect.DeepEqual(store.created.Principal.RepositoryIDs, []int64{102, 101}) {
 		t.Fatalf("stored = %#v", store.created)
 	}
 }

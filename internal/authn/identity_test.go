@@ -21,8 +21,12 @@ func TestScopeMapperMapsAllowedIdentity(t *testing.T) {
 func TestScopeMapperRejectsInvalidIdentity(t *testing.T) {
 	for name, identity := range map[string]Identity{
 		"missing provider": {Issuer: "issuer", Subject: "subject"},
+		"long provider":    {Provider: strings.Repeat("a", 257), Issuer: "issuer", Subject: "subject"},
+		"control provider": {Provider: "oidc\n", Issuer: "issuer", Subject: "subject"},
 		"missing issuer":   {Provider: "oidc", Subject: "subject"},
+		"control issuer":   {Provider: "oidc", Issuer: "issuer\n", Subject: "subject"},
 		"missing subject":  {Provider: "oidc", Issuer: "issuer"},
+		"control subject":  {Provider: "oidc", Issuer: "issuer", Subject: "subject\n"},
 		"long issuer":      {Provider: "oidc", Issuer: strings.Repeat("a", 2049), Subject: "subject"},
 		"long subject":     {Provider: "oidc", Issuer: "issuer", Subject: strings.Repeat("a", 1025)},
 		"long name":        {Provider: "oidc", Issuer: "issuer", Subject: "subject", DisplayName: strings.Repeat("a", 257)},
