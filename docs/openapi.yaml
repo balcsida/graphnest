@@ -5,7 +5,7 @@ info:
 paths:
   /v1/repositories:
     get:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       responses:
         '200':
           description: Authorized repositories and index status
@@ -17,7 +17,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/repositories/{id}:
     get:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
       responses:
@@ -33,7 +33,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/repositories/{id}/status:
     get:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
       responses:
@@ -49,7 +49,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/files/read:
     post:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       requestBody:
         required: true
         content:
@@ -73,7 +73,7 @@ paths:
         '504': {$ref: '#/components/responses/Timeout'}
   /v1/search:
     post:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       requestBody:
         required: true
         content:
@@ -122,7 +122,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/scip/navigation:
     post:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       requestBody:
         required: true
         content:
@@ -199,9 +199,46 @@ paths:
     get:
       responses:
         '200': {description: Prometheus metrics, content: {text/plain: {schema: {type: string}}}}
+  /v1/auth/config:
+    get:
+      responses:
+        '200':
+          description: Token login availability and configured OIDC providers
+          content: {application/json: {schema: {$ref: '#/components/schemas/AuthConfig'}}}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+  /v1/auth/session:
+    get:
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      responses:
+        '200':
+          description: Current authenticated browser identity metadata
+          content: {application/json: {schema: {$ref: '#/components/schemas/AuthSession'}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+  /auth/logout:
+    post:
+      security: [{sessionCookie: []}]
+      responses:
+        '204': {description: Session cookie cleared}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+  /auth/oidc/login:
+    get:
+      responses:
+        '303': {description: Redirect to the configured OIDC provider}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+  /auth/oidc/callback:
+    get:
+      parameters:
+        - {name: state, in: query, required: true, schema: {type: string}}
+        - {name: code, in: query, required: false, schema: {type: string}}
+        - {name: error, in: query, required: false, schema: {type: string}}
+      responses:
+        '303': {description: Redirect to the console after success or a generic authentication failure}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer}
+    sessionCookie: {type: apiKey, in: cookie, name: __Host-grepnest_session}
   responses:
     InvalidRequest: {description: Invalid request, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     Unauthenticated: {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
@@ -213,6 +250,29 @@ components:
     Unavailable: {description: Service unavailable, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     Timeout: {description: Search timed out, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
   schemas:
+    AuthConfig:
+      type: object
+      additionalProperties: false
+      required: [token_login, providers]
+      properties:
+        token_login: {type: boolean}
+        providers:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, label, login_url]
+            properties:
+              id: {type: string, example: oidc}
+              label: {type: string, example: Sign in with SSO}
+              login_url: {type: string, example: /auth/oidc/login}
+    AuthSession:
+      type: object
+      additionalProperties: false
+      required: [method]
+      properties:
+        method: {type: string, enum: [static, oidc]}
+        display_name: {type: string}
     RepositoryList:
       type: object
       additionalProperties: false

@@ -214,6 +214,51 @@ docker compose \
 
 Optional limits are positive and cannot exceed their server caps:
 
+### Optional OIDC browser sign-in
+
+OIDC is optional and disabled by default. Enabling it requires durable mode
+(`GREPNEST_DATABASE_URL`) and an HTTPS public origin; static mode cannot create
+sessions.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `GREPNEST_PUBLIC_URL` | required with OIDC | Authoritative HTTPS public origin, including behind ingress or a reverse proxy |
+| `GREPNEST_OIDC_ISSUER_URL` | required with OIDC | Provider HTTPS issuer URL |
+| `GREPNEST_OIDC_CLIENT_ID` | required with OIDC | Registered client ID |
+| `GREPNEST_OIDC_CLIENT_SECRET_FILE` | required with OIDC | Readable regular file containing the client secret |
+| `GREPNEST_OIDC_CA_FILE` | unset | Optional PEM CA bundle for the provider |
+| `GREPNEST_OIDC_SCOPES` | `openid,profile,email` | Comma-separated requested scopes; must include `openid` |
+| `GREPNEST_OIDC_GROUPS_CLAIM` | `groups` | ID-token claim containing group strings |
+| `GREPNEST_OIDC_ALLOWED_GROUPS` | unset | Comma-separated exact, case-sensitive allowed group strings; unset permits authenticated users |
+| `GREPNEST_OIDC_DISPLAY_NAME_CLAIM` | `name` | Optional ID-token display-name claim |
+| `GREPNEST_SSO_SESSION_TTL` | `8h` | Session lifetime, from 5 minutes through 24 hours |
+| `GREPNEST_SSO_LOGIN_FLOW_TTL` | `10m` | Login transaction lifetime, from 1 through 15 minutes |
+
+Register a confidential web client with the IdP:
+
+```text
+Redirect URI: https://<public-host>/auth/oidc/callback
+Flow: Authorization Code
+PKCE: S256
+Scopes: openid profile email [plus provider-specific groups scope]
+```
+
+The provider must be reachable from server replicas for discovery, JWKS, and
+token exchange. Its TLS chain must validate against system trust or
+`GREPNEST_OIDC_CA_FILE`; do not disable certificate verification. The public
+URL, not forwarded request headers, is authoritative behind ingress and must
+match the registered redirect origin exactly.
+
+An accepted OIDC identity receives the existing user repository scope only;
+OIDC never creates an administrator. Administrative REST operations and MCP
+remain bearer-token only. Group matching is exact and case-sensitive. Group or
+role changes take effect when the session expires or is revoked. Sessions last
+eight hours by default and can be revoked by `POST /auth/logout` or operator
+SQL. GrepNest persists neither IdP tokens nor raw IdP issuer or subject values.
+The short-lived `__Host-grepnest_oidc_login` browser-binding cookie prevents
+login CSRF and is distinct from the session cookie. Unsafe REST requests
+authenticated by that session require an exact same-origin `Origin` header.
+
 | Variable | Default | Maximum |
 | --- | ---: | ---: |
 | `GREPNEST_DEFAULT_RESULTS` | 25 | `GREPNEST_MAX_RESULTS` (100) |

@@ -5,7 +5,8 @@
 - source, repository metadata, and indexed revisions;
 - bearer tokens and GitHub App installation credentials;
 - authorization scopes and server-selected Zoekt repository IDs;
-- service and index availability.
+- service and index availability;
+- OIDC login transactions, browser sessions, and the identity-to-scope mapping.
 
 ## Milestones 0-1 controls
 
@@ -57,6 +58,33 @@
 - the client selects repository names for usability, while the server still
   intersects them with the authenticated principal's numeric authorization
   scope.
+
+## Optional OIDC session controls
+
+- OIDC uses Authorization Code with S256 PKCE, a one-time stored state and
+  browser binding, and an ID-token nonce; callback inputs are consumed before
+  exchange to prevent login CSRF, authorization-code replay, and nonce replay;
+- the callback accepts the configured HTTPS issuer and client audience only;
+  multi-audience tokens require the matching authorized party, preventing
+  issuer or audience confusion;
+- sessions use fresh opaque random tokens, a `__Host-` Secure HttpOnly strict
+  cookie, and stored token hashes, preventing session fixation and reducing the
+  impact of a database compromise; raw IdP issuers, subjects, and tokens are
+  not persisted;
+- bearer and session credentials are mutually exclusive per REST request;
+  session-authenticated unsafe methods require the exact configured public
+  `Origin`, preventing mixed-credential confusion and cross-site request use;
+- login and callback redirect only to fixed provider and `/` destinations, so
+  request parameters cannot create an open redirect;
+- an OIDC identity is mapped once to the current non-admin user repository
+  scope. Exact, case-sensitive allowed-group checks happen at login; membership
+  changes can remain effective until the bounded session TTL expires or the
+  session is revoked;
+- login-flow consumption and session creation are database transactions, so
+  multiple server replicas cannot complete the same flow twice; and
+- provider discovery, token exchange, and JWKS retrieval use configured HTTPS
+  trust. An IdP outage or failed JWKS rotation denies new logins but does not
+  invalidate already-issued GrepNest sessions before their expiry.
 
 ## Known limits
 

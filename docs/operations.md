@@ -77,6 +77,36 @@ shared index directory. The indexer serves only Prometheus metrics on
 Recover an interrupted worker by restarting it; PostgreSQL reaps expired leases
 and the worker removes abandoned numeric-ID worktrees before claiming more work.
 
+## Optional OIDC operations
+
+OIDC is disabled until all required OIDC settings are configured in durable
+mode. Set `GREPNEST_PUBLIC_URL` to the external HTTPS origin registered with
+the IdP; it is authoritative behind ingress or a reverse proxy, so do not
+derive it from forwarded headers. Permit server egress to the provider's
+discovery, authorization, token, and JWKS endpoints and install its issuing CA
+in system trust or supply `GREPNEST_OIDC_CA_FILE` as a readable regular PEM
+file. Register exactly `https://<public-host>/auth/oidc/callback`, Authorization
+Code with S256 PKCE, and `openid profile email` plus any provider-specific
+groups scope.
+
+All OIDC users receive the existing user repository scope; administration and
+MCP still require bearer tokens. Allowed groups compare exactly and
+case-sensitively. Group or role removal becomes effective at session expiry
+(eight hours by default) or revocation. Users revoke their own browser session
+through `POST /auth/logout`; to revoke sessions during an incident, delete the
+corresponding rows from `auth_sessions` using the subject or creation/expiry
+metadata available to the operator, for example:
+
+```sql
+DELETE FROM auth_sessions WHERE principal_subject = 'oidc:<hashed-subject>';
+```
+
+Do not retain IdP access, refresh, or ID tokens in operator tooling: GrepNest
+does not persist them, nor raw IdP issuer or subject values. The login-binding
+cookie is short-lived and distinct from the session cookie. Session-authenticated
+unsafe REST calls must carry the exact public `Origin`; browser clients should
+use same-origin requests with credentials.
+
 ## Kubernetes chart boundary
 
 The [Helm chart](../deploy/helm/grepnest/README.md) is structurally lintable and

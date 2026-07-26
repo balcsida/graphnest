@@ -6,8 +6,8 @@ GitHub Enterprise -> grepnest-server -> PostgreSQL <- grepnest-indexer
                     REST and MCP               Git -> Zoekt
 ```
 
-`grepnest-server` is the sole Zoekt search client. It authenticates a single
-bearer credential, selects repositories permitted to that principal, converts
+`grepnest-server` is the sole Zoekt search client. It authenticates a bearer
+credential or, for user REST routes, an OIDC browser session, selects repositories permitted to that principal, converts
 those repositories to Zoekt `RepoIDs`, applies bounded search limits, and
 normalizes the response. A request that selects no authorized repositories
 returns no matches without calling Zoekt.
@@ -22,6 +22,19 @@ the repository service at `GET /v1/repositories` and the search service at
 `POST /v1/search`. It makes no authorization decisions: repository names are
 only usability selectors, and the server authenticates every API request and
 enforces the principal's repository scope.
+
+When OIDC is enabled, the browser flow is:
+
+```text
+Browser -> OIDC IdP -> callback -> auth_sessions -> authn.Principal -> existing authz
+```
+
+The callback verifies the authorization code with PKCE, nonce, issuer, and
+audience before mapping the identity. It creates a hashed opaque session record
+with the existing user repository scope; the session has no administrator
+privilege. The short-lived browser binding and login transaction live only for
+the redirect flow. The regular session cookie is then used only by same-origin
+REST requests; `/mcp` stays bearer-only.
 
 Beginning in Milestone 2, PostgreSQL supplies repository metadata and the
 durable index queue. `grepnest-server` verifies GitHub webhooks and reconciles
