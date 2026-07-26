@@ -178,6 +178,8 @@ func TestOIDCProviderCallbackRejectsMalformedAndBoundRequests(t *testing.T) {
 		{"empty error", "?state=x&error=", "browser"},
 		{"duplicate error", "?state=x&error=a&error=b", "browser"},
 		{"code and error", "?state=x&code=a&error=b", "browser"},
+		{"code with empty error", "?state=x&code=a&error=", "browser"},
+		{"error with empty code", "?state=x&code=&error=access_denied", "browser"},
 		{"missing cookie", "?state=x&code=a", ""},
 		{"malformed cookie", "?state=x&code=a", "malformed"},
 		{"wrong cookie", "?state=x&code=a", token(9)},
@@ -196,8 +198,8 @@ func TestOIDCProviderCallbackRejectsMalformedAndBoundRequests(t *testing.T) {
 			if recorder.Code != http.StatusSeeOther {
 				t.Fatalf("status = %d", recorder.Code)
 			}
-			if (test.name == "wrong cookie") && fixture.store.consumed {
-				t.Fatal("wrong browser binding consumed flow")
+			if (test.name == "wrong cookie" || test.name == "code with empty error" || test.name == "error with empty code") && fixture.store.consumed {
+				t.Fatal("invalid callback consumed flow")
 			}
 		})
 	}

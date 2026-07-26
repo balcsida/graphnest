@@ -81,9 +81,11 @@ func (provider *Provider) callback(writer http.ResponseWriter, request *http.Req
 		provider.fail(writer)
 		return
 	}
-	code, hasCode := exactlyOne(query["code"])
-	oauthError, hasError := exactlyOne(query["error"])
-	if hasCode == hasError {
+	codeValues, codePresent := query["code"]
+	errorValues, errorPresent := query["error"]
+	code, validCode := exactlyOne(codeValues)
+	oauthError, validError := exactlyOne(errorValues)
+	if !((validCode && !errorPresent) || (validError && !codePresent)) {
 		provider.fail(writer)
 		return
 	}
@@ -107,7 +109,7 @@ func (provider *Provider) callback(writer http.ResponseWriter, request *http.Req
 		provider.fail(writer)
 		return
 	}
-	if hasError {
+	if validError {
 		_ = oauthError
 		provider.fail(writer)
 		return
