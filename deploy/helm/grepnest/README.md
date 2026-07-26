@@ -21,6 +21,8 @@ corresponding values. The key names below are the defaults.
 | `secrets.runtime.name` | `database-url`, `user-token`, `admin-token` | PostgreSQL DSN and distinct user/admin bearer tokens |
 | `secrets.githubApp.name` | `private-key.pem`, `webhook-secret` | GitHub App private key and webhook secret |
 | `secrets.customCA.name` | `ca.crt` | Optional GitHub CA bundle; set the key with `secrets.customCA.key` |
+| `secrets.oidc.name` | `client-secret` | OIDC client secret; required only when OIDC is enabled |
+| `secrets.oidcCA.name` | `ca.crt` | Optional OIDC provider CA bundle |
 | `images.pullSecrets[]` | Kubernetes pull-secret contract | Optional private-registry credentials |
 | `ingress.tls[].secretName` | Ingress-controller TLS contract | Optional existing TLS Secret for the listed hosts |
 
@@ -29,6 +31,13 @@ Override the runtime key names with `databaseURLKey`, `userTokenKey`, and
 `webhookSecretKey`. The chart never accepts plaintext credentials in values.
 Referenced object names must be Kubernetes DNS subdomains. Secret data keys
 may contain letters, digits, `-`, `_`, and `.`.
+
+Enable OIDC with `server.sso.oidc.enabled` and set the HTTPS
+`server.sso.publicURL`, HTTPS issuer URL, client ID, and `secrets.oidc.name`.
+The server reads the selected client-secret key from a read-only file; secret
+contents never enter chart values or a ConfigMap. Configure scopes and group
+claims under `server.sso.oidc`; scopes must include `openid`. Set
+`secrets.oidcCA.name` only when the provider needs a private CA.
 
 ## Validate and install
 
@@ -87,6 +96,14 @@ optional because portable NetworkPolicy cannot select DNS names. Before
 enabling `networkPolicy.externalEgress.enabled`, ensure its DNS selectors and
 ports reach cluster DNS and its GitHub and PostgreSQL CIDRs cover every endpoint
 the deployment resolves. CIDR changes and DNS answers must remain aligned.
+
+When OIDC and external egress isolation are both enabled, set
+`networkPolicy.externalEgress.identityProvider.cidrs` to the provider CIDRs.
+The separate server-only policy permits the configured TCP ports (443 by
+default) for discovery, token exchange, and JWKS retrieval. Browser navigation
+to the authorization endpoint does not originate from the server. Kubernetes
+NetworkPolicy is CIDR/port based, so keep these CIDRs aligned with provider DNS;
+the chart does not claim endpoint-specific filtering.
 
 ## Scheduling, storage, and capacity
 

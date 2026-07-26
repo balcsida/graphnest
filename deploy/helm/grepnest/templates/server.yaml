@@ -88,6 +88,12 @@ spec:
             {{- if .Values.secrets.customCA.name }}
             - {name: custom-ca, mountPath: /var/run/secrets/grepnest/ca/ca.crt, subPath: ca.crt, readOnly: true}
             {{- end }}
+            {{- if .Values.server.sso.oidc.enabled }}
+            - {name: oidc-client-secret, mountPath: /var/run/secrets/grepnest/oidc/client-secret, subPath: client-secret, readOnly: true}
+            {{- if .Values.secrets.oidcCA.name }}
+            - {name: oidc-ca, mountPath: /var/run/secrets/grepnest/oidc-ca/ca.crt, subPath: ca.crt, readOnly: true}
+            {{- end }}
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
@@ -105,6 +111,20 @@ spec:
             secretName: {{ .Values.secrets.customCA.name }}
             items:
               - {key: {{ .Values.secrets.customCA.key }}, path: ca.crt}
+        {{- end }}
+        {{- if .Values.server.sso.oidc.enabled }}
+        - name: oidc-client-secret
+          secret:
+            secretName: {{ .Values.secrets.oidc.name }}
+            items:
+              - {key: {{ .Values.secrets.oidc.clientSecretKey }}, path: client-secret}
+        {{- if .Values.secrets.oidcCA.name }}
+        - name: oidc-ca
+          secret:
+            secretName: {{ .Values.secrets.oidcCA.name }}
+            items:
+              - {key: {{ .Values.secrets.oidcCA.key }}, path: ca.crt}
+        {{- end }}
         {{- end }}
 ---
 apiVersion: v1

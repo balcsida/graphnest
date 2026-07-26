@@ -212,5 +212,29 @@ spec:
         {{- range .Values.networkPolicy.externalEgress.github.ports }}
         - {protocol: TCP, port: {{ . }}}
         {{- end }}
+{{- if .Values.server.sso.oidc.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "grepnest.resourceName" (list . "allow-identity-provider-egress") }}
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  policyTypes: [Egress]
+  egress:
+    - to:
+        {{- range .Values.networkPolicy.externalEgress.identityProvider.cidrs }}
+        - ipBlock: {cidr: {{ printf "%s/%v" .address .prefix | quote }}}
+        {{- end }}
+      ports:
+        {{- range .Values.networkPolicy.externalEgress.identityProvider.ports }}
+        - {protocol: TCP, port: {{ . }}}
+        {{- end }}
+{{- end }}
 {{- end }}
 {{- end }}

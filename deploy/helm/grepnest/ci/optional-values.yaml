@@ -15,7 +15,21 @@ monitoring:
     labels: {monitoring: pilot}
 secrets:
   customCA: {name: grepnest-existing-ca, key: ca.crt}
+  oidc: {name: grepnest-oidc, clientSecretKey: client-secret}
+  oidcCA: {name: grepnest-oidc-ca, key: ca.crt}
 server:
+  sso:
+    publicURL: https://grepnest.example.invalid
+    sessionTTL: 12h
+    loginFlowTTL: 5m
+    oidc:
+      enabled: true
+      issuerURL: https://idp.example.invalid/realms/engineering
+      clientID: grepnest
+      scopes: [openid, profile, email, offline_access]
+      groupsClaim: roles
+      allowedGroups: [engineering, security]
+      displayNameClaim: preferred_username
   nodeSelector: {grepnest.example.invalid/pool: server}
   affinity:
     nodeAffinity:
@@ -56,4 +70,7 @@ networkPolicy:
       port: 5432
     github:
       cidrs: [{address: 198.51.100.0, prefix: 24}, {address: "2001:db8:1234::", prefix: 48}]
+      ports: [443]
+    identityProvider:
+      cidrs: [{address: 203.0.113.0, prefix: 24}]
       ports: [443]

@@ -72,6 +72,8 @@ helm lint "$chart" -f "$minimal"
 helm template pilot "$chart" -n grepnest -f "$minimal" >"$tmp/minimal.yaml"
 helm template pilot "$chart" -n grepnest -f "$minimal" -f "$optional" \
   --api-versions monitoring.coreos.com/v1/ServiceMonitor >"$tmp/optional.yaml"
+reject 'GREPNEST_(PUBLIC_URL|SSO_|OIDC_)|oidc-client-secret|oidc-ca|identity-provider' \
+  "$tmp/minimal.yaml"
 long_release=abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzx
 helm template "$long_release" "$chart" -n grepnest -f "$minimal" >"$tmp/long-release.yaml"
 
@@ -207,6 +209,7 @@ done
 
 for pattern in '^kind: Ingress$' '^kind: ServiceMonitor$' \
   'name: custom-ca' 'secretName: grepnest-existing-ca' \
+  'name: oidc-ca' 'secretName: grepnest-oidc-ca' \
   'grepnest.example.invalid/pool: server' \
   'grepnest.example.invalid/pool: node' \
   'grepnest.example.invalid/pool: migration' \
@@ -222,6 +225,51 @@ done
 [ "$(grep -E -c -e '^kind: ServiceMonitor$' "$tmp/optional.yaml")" -eq 2 ] || exit 1
 require 'app.kubernetes.io/component: indexer' "$tmp/optional.yaml"
 require 'port: metrics' "$tmp/optional.yaml"
+
+sed -n '/^# Source: grepnest\/templates\/configmaps.yaml$/,/^---$/p' \
+  "$tmp/optional.yaml" >"$tmp/server-config.yaml"
+for setting in \
+  'GREPNEST_PUBLIC_URL: "https://grepnest.example.invalid"' \
+  'GREPNEST_SSO_SESSION_TTL: "12h"' \
+  'GREPNEST_SSO_LOGIN_FLOW_TTL: "5m"' \
+  'GREPNEST_OIDC_ISSUER_URL: "https://idp.example.invalid/realms/engineering"' \
+  'GREPNEST_OIDC_CLIENT_ID: "grepnest"' \
+  'GREPNEST_OIDC_CLIENT_SECRET_FILE: /var/run/secrets/grepnest/oidc/client-secret' \
+  'GREPNEST_OIDC_CA_FILE: /var/run/secrets/grepnest/oidc-ca/ca.crt' \
+  'GREPNEST_OIDC_SCOPES: "openid,profile,email,offline_access"' \
+  'GREPNEST_OIDC_GROUPS_CLAIM: "roles"' \
+  'GREPNEST_OIDC_ALLOWED_GROUPS: "engineering,security"' \
+  'GREPNEST_OIDC_DISPLAY_NAME_CLAIM: "preferred_username"'; do
+  require "$setting" "$tmp/server-config.yaml"
+done
+
+sed -n '/^# Source: grepnest\/templates\/server.yaml$/,/^---$/p' \
+  "$tmp/optional.yaml" >"$tmp/server-deployment.yaml"
+require 'checksum/config: [a-f0-9]{64}' "$tmp/server-deployment.yaml"
+require 'name: oidc-client-secret' "$tmp/server-deployment.yaml"
+require 'secretName: grepnest-oidc' "$tmp/server-deployment.yaml"
+require 'key: client-secret, path: client-secret' \
+  "$tmp/server-deployment.yaml"
+require 'mountPath: /var/run/secrets/grepnest/oidc/client-secret, subPath: client-secret, readOnly: true' \
+  "$tmp/server-deployment.yaml"
+require 'name: oidc-ca' "$tmp/server-deployment.yaml"
+require 'mountPath: /var/run/secrets/grepnest/oidc-ca/ca.crt, subPath: ca.crt, readOnly: true' \
+  "$tmp/server-deployment.yaml"
+reject 'value: .*client-secret|GREPNEST_OIDC_CLIENT_SECRET:' "$tmp/server-config.yaml"
+helm template pilot "$chart" -n grepnest -f "$minimal" -f "$optional" \
+  --set-string=server.sso.sessionTTL=13h \
+  --api-versions monitoring.coreos.com/v1/ServiceMonitor >"$tmp/changed-sso.yaml"
+original_checksum=$(sed -n 's/^        checksum\/config: //p' "$tmp/optional.yaml")
+changed_checksum=$(sed -n 's/^        checksum\/config: //p' "$tmp/changed-sso.yaml")
+[ -n "$original_checksum" ] && [ -n "$changed_checksum" ] \
+  && [ "$original_checksum" != "$changed_checksum" ] || exit 1
+
+sed -n '/^# Source: grepnest\/templates\/node.yaml$/,/^---$/p' \
+  "$tmp/optional.yaml" >"$tmp/optional-node.yaml"
+sed -n '/^# Source: grepnest\/templates\/migration-job.yaml$/,/^---$/p' \
+  "$tmp/optional.yaml" >"$tmp/optional-migration.yaml"
+reject 'OIDC|oidc|identity-provider' "$tmp/optional-node.yaml"
+reject 'OIDC|oidc|identity-provider' "$tmp/optional-migration.yaml"
 
 sed -n '/^kind: StatefulSet$/,/^# Source: grepnest\/templates\/migration-job.yaml$/p' \
   "$tmp/minimal.yaml" >"$tmp/node.yaml"
@@ -246,7 +294,7 @@ require '^kind: Ingress$' "$tmp/optional-ingress.yaml"
 reject 'pilot-grepnest-zoekt|name: .*zoekt|backend:.*zoekt' "$tmp/optional-ingress.yaml"
 reject 'host: "?\*|path: /\*|host: "?default([.]|"|$)' "$tmp/optional-ingress.yaml"
 
-policies='deny-ingress allow-server-ingress allow-zoekt-ingress allow-indexer-metrics-ingress deny-egress allow-internal-egress allow-dns-egress allow-postgresql-egress allow-github-egress'
+policies='deny-ingress allow-server-ingress allow-zoekt-ingress allow-indexer-metrics-ingress deny-egress allow-internal-egress allow-dns-egress allow-postgresql-egress allow-github-egress allow-identity-provider-egress'
 for policy in $policies; do
   sed -n "/^  name: pilot-grepnest-$policy\$/,/^---\$/p" \
     "$tmp/optional.yaml" >"$tmp/$policy.yaml"
@@ -305,6 +353,13 @@ require 'policyTypes: \[Egress\]' "$tmp/allow-github-egress-spec.yaml"
 require 'cidr: "198\.51\.100\.0/24"' "$tmp/allow-github-egress-spec.yaml"
 require 'cidr: "2001:db8:1234::/48"' "$tmp/allow-github-egress-spec.yaml"
 require 'protocol: TCP, port: 443' "$tmp/allow-github-egress-spec.yaml"
+require 'app.kubernetes.io/component: server' "$tmp/allow-identity-provider-egress-spec.yaml"
+reject 'matchExpressions:|app.kubernetes.io/component: (node|migration)' \
+  "$tmp/allow-identity-provider-egress-spec.yaml"
+require 'cidr: "203\.0\.113\.0/24"' "$tmp/allow-identity-provider-egress-spec.yaml"
+reject 'cidr: "(198\.51\.100\.0/24|2001:db8:1234::/48)"' \
+  "$tmp/allow-identity-provider-egress-spec.yaml"
+require 'protocol: TCP, port: 443' "$tmp/allow-identity-provider-egress-spec.yaml"
 
 reject '^ *- \{\}|^ *from: *\[?\]?$|^ *to: *\[?\]?$|^ *- (podSelector|namespaceSelector): *\{\}$' "$tmp/optional.yaml"
 reject 'cidr: "?(0\.0\.0\.0/0|::/0)"?' "$tmp/optional.yaml"
@@ -318,6 +373,48 @@ expect_failure "$tmp/scip-upload-min.err" helm template bad "$chart" -f "$minima
   --set=server.config.scipMaxUploadBytes=0
 expect_failure "$tmp/scip-upload-max.err" helm template bad "$chart" -f "$minimal" \
   --set=server.config.scipMaxUploadBytes=268435457
+oidc='--set=server.sso.oidc.enabled=true'
+expect_failure "$tmp/oidc-public-url.err" helm template bad "$chart" -f "$minimal" \
+  $oidc --set-string=server.sso.oidc.issuerURL=https://idp.example \
+  --set-string=server.sso.oidc.clientID=grepnest \
+  --set-string=secrets.oidc.name=grepnest-oidc
+expect_failure "$tmp/oidc-issuer.err" helm template bad "$chart" -f "$minimal" \
+  $oidc --set-string=server.sso.publicURL=https://grepnest.example \
+  --set-string=server.sso.oidc.clientID=grepnest \
+  --set-string=secrets.oidc.name=grepnest-oidc
+expect_failure "$tmp/oidc-client-id.err" helm template bad "$chart" -f "$minimal" \
+  $oidc --set-string=server.sso.publicURL=https://grepnest.example \
+  --set-string=server.sso.oidc.issuerURL=https://idp.example \
+  --set-string=secrets.oidc.name=grepnest-oidc
+expect_failure "$tmp/oidc-secret.err" helm template bad "$chart" -f "$minimal" \
+  $oidc --set-string=server.sso.publicURL=https://grepnest.example \
+  --set-string=server.sso.oidc.issuerURL=https://idp.example \
+  --set-string=server.sso.oidc.clientID=grepnest
+expect_failure "$tmp/oidc-public-http.err" helm template bad "$chart" -f "$minimal" \
+  $oidc --set-string=server.sso.publicURL=http://grepnest.example \
+  --set-string=server.sso.oidc.issuerURL=https://idp.example \
+  --set-string=server.sso.oidc.clientID=grepnest \
+  --set-string=secrets.oidc.name=grepnest-oidc
+expect_failure "$tmp/oidc-issuer-http.err" helm template bad "$chart" -f "$minimal" \
+  $oidc --set-string=server.sso.publicURL=https://grepnest.example \
+  --set-string=server.sso.oidc.issuerURL=http://idp.example \
+  --set-string=server.sso.oidc.clientID=grepnest \
+  --set-string=secrets.oidc.name=grepnest-oidc
+expect_failure "$tmp/oidc-scopes.err" helm template bad "$chart" -f "$minimal" -f "$optional" \
+  --set-json='server.sso.oidc.scopes=["profile","email"]'
+expect_failure "$tmp/oidc-session-ttl.err" helm template bad "$chart" -f "$minimal" -f "$optional" \
+  --set-string=server.sso.sessionTTL=tomorrow
+expect_failure "$tmp/oidc-login-ttl.err" helm template bad "$chart" -f "$minimal" -f "$optional" \
+  --set-string=server.sso.loginFlowTTL=5minutes
+require '/server/sso/publicURL' "$tmp/oidc-public-url.err"
+require '/server/sso/oidc/issuerURL' "$tmp/oidc-issuer.err"
+require '/server/sso/oidc/clientID' "$tmp/oidc-client-id.err"
+require '/secrets/oidc/name' "$tmp/oidc-secret.err"
+require '/server/sso/publicURL' "$tmp/oidc-public-http.err"
+require '/server/sso/oidc/issuerURL' "$tmp/oidc-issuer-http.err"
+require '/server/sso/oidc/scopes' "$tmp/oidc-scopes.err"
+require '/server/sso/sessionTTL' "$tmp/oidc-session-ttl.err"
+require '/server/sso/loginFlowTTL' "$tmp/oidc-login-ttl.err"
 for field in nameOverride fullnameOverride; do
   for value in Bad bad_name -bad bad- \
     aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; do
