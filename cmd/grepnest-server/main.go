@@ -146,13 +146,13 @@ func newAuthRuntime(ctx context.Context, settings config.Config, store authn.Ses
 	if !settings.SSO.OIDC.Enabled {
 		return runtime, nil
 	}
-	secret, err := readBoundedFile(settings.SSO.OIDC.ClientSecretFile, maxOIDCClientSecretBytes)
+	secret, err := readBoundedRegularFile(settings.SSO.OIDC.ClientSecretFile, maxOIDCClientSecretBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read OIDC client secret: %w", err)
 	}
 	var caPEM []byte
 	if settings.SSO.OIDC.CAFile != "" {
-		caPEM, err = readBoundedFile(settings.SSO.OIDC.CAFile, maxOIDCCABytes)
+		caPEM, err = readBoundedRegularFile(settings.SSO.OIDC.CAFile, maxOIDCCABytes)
 		if err != nil {
 			return nil, fmt.Errorf("read OIDC CA: %w", err)
 		}
@@ -319,6 +319,15 @@ func readBoundedFile(path string, maxBytes int64) ([]byte, error) {
 		return nil, err
 	}
 	defer file.Close()
+	return readBounded(file, maxBytes)
+}
+
+func readBoundedRegularFile(path string, maxBytes int64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
 	info, err := file.Stat()
 	if err != nil {
 		return nil, err
@@ -326,7 +335,11 @@ func readBoundedFile(path string, maxBytes int64) ([]byte, error) {
 	if !info.Mode().IsRegular() {
 		return nil, errors.New("not a regular file")
 	}
-	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
+	return readBounded(file, maxBytes)
+}
+
+func readBounded(reader io.Reader, maxBytes int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
 	if err != nil {
 		return nil, err
 	}
