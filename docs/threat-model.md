@@ -68,9 +68,14 @@
   multi-audience tokens require the matching authorized party, preventing
   issuer or audience confusion;
 - sessions use fresh opaque random tokens, a `__Host-` Secure HttpOnly strict
-  cookie, and stored token hashes, preventing session fixation and reducing the
-  impact of a database compromise; raw IdP issuers, subjects, and tokens are
-  not persisted;
+  cookie, and stored token hashes. A read-only database dump cannot directly
+  yield a live bearer token, but a database writer can insert the hash of a
+  chosen session token with arbitrary otherwise-valid installation and
+  repository scope, then authenticate as that scope;
+- a stolen live session cookie is replayable until session expiry or server-side
+  revocation. TTL and revocation bound that residual impact; Secure, HttpOnly,
+  SameSite, and hash-only storage do not prevent either case. Raw IdP issuers,
+  subjects, and tokens are not persisted;
 - bearer and session credentials are mutually exclusive per REST request;
   session-authenticated unsafe methods require the exact configured public
   `Origin`, preventing mixed-credential confusion and cross-site request use;
