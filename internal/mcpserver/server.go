@@ -8,6 +8,7 @@ import (
 
 	"github.com/grepnest/grepnest/internal/httpapi"
 	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/grepnest/grepnest/internal/scipgraph"
 	"github.com/grepnest/grepnest/internal/search"
 	"github.com/grepnest/grepnest/internal/zoekt"
 	"github.com/grepnest/grepnest/pkg/api"
@@ -81,8 +82,12 @@ func New(service *search.Service, repositoryServices ...*repository.Service) *mc
 	return NewWithLimits(service, repositories, Limits{})
 }
 
-func NewWithLimits(service *search.Service, repositories *repository.Service, limits Limits) *mcp.Server {
+func NewWithLimits(service *search.Service, repositories *repository.Service, limits Limits, scipServices ...*scipgraph.Service) *mcp.Server {
 	limits = normalizeLimits(limits)
+	var scip *scipgraph.Service
+	if len(scipServices) > 0 {
+		scip = scipServices[0]
+	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "grepnest", Version: "0.1.0"}, nil)
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "search_code", Description: "Search code contents when you know a symbol, string, or code expression.",
@@ -100,6 +105,31 @@ func NewWithLimits(service *search.Service, repositories *repository.Service, li
 			Limit: input.Limit, MaxResponseBytes: input.MaxOutputBytes,
 		}, outputBudget(input.MaxOutputBytes, limits.MaxOutputBytes))
 	})
+	if scip != nil {
+		mcp.AddTool(server, &mcp.Tool{
+			Name: "navigate_symbol", Description: "Navigate to definitions, references, or implementations for a source symbol.",
+			InputSchema: map[string]any{
+				"type": "object", "additionalProperties": false,
+				"required": []string{"repository_id", "path", "line", "character", "operation"},
+				"properties": map[string]any{
+					"repository_id": positiveIntegerSchema("GitHub repository ID"),
+					"path":          map[string]any{"type": "string", "minLength": 1, "description": "repository-relative source path"},
+					"line":          positiveIntegerSchema("one-based source line"),
+					"character":     map[string]any{"type": "integer", "minimum": 0, "description": "zero-based source character"},
+					"operation":     map[string]any{"type": "string", "enum": []string{"definitions", "references", "implementations"}},
+				},
+			},
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, input api.SCIPNavigationRequest) (*mcp.CallToolResult, api.SCIPNavigationResponse, error) {
+			response, err := scip.Navigate(ctx, httpapi.PrincipalFromContext(ctx), input)
+			if err != nil {
+				return nil, api.SCIPNavigationResponse{}, errors.New(httpapi.SCIPErrorMessage(err))
+			}
+			if !fitsOutput(response, limits.MaxOutputBytes) {
+				return nil, api.SCIPNavigationResponse{}, errOutputBudget
+			}
+			return structuredResult(), response, nil
+		})
+	}
 	if repositories == nil {
 		return server
 	}

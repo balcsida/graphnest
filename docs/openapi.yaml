@@ -93,6 +93,97 @@ paths:
         '502': {$ref: '#/components/responses/BackendError'}
         '503': {$ref: '#/components/responses/Unavailable'}
         '504': {$ref: '#/components/responses/Timeout'}
+  /v1/scip/uploads:
+    post:
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: repository_id, in: query, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: commit, in: query, required: true, schema: {type: string, pattern: '^[0-9a-f]{40}$'}}
+      requestBody:
+        required: true
+        content:
+          application/vnd.scip+protobuf:
+            schema:
+              type: string
+              format: binary
+              description: Default upload limit is 67108864 bytes; server maximum is 268435456 bytes.
+              x-default-max-bytes: 67108864
+              x-server-max-bytes: 268435456
+      responses:
+        '204': {description: SCIP index replaced}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/scip/navigation:
+    post:
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SCIPNavigationRequest'}
+      responses:
+        '200':
+          description: Authorized SCIP locations
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SCIPNavigationResponse'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/scip/dependencies:
+    put:
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SCIPDependenciesRequest'}
+      responses:
+        '204': {description: Manual package metadata replaced}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/scip/dependencies/github:
+    post:
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SCIPRepositoryRequest'}
+      responses:
+        '200':
+          description: GitHub dependency metadata refresh result
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SCIPDependencyRefreshResponse'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
   /healthz:
     get:
       responses:
@@ -100,9 +191,9 @@ paths:
   /readyz:
     get:
       responses:
-        '200': {description: Zoekt is ready, content: {text/plain: {schema: {type: string, example: "ok\\n"}}}}
+        '200': {description: Configured dependencies are ready, content: {text/plain: {schema: {type: string, example: "ok\\n"}}}}
         '503':
-          description: Zoekt is unavailable
+          description: A configured dependency is unavailable
           content: {application/json: {schema: {type: object, additionalProperties: false, required: [error], properties: {error: {type: string, const: unavailable}}}}}
   /metrics:
     get:
@@ -114,6 +205,7 @@ components:
   responses:
     InvalidRequest: {description: Invalid request, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     Unauthenticated: {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+    Forbidden: {description: Administrator access required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     NotFound: {description: Repository not found or not authorized, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     Conflict: {description: Repository is not indexed, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     InvalidFile: {description: File cannot be returned, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
@@ -196,6 +288,61 @@ components:
         line_end: {type: integer}
         preview: {type: string}
         score: {type: number, format: double}
+    SCIPNavigationRequest:
+      type: object
+      additionalProperties: false
+      required: [repository_id, path, line, operation]
+      properties:
+        repository_id: {type: integer, format: int64, minimum: 1}
+        path: {type: string, minLength: 1, description: Clean relative slash-separated path}
+        line: {type: integer, minimum: 1, description: One-based source line}
+        character: {type: integer, minimum: 0, default: 0}
+        operation: {type: string, enum: [definitions, references, implementations]}
+    SCIPNavigationResponse:
+      type: object
+      additionalProperties: false
+      required: [locations, truncated]
+      properties:
+        locations: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/SCIPLocation'}}
+        truncated: {type: boolean}
+    SCIPLocation:
+      type: object
+      additionalProperties: false
+      required: [repository_id, repository_name, commit, path, symbol, start_line, start_character, end_line, end_character, position_encoding, roles, approximate]
+      properties:
+        repository_id: {type: integer, format: int64, minimum: 1}
+        repository_name: {type: string}
+        commit: {type: string, pattern: '^[0-9a-f]{40}$'}
+        path: {type: string}
+        symbol: {type: string}
+        start_line: {type: integer, minimum: 1}
+        start_character: {type: integer, minimum: 0}
+        end_line: {type: integer, minimum: 1}
+        end_character: {type: integer, minimum: 0}
+        position_encoding: {type: string, enum: [UTF8CodeUnitOffsetFromLineStart, UTF16CodeUnitOffsetFromLineStart, UTF32CodeUnitOffsetFromLineStart]}
+        roles: {type: integer, format: int32}
+        approximate: {type: boolean}
+    SCIPDependenciesRequest:
+      type: object
+      additionalProperties: false
+      required: [repository_id]
+      properties:
+        repository_id: {type: integer, format: int64, minimum: 1}
+        provides: {type: array, items: {type: string, minLength: 1}}
+        depends_on: {type: array, items: {type: string, minLength: 1}}
+    SCIPRepositoryRequest:
+      type: object
+      additionalProperties: false
+      required: [repository_id]
+      properties:
+        repository_id: {type: integer, format: int64, minimum: 1}
+    SCIPDependencyRefreshResponse:
+      type: object
+      additionalProperties: false
+      required: [available, packages]
+      properties:
+        available: {type: boolean}
+        packages: {type: integer, minimum: 0}
     Repository:
       type: object
       additionalProperties: false

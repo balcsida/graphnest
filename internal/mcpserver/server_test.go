@@ -17,6 +17,7 @@ import (
 	"github.com/grepnest/grepnest/internal/httpapi"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/grepnest/grepnest/internal/scipgraph"
 	"github.com/grepnest/grepnest/internal/search"
 	"github.com/grepnest/grepnest/internal/zoekt"
 	"github.com/grepnest/grepnest/pkg/api"
@@ -133,7 +134,11 @@ func TestRepositoryToolsUseAuthenticatedService(t *testing.T) {
 	if err != nil || !result.IsError || marshaledSize(t, result) <= 1 {
 		t.Fatalf("tiny-budget result = %#v, size = %d, err = %v", result, marshaledSize(t, result), err)
 	}
-	content, ok := result.Content[0].(*mcp.TextContent)
+	var content *mcp.TextContent
+	ok := false
+	if len(result.Content) == 1 {
+		content, ok = result.Content[0].(*mcp.TextContent)
+	}
 	if !ok || content.Text != errOutputBudget.Error() {
 		t.Fatalf("tiny-budget content = %#v", result.Content)
 	}
@@ -153,6 +158,134 @@ func TestRepositoryToolsUseAuthenticatedService(t *testing.T) {
 	if store.calls != 0 {
 		t.Fatalf("invalid tool service calls = %d", store.calls)
 	}
+}
+
+func TestNavigateSymbolMatchesSCIPServiceResponse(t *testing.T) {
+	store := &mcpSCIPStore{repository: repository.Repository{ID: 1, GitHubID: 101, InstallationID: 10, Name: "acme/one", IndexedSHA: strings.Repeat("a", 40)}}
+	store.locations = []scipgraph.Location{{
+		RepositoryID: 101, RepositoryName: "acme/one", Commit: store.repository.IndexedSHA,
+		Path: "target.go", Symbol: "sym", StartLine: 2, PositionEncoding: 2,
+	}}
+	scipService := &scipgraph.Service{Store: store}
+	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}
+	request := api.SCIPNavigationRequest{RepositoryID: 101, Path: "main.go", Line: 1, Character: 0, Operation: "definitions"}
+	want, err := scipService.Navigate(t.Context(), principal, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	budget := mcpResultSize(t, want)
+	server := NewWithLimits(testService(t, &recordingBackend{}), nil, Limits{MaxOutputBytes: int64(budget)}, scipService)
+	handler := httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{"secret": principal}), mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: httpServer.URL, HTTPClient: bearerClient(httpServer.Client(), "secret"), DisableStandaloneSSE: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	tools, err := session.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, len(tools.Tools))
+	for index, tool := range tools.Tools {
+		names[index] = tool.Name
+	}
+	if !slices.Contains(names, "navigate_symbol") || slices.Contains(names, "scip_upload") || slices.Contains(names, "set_dependencies") {
+		t.Fatalf("tools = %v", names)
+	}
+	schema := repositoryToolSchema(t, tools.Tools, "navigate_symbol")
+	properties := schema["properties"].(map[string]any)
+	if properties["repository_id"].(map[string]any)["minimum"] != float64(1) || properties["line"].(map[string]any)["minimum"] != float64(1) || properties["character"].(map[string]any)["minimum"] != float64(0) || properties["path"].(map[string]any)["minLength"] != float64(1) {
+		t.Fatalf("navigate_symbol schema = %#v", schema)
+	}
+	if !slices.Equal(properties["operation"].(map[string]any)["enum"].([]any), []any{"definitions", "references", "implementations"}) {
+		t.Fatalf("operation schema = %#v", properties["operation"])
+	}
+	invalid, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "navigate_symbol", Arguments: map[string]any{
+		"repository_id": 101, "path": "main.go", "line": 1, "character": 0, "operation": "unknown",
+	}})
+	if err != nil || !invalid.IsError {
+		t.Fatalf("invalid operation result = %#v, err = %v", invalid, err)
+	}
+
+	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "navigate_symbol", Arguments: map[string]any{
+		"repository_id": 101, "path": "main.go", "line": 1, "character": 0, "operation": "definitions",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got api.SCIPNavigationResponse
+	decodeStructured(t, result.StructuredContent, &got)
+	if !slices.Equal(got.Locations, want.Locations) || got.Truncated != want.Truncated || len(result.Content) != 0 || marshaledSize(t, result) > budget {
+		t.Fatalf("output = %#v, want %#v", got, want)
+	}
+	if got.Locations[0].PositionEncoding != "UTF16CodeUnitOffsetFromLineStart" {
+		t.Fatalf("position encoding = %q", got.Locations[0].PositionEncoding)
+	}
+
+	store.occurrenceErr = errors.New("secret backend")
+	result, err = session.CallTool(t.Context(), &mcp.CallToolParams{Name: "navigate_symbol", Arguments: map[string]any{
+		"repository_id": 101, "path": "main.go", "line": 1, "character": 0, "operation": "definitions",
+	}})
+	content, ok := result.Content[0].(*mcp.TextContent)
+	if err != nil || !result.IsError || len(result.Content) != 1 || !ok || content.Text != "SCIP service is unavailable" || strings.Contains(content.Text, "secret") {
+		t.Fatalf("service error result = %#v, err = %v", result, err)
+	}
+	store.occurrenceErr = nil
+
+	tinyServer := NewWithLimits(testService(t, &recordingBackend{}), nil, Limits{MaxOutputBytes: int64(budget - 1)}, scipService)
+	tinyHTTPServer := httptest.NewServer(httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{"secret": principal}), mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return tinyServer }, nil)))
+	defer tinyHTTPServer.Close()
+	tinySession, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: tinyHTTPServer.URL, HTTPClient: bearerClient(tinyHTTPServer.Client(), "secret"), DisableStandaloneSSE: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tinySession.Close()
+	result, err = tinySession.CallTool(t.Context(), &mcp.CallToolParams{Name: "navigate_symbol", Arguments: map[string]any{
+		"repository_id": 101, "path": "main.go", "line": 1, "character": 0, "operation": "definitions",
+	}})
+	if err != nil || !result.IsError {
+		t.Fatalf("bounded result = %#v, err = %v", result, err)
+	}
+
+	nilServer := NewWithLimits(testService(t, &recordingBackend{}), nil, Limits{}, nil)
+	nilHTTPServer := httptest.NewServer(httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{"secret": principal}), mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return nilServer }, nil)))
+	defer nilHTTPServer.Close()
+	nilSession, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: nilHTTPServer.URL, HTTPClient: bearerClient(nilHTTPServer.Client(), "secret"), DisableStandaloneSSE: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nilSession.Close()
+	nilTools, err := nilSession.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range nilTools.Tools {
+		if tool.Name == "navigate_symbol" {
+			t.Fatal("navigate_symbol registered without SCIP service")
+		}
+	}
+}
+
+type mcpSCIPStore struct {
+	repository    repository.Repository
+	locations     []scipgraph.Location
+	occurrenceErr error
+}
+
+func (store *mcpSCIPStore) AuthorizedRepository(_ context.Context, _ int64, _ []int64, _ int64) (repository.Repository, error) {
+	return store.repository, nil
+}
+func (*mcpSCIPStore) ReplaceSCIP(context.Context, int64, string, scipgraph.Upload) error { return nil }
+func (store *mcpSCIPStore) OccurrenceAt(context.Context, int64, string, string, int, int) (scipgraph.StoredOccurrence, error) {
+	return scipgraph.StoredOccurrence{}, store.occurrenceErr
+}
+func (store *mcpSCIPStore) Locations(context.Context, authn.Principal, scipgraph.StoredOccurrence, string, int) ([]scipgraph.Location, bool, error) {
+	return store.locations, false, nil
+}
+func (*mcpSCIPStore) ReplacePackages(context.Context, int64, string, []scipgraph.PackageMapping) error {
+	return nil
 }
 
 func TestRepositoryToolBudgetsBoundActualCallToolResult(t *testing.T) {

@@ -13,6 +13,7 @@
 | 6 | `internal/postgres`, `internal/githubapp`, `internal/webhook` | Embedded migrations, durable numeric identity, verified deliveries, reconciliation, coalescing, leases, and retention are covered against real PostgreSQL. |
 | 7 | `internal/indexer`, `cmd/grepnest-indexer` | Bounded HTTPS Git fetches use fixed askpass, numeric paths, one leased worker, real Zoekt indexing, and exact `/api/list` publication checks. |
 | 8 | repository REST/MCP services and `test/e2e/milestone2_test.go` | A GHES-compatible TLS fixture proves signed webhook through indexed-SHA search/read/list/status, including stale suppression, rename isolation, disablement, and an empty-tree repository. |
+| 9 | `internal/scipgraph`, SCIP HTTP/MCP adapters, PostgreSQL graph storage, and `test/e2e/scip_test.go` | Pre-generated indexes provide exact-SHA cross-repository navigation while suppressing unauthorized targets; no managed indexer was added. |
 
 ## Decisions
 
@@ -30,6 +31,8 @@
   the indexed commit SHA.
 - Pinned Zoekt runs as `linux/amd64`; Apple-silicon hosts use Docker emulation
   because the pinned image has no arm64 variant.
+- SCIP generation remains repository CI's responsibility. GrepNest accepts
+  bounded protobuf uploads only for the exact currently indexed commit.
 
 ## Verification commands and results
 
@@ -47,9 +50,8 @@ make e2e
 make build
 make helm-lint
 make helm-test
-docker compose -f deploy/compose/compose.yml config
-docker compose -f deploy/compose/compose.yml up -d --wait
-docker compose -f deploy/compose/compose.yml ps
+make compose-test
+docker compose -f deploy/compose/compose.yml --profile fixture config
 rg -n 'github\\.com|latest|Authorization|token|RepoIDs|java|jvm|maven|gradle' --glob '!go.sum' .
 git diff --check HEAD
 git status --short
@@ -58,12 +60,15 @@ git status --short
 Results are recorded in the Task 17 report. The E2E gate requires PostgreSQL,
 builds the pinned Zoekt tools, and exercises authenticated HTTPS smart-Git and
 real Zoekt search/list processes. `make image` remains an intentionally failing
-Milestone 3 boundary. Helm lint/render gates pass, but no image or cluster
-deployment has been tested.
+Milestone 3 boundary. Helm lint/render gates, fixture Compose rendering, and
+durable Compose configuration validation pass, but the durable server container
+and cluster deployment have not been tested because no application image is
+built.
 
 ## Risks and next milestone
 
-Local E2E and live Compose prove Milestones 0-2 only; they do not establish
+Local E2E and live Compose dependencies prove Milestones 0-2 only; the durable
+Compose profile has configuration-only validation and does not establish
 production readiness. The implementation uses the GHES 3.17-compatible default
 REST API version `2022-11-28`; the version and CA bundle are configurable.
 Indexing is default-branch-only. Images, secret delivery, cluster deployment,

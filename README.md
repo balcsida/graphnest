@@ -13,8 +13,9 @@ publish the required images, and the chart has not been cluster-tested.
 
 ## Local quick start
 
-Prerequisites: Go 1.26, Git, Docker Compose, and an internet connection for
-`make tools` and Docker image pulls. Run the checked-in fixture with Compose:
+Prerequisites: Go 1.26, Git, Docker Compose, `jq`, and an internet connection
+for `make tools` and Docker image pulls. Run the checked-in fixture with
+Compose:
 
 ```sh
 make tools
@@ -60,6 +61,65 @@ curl -sS http://127.0.0.1:8080/v1/search \
   --data '{"query":"GrepNestFixtureNeedle","repositories":["fixture/repository"]}'
 ```
 
+## SCIP code navigation
+
+GrepNest stores pre-generated SCIP indexes; it does not run or manage language
+indexers. Generate a `.scip` file in each repository's CI at the same 40-character
+lowercase commit SHA that GrepNest reports as `indexed_sha`, then upload it with
+an administrator token:
+
+```sh
+scip-go
+curl --fail-with-body -X POST \
+  "https://grepnest.example/v1/scip/uploads?repository_id=101&commit=$GITHUB_SHA" \
+  -H "Authorization: Bearer $GREPNEST_ADMIN_TOKEN" \
+  -H 'Content-Type: application/vnd.scip+protobuf' \
+  --data-binary @index.scip
+```
+
+The upload is rejected with `409` when `commit` differs from the repository's
+exact indexed SHA. `GREPNEST_SCIP_MAX_UPLOAD_BYTES` defaults to 67108864 (64
+MiB) and is capped at 268435456 (256 MiB). Indexes may use SCIP UTF-8, UTF-16,
+or UTF-32 code-unit positions; navigation lines are one-based and characters
+are zero-based in the index's declared unit.
+
+Navigate from an indexed occurrence with a token authorized for the origin and
+any returned target repositories:
+
+```sh
+curl --fail-with-body https://grepnest.example/v1/scip/navigation \
+  -H "Authorization: Bearer $GREPNEST_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data '{"repository_id":102,"path":"main.go","line":12,"character":4,"operation":"definitions"}'
+```
+
+Targets outside the caller's authorized repositories are omitted. Administrative
+upload and metadata requests return `403` for a non-administrator; an unknown or
+unauthorized repository may return `404` without revealing whether it exists.
+
+Cross-repository navigation can use manually supplied package URLs:
+
+```sh
+curl --fail-with-body -X PUT https://grepnest.example/v1/scip/dependencies \
+  -H "Authorization: Bearer $GREPNEST_ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data '{"repository_id":101,"provides":["pkg:golang/example.com/acme/lib@v1.0.0"],"depends_on":[]}'
+```
+
+Or refresh package metadata from GitHub's dependency graph:
+
+```sh
+curl --fail-with-body -X POST https://grepnest.example/v1/scip/dependencies/github \
+  -H "Authorization: Bearer $GREPNEST_ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data '{"repository_id":101}'
+```
+
+The GitHub App must have read access to repository metadata and the dependency
+graph. GitHub deployments without dependency-graph data degrade gracefully:
+the refresh reports `available: false`; inaccessible repositories return 403 or
+404 and existing manual metadata remains usable.
+
 An unlisted repository is deliberately not searched; the response is a normal
 empty result:
 
@@ -76,7 +136,9 @@ The hosted Streamable HTTP MCP endpoint is `http://127.0.0.1:8080/mcp` and
 requires the same `Authorization: Bearer <token>` header. It offers
 `search_code` (`query`, optional `repositories`, `limit`, `context_lines`, and
 `max_output_bytes`) and `find_files` (`pattern`, optional `repositories`,
-`limit`, and `max_output_bytes`).
+`limit`, and `max_output_bytes`). Durable mode also exposes `navigate_symbol`
+with `repository_id`, `path`, one-based `line`, zero-based `character`, and
+`definitions`, `references`, or `implementations` as the `operation`.
 
 For a stdio MCP client, build the proxy and configure only these two variables:
 
@@ -116,6 +178,40 @@ GitHub synchronously, then refreshes reconciliation and queue metrics every five
 minutes. `POST /webhooks/github` is public but requires a valid GitHub HMAC;
 search, repository, file-read, and MCP routes require bearer authentication.
 
+### Durable Compose
+
+The durable Compose overlay runs the server with PostgreSQL and Zoekt. Set
+`GREPNEST_APPLICATION_IMAGE` to an existing image plus the GitHub and
+token/repository-scope variables listed above. The image must provide
+`grepnest-server` and `wget` on `PATH`. The overlay also requires
+`GREPNEST_GITHUB_PRIVATE_KEY_FILE` and `GREPNEST_GITHUB_WEBHOOK_SECRET_FILE`
+to be readable host-file paths; Compose mounts both read-only into the server.
+Set `GREPNEST_GITHUB_CA_FILE` to an optional private-CA host file; Compose mounts
+it read-only.
+
+```sh
+GREPNEST_APPLICATION_IMAGE=registry.example/grepnest/application:2026-07-22 \
+GREPNEST_GITHUB_PRIVATE_KEY_FILE=$PWD/github-app-private-key.pem \
+GREPNEST_GITHUB_WEBHOOK_SECRET_FILE=$PWD/github-webhook-secret \
+GREPNEST_GITHUB_CA_FILE=$PWD/github-ca.pem \
+GREPNEST_GITHUB_WEB_URL=https://github.example \
+GREPNEST_GITHUB_API_URL=https://github.example/api/v3 \
+GREPNEST_GITHUB_UPLOAD_URL=https://github.example/api/uploads \
+GREPNEST_GITHUB_GIT_URL=https://github.example \
+GREPNEST_GITHUB_APP_ID=123 \
+GREPNEST_USER_TOKEN=replace-user-token \
+GREPNEST_USER_INSTALLATION_ID=456 \
+GREPNEST_USER_REPOSITORY_IDS=789 \
+GREPNEST_ADMIN_TOKEN=replace-admin-token \
+GREPNEST_ADMIN_INSTALLATION_ID=456 \
+GREPNEST_ADMIN_REPOSITORY_IDS=789 \
+docker compose \
+  -f deploy/compose/compose.yml \
+  -f deploy/compose/durable.yml \
+  --profile durable \
+  up -d --wait
+```
+
 Optional limits are positive and cannot exceed their server caps:
 
 | Variable | Default | Maximum |
@@ -128,9 +224,10 @@ Optional limits are positive and cannot exceed their server caps:
 | `GREPNEST_MAX_TIMEOUT` | 5s | 5s |
 | `GREPNEST_MAX_REQUEST_BYTES` | 65536 | 65536 |
 | `GREPNEST_MAX_RESPONSE_BYTES` | 262144 | 262144 |
+| `GREPNEST_SCIP_MAX_UPLOAD_BYTES` | 67108864 | 268435456 |
 
 Run `make fmt lint staticcheck govulncheck test test-race postgres-integration
-integration e2e build` before proposing a change. `make e2e` starts its pinned
+integration e2e build compose-test` before proposing a change. `make e2e` starts its pinned
 PostgreSQL dependency and runs real TLS smart-Git and Zoekt processes. `make
 helm-lint helm-test` validates the chart structure without
 contacting a cluster. `make image` intentionally fails with

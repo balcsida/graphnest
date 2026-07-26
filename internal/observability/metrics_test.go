@@ -87,6 +87,14 @@ func TestWrapHTTPRecordsFirstStatus(t *testing.T) {
 	}
 }
 
+func TestResponseWriterUnwraps(t *testing.T) {
+	underlying := httptest.NewRecorder()
+	wrapped := &responseWriter{ResponseWriter: underlying}
+	if wrapped.Unwrap() != underlying {
+		t.Fatal("response writer did not unwrap")
+	}
+}
+
 func TestWrapHTTPBoundsPathLabelsToMatchedPatterns(t *testing.T) {
 	metrics := New()
 	mux := http.NewServeMux()

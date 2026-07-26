@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -27,7 +28,10 @@ import (
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/grepnest/grepnest/internal/scipgraph"
 	"github.com/grepnest/grepnest/internal/webhook"
+	"github.com/scip-code/scip/bindings/go/scip"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestDurableGitHubLimitReadsNearMaximumFile(t *testing.T) {
@@ -115,6 +119,205 @@ func TestServeHTTPReturnsUnexpectedListenErrorWithoutCancellation(t *testing.T) 
 	if server.shutdownCalled {
 		t.Fatal("shutdown called after listener failed")
 	}
+}
+
+func TestServerDeadlinesIsolateSCIPUploads(t *testing.T) {
+	commit := strings.Repeat("a", 40)
+	store := &deadlineSCIPStore{repository: repository.Repository{ID: 1, GitHubID: 101, InstallationID: 10, IndexedSHA: commit}}
+	authenticator := authn.NewStatic(map[string]authn.Principal{
+		"user":  {Subject: "user", InstallationID: 10, RepositoryIDs: []int64{101}},
+		"admin": {Subject: "admin", Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}},
+	})
+	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, SCIPMaxUploadBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}
+	handler := newAPIHandler(settings, observability.New(), authenticator, nil, nil, &scipgraph.Service{Store: store}, nil, nil, nil)
+	server := newHTTPServer("127.0.0.1:0", handler)
+	if server.ReadTimeout != 10*time.Second || server.WriteTimeout != 10*time.Second || server.ReadHeaderTimeout != 5*time.Second || server.IdleTimeout != time.Minute {
+		t.Fatalf("deadlines = read %s, write %s, header %s, idle %s", server.ReadTimeout, server.WriteTimeout, server.ReadHeaderTimeout, server.IdleTimeout)
+	}
+	server.ReadTimeout = 20 * time.Millisecond
+	server.WriteTimeout = 50 * time.Millisecond
+	listener, err := net.Listen("tcp4", server.Addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	defer server.Close()
+
+	data, err := proto.Marshal(&scip.Index{Metadata: &scip.Metadata{ToolInfo: &scip.ToolInfo{Name: "test"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleResponse := &deadlineResponseRecorder{ResponseRecorder: httptest.NewRecorder()}
+	store.readDeadlineCleared = &staleResponse.readDeadlineCleared
+	store.writeDeadlineSet = &staleResponse.writeDeadlineSet
+	staleRequest := httptest.NewRequest(http.MethodPost, "/v1/scip/uploads?repository_id=101&commit="+strings.Repeat("b", 40), bytes.NewReader(data))
+	staleRequest.Header.Set("Authorization", "Bearer admin")
+	staleRequest.Header.Set("Content-Type", "application/vnd.scip+protobuf")
+	handler.ServeHTTP(staleResponse, staleRequest)
+	if staleResponse.Code != http.StatusConflict {
+		t.Fatalf("stale preflight status = %d", staleResponse.Code)
+	}
+	if staleResponse.readDeadlineCleared.Load() {
+		t.Fatal("stale upload cleared the read deadline before validating the current commit")
+	}
+	if !staleResponse.writeDeadlineSet.Load() {
+		t.Fatal("stale upload response deadline was not bounded")
+	}
+	store.authorizedBeforeDeadlineClear.Store(false)
+	store.authorizationCalls.Store(0)
+
+	deadlineResponse := &deadlineResponseRecorder{ResponseRecorder: httptest.NewRecorder()}
+	store.readDeadlineCleared = &deadlineResponse.readDeadlineCleared
+	store.writeDeadlineSet = &deadlineResponse.writeDeadlineSet
+	preflightRequest := httptest.NewRequest(http.MethodPost, "/v1/scip/uploads?repository_id=101&commit="+commit, bytes.NewReader(data))
+	preflightRequest.Header.Set("Authorization", "Bearer admin")
+	preflightRequest.Header.Set("Content-Type", "application/vnd.scip+protobuf")
+	handler.ServeHTTP(deadlineResponse, preflightRequest)
+	store.readDeadlineCleared = nil
+	store.writeDeadlineSet = nil
+	if deadlineResponse.Code != http.StatusNoContent {
+		t.Fatalf("preflight upload status = %d", deadlineResponse.Code)
+	}
+	if !store.authorizedBeforeDeadlineClear.Load() {
+		t.Fatal("upload repository was not authorized before clearing the read deadline")
+	}
+	if calls := store.authorizationCalls.Load(); calls != 2 {
+		t.Fatalf("upload repository authorization calls = %d, want preflight and post-body validation", calls)
+	}
+	if store.writeDeadlineSetDuringReplace.Load() {
+		t.Fatal("upload response deadline was set before SCIP replacement finished")
+	}
+	store.replaceStarted = make(chan struct{})
+	store.releaseReplace = make(chan struct{})
+
+	bodyReader, bodyWriter := io.Pipe()
+	go func() {
+		_, _ = bodyWriter.Write(data[:1])
+		time.Sleep(2 * server.ReadTimeout)
+		_, _ = bodyWriter.Write(data[1:])
+		_ = bodyWriter.Close()
+	}()
+	request, err := http.NewRequest(http.MethodPost, "http://"+listener.Addr().String()+"/v1/scip/uploads?repository_id=101&commit="+commit, bodyReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.ContentLength = int64(len(data))
+	request.Header.Set("Authorization", "Bearer admin")
+	request.Header.Set("Content-Type", "application/vnd.scip+protobuf")
+	uploadResult := make(chan struct {
+		response *http.Response
+		err      error
+	}, 1)
+	go func() {
+		response, err := (&http.Client{Timeout: time.Second}).Do(request)
+		uploadResult <- struct {
+			response *http.Response
+			err      error
+		}{response, err}
+	}()
+	select {
+	case <-store.replaceStarted:
+	case <-time.After(time.Second):
+		t.Fatal("SCIP replacement did not start")
+	}
+	time.Sleep(2 * server.WriteTimeout)
+	close(store.releaseReplace)
+	result := <-uploadResult
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	response := result.response
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+
+	slowReader, slowWriter := io.Pipe()
+	go func() {
+		_, _ = io.WriteString(slowWriter, `{`)
+		time.Sleep(2 * server.ReadTimeout)
+		_, _ = io.WriteString(slowWriter, `"repository_id":101,"path":"main.go","line":1,"character":0,"operation":"definitions"}`)
+		_ = slowWriter.Close()
+	}()
+	slowRequest, err := http.NewRequest(http.MethodPost, "http://"+listener.Addr().String()+"/v1/scip/navigation", slowReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slowRequest.Header.Set("Authorization", "Bearer user")
+	slowRequest.Header.Set("Content-Type", "application/json")
+	clientTimeout := time.Second
+	started := time.Now()
+	response, err = (&http.Client{Timeout: clientTimeout}).Do(slowRequest)
+	elapsed := time.Since(started)
+	if err != nil {
+		t.Fatalf("slow JSON request failed after %s: %v", elapsed, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("slow JSON status = %d", response.StatusCode)
+	}
+	if elapsed < server.ReadTimeout || elapsed >= server.WriteTimeout {
+		t.Fatalf("slow JSON elapsed = %s, want [%s, %s)", elapsed, server.ReadTimeout, server.WriteTimeout)
+	}
+}
+
+type deadlineResponseRecorder struct {
+	*httptest.ResponseRecorder
+	readDeadlineCleared atomic.Bool
+	writeDeadlineSet    atomic.Bool
+}
+
+func (recorder *deadlineResponseRecorder) SetReadDeadline(deadline time.Time) error {
+	recorder.readDeadlineCleared.Store(deadline.IsZero())
+	return nil
+}
+
+func (recorder *deadlineResponseRecorder) SetWriteDeadline(deadline time.Time) error {
+	recorder.writeDeadlineSet.Store(!deadline.IsZero())
+	return nil
+}
+
+type deadlineSCIPStore struct {
+	repository                    repository.Repository
+	readDeadlineCleared           *atomic.Bool
+	authorizedBeforeDeadlineClear atomic.Bool
+	authorizationCalls            atomic.Int32
+	writeDeadlineSet              *atomic.Bool
+	writeDeadlineSetDuringReplace atomic.Bool
+	replaceStarted                chan struct{}
+	releaseReplace                chan struct{}
+}
+
+func (store *deadlineSCIPStore) AuthorizedRepository(_ context.Context, _ int64, _ []int64, id int64) (repository.Repository, error) {
+	store.authorizationCalls.Add(1)
+	if store.readDeadlineCleared != nil && !store.readDeadlineCleared.Load() {
+		store.authorizedBeforeDeadlineClear.Store(true)
+	}
+	if id == store.repository.GitHubID {
+		return store.repository, nil
+	}
+	return repository.Repository{}, errors.New("not found")
+}
+func (store *deadlineSCIPStore) ReplaceSCIP(context.Context, int64, string, scipgraph.Upload) error {
+	if store.writeDeadlineSet != nil && store.writeDeadlineSet.Load() {
+		store.writeDeadlineSetDuringReplace.Store(true)
+	}
+	if store.replaceStarted != nil {
+		close(store.replaceStarted)
+		<-store.releaseReplace
+	}
+	return nil
+}
+func (*deadlineSCIPStore) OccurrenceAt(context.Context, int64, string, string, int, int) (scipgraph.StoredOccurrence, error) {
+	return scipgraph.StoredOccurrence{}, errors.New("not found")
+}
+func (*deadlineSCIPStore) Locations(context.Context, authn.Principal, scipgraph.StoredOccurrence, string, int) ([]scipgraph.Location, bool, error) {
+	return nil, false, nil
+}
+func (*deadlineSCIPStore) ReplacePackages(context.Context, int64, string, []scipgraph.PackageMapping) error {
+	return nil
 }
 
 type blockingShutdownServer struct {
@@ -263,7 +466,7 @@ func (stub *healthStub) Health(context.Context) error {
 
 func TestDurableRoutesKeepWebhookOutsideBearerAuthentication(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
-	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), authenticator, nil, &repository.Service{Store: repositoryStoreStub{}}, []byte("secret"), webhookProcessorStub{}, nil)
+	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), authenticator, nil, &repository.Service{Store: repositoryStoreStub{}}, nil, []byte("secret"), webhookProcessorStub{}, nil)
 
 	webhookResponse := httptest.NewRecorder()
 	handler.ServeHTTP(webhookResponse, httptest.NewRequest(http.MethodPost, "/webhooks/github", nil))
@@ -320,7 +523,7 @@ func TestStaticHandlerRegistersSystemRoutes(t *testing.T) {
 	if response.Code != http.StatusOK || response.Body.String() != "ok\n" {
 		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
 	}
-	for _, route := range []string{"/v1/repositories", "/webhooks/github"} {
+	for _, route := range []string{"/v1/repositories", "/v1/scip/navigation", "/webhooks/github"} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, route, nil))
 		if response.Code != http.StatusNotFound {
@@ -329,11 +532,29 @@ func TestStaticHandlerRegistersSystemRoutes(t *testing.T) {
 	}
 }
 
+func TestSCIPRoutesRegisterOnlyWithDurableService(t *testing.T) {
+	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
+	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, SCIPMaxUploadBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}
+	without := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, nil, nil)
+	with := newAPIHandler(settings, observability.New(), authenticator, nil, nil, &scipgraph.Service{}, nil, nil, nil)
+	for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/scip/navigation", nil))
+		want := http.StatusNotFound
+		if name == "durable" {
+			want = http.StatusUnauthorized
+		}
+		if response.Code != want {
+			t.Fatalf("%s status = %d, want %d", name, response.Code, want)
+		}
+	}
+}
+
 func TestAPIHandlerMountsWebUIWithoutFallback(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	handler := newAPIHandler(
 		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}},
-		observability.New(), authenticator, nil, nil, nil, nil, nil,
+		observability.New(), authenticator, nil, nil, nil, nil, nil, nil,
 	)
 	for _, path := range []string{"/", "/index.html"} {
 		response := httptest.NewRecorder()

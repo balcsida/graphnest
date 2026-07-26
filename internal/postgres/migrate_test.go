@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"os"
 	"regexp"
 	"strings"
@@ -84,15 +85,116 @@ func TestMigrateIsConcurrentAndIdempotent(t *testing.T) {
 	if err := Migrate(t.Context(), pool); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"installations", "repositories", "webhook_deliveries", "index_jobs", "search_nodes"} {
+	for _, name := range []string{"installations", "repositories", "webhook_deliveries", "index_jobs", "search_nodes", "scip_uploads", "scip_occurrences", "scip_relationships", "repository_packages"} {
 		var found bool
 		if err := pool.QueryRow(t.Context(), `select to_regclass($1) is not null`, name).Scan(&found); err != nil || !found {
 			t.Fatalf("relation %s: found=%v err=%v", name, found, err)
 		}
 	}
 	var count int
-	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != 2 {
+	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != 5 {
 		t.Fatalf("migrations=%d err=%v", count, err)
+	}
+	for _, index := range []string{
+		"scip_occurrences_position", "scip_occurrences_symbol_lookup", "scip_occurrences_global_symbol_key",
+		"scip_relationships_source_lookup", "scip_relationships_target_lookup",
+		"scip_relationships_source_global_symbol_key", "scip_relationships_target_global_symbol_key",
+		"repository_packages_lookup",
+	} {
+		var found bool
+		if err := pool.QueryRow(t.Context(), `select exists(
+			select 1 from pg_indexes where schemaname=current_schema() and indexname=$1)`, index).Scan(&found); err != nil || !found {
+			t.Fatalf("index %s: found=%v err=%v", index, found, err)
+		}
+	}
+	for _, column := range []struct{ table, name string }{
+		{"scip_occurrences", "position_encoding"},
+		{"scip_occurrences", "global_symbol_key"},
+		{"scip_relationships", "document_path"},
+		{"scip_relationships", "source_global_symbol_key"},
+		{"scip_relationships", "target_global_symbol_key"},
+	} {
+		var found bool
+		if err := pool.QueryRow(t.Context(), `select exists(select 1 from information_schema.columns
+			where table_schema=current_schema() and table_name=$1 and column_name=$2)`, column.table, column.name).Scan(&found); err != nil || !found {
+			t.Fatalf("column %s.%s: found=%v err=%v", column.table, column.name, found, err)
+		}
+	}
+	for _, constraint := range []string{
+		"scip_uploads_repository_unique", "scip_uploads_commit_sha",
+		"scip_occurrences_start_line_nonnegative", "scip_occurrences_start_character_nonnegative",
+		"scip_occurrences_end_line_order", "scip_occurrences_end_character_nonnegative",
+		"scip_occurrences_range", "scip_occurrences_position_encoding",
+		"scip_occurrences_unique", "scip_relationships_unique",
+		"repository_packages_source", "repository_packages_relation", "repository_packages_unique",
+	} {
+		var found bool
+		if err := pool.QueryRow(t.Context(), `select exists(
+			select 1 from pg_constraint where connamespace=current_schema()::regnamespace and conname=$1)`, constraint).Scan(&found); err != nil || !found {
+			t.Fatalf("constraint %s: found=%v err=%v", constraint, found, err)
+		}
+	}
+}
+
+func TestMigrateInvalidatesAppliedV4SCIPRows(t *testing.T) {
+	pool := testPool(t)
+	if _, err := pool.Exec(t.Context(), `create table schema_migrations (version bigint primary key)`); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := fs.ReadDir(migrationFiles, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrations, err := migrationDescriptors(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, migration := range migrations {
+		if migration.version >= 5 {
+			continue
+		}
+		sql, err := migrationFiles.ReadFile("migrations/" + migration.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(t.Context(), string(sql)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(t.Context(), "insert into schema_migrations (version) values ($1)", migration.version); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	repositoryID := seedReadyRepository(t, New(pool), 101, testSHA('a'))
+	var uploadID int64
+	if err := pool.QueryRow(t.Context(), `insert into scip_uploads
+		(repository_id, commit, project_root, indexer_name, indexer_version)
+		values ($1, $2, '', 'test', '1') returning id`, repositoryID, testSHA('a')).Scan(&uploadID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), `insert into scip_occurrences
+		(upload_id, path, start_line, start_character, end_line, end_character, symbol, roles, local)
+		values ($1, 'a.go', 0, 0, 0, 1, $2, 0, false)`, uploadID, globalSymbol); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), `insert into scip_relationships
+		(upload_id, source_symbol, target_symbol, is_definition, is_reference, is_implementation, is_type_definition)
+		values ($1, $2, $3, false, false, true, false)`, uploadID, implementationSymbol, globalSymbol); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Migrate(t.Context(), pool); err != nil {
+		t.Fatal(err)
+	}
+	var uploads, version int
+	if err := pool.QueryRow(t.Context(), "select count(*) from scip_uploads").Scan(&uploads); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(t.Context(), "select count(*) from schema_migrations where version=5").Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if uploads != 0 || version != 1 {
+		t.Fatalf("uploads = %d, migration 5 rows = %d", uploads, version)
 	}
 }
 
