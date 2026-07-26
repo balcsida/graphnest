@@ -1,0 +1,33 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      go-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker-compose
+    directory: /deploy/compose
+    schedule:
+      interval: weekly
+    groups:
+      docker-compose:
+        patterns: ["*"]
+
+  - package-ecosystem: helm
+    directory: /deploy/helm/grepnest
+    schedule:
+      interval: weekly
+    groups:
+      helm:
+        patterns: ["*"]
