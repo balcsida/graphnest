@@ -32,7 +32,7 @@ func TestRegisterServesBoundedConsoleAtExactPaths(t *testing.T) {
 			}
 		}
 		body := response.Body.Bytes()
-		if len(body) >= 40<<10 || !bytes.Contains(body, []byte(`data-grepnest-app`)) {
+		if len(body) >= 48<<10 || !bytes.Contains(body, []byte(`data-grepnest-app`)) {
 			t.Fatalf("document bytes=%d shell=%t", len(body), bytes.Contains(body, []byte(`data-grepnest-app`)))
 		}
 		policy := response.Header().Get("Content-Security-Policy")
@@ -40,14 +40,20 @@ func TestRegisterServesBoundedConsoleAtExactPaths(t *testing.T) {
 			t.Fatalf("CSP=%q", policy)
 		}
 		for _, want := range []string{
-			`id="token-form"`, `id="search-form"`, `id="repository-picker"`,
-			`id="status"`, "prefers-reduced-motion: reduce",
+			`id="provider-options"`, `id="token-form"`, `id="sign-out"`,
+			`id="search-form"`, `id="repository-picker"`, `id="status"`,
+			"/v1/auth/config", "/v1/auth/session", "/auth/logout",
+			"sessionStorage", "credentials:\"same-origin\"",
+			"prefers-reduced-motion: reduce",
 		} {
 			if !bytes.Contains(body, []byte(want)) {
 				t.Fatalf("%s missing %q", path, want)
 			}
 		}
-		for _, forbidden := range []string{"localStorage", "innerHTML", "outerHTML", "insertAdjacentHTML"} {
+		for _, forbidden := range []string{
+			"localStorage", "innerHTML", "outerHTML", "insertAdjacentHTML",
+			"document.write", "eval(", "createElement(\"script\")",
+		} {
 			if bytes.Contains(body, []byte(forbidden)) {
 				t.Fatalf("%s contains forbidden %q", path, forbidden)
 			}
