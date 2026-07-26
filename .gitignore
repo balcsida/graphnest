@@ -1,3 +1,12 @@
 .cache/
 .superpowers/
 .worktrees/
+
+.env
+*.env
+*.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
