@@ -74,7 +74,7 @@ printf '%s' "$config" | jq -e '
   and ($server.ports | any(.host_ip == "127.0.0.1" and .target == 8080 and .published == "8080"))
   and ($server.networks | keys | sort) == ["internal", "loopback"]
   and ([ $server.volumes[] | select(.target == "/run/secrets/grepnest/private-key.pem" or .target == "/run/secrets/grepnest/webhook-secret") | .read_only ] | length == 2 and all(. == true))
-  and ([ $server.volumes[].bind.create_host_path ] | all(. == false))
+  and ([ $server.volumes[].bind.create_host_path ] | all((. // false) == false))
   and $server.environment.GREPNEST_GITHUB_CA_FILE == "/run/secrets/grepnest/github-ca.pem"
   and ($server.volumes | any(.source == "/tmp/github-ca.pem" and .target == "/run/secrets/grepnest/github-ca.pem" and .read_only))
   and $server.healthcheck.test == ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/readyz"]
@@ -88,7 +88,7 @@ printf '%s' "${without_ca:?missing Compose config without private CA}" |
     .services["grepnest-server"] as $server
     | $server.image == "registry.example/grepnest/application:test"
     and $server.environment.GREPNEST_GITHUB_CA_FILE == ""
-    and ($server.volumes | any(.source == "/dev/null" and .target == "/run/secrets/grepnest/github-ca.pem" and .read_only and .bind.create_host_path == false))
+    and ($server.volumes | any(.source == "/dev/null" and .target == "/run/secrets/grepnest/github-ca.pem" and .read_only and (.bind.create_host_path // false) == false))
   ' >/dev/null
 
 if render >/dev/null 2>&1; then
