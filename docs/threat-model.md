@@ -70,12 +70,14 @@
 - sessions use fresh opaque random tokens, a `__Host-` Secure HttpOnly strict
   cookie, and stored token hashes. A read-only database dump cannot directly
   yield a live bearer token, but a database writer can insert the hash of a
-  chosen session token with arbitrary otherwise-valid installation and
-  repository scope, then authenticate as that scope;
+  chosen session token with arbitrary otherwise-valid installation, repository
+  scope, and expiry, then authenticate as that scope. That forgery persists
+  until database write access is removed and forged rows are identified and
+  deleted, with credential remediation as appropriate;
 - a stolen live session cookie is replayable until session expiry or server-side
-  revocation. TTL and revocation bound that residual impact; Secure, HttpOnly,
-  SameSite, and hash-only storage do not prevent either case. Raw IdP issuers,
-  subjects, and tokens are not persisted;
+  revocation. Normal session TTL, logout, and operator revocation bound that
+  residual impact; Secure, HttpOnly, SameSite, and hash-only storage do not
+  prevent either case. Raw IdP issuers, subjects, and tokens are not persisted;
 - bearer and session credentials are mutually exclusive per REST request;
   session-authenticated unsafe methods require the exact configured public
   `Origin`, preventing mixed-credential confusion and cross-site request use;
