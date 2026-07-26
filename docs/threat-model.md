@@ -45,10 +45,24 @@
 - HTTP bodies, decoded files, child output, command duration, and free-space
   admission are bounded.
 
+## Web UI controls
+
+- the bearer token is held only in session storage or memory and is cleared on
+  authentication failure;
+- a strict hash-based CSP permits only same-origin connections and the exact
+  embedded style and script blocks;
+- API-controlled text is rendered through DOM text nodes, never HTML sinks;
+- outbound repository links require HTTPS, encode SHA and path components, and
+  use opener isolation; and
+- the client selects repository names for usability, while the server still
+  intersects them with the authenticated principal's numeric authorization
+  scope.
+
 ## Known limits
 
 This remains a local development slice, not a production security boundary.
 Git pack expansion and Zoekt shards require container and volume quotas.
 Container isolation, network policy, secret delivery, backup/restore, and
 production ingress remain Milestone 3 work. Do not claim production readiness
-from local or Compose success.
+from local or Compose success. The Helm Ingress is structural support, not
+proof of a production ingress deployment.

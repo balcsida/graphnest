@@ -43,6 +43,15 @@ The approved design and executed TDD plan are in
 `docs/superpowers/specs/2026-07-18-milestone-2-design.md` and
 `docs/superpowers/plans/2026-07-18-milestone-2.md`.
 
+## Completed Pass: Embedded Web UI
+
+The server now embeds a zero-frontend-runtime-dependency search console at
+`GET /` and `GET /index.html`. The same-origin client obtains repository-picker
+metadata from `GET /v1/repositories` when that route is available and submits
+searches to `POST /v1/search`; static mode continues to search normally without
+repository-picker metadata. Authentication, authorization, and search bounds
+remain server responsibilities.
+
 ## Milestone 3 Notes: OpenShift Pilot
 
 Milestone 2 has passing local tests. Images and cluster implementation still
@@ -66,5 +75,5 @@ require an explicit Milestone 3 pass; the existing Helm chart is structural.
 
 ## Explicitly Deferred
 
-Multi-node sharding, Go outlines, web UI, semantic search, SCIP, tree-sitter,
+Multi-node sharding, Go outlines, semantic search, SCIP, tree-sitter,
 Snyk workflows, and Gradle discovery are outside this pass.

@@ -191,7 +191,7 @@ components:
         repository: {$ref: '#/components/schemas/Repository'}
         path: {type: string}
         sha: {type: string}
-        line_number: {type: integer}
+        line_number: {type: integer, description: One-based source line used for repository-host anchors}
         line_start: {type: integer}
         line_end: {type: integer}
         preview: {type: string}
