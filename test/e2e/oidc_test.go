@@ -48,6 +48,7 @@ const (
 	oidcDeniedRepoID   = int64(7102)
 	oidcUserToken      = "oidc-user-token"
 	oidcAdminToken     = "oidc-admin-token"
+	oidcIndexedSHA     = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 )
 
 func TestOIDCCrossReplicaSessions(t *testing.T) {
@@ -327,7 +328,7 @@ func (backend *oidcSearchBackend) Search(_ context.Context, request search.Backe
 	backend.lastIDs = append([]uint32(nil), request.RepositoryIDs...)
 	backend.mu.Unlock()
 	return api.SearchResponse{Matches: []api.SearchMatch{{
-		ZoektID: backend.zoektID, Path: "main.go", Preview: "needle",
+		ZoektID: backend.zoektID, Path: "main.go", SHA: oidcIndexedSHA, Preview: "needle",
 		Branches: []string{"main"},
 	}}}, nil
 }
@@ -492,6 +493,9 @@ func (idp *oidcIdP) sign(claims map[string]any) string {
 
 func seedOIDCRepositories(t *testing.T, database milestoneDatabase) (repository.Repository, repository.Repository) {
 	t.Helper()
+	if err := database.store.UpsertSearchNode(t.Context(), "oidc-e2e", "http://zoekt.invalid"); err != nil {
+		t.Fatal(err)
+	}
 	if err := database.store.UpsertInstallation(t.Context(), postgres.InstallationUpdate{
 		GitHubID: oidcInstallationID, AccountLogin: "acme", AccountType: "Organization", Status: "active",
 	}); err != nil {
@@ -508,7 +512,13 @@ func seedOIDCRepositories(t *testing.T, database milestoneDatabase) (repository.
 		}
 		return repo
 	}
-	return insert(oidcAllowedRepoID, "allowed"), insert(oidcDeniedRepoID, "denied")
+	allowed, denied := insert(oidcAllowedRepoID, "allowed"), insert(oidcDeniedRepoID, "denied")
+	if _, err := database.pool.Exec(t.Context(),
+		"update repositories set desired_sha=$2, indexed_sha=$2, status='ready' where id=$1",
+		allowed.ID, oidcIndexedSHA); err != nil {
+		t.Fatal(err)
+	}
+	return allowed, denied
 }
 
 func oidcBrowser(t *testing.T, server *httptest.Server) *http.Client {
