@@ -45,6 +45,7 @@ type Config struct {
 	UserInstallationID, AdminInstallationID   int64
 	UserRepositoryIDs, AdminRepositoryIDs     []int64
 	Limits                                    Limits
+	SSO                                       SSO
 }
 
 func Load() (Config, error) {
@@ -103,6 +104,9 @@ func Load() (Config, error) {
 		}
 	} else if config.RepositoriesFile == "" {
 		return Config{}, invalid("repository file is required in static mode")
+	}
+	if config.SSO, err = loadSSO(config.DatabaseURL); err != nil {
+		return Config{}, err
 	}
 	return config, nil
 }

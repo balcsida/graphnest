@@ -13,7 +13,7 @@ func TestLoadKeepsStaticConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.DatabaseURL != "" || got.GitHub.AppID != 0 {
+	if got.DatabaseURL != "" || got.GitHub.AppID != 0 || got.SSO.OIDC.Enabled {
 		t.Fatalf("durable configuration = %#v", got)
 	}
 }
