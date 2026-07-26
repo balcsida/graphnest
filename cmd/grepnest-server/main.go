@@ -24,6 +24,8 @@ import (
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/internal/scipgraph"
 	"github.com/grepnest/grepnest/internal/search"
+	"github.com/grepnest/grepnest/internal/sso"
+	"github.com/grepnest/grepnest/internal/sso/oidc"
 	"github.com/grepnest/grepnest/internal/webhook"
 	"github.com/grepnest/grepnest/internal/webui"
 	"github.com/grepnest/grepnest/internal/zoekt"
@@ -31,12 +33,16 @@ import (
 )
 
 const (
-	searchNodeID           = "primary"
-	reconcileInterval      = 5 * time.Minute
-	maxPrivateKeyBytes     = 64 << 10
-	maxWebhookKeyBytes     = 64 << 10
-	maxCABytes             = 1 << 20
-	maxGitHubResponseBytes = 2 << 20
+	searchNodeID             = "primary"
+	reconcileInterval        = 5 * time.Minute
+	maxPrivateKeyBytes       = 64 << 10
+	maxWebhookKeyBytes       = 64 << 10
+	maxCABytes               = 1 << 20
+	maxOIDCClientSecretBytes = 64 << 10
+	maxOIDCCABytes           = 1 << 20
+	maxGitHubResponseBytes   = 2 << 20
+	authCleanupInterval      = 15 * time.Minute
+	authCleanupTimeout       = 5 * time.Second
 )
 
 func main() { os.Exit(run()) }
@@ -125,7 +131,51 @@ func newHandler(settings config.Config) (http.Handler, error) {
 		DefaultTimeout: settings.Limits.DefaultTimeout, MaxTimeout: settings.Limits.MaxTimeout,
 		MaxResponseBytes: settings.Limits.MaxResponseBytes,
 	})
-	return newAPIHandler(settings, metrics, authn.RequestAuthenticator{Bearer: authenticator}, service, nil, nil, nil, nil, backend), nil
+	return newAPIHandler(settings, metrics, authn.RequestAuthenticator{Bearer: authenticator}, service, nil, nil, nil, nil, backend, nil, nil), nil
+}
+
+type authRuntime struct {
+	requestAuth authn.RequestAuthenticator
+	sessions    *authn.SessionManager
+	providers   []sso.Provider
+	cleanup     func()
+}
+
+func newAuthRuntime(ctx context.Context, settings config.Config, store authn.SessionStore, bearer authn.Authenticator, metrics *observability.Metrics) (*authRuntime, error) {
+	runtime := &authRuntime{requestAuth: authn.RequestAuthenticator{Bearer: bearer}}
+	if !settings.SSO.OIDC.Enabled {
+		return runtime, nil
+	}
+	secret, err := readBoundedFile(settings.SSO.OIDC.ClientSecretFile, maxOIDCClientSecretBytes)
+	if err != nil {
+		return nil, fmt.Errorf("read OIDC client secret: %w", err)
+	}
+	var caPEM []byte
+	if settings.SSO.OIDC.CAFile != "" {
+		caPEM, err = readBoundedFile(settings.SSO.OIDC.CAFile, maxOIDCCABytes)
+		if err != nil {
+			return nil, fmt.Errorf("read OIDC CA: %w", err)
+		}
+	}
+	client, err := oidc.New(ctx, settings.SSO.OIDC, settings.SSO.PublicURL, secret, caPEM)
+	if err != nil {
+		return nil, err
+	}
+	runtime.sessions = &authn.SessionManager{Store: store, TTL: settings.SSO.SessionTTL}
+	runtime.requestAuth.Session = runtime.sessions
+	runtime.requestAuth.PublicOrigin = settings.SSO.PublicURL.Scheme + "://" + settings.SSO.PublicURL.Host
+	runtime.providers = []sso.Provider{&oidc.Provider{
+		Client: client, Store: store,
+		Mapper: authn.ScopeMapper{
+			InstallationID: settings.UserInstallationID,
+			RepositoryIDs:  settings.UserRepositoryIDs,
+			AllowedGroups:  settings.SSO.OIDC.AllowedGroups,
+		},
+		Sessions: runtime.sessions, LoginTTL: settings.SSO.LoginFlowTTL,
+	}}
+	done := startAuthCleanup(ctx, store, metrics)
+	runtime.cleanup = func() { <-done }
+	return runtime, nil
 }
 
 func newRuntime(ctx context.Context, settings config.Config, logger *slog.Logger) (http.Handler, func(), error) {
@@ -209,24 +259,30 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	repositoryService := &repository.Service{Store: store, GitHub: githubClient}
 	scipService := &scipgraph.Service{Store: store, GitHub: githubClient, MaxResults: settings.Limits.MaxResults}
 	processor := webhook.NewGitHubProcessor(store, reconcileRequests, metrics)
-	requestAuthenticator := authn.RequestAuthenticator{Bearer: authenticator}
-	if settings.SSO.OIDC.Enabled {
-		requestAuthenticator.Session = &authn.SessionManager{Store: store, TTL: settings.SSO.SessionTTL}
-		requestAuthenticator.PublicOrigin = settings.SSO.PublicURL.Scheme + "://" + settings.SSO.PublicURL.Host
+	auth, err := newAuthRuntime(loopCtx, settings, store, authenticator, metrics)
+	if err != nil {
+		cancel()
+		<-done
+		<-reconcileDone
+		return fail(err)
 	}
-	handler := newAPIHandler(settings, metrics, requestAuthenticator, searchService, repositoryService, scipService, webhookSecret, processor, durableReadiness{pool: pool, zoekt: backend})
+	handler := newAPIHandler(settings, metrics, auth.requestAuth, searchService, repositoryService, scipService, webhookSecret, processor, durableReadiness{pool: pool, zoekt: backend}, auth.providers, auth.sessions)
 	return handler, func() {
 		cancel()
 		<-done
 		<-reconcileDone
+		if auth.cleanup != nil {
+			auth.cleanup()
+		}
 		pool.Close()
 	}, nil
 }
 
-func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scip *scipgraph.Service, webhookSecret []byte, processor webhook.Processor, checker httpapi.ReadyChecker) http.Handler {
+func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scip *scipgraph.Service, webhookSecret []byte, processor webhook.Processor, checker httpapi.ReadyChecker, providers []sso.Provider, sessions *authn.SessionManager) http.Handler {
 	mux := http.NewServeMux()
 	webui.Register(mux)
 	httpapi.RegisterSystem(mux, checker, metrics.Handler())
+	httpapi.RegisterAuth(mux, true, providers, authenticator, sessions)
 	httpapi.RegisterSearch(mux, authenticator, service, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
 	if repositories != nil {
 		httpapi.RegisterRepositories(mux, authenticator, repositories, settings.Limits.MaxRequestBytes, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
@@ -263,6 +319,13 @@ func readBoundedFile(path string, maxBytes int64) ([]byte, error) {
 		return nil, err
 	}
 	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("not a regular file")
+	}
 	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
 	if err != nil {
 		return nil, err
@@ -274,6 +337,44 @@ func readBoundedFile(path string, maxBytes int64) ([]byte, error) {
 		return nil, errors.New("file is empty")
 	}
 	return data, nil
+}
+
+func startAuthCleanup(ctx context.Context, store authn.SessionStore, metrics *observability.Metrics) <-chan struct{} {
+	_ = metrics // Task 9 adds auth metrics; do not create a temporary metric surface.
+	return startAuthCleanupLoop(ctx, store, authCleanupInterval, authCleanupTimeout, func(err error) {
+		slog.Error("expired auth cleanup failed", "error", err)
+	})
+}
+
+func startAuthCleanupLoop(ctx context.Context, store authn.SessionStore, interval, timeout time.Duration, onError func(error)) <-chan struct{} {
+	cleanup := func() {
+		callCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		flows, sessions, err := store.DeleteExpiredAuth(callCtx, time.Now())
+		if err != nil {
+			if onError != nil {
+				onError(err)
+			}
+			return
+		}
+		slog.Info("expired auth cleanup completed", "login_flows", flows, "sessions", sessions)
+	}
+	cleanup()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				cleanup()
+			}
+		}
+	}()
+	return done
 }
 
 func startPeriodic(ctx context.Context, interval time.Duration, reconcile, refresh func(context.Context) error, onError func(error)) (<-chan struct{}, error) {

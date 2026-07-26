@@ -34,6 +34,202 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func TestAuthRuntimeWithoutOIDCUsesBearerOnly(t *testing.T) {
+	bearer := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
+	for _, settings := range []config.Config{{}, {DatabaseURL: "postgres://db"}} {
+		runtime, err := newAuthRuntime(t.Context(), settings, nil, bearer, observability.New())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if runtime.requestAuth.Bearer != bearer || runtime.requestAuth.Session != nil || runtime.sessions != nil || len(runtime.providers) != 0 || runtime.cleanup != nil {
+			t.Fatalf("runtime = %#v", runtime)
+		}
+	}
+}
+
+func TestOIDCAuthRuntimeReadsFilesAndDiscoversProvider(t *testing.T) {
+	provider := oidcDiscoveryServer(t)
+	secretPath := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(secretPath, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	caPath := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(caPath, provider.ca, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := &authStoreStub{}
+	ctx, cancel := context.WithCancel(t.Context())
+	runtime, err := newAuthRuntime(ctx, oidcSettings(provider.URL, secretPath, caPath), store, authn.NewStatic(nil), observability.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.sessions == nil || runtime.requestAuth.Session != runtime.sessions || len(runtime.providers) != 1 || runtime.cleanup == nil {
+		t.Fatalf("runtime = %#v", runtime)
+	}
+	if store.cleanupCalls.Load() != 1 {
+		t.Fatalf("startup cleanup calls = %d", store.cleanupCalls.Load())
+	}
+	cancel()
+	runtime.cleanup()
+}
+
+func TestOIDCAuthRuntimeRejectsInvalidFilesAndDiscovery(t *testing.T) {
+	provider := oidcDiscoveryServer(t)
+	validSecret := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(validSecret, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	validCA := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(validCA, provider.ca, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]struct {
+		secret, ca, issuer string
+	}{
+		"unreadable secret":  {filepath.Join(t.TempDir(), "missing"), validCA, provider.URL},
+		"empty secret":       {writeTestFile(t, nil), validCA, provider.URL},
+		"oversized secret":   {writeTestFile(t, bytes.Repeat([]byte("x"), maxOIDCClientSecretBytes+1)), validCA, provider.URL},
+		"non-regular secret": {t.TempDir(), validCA, provider.URL},
+		"unreadable CA":      {validSecret, filepath.Join(t.TempDir(), "missing"), provider.URL},
+		"invalid CA":         {validSecret, writeTestFile(t, []byte("invalid")), provider.URL},
+		"oversized CA":       {validSecret, writeTestFile(t, bytes.Repeat([]byte("x"), maxOIDCCABytes+1)), provider.URL},
+		"discovery failure":  {validSecret, validCA, "https://127.0.0.1:1"},
+	}
+	for name, test := range cases {
+		t.Run(name, func(t *testing.T) {
+			settings := oidcSettings(test.issuer, test.secret, test.ca)
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			if _, err := newAuthRuntime(ctx, settings, &authStoreStub{}, authn.NewStatic(nil), observability.New()); err == nil {
+				t.Fatal("newAuthRuntime() succeeded")
+			}
+		})
+	}
+}
+
+func TestAuthRoutesExistWithoutProvidersAndRESTAcceptsSessions(t *testing.T) {
+	bearer := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "bearer", Method: "bearer"}})
+	authenticator := testRequestAuthenticator(bearer)
+	authenticator.Session = mainTestSession{principal: authn.Principal{Subject: "session", Method: "oidc"}}
+	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil, nil)
+	for _, path := range []string{"/v1/auth/config", "/v1/auth/session", "/auth/logout"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		if path == "/auth/logout" {
+			request.Method = http.MethodPost
+		}
+		if path == "/v1/auth/session" {
+			request.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: "session"})
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code == http.StatusNotFound || response.Code == http.StatusUnauthorized {
+			t.Fatalf("%s status = %d", path, response.Code)
+		}
+	}
+}
+
+func TestStartAuthCleanupBoundsCallsAndStops(t *testing.T) {
+	store := &authStoreStub{blockCleanup: true}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := startAuthCleanupLoop(ctx, store, 5*time.Millisecond, 10*time.Millisecond, nil)
+	select {
+	case <-store.cleanupStarted:
+	case <-time.After(time.Second):
+		t.Fatal("cleanup did not start")
+	}
+	select {
+	case <-store.cleanupCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("cleanup call was not bounded")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("cleanup did not stop")
+	}
+}
+
+func oidcSettings(issuer, secret, ca string) config.Config {
+	publicURL, _ := url.Parse("https://grep.example")
+	return config.Config{
+		DatabaseURL:        "postgres://db",
+		UserInstallationID: 10, UserRepositoryIDs: []int64{101},
+		SSO: config.SSO{
+			PublicURL: publicURL, SessionTTL: time.Hour, LoginFlowTTL: time.Minute,
+			OIDC: config.OIDC{Enabled: true, IssuerURL: issuer, ClientID: "client", ClientSecretFile: secret, CAFile: ca, Scopes: []string{"openid"}},
+		},
+	}
+}
+
+type testOIDCServer struct {
+	*httptest.Server
+	ca []byte
+}
+
+func oidcDiscoveryServer(t *testing.T) testOIDCServer {
+	t.Helper()
+	var server *httptest.Server
+	server = httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_ = json.NewEncoder(writer).Encode(map[string]any{
+			"issuer": server.URL, "authorization_endpoint": server.URL + "/authorize",
+			"token_endpoint": server.URL + "/token", "jwks_uri": server.URL + "/keys",
+			"id_token_signing_alg_values_supported": []string{"RS256"},
+		})
+	}))
+	t.Cleanup(server.Close)
+	certificate := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
+	return testOIDCServer{Server: server, ca: certificate}
+}
+
+func writeTestFile(t *testing.T, content []byte) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+type authStoreStub struct {
+	cleanupCalls    atomic.Int32
+	blockCleanup    bool
+	cleanupStarted  chan struct{}
+	cleanupCanceled chan struct{}
+}
+
+func (store *authStoreStub) CreateLoginFlow(context.Context, authn.LoginFlow) error { return nil }
+func (store *authStoreStub) ConsumeLoginFlow(context.Context, [32]byte, [32]byte, string, time.Time) (authn.LoginFlow, error) {
+	return authn.LoginFlow{}, nil
+}
+func (store *authStoreStub) CreateSession(context.Context, authn.SessionRecord) error { return nil }
+func (store *authStoreStub) Session(context.Context, [32]byte, time.Time) (authn.SessionRecord, error) {
+	return authn.SessionRecord{}, nil
+}
+func (store *authStoreStub) DeleteSession(context.Context, [32]byte) error { return nil }
+func (store *authStoreStub) DeleteExpiredAuth(ctx context.Context, _ time.Time) (int64, int64, error) {
+	store.cleanupCalls.Add(1)
+	if !store.blockCleanup {
+		return 0, 0, nil
+	}
+	if store.cleanupStarted == nil {
+		store.cleanupStarted = make(chan struct{})
+		store.cleanupCanceled = make(chan struct{})
+	}
+	select {
+	case <-store.cleanupStarted:
+	default:
+		close(store.cleanupStarted)
+	}
+	<-ctx.Done()
+	select {
+	case <-store.cleanupCanceled:
+	default:
+		close(store.cleanupCanceled)
+	}
+	return 0, 0, ctx.Err()
+}
+
 func TestDurableGitHubLimitReadsNearMaximumFile(t *testing.T) {
 	content := bytes.Repeat([]byte("x"), (1<<20)-1)
 	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -129,7 +325,7 @@ func TestServerDeadlinesIsolateSCIPUploads(t *testing.T) {
 		"admin": {Subject: "admin", Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}},
 	})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, SCIPMaxUploadBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}
-	handler := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, &scipgraph.Service{Store: store}, nil, nil, nil)
+	handler := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, &scipgraph.Service{Store: store}, nil, nil, nil, nil, nil)
 	server := newHTTPServer("127.0.0.1:0", handler)
 	if server.ReadTimeout != 10*time.Second || server.WriteTimeout != 10*time.Second || server.ReadHeaderTimeout != 5*time.Second || server.IdleTimeout != time.Minute {
 		t.Fatalf("deadlines = read %s, write %s, header %s, idle %s", server.ReadTimeout, server.WriteTimeout, server.ReadHeaderTimeout, server.IdleTimeout)
@@ -466,7 +662,7 @@ func (stub *healthStub) Health(context.Context) error {
 
 func TestDurableRoutesKeepWebhookOutsideBearerAuthentication(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
-	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), testRequestAuthenticator(authenticator), nil, &repository.Service{Store: repositoryStoreStub{}}, nil, []byte("secret"), webhookProcessorStub{}, nil)
+	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), testRequestAuthenticator(authenticator), nil, &repository.Service{Store: repositoryStoreStub{}}, nil, []byte("secret"), webhookProcessorStub{}, nil, nil, nil)
 
 	webhookResponse := httptest.NewRecorder()
 	handler.ServeHTTP(webhookResponse, httptest.NewRequest(http.MethodPost, "/webhooks/github", nil))
@@ -492,7 +688,7 @@ func TestDurableRoutesKeepWebhookOutsideBearerAuthentication(t *testing.T) {
 func TestMCPCookieCredentialsAreRejected(t *testing.T) {
 	authenticator := testRequestAuthenticator(authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}}))
 	authenticator.Session = mainTestSession{principal: authn.Principal{Subject: "session", Method: "oidc"}}
-	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), authenticator, nil, nil, nil, nil, nil, nil)
+	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil, nil)
 	for _, name := range []string{"cookie only", "mixed"} {
 		t.Run(name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/mcp", nil)
@@ -561,8 +757,8 @@ func TestStaticHandlerRegistersSystemRoutes(t *testing.T) {
 func TestSCIPRoutesRegisterOnlyWithDurableService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, SCIPMaxUploadBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}
-	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil)
-	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, &scipgraph.Service{}, nil, nil, nil)
+	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil)
+	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, &scipgraph.Service{}, nil, nil, nil, nil, nil)
 	for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/scip/navigation", nil))
@@ -580,7 +776,7 @@ func TestAPIHandlerMountsWebUIWithoutFallback(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	handler := newAPIHandler(
 		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}},
-		observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil,
+		observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	for _, path := range []string{"/", "/index.html"} {
 		response := httptest.NewRecorder()
