@@ -69,7 +69,7 @@ func TestOIDCCrossReplicaSessions(t *testing.T) {
 		assertRedirect(t, response, "/")
 		sessionCookie := namedResponseCookie(t, response, authn.SessionCookieName)
 		if !sessionCookie.Secure || !sessionCookie.HttpOnly || sessionCookie.Path != "/" ||
-			sessionCookie.SameSite != http.SameSiteStrictMode {
+			sessionCookie.Domain != "" || sessionCookie.SameSite != http.SameSiteStrictMode {
 			t.Fatalf("session cookie = %#v", sessionCookie)
 		}
 		if loginCookie.Value == sessionCookie.Value {
@@ -559,7 +559,8 @@ func beginOIDCLogin(t *testing.T, browser *http.Client, public *oidcPublicOrigin
 		query.Get("code_challenge_method") != "S256" || query.Get("code_challenge") == "" {
 		t.Fatalf("authorization redirect = %q", location)
 	}
-	if !binding.Secure || !binding.HttpOnly || binding.Path != "/" || binding.SameSite != http.SameSiteLaxMode {
+	if !binding.Secure || !binding.HttpOnly || binding.Path != "/" ||
+		binding.Domain != "" || binding.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("login cookie = %#v", binding)
 	}
 	drainClose(response)
