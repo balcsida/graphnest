@@ -45,6 +45,12 @@ func TestRegisterServesBoundedConsoleAtExactPaths(t *testing.T) {
 			"/v1/auth/config", "/v1/auth/session", "/auth/logout",
 			"sessionStorage", "credentials:\"same-origin\"",
 			"prefers-reduced-motion: reduce",
+			"const SIGN_OUT_FAILURE=",
+			"return response.ok",
+			"if(!await logout()){showAuth(SIGN_OUT_FAILURE);return}",
+			"if(mode===\"session\"&&!await logout()){showError(new Error(SIGN_OUT_FAILURE));return}",
+			"if(!config.token_login)clearToken()",
+			"if(config.token_login&&remembered)",
 		} {
 			if !bytes.Contains(body, []byte(want)) {
 				t.Fatalf("%s missing %q", path, want)
