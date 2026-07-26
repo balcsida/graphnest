@@ -1,6 +1,7 @@
 package oidc
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -163,6 +164,9 @@ func stringClaim(claims map[string]json.RawMessage, name string) (string, error)
 	if name == "" || len(claims[name]) == 0 {
 		return "", nil
 	}
+	if bytes.Equal(bytes.TrimSpace(claims[name]), []byte("null")) {
+		return "", fmt.Errorf("OIDC claim %q must be a string", name)
+	}
 	var value string
 	if err := json.Unmarshal(claims[name], &value); err != nil {
 		return "", fmt.Errorf("OIDC claim %q must be a string", name)
@@ -173,6 +177,9 @@ func stringClaim(claims map[string]json.RawMessage, name string) (string, error)
 func groupsClaim(claims map[string]json.RawMessage, name string) ([]string, error) {
 	if name == "" || len(claims[name]) == 0 {
 		return nil, nil
+	}
+	if bytes.Equal(bytes.TrimSpace(claims[name]), []byte("null")) {
+		return nil, fmt.Errorf("OIDC claim %q must be an array of strings", name)
 	}
 	var groups []string
 	if err := json.Unmarshal(claims[name], &groups); err != nil {

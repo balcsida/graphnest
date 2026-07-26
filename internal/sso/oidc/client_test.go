@@ -113,8 +113,12 @@ func (fixture *providerFixture) claims(code string) map[string]any {
 		delete(claims, "sub")
 	case "bad-name":
 		claims["name"] = []string{"bad"}
+	case "null-name":
+		claims["name"] = nil
 	case "bad-groups":
 		claims["groups"] = []any{"engineering", 7}
+	case "null-groups":
+		claims["groups"] = nil
 	}
 	return claims
 }
@@ -259,6 +263,7 @@ func TestClientExchangeRejectsInvalidIDTokens(t *testing.T) {
 		"wrong-nonce", "missing-nonce", "wrong-audience", "multi-no-azp",
 		"multi-wrong-azp", "wrong-azp", "wrong-issuer", "expired", "unsigned",
 		"hs-signed", "missing-subject", "bad-name", "bad-groups", "no-token",
+		"null-name", "null-groups",
 	} {
 		t.Run(code, func(t *testing.T) {
 			fixture := newProvider(t)
