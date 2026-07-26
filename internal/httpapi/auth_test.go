@@ -25,6 +25,7 @@ func (provider *authProvider) Register(*http.ServeMux) { provider.registered = t
 type authSessionService struct {
 	principal authn.Principal
 	authErr   error
+	revokeErr error
 	revoked   []string
 }
 
@@ -33,7 +34,7 @@ func (service *authSessionService) Authenticate(context.Context, string) (authn.
 }
 func (service *authSessionService) Revoke(_ context.Context, token string) error {
 	service.revoked = append(service.revoked, token)
-	return errors.New("unknown is still idempotent")
+	return service.revokeErr
 }
 
 func TestRegisterAuthConfigExposesOnlyEnabledMetadata(t *testing.T) {
@@ -115,16 +116,17 @@ func TestRegisterAuthSessionReportsOnlyMethodAndDisplayName(t *testing.T) {
 
 func TestRegisterAuthLogoutIsIdempotentAndClearsCookie(t *testing.T) {
 	tests := []struct {
-		name, cookie string
-		wantRevoked  bool
+		name, cookie, wantResult string
+		revokeErr                error
 	}{
-		{"missing", "", false},
-		{"valid", "valid-session", true},
-		{"malformed or unknown", "bad", true},
+		{"missing", "", "success", nil},
+		{"valid", "valid-session", "success", nil},
+		{"malformed", "bad", "invalid", authn.ErrUnauthenticated},
+		{"store failure", "valid-session", "error", errors.New("database unavailable")},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			sessions := &authSessionService{}
+			sessions := &authSessionService{revokeErr: test.revokeErr}
 			metrics := observability.New()
 			mux := http.NewServeMux()
 			RegisterAuth(mux, true, nil, authn.RequestAuthenticator{}, sessions, metrics)
@@ -138,12 +140,12 @@ func TestRegisterAuthLogoutIsIdempotentAndClearsCookie(t *testing.T) {
 				recorder.Result().Cookies()[0].Name != authn.SessionCookieName || recorder.Result().Cookies()[0].MaxAge != -1 {
 				t.Fatalf("response = %d cookies=%#v", recorder.Code, recorder.Result().Cookies())
 			}
-			if (len(sessions.revoked) == 1) != test.wantRevoked {
+			if (len(sessions.revoked) == 1) != (test.cookie != "") {
 				t.Fatalf("revoked = %#v", sessions.revoked)
 			}
 			metricResponse := httptest.NewRecorder()
 			metrics.Handler().ServeHTTP(metricResponse, httptest.NewRequest(http.MethodGet, "/metrics", nil))
-			if !strings.Contains(metricResponse.Body.String(), `grepnest_auth_events_total{event="logout",provider="session",result="success"} 1`) {
+			if !strings.Contains(metricResponse.Body.String(), `grepnest_auth_events_total{event="logout",provider="session",result="`+test.wantResult+`"} 1`) {
 				t.Fatalf("logout metric = %s", metricResponse.Body.String())
 			}
 			assertAuthPrivateHeaders(t, recorder)

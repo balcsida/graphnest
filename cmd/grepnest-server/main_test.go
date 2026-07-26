@@ -152,6 +152,10 @@ func TestStartAuthCleanupBoundsCallsAndStops(t *testing.T) {
 
 func TestStartAuthCleanupRecordsOnlyAggregateResults(t *testing.T) {
 	metrics := observability.New()
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	defer slog.SetDefault(previous)
 	ctx, cancel := context.WithCancel(t.Context())
 	done := startAuthCleanup(ctx, &authStoreStub{}, metrics)
 	cancel()
@@ -170,6 +174,9 @@ func TestStartAuthCleanupRecordsOnlyAggregateResults(t *testing.T) {
 		if !strings.Contains(recorder.Body.String(), want) {
 			t.Errorf("cleanup metric missing %q:\n%s", want, recorder.Body.String())
 		}
+	}
+	if !strings.Contains(logs.String(), `"code":"store"`) || strings.Contains(logs.String(), `"category"`) {
+		t.Fatalf("cleanup logs = %s", logs.String())
 	}
 }
 

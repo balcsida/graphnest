@@ -13,6 +13,7 @@ import (
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/sso"
+	"github.com/jackc/pgx/v5"
 	"golang.org/x/oauth2"
 )
 
@@ -114,7 +115,11 @@ func (provider *Provider) callback(writer http.ResponseWriter, request *http.Req
 	}
 	flow, err := provider.Store.ConsumeLoginFlow(request.Context(), stateHash, browserHash, "oidc", provider.now())
 	if err != nil {
-		provider.callbackFail(writer, "invalid")
+		result := "error"
+		if errors.Is(err, pgx.ErrNoRows) {
+			result = "invalid"
+		}
+		provider.callbackFail(writer, result)
 		return
 	}
 	if validError {

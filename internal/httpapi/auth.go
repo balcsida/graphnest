@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/grepnest/grepnest/internal/authn"
@@ -45,7 +46,17 @@ func RegisterAuth(
 	mux.Handle("/auth/logout", privateAuth(exactMethod(http.MethodPost, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		http.SetCookie(writer, sso.ClearSessionCookie())
 		if token, count := namedCookie(request, authn.SessionCookieName); count == 1 && sessions != nil {
-			_ = sessions.Revoke(request.Context(), token)
+			if err := sessions.Revoke(request.Context(), token); err != nil {
+				result := "error"
+				if errors.Is(err, authn.ErrUnauthenticated) {
+					result = "invalid"
+				}
+				if metrics != nil {
+					metrics.ObserveAuth("session", "logout", result)
+				}
+				writer.WriteHeader(http.StatusNoContent)
+				return
+			}
 		}
 		if metrics != nil {
 			metrics.ObserveAuth("session", "logout", "success")

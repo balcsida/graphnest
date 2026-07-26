@@ -16,6 +16,7 @@ import (
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/sso"
+	"github.com/jackc/pgx/v5"
 )
 
 type providerClient struct {
@@ -57,7 +58,7 @@ func (store *providerStore) ConsumeLoginFlow(_ context.Context, state, browser [
 		if store.consumeErr != nil {
 			return authn.LoginFlow{}, store.consumeErr
 		}
-		return authn.LoginFlow{}, errors.New("missing")
+		return authn.LoginFlow{}, pgx.ErrNoRows
 	}
 	store.consumed = true
 	return store.flow, nil
@@ -274,11 +275,22 @@ func TestOIDCProviderRecordsFixedAuthResults(t *testing.T) {
 	invalid.provider.Metrics = metrics
 	invalid.callback(t, "?state="+invalid.state+"&code=", invalid.browser)
 
+	missing := newCallbackFixture(t)
+	missing.provider.Metrics = metrics
+	missing.store.consumeErr = pgx.ErrNoRows
+	missing.callback(t, "?state="+missing.state+"&code=good", missing.browser)
+
+	operational := newCallbackFixture(t)
+	operational.provider.Metrics = metrics
+	operational.store.consumeErr = context.DeadlineExceeded
+	operational.callback(t, "?state="+operational.state+"&code=good", operational.browser)
+
 	body := scrapeAuthMetrics(t, metrics)
 	for _, want := range []string{
 		`grepnest_auth_events_total{event="callback",provider="oidc",result="success"} 1`,
 		`grepnest_auth_events_total{event="callback",provider="oidc",result="denied"} 1`,
-		`grepnest_auth_events_total{event="callback",provider="oidc",result="invalid"} 1`,
+		`grepnest_auth_events_total{event="callback",provider="oidc",result="invalid"} 2`,
+		`grepnest_auth_events_total{event="callback",provider="oidc",result="error"} 1`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("metrics missing %q:\n%s", want, body)

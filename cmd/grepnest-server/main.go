@@ -356,7 +356,7 @@ func startAuthCleanup(ctx context.Context, store authn.SessionStore, metrics *ob
 	return startAuthCleanupLoop(ctx, store, authCleanupInterval, authCleanupTimeout, func(err error) {
 		if err != nil {
 			metrics.ObserveAuth("unknown", "cleanup", "error")
-			slog.Error("expired auth cleanup failed", "provider", "unknown", "event", "cleanup", "result", "error", "category", "store")
+			slog.Error("expired auth cleanup failed", "provider", "unknown", "event", "cleanup", "result", "error", "code", "store")
 			return
 		}
 		metrics.ObserveAuth("unknown", "cleanup", "success")
