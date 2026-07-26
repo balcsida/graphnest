@@ -142,8 +142,9 @@ func TestMilestone2Vertical(t *testing.T) {
 	searchService := search.NewService(zoektClient, authz.NewPostgres(database.store), search.Limits{MaxResults: 100, MaxResponseBytes: 256 << 10})
 	repositoryService := &repository.Service{Store: database.store, GitHub: githubClient}
 	mux := http.NewServeMux()
-	httpapi.RegisterSearch(mux, authenticator, searchService, 64<<10, 256<<10)
-	httpapi.RegisterRepositories(mux, authenticator, repositoryService, 64<<10, 100, 256<<10)
+	requestAuthenticator := authn.RequestAuthenticator{Bearer: authenticator}
+	httpapi.RegisterSearch(mux, requestAuthenticator, searchService, 64<<10, 256<<10)
+	httpapi.RegisterRepositories(mux, requestAuthenticator, repositoryService, 64<<10, 100, 256<<10)
 	httpapi.RegisterGitHubWebhook(mux, []byte(milestoneWebhookSecret), 1<<20, processor)
 	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return mcpserver.New(searchService, repositoryService)
