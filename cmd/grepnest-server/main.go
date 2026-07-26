@@ -125,7 +125,7 @@ func newHandler(settings config.Config) (http.Handler, error) {
 		DefaultTimeout: settings.Limits.DefaultTimeout, MaxTimeout: settings.Limits.MaxTimeout,
 		MaxResponseBytes: settings.Limits.MaxResponseBytes,
 	})
-	return newAPIHandler(settings, metrics, authenticator, service, nil, nil, nil, nil, backend), nil
+	return newAPIHandler(settings, metrics, authn.RequestAuthenticator{Bearer: authenticator}, service, nil, nil, nil, nil, backend), nil
 }
 
 func newRuntime(ctx context.Context, settings config.Config, logger *slog.Logger) (http.Handler, func(), error) {
@@ -209,7 +209,12 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	repositoryService := &repository.Service{Store: store, GitHub: githubClient}
 	scipService := &scipgraph.Service{Store: store, GitHub: githubClient, MaxResults: settings.Limits.MaxResults}
 	processor := webhook.NewGitHubProcessor(store, reconcileRequests, metrics)
-	handler := newAPIHandler(settings, metrics, authenticator, searchService, repositoryService, scipService, webhookSecret, processor, durableReadiness{pool: pool, zoekt: backend})
+	requestAuthenticator := authn.RequestAuthenticator{Bearer: authenticator}
+	if settings.SSO.OIDC.Enabled {
+		requestAuthenticator.Session = &authn.SessionManager{Store: store, TTL: settings.SSO.SessionTTL}
+		requestAuthenticator.PublicOrigin = settings.SSO.PublicURL.Scheme + "://" + settings.SSO.PublicURL.Host
+	}
+	handler := newAPIHandler(settings, metrics, requestAuthenticator, searchService, repositoryService, scipService, webhookSecret, processor, durableReadiness{pool: pool, zoekt: backend})
 	return handler, func() {
 		cancel()
 		<-done
@@ -218,7 +223,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	}, nil
 }
 
-func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.Authenticator, service *search.Service, repositories *repository.Service, scip *scipgraph.Service, webhookSecret []byte, processor webhook.Processor, checker httpapi.ReadyChecker) http.Handler {
+func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scip *scipgraph.Service, webhookSecret []byte, processor webhook.Processor, checker httpapi.ReadyChecker) http.Handler {
 	mux := http.NewServeMux()
 	webui.Register(mux)
 	httpapi.RegisterSystem(mux, checker, metrics.Handler())
@@ -236,7 +241,7 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 		MaxItems: settings.Limits.MaxResults, MaxOutputBytes: settings.Limits.MaxResponseBytes,
 	}, scip)
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer }, nil)
-	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator.Bearer, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		request.Body = http.MaxBytesReader(writer, request.Body, settings.Limits.MaxRequestBytes)
 		mcpHandler.ServeHTTP(writer, request)
 	})))

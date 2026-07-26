@@ -129,7 +129,7 @@ func TestServerDeadlinesIsolateSCIPUploads(t *testing.T) {
 		"admin": {Subject: "admin", Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}},
 	})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, SCIPMaxUploadBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}
-	handler := newAPIHandler(settings, observability.New(), authenticator, nil, nil, &scipgraph.Service{Store: store}, nil, nil, nil)
+	handler := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, &scipgraph.Service{Store: store}, nil, nil, nil)
 	server := newHTTPServer("127.0.0.1:0", handler)
 	if server.ReadTimeout != 10*time.Second || server.WriteTimeout != 10*time.Second || server.ReadHeaderTimeout != 5*time.Second || server.IdleTimeout != time.Minute {
 		t.Fatalf("deadlines = read %s, write %s, header %s, idle %s", server.ReadTimeout, server.WriteTimeout, server.ReadHeaderTimeout, server.IdleTimeout)
@@ -466,7 +466,7 @@ func (stub *healthStub) Health(context.Context) error {
 
 func TestDurableRoutesKeepWebhookOutsideBearerAuthentication(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
-	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), authenticator, nil, &repository.Service{Store: repositoryStoreStub{}}, nil, []byte("secret"), webhookProcessorStub{}, nil)
+	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), testRequestAuthenticator(authenticator), nil, &repository.Service{Store: repositoryStoreStub{}}, nil, []byte("secret"), webhookProcessorStub{}, nil)
 
 	webhookResponse := httptest.NewRecorder()
 	handler.ServeHTTP(webhookResponse, httptest.NewRequest(http.MethodPost, "/webhooks/github", nil))
@@ -487,6 +487,32 @@ func TestDurableRoutesKeepWebhookOutsideBearerAuthentication(t *testing.T) {
 	if authorized.Code != http.StatusOK {
 		t.Fatalf("authorized repositories status=%d body=%q", authorized.Code, authorized.Body.String())
 	}
+}
+
+func TestMCPCookieCredentialsAreRejected(t *testing.T) {
+	authenticator := testRequestAuthenticator(authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}}))
+	authenticator.Session = mainTestSession{principal: authn.Principal{Subject: "session", Method: "oidc"}}
+	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), authenticator, nil, nil, nil, nil, nil, nil)
+	for _, name := range []string{"cookie only", "mixed"} {
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+			request.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: "session"})
+			if name == "mixed" {
+				request.Header.Set("Authorization", "Bearer user")
+			}
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d", response.Code)
+			}
+		})
+	}
+}
+
+type mainTestSession struct{ principal authn.Principal }
+
+func (s mainTestSession) Authenticate(context.Context, string) (authn.Principal, error) {
+	return s.principal, nil
 }
 
 type webhookProcessorStub struct{}
@@ -535,8 +561,8 @@ func TestStaticHandlerRegistersSystemRoutes(t *testing.T) {
 func TestSCIPRoutesRegisterOnlyWithDurableService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, SCIPMaxUploadBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}
-	without := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, nil, nil)
-	with := newAPIHandler(settings, observability.New(), authenticator, nil, nil, &scipgraph.Service{}, nil, nil, nil)
+	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil)
+	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, &scipgraph.Service{}, nil, nil, nil)
 	for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/scip/navigation", nil))
@@ -554,7 +580,7 @@ func TestAPIHandlerMountsWebUIWithoutFallback(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	handler := newAPIHandler(
 		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}},
-		observability.New(), authenticator, nil, nil, nil, nil, nil, nil,
+		observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil,
 	)
 	for _, path := range []string{"/", "/index.html"} {
 		response := httptest.NewRecorder()
@@ -570,6 +596,10 @@ func TestAPIHandlerMountsWebUIWithoutFallback(t *testing.T) {
 			t.Fatalf("%s status=%d", path, response.Code)
 		}
 	}
+}
+
+func testRequestAuthenticator(bearer authn.Authenticator) authn.RequestAuthenticator {
+	return authn.RequestAuthenticator{Bearer: bearer}
 }
 
 func TestStaticHandlerProtectsMCPRoute(t *testing.T) {
