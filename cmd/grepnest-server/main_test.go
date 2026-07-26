@@ -150,6 +150,29 @@ func TestStartAuthCleanupBoundsCallsAndStops(t *testing.T) {
 	}
 }
 
+func TestStartAuthCleanupRecordsOnlyAggregateResults(t *testing.T) {
+	metrics := observability.New()
+	ctx, cancel := context.WithCancel(t.Context())
+	done := startAuthCleanup(ctx, &authStoreStub{}, metrics)
+	cancel()
+	<-done
+	errorCtx, errorCancel := context.WithCancel(t.Context())
+	errorDone := startAuthCleanup(errorCtx, &authStoreStub{cleanupErr: errors.New("token-hash-secret")}, metrics)
+	errorCancel()
+	<-errorDone
+
+	recorder := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	for _, want := range []string{
+		`grepnest_auth_events_total{event="cleanup",provider="unknown",result="success"} 1`,
+		`grepnest_auth_events_total{event="cleanup",provider="unknown",result="error"} 1`,
+	} {
+		if !strings.Contains(recorder.Body.String(), want) {
+			t.Errorf("cleanup metric missing %q:\n%s", want, recorder.Body.String())
+		}
+	}
+}
+
 func oidcSettings(issuer, secret, ca string) config.Config {
 	publicURL, _ := url.Parse("https://grep.example")
 	return config.Config{
@@ -194,6 +217,7 @@ func writeTestFile(t *testing.T, content []byte) string {
 type authStoreStub struct {
 	cleanupCalls    atomic.Int32
 	blockCleanup    bool
+	cleanupErr      error
 	cleanupStarted  chan struct{}
 	cleanupCanceled chan struct{}
 }
@@ -210,7 +234,7 @@ func (store *authStoreStub) DeleteSession(context.Context, [32]byte) error { ret
 func (store *authStoreStub) DeleteExpiredAuth(ctx context.Context, _ time.Time) (int64, int64, error) {
 	store.cleanupCalls.Add(1)
 	if !store.blockCleanup {
-		return 0, 0, nil
+		return 0, 0, store.cleanupErr
 	}
 	if store.cleanupStarted == nil {
 		store.cleanupStarted = make(chan struct{})

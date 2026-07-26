@@ -131,7 +131,7 @@ func newHandler(settings config.Config) (http.Handler, error) {
 		DefaultTimeout: settings.Limits.DefaultTimeout, MaxTimeout: settings.Limits.MaxTimeout,
 		MaxResponseBytes: settings.Limits.MaxResponseBytes,
 	})
-	return newAPIHandler(settings, metrics, authn.RequestAuthenticator{Bearer: authenticator}, service, nil, nil, nil, nil, backend, nil, nil), nil
+	return newAPIHandler(settings, metrics, authn.RequestAuthenticator{Bearer: authenticator, Metrics: metrics}, service, nil, nil, nil, nil, backend, nil, nil), nil
 }
 
 type authRuntime struct {
@@ -142,7 +142,7 @@ type authRuntime struct {
 }
 
 func newAuthRuntime(ctx context.Context, settings config.Config, store authn.SessionStore, bearer authn.Authenticator, metrics *observability.Metrics) (*authRuntime, error) {
-	runtime := &authRuntime{requestAuth: authn.RequestAuthenticator{Bearer: bearer}}
+	runtime := &authRuntime{requestAuth: authn.RequestAuthenticator{Bearer: bearer, Metrics: metrics}}
 	if !settings.SSO.OIDC.Enabled {
 		return runtime, nil
 	}
@@ -171,7 +171,7 @@ func newAuthRuntime(ctx context.Context, settings config.Config, store authn.Ses
 			RepositoryIDs:  settings.UserRepositoryIDs,
 			AllowedGroups:  settings.SSO.OIDC.AllowedGroups,
 		},
-		Sessions: runtime.sessions, LoginTTL: settings.SSO.LoginFlowTTL,
+		Sessions: runtime.sessions, LoginTTL: settings.SSO.LoginFlowTTL, Metrics: metrics,
 	}}
 	done := startAuthCleanup(ctx, store, metrics)
 	runtime.cleanup = func() { <-done }
@@ -282,7 +282,7 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 	mux := http.NewServeMux()
 	webui.Register(mux)
 	httpapi.RegisterSystem(mux, checker, metrics.Handler())
-	httpapi.RegisterAuth(mux, true, providers, authenticator, sessions)
+	httpapi.RegisterAuth(mux, true, providers, authenticator, sessions, metrics)
 	httpapi.RegisterSearch(mux, authenticator, service, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
 	if repositories != nil {
 		httpapi.RegisterRepositories(mux, authenticator, repositories, settings.Limits.MaxRequestBytes, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
@@ -353,9 +353,13 @@ func readBounded(reader io.Reader, maxBytes int64) ([]byte, error) {
 }
 
 func startAuthCleanup(ctx context.Context, store authn.SessionStore, metrics *observability.Metrics) <-chan struct{} {
-	_ = metrics // Task 9 adds auth metrics; do not create a temporary metric surface.
 	return startAuthCleanupLoop(ctx, store, authCleanupInterval, authCleanupTimeout, func(err error) {
-		slog.Error("expired auth cleanup failed", "error", err)
+		if err != nil {
+			metrics.ObserveAuth("unknown", "cleanup", "error")
+			slog.Error("expired auth cleanup failed", "provider", "unknown", "event", "cleanup", "result", "error", "category", "store")
+			return
+		}
+		metrics.ObserveAuth("unknown", "cleanup", "success")
 	})
 }
 
@@ -364,13 +368,13 @@ func startAuthCleanupLoop(ctx context.Context, store authn.SessionStore, interva
 		callCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		flows, sessions, err := store.DeleteExpiredAuth(callCtx, time.Now())
+		if onError != nil {
+			onError(err)
+		}
 		if err != nil {
-			if onError != nil {
-				onError(err)
-			}
 			return
 		}
-		slog.Info("expired auth cleanup completed", "login_flows", flows, "sessions", sessions)
+		slog.Info("expired auth cleanup completed", "provider", "unknown", "event", "cleanup", "result", "success", "login_flows", flows, "sessions", sessions)
 	}
 	cleanup()
 	done := make(chan struct{})

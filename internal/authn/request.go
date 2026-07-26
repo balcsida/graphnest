@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"strings"
+
+	"github.com/grepnest/grepnest/internal/observability"
 )
 
 const SessionCookieName = "__Host-grepnest_session"
@@ -14,35 +16,55 @@ type RequestAuthenticator struct {
 		Authenticate(context.Context, string) (Principal, error)
 	}
 	PublicOrigin string
+	Metrics      *observability.Metrics
 }
 
 func (a RequestAuthenticator) AuthenticateRequest(request *http.Request) (Principal, error) {
 	values := request.Header.Values("Authorization")
 	session, sessionCount := requestSessionCookie(request)
+	provider := "unknown"
+	if len(values) > 0 && sessionCount == 0 {
+		provider = "static"
+	} else if len(values) == 0 && sessionCount > 0 {
+		provider = "session"
+	}
+	observe := func(result string) {
+		if a.Metrics != nil {
+			a.Metrics.ObserveAuth(provider, "session_auth", result)
+		}
+	}
 	if len(values) > 0 && sessionCount > 0 {
+		observe("invalid")
 		return Principal{}, ErrUnauthenticated
 	}
 	if len(values) > 0 {
 		if len(values) != 1 || a.Bearer == nil {
+			observe("invalid")
 			return Principal{}, ErrUnauthenticated
 		}
 		parts := strings.Fields(values[0])
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+			observe("invalid")
 			return Principal{}, ErrUnauthenticated
 		}
 		principal, err := a.Bearer.Authenticate(parts[1])
 		if err != nil {
+			observe("invalid")
 			return Principal{}, ErrUnauthenticated
 		}
+		observe("success")
 		return principal, nil
 	}
 	if sessionCount != 1 || a.Session == nil || (unsafeMethod(request.Method) && request.Header.Get("Origin") != a.PublicOrigin) {
+		observe("invalid")
 		return Principal{}, ErrUnauthenticated
 	}
 	principal, err := a.Session.Authenticate(request.Context(), session)
 	if err != nil {
+		observe("invalid")
 		return Principal{}, ErrUnauthenticated
 	}
+	observe("success")
 	return principal, nil
 }
 

@@ -23,6 +23,7 @@ type Metrics struct {
 	indexQueueDepth   *prometheus.GaugeVec
 	indexPhases       *prometheus.CounterVec
 	indexDuration     *prometheus.HistogramVec
+	authEvents        *prometheus.CounterVec
 }
 
 func New() *Metrics {
@@ -38,7 +39,8 @@ func New() *Metrics {
 	metrics.indexQueueDepth = prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "grepnest_index_queue_depth", Help: "Index queue jobs."}, []string{"state"})
 	metrics.indexPhases = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "grepnest_index_phase_total", Help: "Index phase executions."}, []string{"phase", "result"})
 	metrics.indexDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "grepnest_index_phase_duration_seconds", Help: "Index phase duration."}, []string{"phase", "result"})
-	metrics.registry.MustRegister(metrics.activeRequests, metrics.httpRequests, metrics.httpDuration, metrics.httpResponseSize, metrics.backendCalls, metrics.backendDuration, metrics.githubRequests, metrics.webhookDeliveries, metrics.indexQueueDepth, metrics.indexPhases, metrics.indexDuration)
+	metrics.authEvents = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "grepnest_auth_events_total", Help: "Authentication events."}, []string{"provider", "event", "result"})
+	metrics.registry.MustRegister(metrics.activeRequests, metrics.httpRequests, metrics.httpDuration, metrics.httpResponseSize, metrics.backendCalls, metrics.backendDuration, metrics.githubRequests, metrics.webhookDeliveries, metrics.indexQueueDepth, metrics.indexPhases, metrics.indexDuration, metrics.authEvents)
 	return metrics
 }
 
@@ -96,6 +98,23 @@ func (metrics *Metrics) ObserveIndexPhase(phase, result string, duration time.Du
 	labels := []string{fixed(phase, "fetch", "index", "visibility"), successOrError(result)}
 	metrics.indexPhases.WithLabelValues(labels...).Inc()
 	metrics.indexDuration.WithLabelValues(labels...).Observe(duration.Seconds())
+}
+
+func (metrics *Metrics) ObserveAuth(provider, event, result string) {
+	metrics.authEvents.WithLabelValues(
+		fixed(provider, "oidc", "session", "static"),
+		fixed(event, "login_start", "callback", "session_auth", "logout", "cleanup"),
+		authResult(result),
+	).Inc()
+}
+
+func authResult(result string) string {
+	for _, candidate := range []string{"success", "invalid", "denied", "error"} {
+		if result == candidate {
+			return result
+		}
+	}
+	return "error"
 }
 
 func fixed(value string, allowed ...string) string {

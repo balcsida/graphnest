@@ -5,11 +5,13 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"io"
 	"net/http"
 	"time"
 
 	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/sso"
 	"golang.org/x/oauth2"
 )
@@ -25,6 +27,7 @@ type Provider struct {
 	Mapper   authn.ScopeMapper
 	Sessions *authn.SessionManager
 	LoginTTL time.Duration
+	Metrics  *observability.Metrics
 	Now      func() time.Time
 	Rand     io.Reader
 }
@@ -42,16 +45,19 @@ func (provider *Provider) login(writer http.ResponseWriter, request *http.Reques
 	privateHeaders(writer)
 	state, stateRaw, err := provider.randomToken()
 	if err != nil {
+		provider.observe("login_start", "error")
 		provider.fail(writer)
 		return
 	}
 	browser, browserRaw, err := provider.randomToken()
 	if err != nil {
+		provider.observe("login_start", "error")
 		provider.fail(writer)
 		return
 	}
 	nonce, _, err := provider.randomToken()
 	if err != nil {
+		provider.observe("login_start", "error")
 		provider.fail(writer)
 		return
 	}
@@ -65,9 +71,11 @@ func (provider *Provider) login(writer http.ResponseWriter, request *http.Reques
 	}
 	if provider.Client == nil || provider.Store == nil || provider.LoginTTL <= 0 ||
 		provider.Store.CreateLoginFlow(request.Context(), flow) != nil {
+		provider.observe("login_start", "error")
 		provider.fail(writer)
 		return
 	}
+	provider.observe("login_start", "success")
 	http.SetCookie(writer, sso.OIDCLoginCookie(browser, expires, now))
 	http.Redirect(writer, request, provider.Client.AuthorizationURL(state, nonce, verifier), http.StatusSeeOther)
 }
@@ -78,7 +86,7 @@ func (provider *Provider) callback(writer http.ResponseWriter, request *http.Req
 	query := request.URL.Query()
 	state, ok := exactlyOne(query["state"])
 	if !ok {
-		provider.fail(writer)
+		provider.callbackFail(writer, "invalid")
 		return
 	}
 	codeValues, codePresent := query["code"]
@@ -86,53 +94,58 @@ func (provider *Provider) callback(writer http.ResponseWriter, request *http.Req
 	code, validCode := exactlyOne(codeValues)
 	oauthError, validError := exactlyOne(errorValues)
 	if !((validCode && !errorPresent) || (validError && !codePresent)) {
-		provider.fail(writer)
+		provider.callbackFail(writer, "invalid")
 		return
 	}
 	stateHash, ok := tokenHash(state)
 	if !ok {
-		provider.fail(writer)
+		provider.callbackFail(writer, "invalid")
 		return
 	}
 	browser, count := cookieValue(request, sso.OIDCLoginCookieName)
 	browserHash, validBrowser := tokenHash(browser)
 	if count != 1 || !validBrowser {
-		provider.fail(writer)
+		provider.callbackFail(writer, "invalid")
 		return
 	}
 	if provider.Store == nil {
-		provider.fail(writer)
+		provider.callbackFail(writer, "error")
 		return
 	}
 	flow, err := provider.Store.ConsumeLoginFlow(request.Context(), stateHash, browserHash, "oidc", provider.now())
 	if err != nil {
-		provider.fail(writer)
+		provider.callbackFail(writer, "invalid")
 		return
 	}
 	if validError {
 		_ = oauthError
-		provider.fail(writer)
+		provider.callbackFail(writer, "denied")
 		return
 	}
 	if provider.Client == nil || provider.Sessions == nil {
-		provider.fail(writer)
+		provider.callbackFail(writer, "error")
 		return
 	}
 	identity, err := provider.Client.Exchange(request.Context(), code, flow.CodeVerifier, flow.Nonce)
 	if err != nil {
-		provider.fail(writer)
+		provider.callbackFail(writer, "invalid")
 		return
 	}
 	principal, err := provider.Mapper.Map(identity)
 	if err != nil {
-		provider.fail(writer)
+		result := "invalid"
+		if errors.Is(err, authn.ErrIdentityForbidden) {
+			result = "denied"
+		}
+		provider.callbackFail(writer, result)
 		return
 	}
 	token, expires, err := provider.Sessions.Create(request.Context(), identity, principal)
 	if err != nil {
-		provider.fail(writer)
+		provider.callbackFail(writer, "error")
 		return
 	}
+	provider.observe("callback", "success")
 	http.SetCookie(writer, sso.SessionCookie(token, expires, provider.now()))
 	http.Redirect(writer, request, "/", http.StatusSeeOther)
 }
@@ -159,6 +172,17 @@ func (provider *Provider) now() time.Time {
 func (*Provider) fail(writer http.ResponseWriter) {
 	writer.Header().Set("Location", "/?auth_error=authentication_failed")
 	writer.WriteHeader(http.StatusSeeOther)
+}
+
+func (provider *Provider) callbackFail(writer http.ResponseWriter, result string) {
+	provider.observe("callback", result)
+	provider.fail(writer)
+}
+
+func (provider *Provider) observe(event, result string) {
+	if provider.Metrics != nil {
+		provider.Metrics.ObserveAuth("oidc", event, result)
+	}
 }
 
 func exactlyOne(values []string) (string, bool) {

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/sso"
 )
 
@@ -18,6 +19,7 @@ func RegisterAuth(
 	providers []sso.Provider,
 	authenticator authn.RequestAuthenticator,
 	sessions sessionRevoker,
+	metrics *observability.Metrics,
 ) {
 	metadata := make([]sso.Metadata, 0, len(providers))
 	for _, provider := range providers {
@@ -44,6 +46,9 @@ func RegisterAuth(
 		http.SetCookie(writer, sso.ClearSessionCookie())
 		if token, count := namedCookie(request, authn.SessionCookieName); count == 1 && sessions != nil {
 			_ = sessions.Revoke(request.Context(), token)
+		}
+		if metrics != nil {
+			metrics.ObserveAuth("session", "logout", "success")
 		}
 		writer.WriteHeader(http.StatusNoContent)
 	}))))

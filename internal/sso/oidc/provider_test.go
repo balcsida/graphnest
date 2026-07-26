@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/sso"
 )
 
@@ -259,6 +260,35 @@ func TestOIDCProviderCallbackRejectsReplayAndIgnoresReturnTargets(t *testing.T) 
 	assertGenericFailure(t, second)
 }
 
+func TestOIDCProviderRecordsFixedAuthResults(t *testing.T) {
+	metrics := observability.New()
+	fixture := newCallbackFixture(t)
+	fixture.provider.Metrics = metrics
+	fixture.callback(t, "?state="+fixture.state+"&code=good", fixture.browser)
+
+	denied := newCallbackFixture(t)
+	denied.provider.Metrics = metrics
+	denied.callback(t, "?state="+denied.state+"&error=access_denied&error_description=id-token-secret", denied.browser)
+
+	invalid := newCallbackFixture(t)
+	invalid.provider.Metrics = metrics
+	invalid.callback(t, "?state="+invalid.state+"&code=", invalid.browser)
+
+	body := scrapeAuthMetrics(t, metrics)
+	for _, want := range []string{
+		`grepnest_auth_events_total{event="callback",provider="oidc",result="success"} 1`,
+		`grepnest_auth_events_total{event="callback",provider="oidc",result="denied"} 1`,
+		`grepnest_auth_events_total{event="callback",provider="oidc",result="invalid"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "id-token-secret") {
+		t.Fatalf("metrics leaked callback detail:\n%s", body)
+	}
+}
+
 func TestOIDCProviderEnforcesGETMethods(t *testing.T) {
 	provider := &Provider{}
 	mux := http.NewServeMux()
@@ -335,4 +365,11 @@ func assertPrivateHeaders(t *testing.T, recorder *httptest.ResponseRecorder) {
 	if recorder.Header().Get("Cache-Control") != "no-store" || recorder.Header().Get("Referrer-Policy") != "no-referrer" {
 		t.Fatalf("privacy headers = %v", recorder.Header())
 	}
+}
+
+func scrapeAuthMetrics(t *testing.T, metrics *observability.Metrics) string {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	return recorder.Body.String()
 }
