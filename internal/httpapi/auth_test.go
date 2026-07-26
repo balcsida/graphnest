@@ -1,0 +1,182 @@
+package httpapi
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/grepnest/grepnest/internal/sso"
+)
+
+type authProvider struct {
+	metadata   sso.Metadata
+	registered bool
+}
+
+func (provider *authProvider) Metadata() sso.Metadata  { return provider.metadata }
+func (provider *authProvider) Register(*http.ServeMux) { provider.registered = true }
+
+type authSessionService struct {
+	principal authn.Principal
+	authErr   error
+	revoked   []string
+}
+
+func (service *authSessionService) Authenticate(context.Context, string) (authn.Principal, error) {
+	return service.principal, service.authErr
+}
+func (service *authSessionService) Revoke(_ context.Context, token string) error {
+	service.revoked = append(service.revoked, token)
+	return errors.New("unknown is still idempotent")
+}
+
+func TestRegisterAuthConfigExposesOnlyEnabledMetadata(t *testing.T) {
+	provider := &authProvider{metadata: sso.Metadata{ID: "oidc", Label: "Sign in with SSO", LoginURL: "/auth/oidc/login"}}
+	mux := http.NewServeMux()
+	RegisterAuth(mux, true, []sso.Provider{provider}, authn.RequestAuthenticator{}, nil)
+	recorder := requestAuth(mux, http.MethodGet, "/v1/auth/config", "")
+	if recorder.Code != http.StatusOK || !provider.registered {
+		t.Fatalf("response=%d registered=%v", recorder.Code, provider.registered)
+	}
+	var body struct {
+		TokenLogin bool           `json:"token_login"`
+		Providers  []sso.Metadata `json:"providers"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.TokenLogin || len(body.Providers) != 1 || body.Providers[0] != provider.metadata {
+		t.Fatalf("body = %#v", body)
+	}
+	for _, secret := range []string{"issuer", "client_id", "groups", "secret", "file"} {
+		if strings.Contains(recorder.Body.String(), secret) {
+			t.Fatalf("config leaked %q: %s", secret, recorder.Body.String())
+		}
+	}
+	assertAuthPrivateHeaders(t, recorder)
+
+	emptyMux := http.NewServeMux()
+	RegisterAuth(emptyMux, false, nil, authn.RequestAuthenticator{}, nil)
+	empty := requestAuth(emptyMux, http.MethodGet, "/v1/auth/config", "")
+	if empty.Body.String() != "{\"token_login\":false,\"providers\":[]}\n" {
+		t.Fatalf("disabled config = %q", empty.Body.String())
+	}
+}
+
+func TestRegisterAuthSessionReportsOnlyMethodAndDisplayName(t *testing.T) {
+	static := authn.NewStatic(map[string]authn.Principal{"token": {
+		Subject: "static-subject", Method: "static", Administrator: true, RepositoryIDs: []int64{1},
+	}})
+	tests := []struct {
+		name, authorization, cookie, want string
+		authenticator                     authn.RequestAuthenticator
+	}{
+		{"anonymous", "", "", "", authn.RequestAuthenticator{}},
+		{"bearer", "Bearer token", "", "{\"method\":\"static\"}\n", authn.RequestAuthenticator{Bearer: static}},
+		{"OIDC", "", "session", "{\"method\":\"oidc\",\"display_name\":\"Ada\"}\n", authn.RequestAuthenticator{
+			Session: &authSessionService{principal: authn.Principal{Subject: "oidc:subject", Method: "oidc", DisplayName: "Ada"}},
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			RegisterAuth(mux, true, nil, test.authenticator, nil)
+			request := httptest.NewRequest(http.MethodGet, "/v1/auth/session", nil)
+			if test.authorization != "" {
+				request.Header.Set("Authorization", test.authorization)
+			}
+			if test.cookie != "" {
+				request.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: test.cookie})
+			}
+			recorder := httptest.NewRecorder()
+			mux.ServeHTTP(recorder, request)
+			if test.name == "anonymous" {
+				if recorder.Code != http.StatusUnauthorized {
+					t.Fatalf("status = %d", recorder.Code)
+				}
+			} else if recorder.Code != http.StatusOK || recorder.Body.String() != test.want {
+				t.Fatalf("response = %d %q", recorder.Code, recorder.Body.String())
+			}
+			for _, forbidden := range []string{"subject", "administrator", "repository", "scope", "claim"} {
+				if strings.Contains(recorder.Body.String(), forbidden) {
+					t.Fatalf("session leaked %q: %s", forbidden, recorder.Body.String())
+				}
+			}
+			assertAuthPrivateHeaders(t, recorder)
+		})
+	}
+}
+
+func TestRegisterAuthLogoutIsIdempotentAndClearsCookie(t *testing.T) {
+	tests := []struct {
+		name, cookie string
+		wantRevoked  bool
+	}{
+		{"missing", "", false},
+		{"valid", "valid-session", true},
+		{"malformed or unknown", "bad", true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			sessions := &authSessionService{}
+			mux := http.NewServeMux()
+			RegisterAuth(mux, true, nil, authn.RequestAuthenticator{}, sessions)
+			request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+			if test.cookie != "" {
+				request.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: test.cookie})
+			}
+			recorder := httptest.NewRecorder()
+			mux.ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusNoContent || len(recorder.Result().Cookies()) != 1 ||
+				recorder.Result().Cookies()[0].Name != authn.SessionCookieName || recorder.Result().Cookies()[0].MaxAge != -1 {
+				t.Fatalf("response = %d cookies=%#v", recorder.Code, recorder.Result().Cookies())
+			}
+			if (len(sessions.revoked) == 1) != test.wantRevoked {
+				t.Fatalf("revoked = %#v", sessions.revoked)
+			}
+			assertAuthPrivateHeaders(t, recorder)
+		})
+	}
+}
+
+func TestRegisterAuthEnforcesMethodsAndExactPaths(t *testing.T) {
+	tests := []struct {
+		method, path string
+		want         int
+	}{
+		{http.MethodPost, "/v1/auth/config", http.StatusMethodNotAllowed},
+		{http.MethodPost, "/v1/auth/session", http.StatusMethodNotAllowed},
+		{http.MethodGet, "/auth/logout", http.StatusMethodNotAllowed},
+		{http.MethodGet, "/v1/auth/config/extra", http.StatusNotFound},
+		{http.MethodGet, "/v1/auth/session/extra", http.StatusNotFound},
+		{http.MethodPost, "/auth/logout/extra", http.StatusNotFound},
+	}
+	mux := http.NewServeMux()
+	RegisterAuth(mux, true, nil, authn.RequestAuthenticator{}, nil)
+	for _, test := range tests {
+		recorder := requestAuth(mux, test.method, test.path, "")
+		if recorder.Code != test.want {
+			t.Errorf("%s %s = %d, want %d", test.method, test.path, recorder.Code, test.want)
+		}
+	}
+}
+
+func requestAuth(handler http.Handler, method, path, authorization string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(method, path, nil)
+	request.Header.Set("Authorization", authorization)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	return recorder
+}
+
+func assertAuthPrivateHeaders(t *testing.T, recorder *httptest.ResponseRecorder) {
+	t.Helper()
+	if recorder.Header().Get("Cache-Control") != "no-store" || recorder.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Fatalf("privacy headers = %v", recorder.Header())
+	}
+}
