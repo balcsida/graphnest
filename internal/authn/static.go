@@ -7,10 +7,13 @@ import (
 )
 
 var ErrUnauthenticated = errors.New("unauthenticated")
+var ErrIdentityForbidden = errors.New("identity forbidden")
+var ErrInvalidIdentity = errors.New("invalid identity")
 
 type Principal struct {
 	Subject         string
 	Method          string
+	DisplayName     string
 	Administrator   bool
 	InstallationID  int64
 	RepositoryIDs   []int64
