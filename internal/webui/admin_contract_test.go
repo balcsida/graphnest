@@ -50,6 +50,8 @@ func TestAdminDocumentHidesContentUntilAuthorization(t *testing.T) {
 		`id="admin-shell" hidden`, `response.status===401`, `response.status===403`,
 		`response.status===404`, `shell.hidden=false`, `textContent`,
 		`window.confirm`, `setInterval`, `aria-live="polite"`,
+		`[hidden]{display:none!important}`,
+		`#admin-shell{grid-template-columns:minmax(0,1fr)}`,
 	} {
 		if !bytes.Contains(adminDocument, []byte(want)) {
 			t.Errorf("admin lifecycle missing %q", want)
