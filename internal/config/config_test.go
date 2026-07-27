@@ -142,7 +142,8 @@ func TestLoadClampsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Limits.MaxResults != 100 || got.Limits.MaxContextLines != 20 || got.Limits.MaxResponseBytes != 256<<10 || got.Limits.SCIPMaxUploadBytes != 64<<20 {
+	if got.Limits.MaxResults != 100 || got.Limits.MaxContextLines != 20 || got.Limits.MaxResponseBytes != 256<<10 ||
+		got.Limits.SCIPMaxUploadBytes != 64<<20 || got.Limits.GraphMaxUploadBytes != 64<<20 {
 		t.Fatalf("limits = %#v", got.Limits)
 	}
 }
@@ -155,6 +156,18 @@ func TestLoadSCIPUploadLimitIsIndependent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.Limits.SCIPMaxUploadBytes != 1048576 || got.Limits.MaxRequestBytes != 64<<10 {
+		t.Fatalf("limits = %#v", got.Limits)
+	}
+}
+
+func TestLoadGraphUploadLimitIsIndependent(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("GREPNEST_GRAPH_MAX_UPLOAD_BYTES", "1048576")
+	got, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Limits.GraphMaxUploadBytes != 1048576 || got.Limits.MaxRequestBytes != 64<<10 {
 		t.Fatalf("limits = %#v", got.Limits)
 	}
 }
@@ -172,6 +185,7 @@ func TestLoadEnforcesSafetyCaps(t *testing.T) {
 		{"response bytes", "GREPNEST_MAX_RESPONSE_BYTES", "262144", "262145"},
 		{"request bytes", "GREPNEST_MAX_REQUEST_BYTES", "65536", "65537"},
 		{"SCIP upload bytes", "GREPNEST_SCIP_MAX_UPLOAD_BYTES", "268435456", "268435457"},
+		{"graph upload bytes", "GREPNEST_GRAPH_MAX_UPLOAD_BYTES", "268435456", "268435457"},
 	}
 	for _, test := range cases {
 		t.Run(test.name+" boundary", func(t *testing.T) {

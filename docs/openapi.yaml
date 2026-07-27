@@ -207,6 +207,50 @@ paths:
         '413': {$ref: '#/components/responses/InvalidRequest'}
         '415': {$ref: '#/components/responses/InvalidRequest'}
         '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/graph/uploads:
+    post:
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: repository_id, in: query, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: commit, in: query, required: true, schema: {type: string, pattern: '^[0-9a-f]{40}$'}}
+      requestBody:
+        required: true
+        content:
+          application/vnd.grepnest.graph.v1+protobuf:
+            schema:
+              type: string
+              format: binary
+              description: Default upload limit is 67108864 bytes; server maximum is 268435456 bytes.
+              x-default-max-bytes: 67108864
+              x-server-max-bytes: 268435456
+      responses:
+        '204': {description: External graph replaced}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/graph/repositories/{id}/status:
+    get:
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200':
+          description: Authorized graph status
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GraphStatus'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
   /v1/scip/navigation:
     post:
       security: [{bearerAuth: []}]
@@ -472,6 +516,24 @@ components:
         error_code: {type: string}
         search_node: {type: string}
         last_indexed_at: {type: string, format: date-time}
+    GraphStatus:
+      type: object
+      additionalProperties: false
+      required: [repository_id, state]
+      properties:
+        repository_id: {type: integer, format: int64, minimum: 1}
+        commit: {type: string, pattern: '^[0-9a-f]{40}$'}
+        state: {type: string, enum: [not_indexed, pending, fallback, degraded, ready]}
+        source: {type: string, enum: [managed, external]}
+        job_state: {type: string, enum: [queued, running, succeeded, failed, superseded]}
+        error_code: {type: string}
+        scip_fallback: {$ref: '#/components/schemas/SCIPFallbackStatus'}
+    SCIPFallbackStatus:
+      type: object
+      additionalProperties: false
+      required: [commit]
+      properties:
+        commit: {type: string, pattern: '^[0-9a-f]{40}$'}
     ReadFileRequest:
       type: object
       additionalProperties: false

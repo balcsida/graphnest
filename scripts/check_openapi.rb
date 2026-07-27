@@ -66,12 +66,19 @@ document = load_document(document_path, documents)
 resolve_local_references(document, document_path, documents)
 
 upload = document.dig("paths", "/v1/scip/uploads", "post", "requestBody", "content", "application/vnd.scip+protobuf", "schema")
+graph_upload = document.dig("paths", "/v1/graph/uploads", "post", "requestBody", "content", "application/vnd.grepnest.graph.v1+protobuf", "schema")
+graph_status = document.dig("paths", "/v1/graph/repositories/{id}/status", "get", "responses", "200", "content", "application/json", "schema")
 locations = document.dig("components", "schemas", "SCIPNavigationResponse", "properties", "locations")
 raise OpenAPIError, "SCIP upload schema is missing" unless upload.is_a?(Hash)
+raise OpenAPIError, "graph upload schema is missing" unless graph_upload.is_a?(Hash)
+raise OpenAPIError, "graph status schema is missing" unless graph_status.is_a?(Hash)
 raise OpenAPIError, "SCIP navigation locations schema is missing" unless locations.is_a?(Hash)
 
 require_value(upload["x-default-max-bytes"], 67_108_864, "SCIP upload default byte cap")
 require_value(upload["x-server-max-bytes"], 268_435_456, "SCIP upload server byte cap")
+require_value(graph_upload["x-default-max-bytes"], 67_108_864, "graph upload default byte cap")
+require_value(graph_upload["x-server-max-bytes"], 268_435_456, "graph upload server byte cap")
+require_value(graph_status["$ref"], "#/components/schemas/GraphStatus", "graph status response schema")
 require_value(locations["maxItems"], 100, "SCIP navigation locations cap")
 
 puts "OpenAPI validation passed"
