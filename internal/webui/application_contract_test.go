@@ -21,6 +21,13 @@ func TestConsoleExplainsUnavailableSignInChoices(t *testing.T) {
 	}
 }
 
+func TestConsoleMarksDisabledProvidersAsUnavailable(t *testing.T) {
+	want := `button:disabled{cursor:not-allowed;opacity:.65}`
+	if !bytes.Contains(document, []byte(want)) {
+		t.Fatalf("console is missing disabled-button affordance %q", want)
+	}
+}
+
 func TestConsoleProvidesFunctionalSearchFiltersAndExamples(t *testing.T) {
 	for _, want := range []string{
 		`id="language-filter"`,
