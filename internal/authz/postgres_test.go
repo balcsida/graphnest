@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"os"
 	"testing"
 
@@ -33,6 +34,48 @@ func TestAuthorizedRepositoriesUseDurableIDs(t *testing.T) {
 	one, err := authz.NewPostgres(store).AuthorizedRepository(t.Context(), principal, 101)
 	if err != nil || one.Name != "acme/new" {
 		t.Fatalf("got=%#v err=%v", one, err)
+	}
+}
+
+func TestAdministratorsAuthorizeActiveRepositoriesAcrossInstallations(t *testing.T) {
+	store := testStore(t)
+	for _, installation := range []postgres.InstallationUpdate{
+		{GitHubID: 10, AccountLogin: "acme", AccountType: "Organization", Status: "active"},
+		{GitHubID: 20, AccountLogin: "other", AccountType: "Organization", Status: "active"},
+		{GitHubID: 30, AccountLogin: "inactive", AccountType: "Organization", Status: "suspended"},
+	} {
+		if err := store.UpsertInstallation(t.Context(), installation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, item := range []postgres.RepositoryUpdate{
+		{GitHubID: 101, InstallationID: 10, Owner: "acme", Name: "one", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true},
+		{GitHubID: 201, InstallationID: 20, Owner: "other", Name: "two", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true},
+		{GitHubID: 202, InstallationID: 20, Owner: "other", Name: "disabled", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: false},
+		{GitHubID: 203, InstallationID: 20, Owner: "other", Name: "archived", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true, Archived: true},
+		{GitHubID: 301, InstallationID: 30, Owner: "inactive", Name: "three", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true},
+	} {
+		if _, err := store.UpsertRepository(t.Context(), item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	authorizer := authz.NewPostgres(store)
+	nonAdmin := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}
+	if _, err := authorizer.AuthorizedRepository(t.Context(), nonAdmin, 201); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("non-admin cross-installation lookup error = %v", err)
+	}
+	admin := authn.Principal{Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}}
+	got, err := authorizer.AuthorizedRepositories(t.Context(), admin, authz.RepositorySelection{})
+	if err != nil || len(got) != 2 || got[0].GitHubID != 101 || got[1].GitHubID != 201 {
+		t.Fatalf("admin repositories = %#v, err = %v", got, err)
+	}
+	filtered, err := authorizer.AuthorizedRepositories(t.Context(), admin, authz.RepositorySelection{Names: []string{"other/two"}})
+	if err != nil || len(filtered) != 1 || filtered[0].GitHubID != 201 {
+		t.Fatalf("admin filtered repositories = %#v, err = %v", filtered, err)
+	}
+	gotRepository, err := authorizer.AuthorizedRepository(t.Context(), admin, 201)
+	if err != nil || gotRepository.GitHubID != 201 {
+		t.Fatalf("admin cross-installation repository = %#v, err = %v", gotRepository, err)
 	}
 }
 

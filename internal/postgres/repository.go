@@ -186,6 +186,27 @@ func (s *Store) AuthorizedRepository(ctx context.Context, installationID int64, 
 	return scanRepository(s.pool.QueryRow(ctx, repositoryQuery+" and repositories.github_id = $4", installationID, repositoryIDs, []string{}, repositoryID))
 }
 
+func (s *Store) AllAuthorizedRepositories(ctx context.Context, names []string) ([]repository.Repository, error) {
+	rows, err := s.pool.Query(ctx, allRepositoriesQuery+" order by repositories.owner, repositories.name", names)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var repositories []repository.Repository
+	for rows.Next() {
+		repository, err := scanRepository(rows)
+		if err != nil {
+			return nil, err
+		}
+		repositories = append(repositories, repository)
+	}
+	return repositories, rows.Err()
+}
+
+func (s *Store) AnyAuthorizedRepository(ctx context.Context, repositoryID int64) (repository.Repository, error) {
+	return scanRepository(s.pool.QueryRow(ctx, allRepositoriesQuery+" and repositories.github_id = $2", []string{}, repositoryID))
+}
+
 func (s *Store) RepositoryForIndex(ctx context.Context, id int64) (repository.Repository, error) {
 	return scanRepository(s.pool.QueryRow(ctx, repositoryByIDQuery, id))
 }
@@ -213,6 +234,10 @@ const repositoryColumns = `repositories.id, installations.github_id, repositorie
 const repositoryQuery = `select ` + repositoryColumns + ` from repositories join installations on installations.id = repositories.installation_id
 	where installations.github_id = $1 and repositories.github_id = any($2) and installations.status = 'active'
 	and repositories.enabled and not repositories.archived and (coalesce(cardinality($3::text[]), 0) = 0 or repositories.owner || '/' || repositories.name = any($3))`
+
+const allRepositoriesQuery = `select ` + repositoryColumns + ` from repositories join installations on installations.id = repositories.installation_id
+	where installations.status = 'active' and repositories.enabled and not repositories.archived
+	and (coalesce(cardinality($1::text[]), 0) = 0 or repositories.owner || '/' || repositories.name = any($1))`
 
 const repositoryByIDQuery = `select ` + repositoryColumns + ` from repositories join installations on installations.id = repositories.installation_id where repositories.id = $1`
 

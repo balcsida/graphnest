@@ -418,6 +418,14 @@ func (store *mcpRepositoryStore) AuthorizedRepository(_ context.Context, _ int64
 	return repository.Repository{}, pgx.ErrNoRows
 }
 
+func (*mcpRepositoryStore) AllAuthorizedRepositories(context.Context, []string) ([]repository.Repository, error) {
+	return nil, nil
+}
+
+func (*mcpRepositoryStore) AnyAuthorizedRepository(context.Context, int64) (repository.Repository, error) {
+	return repository.Repository{}, pgx.ErrNoRows
+}
+
 type mcpContentReader struct {
 	content githubapp.Content
 	err     error

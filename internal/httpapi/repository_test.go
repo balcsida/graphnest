@@ -44,6 +44,35 @@ func TestRepositoriesRoutes(t *testing.T) {
 	}
 }
 
+func TestRepositoryRoutesAllowAdministratorsAcrossInstallations(t *testing.T) {
+	service := repositoryHTTPService()
+	store := service.Store.(*repositoryHTTPStore)
+	second := repository.Repository{ID: 2, InstallationID: 20, GitHubID: 202, Name: "other/two", Branch: "main", DesiredSHA: strings.Repeat("b", 40), IndexedSHA: strings.Repeat("b", 40), Status: "ready", SearchNode: "node-a"}
+	store.globalRepositories = []repository.Repository{store.repository, second}
+	store.globalRepositoriesByID = map[int64]repository.Repository{101: store.repository, 202: second}
+	mux := http.NewServeMux()
+	RegisterRepositories(mux, authn.NewStatic(map[string]authn.Principal{"admin": {Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}}}), service, 128, 100, 256<<10)
+
+	response := repositoryRequest(t, mux, http.MethodGet, "/v1/repositories", "", "admin", "")
+	var list struct {
+		Repositories []api.RepositorySummary `json:"repositories"`
+	}
+	decodeRepositoryResponse(t, response, &list)
+	if response.Code != http.StatusOK || len(list.Repositories) != 2 || list.Repositories[1].GitHubID != 202 {
+		t.Fatalf("list status=%d repositories=%#v", response.Code, list.Repositories)
+	}
+	for _, target := range []struct{ method, path, body, contentType string }{
+		{http.MethodGet, "/v1/repositories/202", "", ""},
+		{http.MethodGet, "/v1/repositories/202/status", "", ""},
+		{http.MethodPost, "/v1/files/read", `{"repository_id":202,"path":"main.go"}`, "application/json"},
+	} {
+		response = repositoryRequest(t, mux, target.method, target.path, target.body, "admin", target.contentType)
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s status=%d body=%q", target.path, response.Code, response.Body.String())
+		}
+	}
+}
+
 func TestRepositoryListBoundsWireResponse(t *testing.T) {
 	items := []repository.Repository{
 		{ID: 1, InstallationID: 10, GitHubID: 101, Name: strings.Repeat("a", 80), Branch: "main", DesiredSHA: strings.Repeat("a", 40), IndexedSHA: strings.Repeat("a", 40), Status: "ready", SearchNode: "node-a"},
@@ -245,9 +274,11 @@ func repositoryAuthenticator() authn.Authenticator {
 }
 
 type repositoryHTTPStore struct {
-	repository   repository.Repository
-	repositories []repository.Repository
-	calls        int
+	repository             repository.Repository
+	repositories           []repository.Repository
+	globalRepositories     []repository.Repository
+	globalRepositoriesByID map[int64]repository.Repository
+	calls                  int
 }
 
 func (store *repositoryHTTPStore) AuthorizedRepositories(_ context.Context, _ int64, ids []int64, _ []string) ([]repository.Repository, error) {
@@ -267,6 +298,20 @@ func (store *repositoryHTTPStore) AuthorizedRepository(_ context.Context, _ int6
 		return store.repository, nil
 	}
 	return repository.Repository{}, pgx.ErrNoRows
+}
+
+func (store *repositoryHTTPStore) AllAuthorizedRepositories(context.Context, []string) ([]repository.Repository, error) {
+	store.calls++
+	return store.globalRepositories, nil
+}
+
+func (store *repositoryHTTPStore) AnyAuthorizedRepository(_ context.Context, id int64) (repository.Repository, error) {
+	store.calls++
+	item, ok := store.globalRepositoriesByID[id]
+	if !ok {
+		return repository.Repository{}, pgx.ErrNoRows
+	}
+	return item, nil
 }
 
 type repositoryContentReader struct {

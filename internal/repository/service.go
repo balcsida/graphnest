@@ -35,6 +35,8 @@ var (
 type ServiceStore interface {
 	AuthorizedRepositories(context.Context, int64, []int64, []string) ([]Repository, error)
 	AuthorizedRepository(context.Context, int64, []int64, int64) (Repository, error)
+	AllAuthorizedRepositories(context.Context, []string) ([]Repository, error)
+	AnyAuthorizedRepository(context.Context, int64) (Repository, error)
 }
 
 type ContentReader interface {
@@ -49,7 +51,7 @@ type Service struct {
 }
 
 func (service *Service) List(ctx context.Context, principal authn.Principal) ([]api.RepositorySummary, error) {
-	repositories, err := service.Store.AuthorizedRepositories(ctx, principal.InstallationID, principal.RepositoryIDs, principal.RepositoryNames)
+	repositories, err := service.authorizedRepositories(ctx, principal)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +66,7 @@ func (service *Service) List(ctx context.Context, principal authn.Principal) ([]
 }
 
 func (service *Service) Status(ctx context.Context, principal authn.Principal, repositoryID int64) (api.RepositorySummary, error) {
-	repository, err := service.Store.AuthorizedRepository(ctx, principal.InstallationID, principal.RepositoryIDs, repositoryID)
+	repository, err := service.authorizedRepository(ctx, principal, repositoryID)
 	if err != nil {
 		return api.RepositorySummary{}, err
 	}
@@ -72,7 +74,7 @@ func (service *Service) Status(ctx context.Context, principal authn.Principal, r
 }
 
 func (service *Service) ReadFile(ctx context.Context, principal authn.Principal, request api.ReadFileRequest) (api.ReadFileResponse, error) {
-	repository, err := service.Store.AuthorizedRepository(ctx, principal.InstallationID, principal.RepositoryIDs, request.RepositoryID)
+	repository, err := service.authorizedRepository(ctx, principal, request.RepositoryID)
 	if err != nil {
 		return api.ReadFileResponse{}, err
 	}
@@ -115,7 +117,7 @@ func (service *Service) ReadFile(ctx context.Context, principal authn.Principal,
 	if truncated {
 		end = start + service.maxLines() - 1
 	}
-	current, err := service.Store.AuthorizedRepository(ctx, principal.InstallationID, principal.RepositoryIDs, request.RepositoryID)
+	current, err := service.authorizedRepository(ctx, principal, request.RepositoryID)
 	if err != nil {
 		return api.ReadFileResponse{}, err
 	}
@@ -126,6 +128,20 @@ func (service *Service) ReadFile(ctx context.Context, principal authn.Principal,
 		RepositoryID: request.RepositoryID, Path: request.Path, IndexedSHA: repository.IndexedSHA, BlobSHA: content.SHA,
 		Content: string(bytes.Join(lines[start-1:end], []byte{'\n'})), StartLine: start, EndLine: end, Truncated: truncated,
 	}, nil
+}
+
+func (service *Service) authorizedRepositories(ctx context.Context, principal authn.Principal) ([]Repository, error) {
+	if principal.Administrator {
+		return service.Store.AllAuthorizedRepositories(ctx, principal.RepositoryNames)
+	}
+	return service.Store.AuthorizedRepositories(ctx, principal.InstallationID, principal.RepositoryIDs, principal.RepositoryNames)
+}
+
+func (service *Service) authorizedRepository(ctx context.Context, principal authn.Principal, repositoryID int64) (Repository, error) {
+	if principal.Administrator {
+		return service.Store.AnyAuthorizedRepository(ctx, repositoryID)
+	}
+	return service.Store.AuthorizedRepository(ctx, principal.InstallationID, principal.RepositoryIDs, repositoryID)
 }
 
 func summarize(repository Repository) (api.RepositorySummary, error) {
