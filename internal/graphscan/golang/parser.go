@@ -5,7 +5,6 @@ import (
 	_ "embed"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/grepnest/grepnest/internal/graphartifact"
 	"github.com/grepnest/grepnest/internal/graphscan"
@@ -16,24 +15,13 @@ import (
 //go:embed queries.scm
 var querySource string
 
-var (
-	queryOnce sync.Once
-	query     *tree_sitter.Query
-	queryErr  error
-)
-
 func Parse(ctx context.Context, path string, source []byte) (graphscan.File, error) {
 	language := tree_sitter.NewLanguage(tree_sitter_go.Language())
-	queryOnce.Do(func() {
-		var err *tree_sitter.QueryError
-		query, err = tree_sitter.NewQuery(language, querySource)
-		if err != nil {
-			queryErr = err
-		}
-	})
+	query, queryErr := tree_sitter.NewQuery(language, querySource)
 	if queryErr != nil {
 		return graphscan.File{}, queryErr
 	}
+	defer query.Close()
 	parser := tree_sitter.NewParser()
 	defer parser.Close()
 	if err := parser.SetLanguage(language); err != nil {

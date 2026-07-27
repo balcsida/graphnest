@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/grepnest/grepnest/internal/graphartifact"
 	"github.com/grepnest/grepnest/internal/graphscan"
@@ -18,31 +17,17 @@ import (
 //go:embed queries.scm
 var querySource string
 
-type compiledQuery struct {
-	language *tree_sitter.Language
-	query    *tree_sitter.Query
-	err      error
-}
-
-var queries sync.Map
-
 func Parse(ctx context.Context, path string, source []byte) (graphscan.File, error) {
 	extension := filepath.Ext(path)
 	language, fileLanguage := languageFor(extension)
-	value, _ := queries.LoadOrStore(extension, sync.OnceValue(func() compiledQuery {
-		query, err := tree_sitter.NewQuery(language, querySource)
-		if err != nil {
-			return compiledQuery{err: err}
-		}
-		return compiledQuery{language: language, query: query}
-	}))
-	compiled := value.(func() compiledQuery)()
-	if compiled.err != nil {
-		return graphscan.File{}, compiled.err
+	query, queryErr := tree_sitter.NewQuery(language, querySource)
+	if queryErr != nil {
+		return graphscan.File{}, queryErr
 	}
+	defer query.Close()
 	parser := tree_sitter.NewParser()
 	defer parser.Close()
-	if err := parser.SetLanguage(compiled.language); err != nil {
+	if err := parser.SetLanguage(language); err != nil {
 		return graphscan.File{}, err
 	}
 	tree := parser.ParseCtx(ctx, source, nil)
@@ -52,7 +37,7 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 	defer tree.Close()
 	cursor := tree_sitter.NewQueryCursor()
 	defer cursor.Close()
-	matches := cursor.Matches(compiled.query, tree.RootNode(), source)
+	matches := cursor.Matches(query, tree.RootNode(), source)
 	if matches.Next() == nil {
 		return graphscan.File{}, fmt.Errorf("parse JavaScript: query did not match")
 	}
