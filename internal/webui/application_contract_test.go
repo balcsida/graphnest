@@ -2,6 +2,7 @@ package webui
 
 import (
 	"bytes"
+	"os/exec"
 	"testing"
 )
 
@@ -45,13 +46,58 @@ func TestConsoleProvidesAccessibleQuerySyntaxDrawer(t *testing.T) {
 		`repo:payments`,
 		`"exact phrase"`,
 		`function setSyntaxOpen(open,trigger)`,
-		`syntaxTrigger.focus()`,
 		`setSyntaxOpen(true,$("syntax-rail"))`,
 		`event.key==="Escape"`,
 	} {
 		if !bytes.Contains(document, []byte(want)) {
 			t.Fatalf("console is missing query syntax behavior %q", want)
 		}
+	}
+}
+
+func TestConsoleExplainsZoektQueryComposition(t *testing.T) {
+	for _, want := range []string{
+		`Queries use Zoekt syntax.`,
+		`Regular expressions are enabled by default.`,
+		`Combine filters with spaces.`,
+		`Prefix a term with - to negate it.`,
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console is missing query guidance %q", want)
+		}
+	}
+}
+
+func TestSyntaxDrawerRestoresItsConnectedOpenerOrQuery(t *testing.T) {
+	script, err := elementBody(string(document), "script")
+	if err != nil {
+		t.Fatal(err)
+	}
+	setSyntaxOpen, err := functionBody(script, "setSyntaxOpen")
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness := `
+const focused=[];
+const elements={
+  "syntax-drawer":{hidden:true},
+  "syntax-toggle":{setAttribute(){}},
+  "syntax-close":{focus(){focused.push("close")}},
+  query:{isConnected:true,focus(){focused.push("query")}}
+};
+const $=id=>elements[id],state={syntaxTrigger:null};
+const document={activeElement:null};
+` + setSyntaxOpen + `
+const opener={isConnected:true,focus(){focused.push("opener")}};
+document.activeElement=opener;setSyntaxOpen(true);
+document.activeElement={isConnected:true};setSyntaxOpen(false);
+if(focused.at(-1)!=="opener")throw new Error("connected opener was not restored");
+document.activeElement=opener;setSyntaxOpen(true);opener.isConnected=false;
+document.activeElement={isConnected:true};setSyntaxOpen(false);
+if(focused.at(-1)!=="query")throw new Error("query fallback was not restored");
+`
+	if output, err := exec.Command("node", "-e", harness).CombinedOutput(); err != nil {
+		t.Fatalf("drawer behavior failed: %v\n%s", err, output)
 	}
 }
 
