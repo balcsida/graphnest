@@ -44,6 +44,25 @@ func TestConsoleProvidesFunctionalSearchFiltersAndExamples(t *testing.T) {
 	}
 }
 
+func TestConsolePluralizesResultCounts(t *testing.T) {
+	script, err := elementBody(string(document), "script")
+	if err != nil {
+		t.Fatal(err)
+	}
+	countLabel, err := functionBody(script, "countLabel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness := countLabel + `
+if(countLabel(1,"match")!=="1 match")throw new Error("singular match");
+if(countLabel(2,"match")!=="2 matches")throw new Error("plural matches");
+if(countLabel(2,"repository")!=="2 repositories")throw new Error("plural repositories");
+`
+	if output, err := exec.Command(requireNode(t), "-e", harness).CombinedOutput(); err != nil {
+		t.Fatalf("count grammar failed: %v\n%s", err, output)
+	}
+}
+
 func TestConsoleProvidesAccessibleQuerySyntaxDrawer(t *testing.T) {
 	for _, want := range []string{
 		`id="syntax-toggle"`,

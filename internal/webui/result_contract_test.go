@@ -90,9 +90,8 @@ func TestConsoleNavigatesIdentifiersAtExactOffsets(t *testing.T) {
 	}
 }
 
-func TestConsoleUsesSingularCountGrammar(t *testing.T) {
+func TestConsoleUsesCountLabels(t *testing.T) {
 	for _, want := range []string{
-		"function countLabel(count,noun){return `${count} ${noun}${count===1?\"\":\"s\"}`}",
 		`countLabel(response.matches.length,"match")`,
 		`countLabel(repositories.size,"repository")`,
 		`countLabel(groups.size,"repository")`,
