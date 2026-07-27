@@ -7,6 +7,13 @@ file reads, and sequential default-branch indexing. The local GHES-compatible
 HTTPS smart-Git-to-Zoekt proof passes.
 It is not production-ready.
 
+## Interface
+
+Search indexed code, open the exact indexed revision, and follow SCIP
+definitions, references, and implementations without leaving the console.
+
+![GrepNest code search with SCIP navigation](docs/images/grepnest-ui.png)
+
 The [Helm chart](deploy/helm/grepnest/README.md) is structurally lintable and
 renderable, but not currently deployable. This repository does not build or
 publish the required images, and the chart has not been cluster-tested.
