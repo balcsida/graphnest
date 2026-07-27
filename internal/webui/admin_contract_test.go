@@ -24,6 +24,7 @@ func TestAdminDocumentContract(t *testing.T) {
 		`/v1/scip/uploads`, `/v1/scip/dependencies/github`, `/healthz`, `/readyz`,
 		`button{min-width:44px}`, `.aside-foot a{min-height:44px;display:flex;align-items:center}`,
 		`input[type=checkbox]{width:44px;min-width:44px}`,
+		`.toolbar>:not(.sr){width:100%}`,
 		`<th>GitHub ID</th><th>Repository</th><th>Branch</th><th>Status</th><th>Error code</th>`,
 		`<th>Target ref</th><th>Target SHA</th><th>State</th><th>Attempts</th><th>Reason</th><th>Error code</th>`,
 		`<th>Outcome</th><th>Received</th><th>Processed</th>`,
