@@ -62,7 +62,7 @@ func (service *Service) UploadExternal(ctx context.Context, principal authn.Prin
 	if !replacement.Applied {
 		return api.GraphStatus{}, ErrNotIndexed
 	}
-	return service.Status(ctx, principal, repositoryID)
+	return api.GraphStatus{RepositoryID: repositoryID, Commit: commit, State: api.GraphStateReady, Source: api.GraphSourceExternal}, nil
 }
 
 func (service *Service) Status(ctx context.Context, principal authn.Principal, repositoryID int64) (api.GraphStatus, error) {

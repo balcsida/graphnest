@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	graphv1 "github.com/grepnest/grepnest/internal/graphartifact/v1"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -56,6 +57,18 @@ func TestParseUsesDefaultsAndRejectsLimitsAboveHardCaps(t *testing.T) {
 	}
 	if _, err := Parse(data, Limits{MaxNodes: 10, MaxEdges: 10_000_001, MaxPathBytes: 4096, MaxIdentifierBytes: 16384}); !errors.Is(err, ErrInvalidArtifact) {
 		t.Fatalf("Parse() with excessive edge limit error = %v, want ErrInvalidArtifact", err)
+	}
+}
+
+func TestParseRejectsPathologicalNodeCountBeforeDecoding(t *testing.T) {
+	data := bytes.Repeat(protowire.AppendBytes(protowire.AppendTag(nil, 6, protowire.BytesType), nil), 100_000)
+	allocations := testing.AllocsPerRun(1, func() {
+		if _, err := Parse(data, Limits{MaxNodes: 1, MaxEdges: 1}); !errors.Is(err, ErrInvalidArtifact) {
+			t.Fatalf("Parse() error = %v, want ErrInvalidArtifact", err)
+		}
+	})
+	if allocations > 100 {
+		t.Fatalf("Parse() allocations = %.0f, want at most 100", allocations)
 	}
 }
 

@@ -68,6 +68,16 @@ func TestUploadExternalConvertsPublicArtifactRepositoryID(t *testing.T) {
 	}
 }
 
+func TestUploadExternalDoesNotReadStatusAfterReplacement(t *testing.T) {
+	store := &fakeStore{repository: readyRepository(101, testCommit), statusErr: errors.New("transient status failure")}
+	service := Service{Store: store, Limits: testArtifactLimits()}
+	status, err := service.UploadExternal(t.Context(), adminPrincipal(101), 101, testCommit, validArtifactBytes(t, 101))
+	if err != nil || status.RepositoryID != 101 || status.Commit != testCommit || status.State != api.GraphStateReady ||
+		status.Source != api.GraphSourceExternal || store.statusCalls != 0 {
+		t.Fatalf("status=%#v err=%v statusCalls=%d", status, err, store.statusCalls)
+	}
+}
+
 func TestUploadExternalRejectsFinalStaleReplacement(t *testing.T) {
 	store := &fakeStore{repository: readyRepository(101, testCommit), replacement: postgres.GraphReplacement{Applied: false}, replacementSet: true}
 	service := Service{Store: store, Limits: testArtifactLimits()}
@@ -141,6 +151,7 @@ type fakeStore struct {
 	replacementSet       bool
 	afterAuthorize       func()
 	authorizedCalls      int
+	statusCalls          int
 	replaced             bool
 	replacedRepositoryID int64
 	replacedArtifact     graphartifact.Artifact
@@ -164,6 +175,7 @@ func (store *fakeStore) ReplaceGraph(_ context.Context, repositoryID int64, _ po
 }
 
 func (store *fakeStore) GraphStatus(_ context.Context, _ int64) (api.GraphStatus, error) {
+	store.statusCalls++
 	return store.status, store.statusErr
 }
 

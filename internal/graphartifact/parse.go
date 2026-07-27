@@ -10,18 +10,49 @@ import (
 	"strings"
 
 	graphv1 "github.com/grepnest/grepnest/internal/graphartifact/v1"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
 var ErrInvalidArtifact = errors.New("invalid graph artifact")
 
 func Parse(data []byte, limits Limits) (Artifact, error) {
+	limits, ok := normalizedLimits(limits)
+	if !ok || exceedsWireCounts(data, limits) {
+		return Artifact{}, ErrInvalidArtifact
+	}
 	var wire graphv1.Artifact
 	if err := proto.Unmarshal(data, &wire); err != nil {
 		return Artifact{}, ErrInvalidArtifact
 	}
 	artifact := fromWire(&wire)
 	return artifact, Validate(artifact, limits)
+}
+
+func exceedsWireCounts(data []byte, limits Limits) bool {
+	var nodes, edges int
+	for len(data) > 0 {
+		number, wireType, tagLength := protowire.ConsumeTag(data)
+		if tagLength < 0 {
+			return true
+		}
+		data = data[tagLength:]
+		switch number {
+		case 6:
+			nodes++
+		case 7:
+			edges++
+		}
+		if nodes > limits.MaxNodes || edges > limits.MaxEdges {
+			return true
+		}
+		valueLength := protowire.ConsumeFieldValue(number, wireType, data)
+		if valueLength < 0 {
+			return true
+		}
+		data = data[valueLength:]
+	}
+	return false
 }
 
 func Validate(artifact Artifact, limits Limits) error {

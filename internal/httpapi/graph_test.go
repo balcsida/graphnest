@@ -89,7 +89,7 @@ func TestGraphUploadDeadlineSequence(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer admin")
 	request.Header.Set("Content-Type", "application/vnd.grepnest.graph.v1+protobuf")
 	graphHandler(store, 1<<20, 1024).ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusNoContent || !store.authorizedBeforeDeadlineClear.Load() || store.authorizedCalls.Load() != 4 {
+	if recorder.Code != http.StatusNoContent || !store.authorizedBeforeDeadlineClear.Load() || store.authorizedCalls.Load() != 3 {
 		t.Fatalf("status=%d authorizedBeforeClear=%t calls=%d", recorder.Code, store.authorizedBeforeDeadlineClear.Load(), store.authorizedCalls.Load())
 	}
 	if !recorder.readDeadlineCleared.Load() || !recorder.writeDeadlineSet.Load() || store.writeDeadlineSetDuringReplace.Load() {
