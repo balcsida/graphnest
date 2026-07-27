@@ -9,6 +9,7 @@ type RepositorySummary struct {
 	Branch        string     `json:"branch"`
 	DesiredSHA    string     `json:"desired_sha"`
 	IndexedSHA    string     `json:"indexed_sha"`
+	WebURL        string     `json:"web_url"`
 	Status        string     `json:"status"`
 	ErrorCode     string     `json:"error_code"`
 	SearchNode    string     `json:"search_node"`

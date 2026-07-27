@@ -223,7 +223,7 @@ components:
     RepositorySummary:
       type: object
       additionalProperties: false
-      required: [id, github_id, name, branch, desired_sha, indexed_sha, status, error_code, search_node]
+      required: [id, github_id, name, branch, desired_sha, indexed_sha, web_url, status, error_code, search_node]
       properties:
         id: {type: integer, format: int64}
         github_id: {type: integer, format: int64}
@@ -231,6 +231,7 @@ components:
         branch: {type: string}
         desired_sha: {type: string}
         indexed_sha: {type: string}
+        web_url: {type: string, format: uri}
         status: {type: string}
         error_code: {type: string}
         search_node: {type: string}
