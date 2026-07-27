@@ -38,6 +38,7 @@ func TestGitHubProcessorDurability(t *testing.T) {
 		processor := NewGitHubProcessor(store, nil)
 		deliveries := []Delivery{
 			{ID: "accepted", Event: "push", Body: pushBody(10, 101, "refs/heads/main", webhookSHAA)},
+			{ID: "repository", Event: "repository", Body: []byte(`{"action":"edited","installation":{"id":10},"repository":{"id":101}}`)},
 			{ID: "ignored", Event: "ping", Body: []byte(`{"zen":"keep it logically awesome","hook":{"id":7},"sender":{"login":"octocat"}}`)},
 		}
 		for _, delivery := range deliveries {
@@ -45,20 +46,32 @@ func TestGitHubProcessorDurability(t *testing.T) {
 				t.Fatalf("%s: inserted=%v err=%v", delivery.ID, inserted, err)
 			}
 		}
-		rows, err := pool.Query(t.Context(), "select delivery_id, state from webhook_deliveries order by delivery_id")
+		rows, err := pool.Query(t.Context(), `select delivery_id, state, coalesce(repositories.github_id, 0)
+			from webhook_deliveries left join repositories on repositories.id=webhook_deliveries.repository_id
+			order by delivery_id`)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer rows.Close()
-		got := map[string]string{}
+		got := map[string]struct {
+			state        string
+			repositoryID int64
+		}{}
 		for rows.Next() {
 			var id, state string
-			if err := rows.Scan(&id, &state); err != nil {
+			var repositoryID int64
+			if err := rows.Scan(&id, &state, &repositoryID); err != nil {
 				t.Fatal(err)
 			}
-			got[id] = state
+			got[id] = struct {
+				state        string
+				repositoryID int64
+			}{state, repositoryID}
 		}
-		if err := rows.Err(); err != nil || got["accepted"] != "accepted" || got["ignored"] != "ignored" {
+		if err := rows.Err(); err != nil || got["accepted"].state != "accepted" ||
+			got["accepted"].repositoryID != 101 || got["ignored"].state != "ignored" ||
+			got["ignored"].repositoryID != 0 || got["repository"].state != "accepted" ||
+			got["repository"].repositoryID != 101 {
 			t.Fatalf("states=%v err=%v", got, err)
 		}
 	})
@@ -84,6 +97,57 @@ func TestGitHubProcessorDurability(t *testing.T) {
 		var failed int
 		if err := pool.QueryRow(t.Context(), `select count(*) from webhook_deliveries where state='failed' and error_code='invalid_payload'`).Scan(&failed); err != nil || failed != 3 {
 			t.Fatalf("failed=%d err=%v", failed, err)
+		}
+	})
+
+	t.Run("invalid payload repository scope", func(t *testing.T) {
+		store, pool := webhookStore(t)
+		seedWebhookRepository(t, store, 101)
+		processor := NewGitHubProcessor(store, nil)
+		for _, delivery := range []Delivery{
+			{ID: "bad-ref", Event: "push", Body: pushBody(10, 101, "main", webhookSHAA)},
+			{ID: "bad-sha", Event: "push", Body: pushBody(10, 101, "refs/heads/main", "bad")},
+			{ID: "bad-size", Event: "push", Body: pushBodyWithSize(10, 101, "refs/heads/main", webhookSHAA, -1)},
+		} {
+			inserted, err := processor.Process(t.Context(), delivery)
+			var invalid InvalidDeliveryError
+			if !inserted || !errors.As(err, &invalid) {
+				t.Fatalf("%s: inserted=%v err=%v", delivery.ID, inserted, err)
+			}
+		}
+		deliveries, more, err := store.AdminDeliveries(t.Context(), 10, []int64{101}, 10)
+		if err != nil || more || len(deliveries) != 3 {
+			t.Fatalf("deliveries=%#v more=%v err=%v", deliveries, more, err)
+		}
+		for _, delivery := range deliveries {
+			if delivery.State != "failed" {
+				t.Fatalf("delivery=%#v", delivery)
+			}
+		}
+		overview, err := store.AdminOverview(t.Context(), 10, []int64{101})
+		if err != nil || overview.Deliveries["failed"] != 3 {
+			t.Fatalf("delivery overview=%#v err=%v", overview.Deliveries, err)
+		}
+
+		for _, delivery := range []Delivery{
+			{ID: "undecodable", Event: "push", Body: []byte(`{`)},
+			{ID: "missing-repository", Event: "push", Body: []byte(fmt.Sprintf(
+				`{"installation":{"id":10},"repository":{"size":1},"ref":"refs/heads/main","after":%q}`, webhookSHAA,
+			))},
+		} {
+			inserted, err := processor.Process(t.Context(), delivery)
+			var invalid InvalidDeliveryError
+			if !inserted || !errors.As(err, &invalid) {
+				t.Fatalf("%s: inserted=%v err=%v", delivery.ID, inserted, err)
+			}
+		}
+		var undecodable, missingRepository int
+		if err := pool.QueryRow(t.Context(), `select
+			count(*) filter (where delivery_id='undecodable' and installation_id is null and repository_id is null),
+			count(*) filter (where delivery_id='missing-repository' and installation_id is not null and repository_id is null)
+			from webhook_deliveries`).Scan(&undecodable, &missingRepository); err != nil ||
+			undecodable != 1 || missingRepository != 1 {
+			t.Fatalf("undecodable=%d missingRepository=%d err=%v", undecodable, missingRepository, err)
 		}
 	})
 

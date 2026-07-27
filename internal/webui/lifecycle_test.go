@@ -5,6 +5,17 @@ import (
 	"testing"
 )
 
+func TestConsoleKeepsTokenGateDesignSystemBackground(t *testing.T) {
+	for _, want := range []string{
+		`background-image:radial-gradient(640px 400px at 50% 8%,var(--accent-soft),transparent 70%),linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px)`,
+		`background-size:auto,48px 48px,48px 48px`,
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console is missing token-gate background %q", want)
+		}
+	}
+}
+
 func TestConsoleInvalidatesCredentialScopedRepositoryState(t *testing.T) {
 	for _, want := range []string{
 		"repositoryController:null",
@@ -13,6 +24,7 @@ func TestConsoleInvalidatesCredentialScopedRepositoryState(t *testing.T) {
 		"state.repositoryController.abort()",
 		"state.repositories=[]",
 		"$(\"repository-options\").replaceChildren()",
+		`$("repository-status").textContent=""`,
 		"$(\"all-repositories\").checked=true",
 		"generation!==state.repositoryGeneration",
 		"signal:controller.signal",
@@ -20,6 +32,22 @@ func TestConsoleInvalidatesCredentialScopedRepositoryState(t *testing.T) {
 		if !bytes.Contains(document, []byte(want)) {
 			t.Fatalf("console is missing credential-state protection %q", want)
 		}
+	}
+}
+
+func TestConsoleRendersTruncatedAuthorizedRepositories(t *testing.T) {
+	for _, want := range []string{
+		`id="repository-status"`,
+		`if(!Array.isArray(response.repositories))return`,
+		`state.repositories=response.repositories`,
+		`$("repository-status").textContent=response.truncated?"Only the first authorized repositories are shown.":""`,
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console is missing truncated repository lifecycle %q", want)
+		}
+	}
+	if bytes.Contains(document, []byte(`if(response.truncated||!Array.isArray(response.repositories))return`)) {
+		t.Fatal("console discards the authorized repository prefix when it is truncated")
 	}
 }
 
@@ -45,11 +73,42 @@ func TestConsoleClearsPrincipalSearchStateOnSignOut(t *testing.T) {
 	}
 }
 
+func TestConsoleClearsPrincipalFileAndNavigationStateOnSignOut(t *testing.T) {
+	for _, want := range []string{
+		"fileController:null",
+		"navigationController:null",
+		"fileGeneration:0",
+		"navigationGeneration:0",
+		"fileRetry:null",
+		"navigationRetry:null",
+		"selectedIdentifier:null",
+		"function resetFileState()",
+		"state.fileController.abort()",
+		"state.navigationController.abort()",
+		"state.fileRetry=null",
+		"state.navigationRetry=null",
+		"state.selectedIdentifier=null",
+		`$("file-lines").replaceChildren()`,
+		`$("navigation-locations").replaceChildren()`,
+		`$("navigation-status").textContent=""`,
+		"resetSearchState();resetRepositories();resetFileState()",
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console is missing file/navigation lifecycle reset %q", want)
+		}
+	}
+}
+
 func TestConsoleKeepsTouchTargetsAtLeast44Pixels(t *testing.T) {
 	for _, want := range []string{
+		`.wordmark{display:flex;align-items:center;gap:9px;padding:9px`,
+		".nav-button{min-height:44px",
+		"#query{min-height:44px",
 		"fieldset label{display:flex;gap:8px;align-items:center;min-width:0;min-height:44px;overflow-wrap:anywhere}",
 		"fieldset input{width:44px;min-width:44px;min-height:44px}",
-		".file-header a{color:var(--signal);display:inline-flex;min-height:44px;align-items:center}",
+		".file-header a,.repository-link{color:var(--accent);display:inline-flex;min-height:44px;align-items:center}",
+		".file-line{display:grid;grid-template-columns:58px max-content;min-width:max-content;min-height:44px}",
+		".identifier{min-width:44px;min-height:44px",
 	} {
 		if !bytes.Contains(document, []byte(want)) {
 			t.Fatalf("console is missing 44px touch target %q", want)
@@ -60,18 +119,36 @@ func TestConsoleKeepsTouchTargetsAtLeast44Pixels(t *testing.T) {
 func TestConsoleKeepsHiddenApplicationStatesAuthoritative(t *testing.T) {
 	for _, want := range []string{
 		`[hidden]{display:none!important}`,
-		`<form id="search-form" class="search-strip" hidden>`,
-		`<section id="workspace" hidden>`,
+		`<div id="application" class="app" hidden>`,
+		`<section id="search-view" data-screen="search">`,
+		`<section id="repository-view" data-screen="repositories" hidden`,
+		`<section id="file-view" data-screen="file" hidden`,
 		`<section id="token-gate"`,
 		`$("token-gate").hidden=true`,
-		`$("workspace").hidden=false`,
-		`$("search-form").hidden=false`,
-		`$("workspace").hidden=true`,
-		`$("search-form").hidden=true`,
+		`$("application").hidden=false`,
+		`$("application").hidden=true`,
 		`$("token-gate").hidden=false`,
+		`function showScreen(screen)`,
+		`$("search-view").hidden=screen!=="search"`,
+		`$("repository-view").hidden=screen!=="repositories"`,
+		`$("file-view").hidden=screen!=="file"`,
 	} {
 		if !bytes.Contains(document, []byte(want)) {
 			t.Fatalf("console is missing authoritative state transition %q", want)
 		}
+	}
+}
+
+func TestConsoleMarksOnlyTheVisibleScreenAsCurrentPage(t *testing.T) {
+	for _, want := range []string{
+		`active.setAttribute("aria-current","page")`,
+		`inactive.removeAttribute("aria-current")`,
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console is missing current-page navigation behavior %q", want)
+		}
+	}
+	if bytes.Contains(document, []byte(`toggleAttribute("aria-current"`)) {
+		t.Fatal("console can expose aria-current without the page value")
 	}
 }

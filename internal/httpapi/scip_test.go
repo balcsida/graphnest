@@ -126,14 +126,14 @@ func TestSCIPJSONRouteContracts(t *testing.T) {
 
 func TestSCIPNavigationReturnsPositionEncoding(t *testing.T) {
 	store := &scipStoreStub{repository: scipRepository(), locations: []scipgraph.Location{{
-		RepositoryID: 101, RepositoryName: "acme/one", Commit: scipTestSHA,
+		RepositoryID: 101, RepositoryName: "acme/one", WebURL: "https://github.example/acme/target", Commit: scipTestSHA,
 		Path: "target.go", PositionEncoding: 3,
 	}}}
 	response := scipRequest(
 		newSCIPHandler(store, nil, 1024, 1024),
 		http.MethodPost,
 		"/v1/scip/navigation",
-		[]byte(`{"repository_id":101,"path":"main.go","line":1,"character":0,"operation":"definitions"}`),
+		[]byte(`{"repository_id":101,"path":"main.go","commit":"`+scipTestSHA+`","line":1,"character_utf8":5,"character_utf16":4,"character_utf32":3,"operation":"definitions"}`),
 		"user",
 		"application/json",
 	)
@@ -142,8 +142,40 @@ func TestSCIPNavigationReturnsPositionEncoding(t *testing.T) {
 		t.Fatal(err)
 	}
 	if response.Code != http.StatusOK || len(got.Locations) != 1 ||
+		got.Locations[0].WebURL != "https://github.example/acme/target" ||
 		got.Locations[0].PositionEncoding != "UTF32CodeUnitOffsetFromLineStart" {
 		t.Fatalf("status = %d, response = %#v", response.Code, got)
+	}
+}
+
+func TestSCIPNavigationRejectsInvalidDatabasePositions(t *testing.T) {
+	handler := newSCIPHandler(&scipStoreStub{repository: scipRepository()}, nil, 1024, 1024)
+	for _, body := range []string{
+		`{"repository_id":101,"path":"main.go","line":2147483648,"character":0,"operation":"definitions"}`,
+		`{"repository_id":101,"path":"main.go","line":1,"character":2147483648,"operation":"definitions"}`,
+		`{"repository_id":101,"path":"main.go","line":1,"character":-1,"character_utf8":0,"character_utf16":0,"character_utf32":0,"operation":"definitions"}`,
+		`{"repository_id":101,"path":"main.go","line":1,"character_utf8":2147483648,"character_utf16":0,"character_utf32":0,"operation":"definitions"}`,
+		`{"repository_id":101,"path":"main.go","line":1,"character_utf8":0,"character_utf16":2147483648,"character_utf32":0,"operation":"definitions"}`,
+		`{"repository_id":101,"path":"main.go","line":1,"character_utf8":0,"character_utf16":0,"character_utf32":2147483648,"operation":"definitions"}`,
+	} {
+		response := scipRequest(handler, http.MethodPost, "/v1/scip/navigation", []byte(body), "user", "application/json")
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("body = %s, status = %d, response = %q", body, response.Code, response.Body.String())
+		}
+	}
+}
+
+func TestSCIPNavigationRejectsStaleSuppliedCommit(t *testing.T) {
+	response := scipRequest(
+		newSCIPHandler(&scipStoreStub{repository: scipRepository()}, nil, 1024, 1024),
+		http.MethodPost,
+		"/v1/scip/navigation",
+		[]byte(`{"repository_id":101,"path":"main.go","commit":"`+strings.Repeat("b", 40)+`","line":1,"character":0,"operation":"definitions"}`),
+		"user",
+		"application/json",
+	)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("status = %d, body = %q", response.Code, response.Body.String())
 	}
 }
 
@@ -246,7 +278,7 @@ func (store *scipStoreStub) ReplaceSCIP(_ context.Context, _ int64, commit strin
 	store.replacedCommit = commit
 	return nil
 }
-func (*scipStoreStub) OccurrenceAt(context.Context, int64, string, string, int, int) (scipgraph.StoredOccurrence, error) {
+func (*scipStoreStub) OccurrenceAt(context.Context, int64, string, string, int, scipgraph.OccurrencePosition) (scipgraph.StoredOccurrence, error) {
 	return scipgraph.StoredOccurrence{RepositoryID: 101}, nil
 }
 func (store *scipStoreStub) Locations(context.Context, authn.Principal, scipgraph.StoredOccurrence, string, int) ([]scipgraph.Location, bool, error) {

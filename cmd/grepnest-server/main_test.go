@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/admin"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/config"
 	"github.com/grepnest/grepnest/internal/githubapp"
@@ -33,6 +34,33 @@ import (
 	"github.com/scip-code/scip/bindings/go/scip"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestAdminRoutesRegisterOnlyWithDurableService(t *testing.T) {
+	authenticator := authn.NewStatic(map[string]authn.Principal{"admin": {Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}}})
+	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}}
+	static := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/admin/overview", nil)
+	request.Header.Set("Authorization", "Bearer admin")
+	response := httptest.NewRecorder()
+	static.ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("static status=%d", response.Code)
+	}
+
+	durable := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, nil,
+		&admin.Service{Store: mainAdminStore{}}, nil)
+	response = httptest.NewRecorder()
+	durable.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("durable status=%d body=%q", response.Code, response.Body.String())
+	}
+}
+
+type mainAdminStore struct{ admin.Store }
+
+func (mainAdminStore) AdminOverview(context.Context, int64, []int64) (admin.Overview, error) {
+	return admin.Overview{}, nil
+}
 
 func TestDurableGitHubLimitReadsNearMaximumFile(t *testing.T) {
 	content := bytes.Repeat([]byte("x"), (1<<20)-1)
@@ -129,7 +157,7 @@ func TestServerDeadlinesIsolateSCIPUploads(t *testing.T) {
 		"admin": {Subject: "admin", Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}},
 	})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, SCIPMaxUploadBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}
-	handler := newAPIHandler(settings, observability.New(), authenticator, nil, nil, &scipgraph.Service{Store: store}, nil, nil, nil)
+	handler := newAPIHandler(settings, observability.New(), authenticator, nil, nil, &scipgraph.Service{Store: store}, nil, nil, nil, nil)
 	server := newHTTPServer("127.0.0.1:0", handler)
 	if server.ReadTimeout != 10*time.Second || server.WriteTimeout != 10*time.Second || server.ReadHeaderTimeout != 5*time.Second || server.IdleTimeout != time.Minute {
 		t.Fatalf("deadlines = read %s, write %s, header %s, idle %s", server.ReadTimeout, server.WriteTimeout, server.ReadHeaderTimeout, server.IdleTimeout)
@@ -310,7 +338,7 @@ func (store *deadlineSCIPStore) ReplaceSCIP(context.Context, int64, string, scip
 	}
 	return nil
 }
-func (*deadlineSCIPStore) OccurrenceAt(context.Context, int64, string, string, int, int) (scipgraph.StoredOccurrence, error) {
+func (*deadlineSCIPStore) OccurrenceAt(context.Context, int64, string, string, int, scipgraph.OccurrencePosition) (scipgraph.StoredOccurrence, error) {
 	return scipgraph.StoredOccurrence{}, errors.New("not found")
 }
 func (*deadlineSCIPStore) Locations(context.Context, authn.Principal, scipgraph.StoredOccurrence, string, int) ([]scipgraph.Location, bool, error) {
@@ -466,7 +494,7 @@ func (stub *healthStub) Health(context.Context) error {
 
 func TestDurableRoutesKeepWebhookOutsideBearerAuthentication(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
-	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), authenticator, nil, &repository.Service{Store: repositoryStoreStub{}}, nil, []byte("secret"), webhookProcessorStub{}, nil)
+	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), authenticator, nil, &repository.Service{Store: repositoryStoreStub{}}, nil, []byte("secret"), webhookProcessorStub{}, nil, nil)
 
 	webhookResponse := httptest.NewRecorder()
 	handler.ServeHTTP(webhookResponse, httptest.NewRequest(http.MethodPost, "/webhooks/github", nil))
@@ -543,8 +571,8 @@ func TestStaticHandlerRegistersSystemRoutes(t *testing.T) {
 func TestSCIPRoutesRegisterOnlyWithDurableService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, SCIPMaxUploadBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}
-	without := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, nil, nil)
-	with := newAPIHandler(settings, observability.New(), authenticator, nil, nil, &scipgraph.Service{}, nil, nil, nil)
+	without := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil)
+	with := newAPIHandler(settings, observability.New(), authenticator, nil, nil, &scipgraph.Service{}, nil, nil, nil, nil)
 	for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/scip/navigation", nil))
@@ -562,9 +590,9 @@ func TestAPIHandlerMountsWebUIWithoutFallback(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	handler := newAPIHandler(
 		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}},
-		observability.New(), authenticator, nil, nil, nil, nil, nil, nil,
+		observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil,
 	)
-	for _, path := range []string{"/", "/index.html"} {
+	for _, path := range []string{"/", "/index.html", "/admin"} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
 		if response.Code != http.StatusOK {

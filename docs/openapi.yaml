@@ -3,6 +3,93 @@ info:
   title: GrepNest REST API
   version: 0.1.0
 paths:
+  /v1/admin/overview:
+    get:
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Durable service totals, content: {application/json: {schema: {$ref: '#/components/schemas/AdminOverview'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/repositories:
+    get:
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Bounded durable repository inventory, content: {application/json: {schema: {$ref: '#/components/schemas/AdminRepositoryList'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/jobs:
+    get:
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Bounded indexing job inventory, content: {application/json: {schema: {$ref: '#/components/schemas/AdminJobList'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/scip/uploads:
+    get:
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Bounded SCIP upload inventory, content: {application/json: {schema: {$ref: '#/components/schemas/AdminSCIPUploadList'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/scip/dependencies:
+    get:
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Bounded SCIP dependency inventory, content: {application/json: {schema: {$ref: '#/components/schemas/AdminSCIPDependencyList'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/webhook-deliveries:
+    get:
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Bounded webhook delivery inventory, content: {application/json: {schema: {$ref: '#/components/schemas/AdminDeliveryList'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/github:
+    get:
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Sanitized GitHub App settings and installations, content: {application/json: {schema: {$ref: '#/components/schemas/AdminGitHub'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/repositories/{github_id}/reindex:
+    post:
+      security: [{bearerAuth: []}]
+      parameters: [{name: github_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}]
+      responses:
+        '204': {description: Current default branch SHA resolved and queued}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/reconcile:
+    post:
+      security: [{bearerAuth: []}]
+      responses:
+        '204': {description: GitHub App installations reconciled}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/jobs/{id}/retry:
+    post:
+      security: [{bearerAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}]
+      responses:
+        '204': {description: Current authorized failed job requeued}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/Unavailable'}
   /v1/repositories:
     get:
       security: [{bearerAuth: []}]
@@ -213,6 +300,155 @@ components:
     Unavailable: {description: Service unavailable, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     Timeout: {description: Search timed out, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
   schemas:
+    AdminOverview:
+      type: object
+      additionalProperties: false
+      required: [repositories, jobs, deliveries, scip_uploads, dependencies, installations]
+      properties:
+        repositories: {type: object, additionalProperties: {type: integer, format: int64}}
+        jobs: {type: object, additionalProperties: {type: integer, format: int64}}
+        deliveries: {type: object, additionalProperties: {type: integer, format: int64}}
+        scip_uploads: {type: integer, format: int64}
+        dependencies: {type: integer, format: int64}
+        installations: {type: integer, format: int64}
+    AdminRepositoryList:
+      type: object
+      additionalProperties: false
+      required: [repositories, truncated]
+      properties:
+        repositories: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/AdminRepository'}}
+        truncated: {type: boolean}
+    AdminRepository:
+      type: object
+      additionalProperties: false
+      required: [id, github_id, installation_id, name, default_branch, desired_sha, indexed_sha, status, error_code, web_url, enabled, private, archived]
+      properties:
+        id: {type: integer, format: int64, minimum: 1}
+        github_id: {type: integer, format: int64, minimum: 1}
+        installation_id: {type: integer, format: int64, minimum: 1}
+        name: {type: string}
+        default_branch: {type: string}
+        desired_sha: {type: string}
+        indexed_sha: {type: string}
+        status: {type: string, enum: [pending, ready, failed, disabled]}
+        error_code: {type: string}
+        web_url: {type: string, format: uri}
+        enabled: {type: boolean}
+        private: {type: boolean}
+        archived: {type: boolean}
+        last_indexed_at: {type: string, format: date-time}
+    AdminJobList:
+      type: object
+      additionalProperties: false
+      required: [jobs, truncated]
+      properties:
+        jobs: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/AdminJob'}}
+        truncated: {type: boolean}
+    AdminJob:
+      type: object
+      additionalProperties: false
+      required: [id, repository_id, repository, target_sha, target_ref, reason, state, error_code, attempt, max_attempts, priority, run_after, created_at, updated_at]
+      properties:
+        id: {type: integer, format: int64, minimum: 1}
+        repository_id: {type: integer, format: int64, minimum: 1}
+        repository: {type: string}
+        target_sha: {type: string, pattern: '^[0-9a-f]{40}$'}
+        target_ref: {type: string}
+        reason: {type: string}
+        state: {type: string, enum: [queued, running, succeeded, failed, superseded]}
+        error_code: {type: string}
+        attempt: {type: integer, minimum: 0}
+        max_attempts: {type: integer, minimum: 1, maximum: 5}
+        priority: {type: integer}
+        run_after: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    AdminSCIPUploadList:
+      type: object
+      additionalProperties: false
+      required: [uploads, truncated]
+      properties:
+        uploads: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/AdminSCIPUpload'}}
+        truncated: {type: boolean}
+    AdminSCIPUpload:
+      type: object
+      additionalProperties: false
+      required: [id, repository_id, repository, commit, project_root, indexer_name, indexer_version, uploaded_at]
+      properties:
+        id: {type: integer, format: int64, minimum: 1}
+        repository_id: {type: integer, format: int64, minimum: 1}
+        repository: {type: string}
+        commit: {type: string, pattern: '^[0-9a-f]{40}$'}
+        project_root: {type: string}
+        indexer_name: {type: string}
+        indexer_version: {type: string}
+        uploaded_at: {type: string, format: date-time}
+    AdminSCIPDependencyList:
+      type: object
+      additionalProperties: false
+      required: [dependencies, truncated]
+      properties:
+        dependencies: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/AdminSCIPDependency'}}
+        truncated: {type: boolean}
+    AdminSCIPDependency:
+      type: object
+      additionalProperties: false
+      required: [repository_id, repository, source, relation, purl, manager, name, version]
+      properties:
+        repository_id: {type: integer, format: int64, minimum: 1}
+        repository: {type: string}
+        source: {type: string, enum: [manual, github]}
+        relation: {type: string, enum: [provides, depends_on]}
+        purl: {type: string}
+        manager: {type: string}
+        name: {type: string}
+        version: {type: string}
+    AdminDeliveryList:
+      type: object
+      additionalProperties: false
+      required: [deliveries, truncated]
+      properties:
+        deliveries: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/AdminDelivery'}}
+        truncated: {type: boolean}
+    AdminDelivery:
+      type: object
+      additionalProperties: false
+      required: [id, delivery_id, event, state, error_code, installation_id, received_at]
+      properties:
+        id: {type: integer, format: int64, minimum: 1}
+        delivery_id: {type: string}
+        event: {type: string}
+        state: {type: string}
+        error_code: {type: string}
+        installation_id: {type: integer, format: int64, minimum: 1}
+        received_at: {type: string, format: date-time}
+        processed_at: {type: string, format: date-time}
+    AdminGitHub:
+      type: object
+      additionalProperties: false
+      required: [app_id, web_url, api_url, upload_url, git_url, api_version, private_key_configured, webhook_secret_configured, ca_configured, installations, truncated]
+      properties:
+        app_id: {type: integer, format: int64}
+        web_url: {type: string, format: uri}
+        api_url: {type: string, format: uri}
+        upload_url: {type: string, format: uri}
+        git_url: {type: string, format: uri}
+        api_version: {type: string}
+        private_key_configured: {type: boolean}
+        webhook_secret_configured: {type: boolean}
+        ca_configured: {type: boolean}
+        installations: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/AdminInstallation'}}
+        truncated: {type: boolean}
+    AdminInstallation:
+      type: object
+      additionalProperties: false
+      required: [github_id, account_login, account_type, status]
+      properties:
+        github_id: {type: integer, format: int64, minimum: 1}
+        account_login: {type: string}
+        account_type: {type: string}
+        status: {type: string}
+        suspended_at: {type: string, format: date-time}
     RepositoryList:
       type: object
       additionalProperties: false
@@ -223,7 +459,7 @@ components:
     RepositorySummary:
       type: object
       additionalProperties: false
-      required: [id, github_id, name, branch, desired_sha, indexed_sha, status, error_code, search_node]
+      required: [id, github_id, name, branch, desired_sha, indexed_sha, web_url, status, error_code, search_node]
       properties:
         id: {type: integer, format: int64}
         github_id: {type: integer, format: int64}
@@ -231,6 +467,7 @@ components:
         branch: {type: string}
         desired_sha: {type: string}
         indexed_sha: {type: string}
+        web_url: {type: string, format: uri}
         status: {type: string}
         error_code: {type: string}
         search_node: {type: string}
@@ -292,11 +529,22 @@ components:
       type: object
       additionalProperties: false
       required: [repository_id, path, line, operation]
+      oneOf:
+        - required: [character_utf8, character_utf16, character_utf32]
+        - not:
+            anyOf:
+              - required: [character_utf8]
+              - required: [character_utf16]
+              - required: [character_utf32]
       properties:
         repository_id: {type: integer, format: int64, minimum: 1}
         path: {type: string, minLength: 1, description: Clean relative slash-separated path}
-        line: {type: integer, minimum: 1, description: One-based source line}
-        character: {type: integer, minimum: 0, default: 0}
+        commit: {type: string, pattern: '^[0-9a-f]{40}$', description: Optional indexed commit; stale supplied commits are rejected}
+        line: {type: integer, minimum: 1, maximum: 2147483647, description: One-based source line}
+        character: {type: integer, minimum: 0, maximum: 2147483647, default: 0, description: Legacy offset applied to every position encoding}
+        character_utf8: {type: integer, minimum: 0, maximum: 2147483647, description: UTF-8 code-unit offset; provide with character_utf16 and character_utf32}
+        character_utf16: {type: integer, minimum: 0, maximum: 2147483647, description: UTF-16 code-unit offset; provide with character_utf8 and character_utf32}
+        character_utf32: {type: integer, minimum: 0, maximum: 2147483647, description: UTF-32 code-unit offset; provide with character_utf8 and character_utf16}
         operation: {type: string, enum: [definitions, references, implementations]}
     SCIPNavigationResponse:
       type: object
@@ -308,10 +556,12 @@ components:
     SCIPLocation:
       type: object
       additionalProperties: false
-      required: [repository_id, repository_name, commit, path, symbol, start_line, start_character, end_line, end_character, position_encoding, roles, approximate]
+      required: [repository_id, repository_name, branch, web_url, commit, path, symbol, start_line, start_character, end_line, end_character, position_encoding, roles, approximate]
       properties:
         repository_id: {type: integer, format: int64, minimum: 1}
         repository_name: {type: string}
+        branch: {type: string}
+        web_url: {type: string, format: uri}
         commit: {type: string, pattern: '^[0-9a-f]{40}$'}
         path: {type: string}
         symbol: {type: string}

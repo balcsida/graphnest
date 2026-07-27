@@ -92,10 +92,17 @@ func TestMigrateIsConcurrentAndIdempotent(t *testing.T) {
 		}
 	}
 	var count int
-	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != 5 {
+	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != 6 {
 		t.Fatalf("migrations=%d err=%v", count, err)
 	}
+	var repositoryIDNullable string
+	if err := pool.QueryRow(t.Context(), `select is_nullable from information_schema.columns
+		where table_schema=current_schema() and table_name='webhook_deliveries' and column_name='repository_id'`).
+		Scan(&repositoryIDNullable); err != nil || repositoryIDNullable != "YES" {
+		t.Fatalf("repository_id nullable=%q err=%v", repositoryIDNullable, err)
+	}
 	for _, index := range []string{
+		"webhook_deliveries_repository_received",
 		"scip_occurrences_position", "scip_occurrences_symbol_lookup", "scip_occurrences_global_symbol_key",
 		"scip_relationships_source_lookup", "scip_relationships_target_lookup",
 		"scip_relationships_source_global_symbol_key", "scip_relationships_target_global_symbol_key",
@@ -241,6 +248,10 @@ func TestMigrateUpgradesAppliedV1(t *testing.T) {
 	if err := pool.QueryRow(t.Context(), `select is_nullable from information_schema.columns
 		where table_schema = current_schema() and table_name = 'webhook_deliveries' and column_name = 'installation_id'`).Scan(&nullable); err != nil || nullable != "YES" {
 		t.Fatalf("installation_id nullable=%q err=%v", nullable, err)
+	}
+	if err := pool.QueryRow(t.Context(), `select is_nullable from information_schema.columns
+		where table_schema = current_schema() and table_name = 'webhook_deliveries' and column_name = 'repository_id'`).Scan(&nullable); err != nil || nullable != "YES" {
+		t.Fatalf("repository_id nullable=%q err=%v", nullable, err)
 	}
 	if err := pool.QueryRow(t.Context(), `select indexdef from pg_indexes where schemaname = current_schema() and indexname = 'index_jobs_claim'`).Scan(&index); err != nil || !strings.Contains(index, "priority DESC") {
 		t.Fatalf("claim index=%q err=%v", index, err)

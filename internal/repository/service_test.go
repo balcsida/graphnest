@@ -27,7 +27,7 @@ func TestServiceList(t *testing.T) {
 	indexedAt := time.Date(2026, time.July, 20, 12, 0, 0, 0, time.UTC)
 	store := &serviceStore{repositories: []Repository{{
 		ID: 1, GitHubID: 101, Name: "acme/one", Branch: "main", DesiredSHA: strings.Repeat("b", 40),
-		IndexedSHA: strings.Repeat("a", 40), Status: "ready", SearchNode: "node-a", LastIndexedAt: &indexedAt,
+		IndexedSHA: strings.Repeat("a", 40), WebURL: "https://github.com/acme/one", Status: "ready", SearchNode: "node-a", LastIndexedAt: &indexedAt,
 	}}}
 	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}, RepositoryNames: []string{"acme/one"}}
 
@@ -37,7 +37,7 @@ func TestServiceList(t *testing.T) {
 	}
 	want := []api.RepositorySummary{{
 		ID: 101, GitHubID: 101, Name: "acme/one", Branch: "main", DesiredSHA: strings.Repeat("b", 40),
-		IndexedSHA: strings.Repeat("a", 40), Status: "ready", SearchNode: "node-a", LastIndexedAt: &indexedAt,
+		IndexedSHA: strings.Repeat("a", 40), WebURL: "https://github.com/acme/one", Status: "ready", SearchNode: "node-a", LastIndexedAt: &indexedAt,
 	}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %#v, want %#v", got, want)

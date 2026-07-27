@@ -1,11 +1,15 @@
 package api
 
 type SCIPNavigationRequest struct {
-	RepositoryID int64  `json:"repository_id"`
-	Path         string `json:"path"`
-	Line         int    `json:"line"`
-	Character    int    `json:"character"`
-	Operation    string `json:"operation"`
+	RepositoryID   int64  `json:"repository_id"`
+	Path           string `json:"path"`
+	Commit         string `json:"commit,omitempty"`
+	Line           int    `json:"line"`
+	Character      int    `json:"character"`
+	CharacterUTF8  *int   `json:"character_utf8,omitempty"`
+	CharacterUTF16 *int   `json:"character_utf16,omitempty"`
+	CharacterUTF32 *int   `json:"character_utf32,omitempty"`
+	Operation      string `json:"operation"`
 }
 
 type SCIPNavigationResponse struct {
@@ -16,6 +20,8 @@ type SCIPNavigationResponse struct {
 type SCIPLocation struct {
 	RepositoryID     int64  `json:"repository_id"`
 	RepositoryName   string `json:"repository_name"`
+	Branch           string `json:"branch"`
+	WebURL           string `json:"web_url"`
 	Commit           string `json:"commit"`
 	Path             string `json:"path"`
 	Symbol           string `json:"symbol"`

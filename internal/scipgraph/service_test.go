@@ -69,19 +69,34 @@ func TestUploadMapsStaleReplacementOnly(t *testing.T) {
 func TestNavigateValidatesRequestAndUsesZeroBasedStorageLine(t *testing.T) {
 	store := &fakeStore{repositories: map[int64]repository.Repository{101: serviceRepository}, origin: StoredOccurrence{RepositoryID: 1, Commit: serviceSHA}}
 	service := Service{Store: store, MaxResults: 7}
-	request := api.SCIPNavigationRequest{RepositoryID: 101, Path: "a.go", Line: 3, Character: 4, Operation: "definitions"}
+	utf8, utf16, utf32 := 5, 4, 3
+	request := api.SCIPNavigationRequest{
+		RepositoryID: 101, Path: "a.go", Commit: serviceSHA, Line: 3,
+		CharacterUTF8: &utf8, CharacterUTF16: &utf16, CharacterUTF32: &utf32,
+		Operation: "definitions",
+	}
 
 	if _, err := service.Navigate(t.Context(), userPrincipal, request); err != nil {
 		t.Fatal(err)
 	}
-	if store.occurrenceRepositoryID != 1 || store.occurrenceCommit != serviceSHA || store.occurrenceLine != 2 || store.occurrenceCharacter != 4 || store.locationsMax != 7 {
+	if store.occurrenceRepositoryID != 1 || store.occurrenceCommit != serviceSHA || store.occurrenceLine != 2 ||
+		store.occurrencePosition != (OccurrencePosition{UTF8: 5, UTF16: 4, UTF32: 3}) || store.locationsMax != 7 {
 		t.Fatalf("storage request = %#v", store)
 	}
 
 	for _, invalid := range []api.SCIPNavigationRequest{
 		{RepositoryID: 101, Path: "a.go", Line: 0, Operation: "definitions"},
+		{RepositoryID: 101, Path: "a.go", Line: 1 << 31, Operation: "definitions"},
 		{RepositoryID: 101, Path: "../a.go", Line: 1, Operation: "definitions"},
 		{RepositoryID: 101, Path: "a.go", Line: 1, Character: -1, Operation: "definitions"},
+		{RepositoryID: 101, Path: "a.go", Line: 1, Character: 1 << 31, Operation: "definitions"},
+		{RepositoryID: 101, Path: "a.go", Line: 1, Character: -1, CharacterUTF8: intPointer(0), CharacterUTF16: intPointer(0), CharacterUTF32: intPointer(0), Operation: "definitions"},
+		{RepositoryID: 101, Path: "a.go", Line: 1, CharacterUTF8: intPointer(-1), CharacterUTF16: intPointer(0), CharacterUTF32: intPointer(0), Operation: "definitions"},
+		{RepositoryID: 101, Path: "a.go", Line: 1, CharacterUTF8: intPointer(1 << 31), CharacterUTF16: intPointer(0), CharacterUTF32: intPointer(0), Operation: "definitions"},
+		{RepositoryID: 101, Path: "a.go", Line: 1, CharacterUTF8: intPointer(0), CharacterUTF16: intPointer(1 << 31), CharacterUTF32: intPointer(0), Operation: "definitions"},
+		{RepositoryID: 101, Path: "a.go", Line: 1, CharacterUTF8: intPointer(0), CharacterUTF16: intPointer(0), CharacterUTF32: intPointer(1 << 31), Operation: "definitions"},
+		{RepositoryID: 101, Path: "a.go", Line: 1, CharacterUTF8: intPointer(0), Operation: "definitions"},
+		{RepositoryID: 101, Path: "a.go", Commit: strings.Repeat("A", 40), Line: 1, Operation: "definitions"},
 		{RepositoryID: 101, Path: "a.go", Line: 1, Operation: "unknown"},
 	} {
 		if _, err := service.Navigate(t.Context(), userPrincipal, invalid); !errors.Is(err, ErrInvalidRequest) {
@@ -90,14 +105,37 @@ func TestNavigateValidatesRequestAndUsesZeroBasedStorageLine(t *testing.T) {
 	}
 }
 
+func TestNavigateRejectsSuppliedStaleCommit(t *testing.T) {
+	store := &fakeStore{repositories: map[int64]repository.Repository{101: serviceRepository}}
+	_, err := (&Service{Store: store}).Navigate(t.Context(), userPrincipal, api.SCIPNavigationRequest{
+		RepositoryID: 101,
+		Path:         "a.go",
+		Commit:       strings.Repeat("b", 40),
+		Line:         1,
+		Operation:    "definitions",
+	})
+	if !errors.Is(err, ErrNotIndexed) {
+		t.Fatalf("Navigate() error = %v", err)
+	}
+	if store.occurrenceRepositoryID != 0 {
+		t.Fatal("stale navigation reached occurrence lookup")
+	}
+}
+
+func intPointer(value int) *int {
+	return &value
+}
+
 func TestNavigateAuthorizesEveryLocationAndConvertsLines(t *testing.T) {
 	principal := userPrincipal
 	principal.RepositoryNames = []string{"acme/one"}
+	target := serviceRepository
+	target.Branch = "release/2026"
 	store := &fakeStore{
-		repositories: map[int64]repository.Repository{101: serviceRepository},
+		repositories: map[int64]repository.Repository{101: target},
 		origin:       StoredOccurrence{RepositoryID: 1, Commit: serviceSHA},
 		locations: []Location{
-			{RepositoryID: 101, RepositoryName: "acme/one", Commit: serviceSHA, Path: "allowed.go", StartLine: 2, EndLine: 3, PositionEncoding: 2, Approximate: true},
+			{RepositoryID: 101, RepositoryName: "acme/one", WebURL: "https://github.example/acme/one", Commit: serviceSHA, Path: "allowed.go", StartLine: 2, EndLine: 3, PositionEncoding: 2, Approximate: true},
 			{RepositoryID: 102, RepositoryName: "acme/two", Commit: serviceSHA, Path: "forbidden.go"},
 			{RepositoryID: 101, RepositoryName: "acme/one", Commit: strings.Repeat("b", 40), Path: "stale.go"},
 		},
@@ -107,6 +145,8 @@ func TestNavigateAuthorizesEveryLocationAndConvertsLines(t *testing.T) {
 
 	got, err := service.Navigate(t.Context(), principal, api.SCIPNavigationRequest{RepositoryID: 101, Path: "a.go", Line: 3, Character: 4, Operation: "definitions"})
 	if err != nil || len(got.Locations) != 1 || got.Locations[0].RepositoryID != 101 || got.Locations[0].StartLine != 3 || got.Locations[0].EndLine != 4 ||
+		got.Locations[0].WebURL != "https://github.example/acme/one" ||
+		got.Locations[0].Branch != "release/2026" ||
 		got.Locations[0].PositionEncoding != "UTF16CodeUnitOffsetFromLineStart" || !got.Locations[0].Approximate || !got.Truncated {
 		t.Fatalf("Navigate() = %#v, %v", got, err)
 	}
@@ -266,22 +306,23 @@ func (reader *dependencyReader) DependencySBOM(_ context.Context, installationID
 var errUnauthorizedRepository = errors.New("unauthorized repository")
 
 type fakeStore struct {
-	repositories                                      map[int64]repository.Repository
-	origin                                            StoredOccurrence
-	locations                                         []Location
-	locationsTruncated                                bool
-	replacedRepositoryID                              int64
-	replacedCommit                                    string
-	occurrenceRepositoryID                            int64
-	occurrenceCommit                                  string
-	occurrenceLine, occurrenceCharacter, locationsMax int
-	packagesRepositoryID                              int64
-	packagesSource                                    string
-	packages                                          []PackageMapping
-	replaceErr, occurrenceErr                         error
-	authorizationCalls                                []authorizationCall
-	locationsPrincipal                                authn.Principal
-	replacePackagesCalls                              int
+	repositories                 map[int64]repository.Repository
+	origin                       StoredOccurrence
+	locations                    []Location
+	locationsTruncated           bool
+	replacedRepositoryID         int64
+	replacedCommit               string
+	occurrenceRepositoryID       int64
+	occurrenceCommit             string
+	occurrenceLine, locationsMax int
+	occurrencePosition           OccurrencePosition
+	packagesRepositoryID         int64
+	packagesSource               string
+	packages                     []PackageMapping
+	replaceErr, occurrenceErr    error
+	authorizationCalls           []authorizationCall
+	locationsPrincipal           authn.Principal
+	replacePackagesCalls         int
 }
 
 type authorizationCall struct {
@@ -304,9 +345,9 @@ func (store *fakeStore) ReplaceSCIP(_ context.Context, repositoryID int64, commi
 	return store.replaceErr
 }
 
-func (store *fakeStore) OccurrenceAt(_ context.Context, repositoryID int64, commit, _ string, line, character int) (StoredOccurrence, error) {
+func (store *fakeStore) OccurrenceAt(_ context.Context, repositoryID int64, commit, _ string, line int, position OccurrencePosition) (StoredOccurrence, error) {
 	store.occurrenceRepositoryID, store.occurrenceCommit = repositoryID, commit
-	store.occurrenceLine, store.occurrenceCharacter = line, character
+	store.occurrenceLine, store.occurrencePosition = line, position
 	return store.origin, store.occurrenceErr
 }
 
