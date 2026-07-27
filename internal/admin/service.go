@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/repository"
 )
 
@@ -123,86 +124,85 @@ type IndexRequest struct {
 }
 
 type Store interface {
-	AdminOverview(context.Context) (Overview, error)
-	AdminRepositories(context.Context, int) ([]Repository, bool, error)
-	AdminJobs(context.Context, int) ([]Job, bool, error)
-	AdminSCIPUploads(context.Context, int) ([]SCIPUpload, bool, error)
-	AdminSCIPDependencies(context.Context, int) ([]SCIPDependency, bool, error)
-	AdminDeliveries(context.Context, int) ([]Delivery, bool, error)
-	AdminGitHub(context.Context, GitHubConfig, int) (GitHub, error)
-	AdminRepository(context.Context, int64) (repository.Repository, error)
+	AdminOverview(context.Context, int64, []int64) (Overview, error)
+	AdminRepositories(context.Context, int64, []int64, int) ([]Repository, bool, error)
+	AdminJobs(context.Context, int64, []int64, int) ([]Job, bool, error)
+	AdminSCIPUploads(context.Context, int64, []int64, int) ([]SCIPUpload, bool, error)
+	AdminSCIPDependencies(context.Context, int64, []int64, int) ([]SCIPDependency, bool, error)
+	AdminDeliveries(context.Context, int64, []int64, int) ([]Delivery, bool, error)
+	AdminGitHub(context.Context, int64, []int64, GitHubConfig, int) (GitHub, error)
+	AdminRepository(context.Context, int64, []int64, int64) (repository.Repository, error)
 	EnqueueAdminIndex(context.Context, IndexRequest) error
-	RetryAdminJob(context.Context, int64) error
+	RetryAdminJob(context.Context, int64, []int64, int64) error
+	ReconcileAdminRepositories(context.Context, int64, []int64, []githubapp.Repository) error
 }
 
 type GitHubClient interface {
 	DefaultBranchSHA(context.Context, int64, string, string, string) (string, error)
+	InstallationRepositories(context.Context, int64) ([]githubapp.Repository, error)
 }
 
-type Reconciler interface{ All(context.Context) error }
-
 type Service struct {
-	Store      Store
-	GitHub     GitHubClient
-	Reconciler Reconciler
-	Config     GitHubConfig
-	MaxItems   int
+	Store    Store
+	GitHub   GitHubClient
+	Config   GitHubConfig
+	MaxItems int
 }
 
 func (service *Service) Overview(ctx context.Context, principal authn.Principal) (Overview, error) {
 	if err := requireAdmin(principal); err != nil {
 		return Overview{}, err
 	}
-	return service.Store.AdminOverview(ctx)
+	return service.Store.AdminOverview(ctx, principal.InstallationID, principal.RepositoryIDs)
 }
 
 func (service *Service) Repositories(ctx context.Context, principal authn.Principal) ([]Repository, bool, error) {
 	if err := requireAdmin(principal); err != nil {
 		return nil, false, err
 	}
-	return service.Store.AdminRepositories(ctx, service.limit())
+	return service.Store.AdminRepositories(ctx, principal.InstallationID, principal.RepositoryIDs, service.limit())
 }
 
 func (service *Service) Jobs(ctx context.Context, principal authn.Principal) ([]Job, bool, error) {
 	if err := requireAdmin(principal); err != nil {
 		return nil, false, err
 	}
-	return service.Store.AdminJobs(ctx, service.limit())
+	return service.Store.AdminJobs(ctx, principal.InstallationID, principal.RepositoryIDs, service.limit())
 }
 
 func (service *Service) SCIPUploads(ctx context.Context, principal authn.Principal) ([]SCIPUpload, bool, error) {
 	if err := requireAdmin(principal); err != nil {
 		return nil, false, err
 	}
-	return service.Store.AdminSCIPUploads(ctx, service.limit())
+	return service.Store.AdminSCIPUploads(ctx, principal.InstallationID, principal.RepositoryIDs, service.limit())
 }
 
 func (service *Service) SCIPDependencies(ctx context.Context, principal authn.Principal) ([]SCIPDependency, bool, error) {
 	if err := requireAdmin(principal); err != nil {
 		return nil, false, err
 	}
-	return service.Store.AdminSCIPDependencies(ctx, service.limit())
+	return service.Store.AdminSCIPDependencies(ctx, principal.InstallationID, principal.RepositoryIDs, service.limit())
 }
 
 func (service *Service) Deliveries(ctx context.Context, principal authn.Principal) ([]Delivery, bool, error) {
 	if err := requireAdmin(principal); err != nil {
 		return nil, false, err
 	}
-	return service.Store.AdminDeliveries(ctx, service.limit())
+	return service.Store.AdminDeliveries(ctx, principal.InstallationID, principal.RepositoryIDs, service.limit())
 }
 
 func (service *Service) GitHubInfo(ctx context.Context, principal authn.Principal) (GitHub, error) {
 	if err := requireAdmin(principal); err != nil {
 		return GitHub{}, err
 	}
-	return service.Store.AdminGitHub(ctx, service.Config, service.limit())
+	return service.Store.AdminGitHub(ctx, principal.InstallationID, principal.RepositoryIDs, service.Config, service.limit())
 }
 
 func (service *Service) Reindex(ctx context.Context, principal authn.Principal, githubID int64) error {
 	if err := requireAdmin(principal); err != nil {
 		return err
 	}
-	repo, err := service.Store.AdminRepository(ctx, githubID)
+	repo, err := service.Store.AdminRepository(ctx, principal.InstallationID, principal.RepositoryIDs, githubID)
 	if err != nil {
 		return err
 	}
@@ -223,14 +223,33 @@ func (service *Service) Reconcile(ctx context.Context, principal authn.Principal
 	if err := requireAdmin(principal); err != nil {
 		return err
 	}
-	return service.Reconciler.All(ctx)
+	upstream, err := service.GitHub.InstallationRepositories(ctx, principal.InstallationID)
+	if err != nil {
+		return err
+	}
+	allowed := make(map[int64]struct{}, len(principal.RepositoryIDs))
+	for _, id := range principal.RepositoryIDs {
+		allowed[id] = struct{}{}
+	}
+	scoped := make([]githubapp.Repository, 0, len(principal.RepositoryIDs))
+	for _, repo := range upstream {
+		if _, ok := allowed[repo.ID]; !ok {
+			continue
+		}
+		repo.DefaultSHA, err = service.GitHub.DefaultBranchSHA(ctx, principal.InstallationID, repo.Owner, repo.Name, repo.DefaultBranch)
+		if err != nil {
+			return err
+		}
+		scoped = append(scoped, repo)
+	}
+	return service.Store.ReconcileAdminRepositories(ctx, principal.InstallationID, principal.RepositoryIDs, scoped)
 }
 
 func (service *Service) Retry(ctx context.Context, principal authn.Principal, id int64) error {
 	if err := requireAdmin(principal); err != nil {
 		return err
 	}
-	return service.Store.RetryAdminJob(ctx, id)
+	return service.Store.RetryAdminJob(ctx, principal.InstallationID, principal.RepositoryIDs, id)
 }
 
 func requireAdmin(principal authn.Principal) error {

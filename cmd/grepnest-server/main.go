@@ -211,7 +211,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	scipService := &scipgraph.Service{Store: store, GitHub: githubClient, MaxResults: settings.Limits.MaxResults}
 	processor := webhook.NewGitHubProcessor(store, reconcileRequests, metrics)
 	adminService := &admin.Service{
-		Store: store, GitHub: githubClient, Reconciler: reconciler,
+		Store: store, GitHub: githubClient,
 		Config: admin.GitHubConfig{
 			AppID: settings.GitHub.AppID, WebURL: settings.GitHub.WebURL, APIURL: settings.GitHub.APIURL,
 			UploadURL: settings.GitHub.UploadURL, GitURL: settings.GitHub.GitURL, APIVersion: settings.GitHub.APIVersion,

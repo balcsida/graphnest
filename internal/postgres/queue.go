@@ -10,11 +10,13 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-func (s *Store) AdminJobs(ctx context.Context, limit int) ([]admin.Job, bool, error) {
+func (s *Store) AdminJobs(ctx context.Context, installationID int64, repositoryIDs []int64, limit int) ([]admin.Job, bool, error) {
 	rows, err := s.pool.Query(ctx, `select jobs.id,repositories.github_id,repositories.owner||'/'||repositories.name,
 		jobs.target_sha,jobs.target_ref,jobs.reason,jobs.state,coalesce(jobs.error_code,''),jobs.attempt,jobs.max_attempts,
 		jobs.priority,jobs.run_after,jobs.created_at,jobs.updated_at from index_jobs jobs
-		join repositories on repositories.id=jobs.repository_id order by jobs.updated_at desc,jobs.id desc limit $1`, limit+1)
+		join repositories on repositories.id=jobs.repository_id join installations on installations.id=repositories.installation_id
+		where installations.github_id=$1 and repositories.github_id=any($2)
+		order by jobs.updated_at desc,jobs.id desc limit $3`, installationID, repositoryIDs, limit+1)
 	if err != nil {
 		return nil, false, err
 	}
@@ -41,12 +43,13 @@ func (s *Store) EnqueueAdminIndex(ctx context.Context, r admin.IndexRequest) err
 	return s.EnqueueIndex(ctx, IndexRequest{RepositoryID: r.RepositoryID, TargetSHA: r.TargetSHA, TargetRef: r.TargetRef, Reason: r.Reason})
 }
 
-func (s *Store) RetryAdminJob(ctx context.Context, id int64) error {
+func (s *Store) RetryAdminJob(ctx context.Context, installationID int64, repositoryIDs []int64, id int64) error {
 	result, err := s.pool.Exec(ctx, `update index_jobs jobs set state='queued',run_after=now(),lease_owner=null,
 		lease_expires_at=null,error_code=null,error_message=null,attempt=0,updated_at=now() from repositories
 		join installations on installations.id=repositories.installation_id where jobs.id=$1
 		and jobs.repository_id=repositories.id and jobs.state='failed' and jobs.target_sha=repositories.desired_sha
-		and repositories.enabled and not repositories.archived and installations.status='active'`, id)
+		and repositories.enabled and not repositories.archived and installations.status='active'
+		and installations.github_id=$2 and repositories.github_id=any($3)`, id, installationID, repositoryIDs)
 	if err != nil {
 		return err
 	}

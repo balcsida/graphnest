@@ -36,7 +36,7 @@ import (
 )
 
 func TestAdminRoutesRegisterOnlyWithDurableService(t *testing.T) {
-	authenticator := authn.NewStatic(map[string]authn.Principal{"admin": {Administrator: true}})
+	authenticator := authn.NewStatic(map[string]authn.Principal{"admin": {Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}}})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}}
 	static := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil)
 	request := httptest.NewRequest(http.MethodGet, "/v1/admin/overview", nil)
@@ -58,7 +58,7 @@ func TestAdminRoutesRegisterOnlyWithDurableService(t *testing.T) {
 
 type mainAdminStore struct{ admin.Store }
 
-func (mainAdminStore) AdminOverview(context.Context) (admin.Overview, error) {
+func (mainAdminStore) AdminOverview(context.Context, int64, []int64) (admin.Overview, error) {
 	return admin.Overview{}, nil
 }
 

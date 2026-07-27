@@ -6,11 +6,12 @@ import (
 	"testing"
 
 	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/repository"
 )
 
 func TestServiceRejectsNonAdministrators(t *testing.T) {
-	service := &Service{Store: &fakeStore{}, GitHub: fakeGitHub{}, Reconciler: &fakeReconciler{}}
+	service := &Service{Store: &fakeStore{}, GitHub: fakeGitHub{}}
 	for name, call := range map[string]func() error{
 		"overview":  func() error { _, err := service.Overview(t.Context(), authn.Principal{}); return err },
 		"reindex":   func() error { return service.Reindex(t.Context(), authn.Principal{}, 101) },
@@ -29,8 +30,8 @@ func TestServiceResolvesReindexDefaultBranchSHA(t *testing.T) {
 	store := &fakeStore{repository: repository.Repository{
 		ID: 7, InstallationID: 10, GitHubID: 101, Name: "acme/one", Branch: "main", Enabled: true,
 	}}
-	service := &Service{Store: store, GitHub: fakeGitHub{sha: testSHA}, Reconciler: &fakeReconciler{}}
-	if err := service.Reindex(t.Context(), authn.Principal{Administrator: true}, 101); err != nil {
+	service := &Service{Store: store, GitHub: fakeGitHub{sha: testSHA}}
+	if err := service.Reindex(t.Context(), authn.Principal{Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}}, 101); err != nil {
 		t.Fatal(err)
 	}
 	if store.enqueued.RepositoryID != 7 || store.enqueued.TargetSHA != testSHA ||
@@ -39,49 +40,61 @@ func TestServiceResolvesReindexDefaultBranchSHA(t *testing.T) {
 	}
 }
 
-func TestServiceRunsReconcileAndRetry(t *testing.T) {
+func TestServiceScopesReconcileAndRetry(t *testing.T) {
 	store := &fakeStore{}
-	reconciler := fakeReconciler{}
-	service := &Service{Store: store, GitHub: fakeGitHub{}, Reconciler: &reconciler}
-	admin := authn.Principal{Administrator: true}
+	service := &Service{Store: store, GitHub: fakeGitHub{repositories: []githubapp.Repository{
+		{ID: 101, InstallationID: 10, Owner: "acme", Name: "one", DefaultBranch: "main"},
+		{ID: 102, InstallationID: 10, Owner: "acme", Name: "unscoped", DefaultBranch: "main"},
+		{ID: 202, InstallationID: 20, Owner: "other", Name: "two", DefaultBranch: "main"},
+	}}}
+	admin := authn.Principal{Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}}
 	if err := service.Reconcile(t.Context(), admin); err != nil {
 		t.Fatal(err)
 	}
 	if err := service.Retry(t.Context(), admin, 42); err != nil {
 		t.Fatal(err)
 	}
-	if reconciler.calls != 1 || store.retried != 42 {
-		t.Fatalf("reconciles=%d retried=%d", reconciler.calls, store.retried)
+	if len(store.reconciled) != 1 || store.reconciled[0].ID != 101 || store.retried != 42 ||
+		store.retryInstallationID != 10 || len(store.retryRepositoryIDs) != 1 || store.retryRepositoryIDs[0] != 101 {
+		t.Fatalf("reconciled=%#v retried=%d retry scope=(%d,%v)", store.reconciled, store.retried, store.retryInstallationID, store.retryRepositoryIDs)
 	}
 }
 
 const testSHA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 type fakeStore struct {
-	repository repository.Repository
-	enqueued   IndexRequest
-	retried    int64
+	repository          repository.Repository
+	enqueued            IndexRequest
+	retried             int64
+	retryInstallationID int64
+	retryRepositoryIDs  []int64
+	reconciled          []githubapp.Repository
 }
 
-func (*fakeStore) AdminOverview(context.Context) (Overview, error) { return Overview{}, nil }
-func (*fakeStore) AdminRepositories(context.Context, int) ([]Repository, bool, error) {
+func (*fakeStore) AdminOverview(context.Context, int64, []int64) (Overview, error) {
+	return Overview{}, nil
+}
+func (*fakeStore) AdminRepositories(context.Context, int64, []int64, int) ([]Repository, bool, error) {
 	return nil, false, nil
 }
-func (*fakeStore) AdminJobs(context.Context, int) ([]Job, bool, error) { return nil, false, nil }
-func (*fakeStore) AdminSCIPUploads(context.Context, int) ([]SCIPUpload, bool, error) {
+func (*fakeStore) AdminJobs(context.Context, int64, []int64, int) ([]Job, bool, error) {
 	return nil, false, nil
 }
-func (*fakeStore) AdminSCIPDependencies(context.Context, int) ([]SCIPDependency, bool, error) {
+func (*fakeStore) AdminSCIPUploads(context.Context, int64, []int64, int) ([]SCIPUpload, bool, error) {
 	return nil, false, nil
 }
-func (*fakeStore) AdminDeliveries(context.Context, int) ([]Delivery, bool, error) {
+func (*fakeStore) AdminSCIPDependencies(context.Context, int64, []int64, int) ([]SCIPDependency, bool, error) {
 	return nil, false, nil
 }
-func (*fakeStore) AdminGitHub(context.Context, GitHubConfig, int) (GitHub, error) {
+func (*fakeStore) AdminDeliveries(context.Context, int64, []int64, int) ([]Delivery, bool, error) {
+	return nil, false, nil
+}
+func (*fakeStore) AdminGitHub(context.Context, int64, []int64, GitHubConfig, int) (GitHub, error) {
 	return GitHub{}, nil
 }
-func (store *fakeStore) AdminRepository(_ context.Context, githubID int64) (repository.Repository, error) {
-	if store.repository.GitHubID != githubID {
+func (store *fakeStore) AdminRepository(_ context.Context, installationID int64, repositoryIDs []int64, githubID int64) (repository.Repository, error) {
+	if installationID != store.repository.InstallationID || len(repositoryIDs) != 1 ||
+		repositoryIDs[0] != githubID || store.repository.GitHubID != githubID {
 		return repository.Repository{}, errors.New("missing")
 	}
 	return store.repository, nil
@@ -90,20 +103,25 @@ func (store *fakeStore) EnqueueAdminIndex(_ context.Context, request IndexReques
 	store.enqueued = request
 	return nil
 }
-func (store *fakeStore) RetryAdminJob(_ context.Context, id int64) error {
+func (store *fakeStore) RetryAdminJob(_ context.Context, installationID int64, repositoryIDs []int64, id int64) error {
 	store.retried = id
+	store.retryInstallationID = installationID
+	store.retryRepositoryIDs = append([]int64(nil), repositoryIDs...)
+	return nil
+}
+func (store *fakeStore) ReconcileAdminRepositories(_ context.Context, _ int64, _ []int64, repositories []githubapp.Repository) error {
+	store.reconciled = append([]githubapp.Repository(nil), repositories...)
 	return nil
 }
 
-type fakeGitHub struct{ sha string }
+type fakeGitHub struct {
+	sha          string
+	repositories []githubapp.Repository
+}
 
 func (github fakeGitHub) DefaultBranchSHA(context.Context, int64, string, string, string) (string, error) {
 	return github.sha, nil
 }
-
-type fakeReconciler struct{ calls int }
-
-func (reconciler *fakeReconciler) All(context.Context) error {
-	reconciler.calls++
-	return nil
+func (github fakeGitHub) InstallationRepositories(context.Context, int64) ([]githubapp.Repository, error) {
+	return github.repositories, nil
 }

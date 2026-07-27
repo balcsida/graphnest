@@ -8,12 +8,13 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (s *Store) AdminDeliveries(ctx context.Context, limit int) ([]admin.Delivery, bool, error) {
+func (s *Store) AdminDeliveries(ctx context.Context, installationID int64, _ []int64, limit int) ([]admin.Delivery, bool, error) {
 	rows, err := s.pool.Query(ctx, `select deliveries.id,deliveries.delivery_id,deliveries.event_name,
 		installations.github_id,deliveries.received_at,deliveries.processed_at,deliveries.state,
 		coalesce(deliveries.error_code,'') from webhook_deliveries deliveries
 		join installations on installations.id=deliveries.installation_id
-		order by deliveries.received_at desc,deliveries.id desc limit $1`, limit+1)
+		where installations.github_id=$1
+		order by deliveries.received_at desc,deliveries.id desc limit $2`, installationID, limit+1)
 	if err != nil {
 		return nil, false, err
 	}

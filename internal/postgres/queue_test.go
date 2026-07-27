@@ -175,7 +175,7 @@ func TestAdminRetryOnlyRequeuesCurrentFailedWork(t *testing.T) {
 	if err := store.FailIndex(t.Context(), job.ID, "owner", "permanent", false); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.RetryAdminJob(t.Context(), job.ID); err != nil {
+	if err := store.RetryAdminJob(t.Context(), 10, []int64{101}, job.ID); err != nil {
 		t.Fatal(err)
 	}
 	var state string
@@ -183,7 +183,10 @@ func TestAdminRetryOnlyRequeuesCurrentFailedWork(t *testing.T) {
 	if err := store.pool.QueryRow(t.Context(), "select state,attempt from index_jobs where id=$1", job.ID).Scan(&state, &attempt); err != nil || state != "queued" || attempt != 0 {
 		t.Fatalf("state=%q attempt=%d err=%v", state, attempt, err)
 	}
-	if err := store.RetryAdminJob(t.Context(), job.ID); err == nil {
+	if err := store.RetryAdminJob(t.Context(), 20, []int64{202}, job.ID); err == nil {
+		t.Fatal("cross-scope job was retried")
+	}
+	if err := store.RetryAdminJob(t.Context(), 10, []int64{101}, job.ID); err == nil {
 		t.Fatal("queued job was retried")
 	}
 	if _, err := store.pool.Exec(t.Context(), "update repositories set enabled=false where id=$1", repositoryID); err != nil {
@@ -192,7 +195,7 @@ func TestAdminRetryOnlyRequeuesCurrentFailedWork(t *testing.T) {
 	if _, err := store.pool.Exec(t.Context(), "update index_jobs set state='failed' where id=$1", job.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.RetryAdminJob(t.Context(), job.ID); err == nil {
+	if err := store.RetryAdminJob(t.Context(), 10, []int64{101}, job.ID); err == nil {
 		t.Fatal("disabled repository job was retried")
 	}
 }

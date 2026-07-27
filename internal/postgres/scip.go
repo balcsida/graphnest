@@ -11,11 +11,13 @@ import (
 	"github.com/scip-code/scip/bindings/go/scip"
 )
 
-func (s *Store) AdminSCIPUploads(ctx context.Context, limit int) ([]admin.SCIPUpload, bool, error) {
+func (s *Store) AdminSCIPUploads(ctx context.Context, installationID int64, repositoryIDs []int64, limit int) ([]admin.SCIPUpload, bool, error) {
 	rows, err := s.pool.Query(ctx, `select uploads.id,repositories.github_id,repositories.owner||'/'||repositories.name,
 		uploads.commit,uploads.project_root,uploads.indexer_name,uploads.indexer_version,uploads.uploaded_at
 		from scip_uploads uploads join repositories on repositories.id=uploads.repository_id
-		order by uploads.uploaded_at desc,uploads.id desc limit $1`, limit+1)
+		join installations on installations.id=repositories.installation_id
+		where installations.github_id=$1 and repositories.github_id=any($2)
+		order by uploads.uploaded_at desc,uploads.id desc limit $3`, installationID, repositoryIDs, limit+1)
 	if err != nil {
 		return nil, false, err
 	}
@@ -38,11 +40,13 @@ func (s *Store) AdminSCIPUploads(ctx context.Context, limit int) ([]admin.SCIPUp
 	return items, more, nil
 }
 
-func (s *Store) AdminSCIPDependencies(ctx context.Context, limit int) ([]admin.SCIPDependency, bool, error) {
+func (s *Store) AdminSCIPDependencies(ctx context.Context, installationID int64, repositoryIDs []int64, limit int) ([]admin.SCIPDependency, bool, error) {
 	rows, err := s.pool.Query(ctx, `select repositories.github_id,repositories.owner||'/'||repositories.name,
 		packages.source,packages.relation,packages.purl,packages.manager,packages.name,packages.version
 		from repository_packages packages join repositories on repositories.id=packages.repository_id
-		order by repositories.github_id,packages.source,packages.relation,packages.purl limit $1`, limit+1)
+		join installations on installations.id=repositories.installation_id
+		where installations.github_id=$1 and repositories.github_id=any($2)
+		order by repositories.github_id,packages.source,packages.relation,packages.purl limit $3`, installationID, repositoryIDs, limit+1)
 	if err != nil {
 		return nil, false, err
 	}

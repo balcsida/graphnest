@@ -9,15 +9,17 @@ import (
 
 	"github.com/grepnest/grepnest/internal/admin"
 	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/jackc/pgx/v5"
 )
 
 func TestAdminRoutesRequireAdministrator(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterAdmin(mux, authn.NewStatic(map[string]authn.Principal{
 		"user":  {Subject: "user"},
-		"admin": {Subject: "admin", Administrator: true},
-	}), &admin.Service{Store: &adminHTTPStore{}, GitHub: adminHTTPGitHub{}, Reconciler: adminHTTPReconciler{}}, 2, 4096)
+		"admin": {Subject: "admin", Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}},
+	}), &admin.Service{Store: &adminHTTPStore{}, GitHub: adminHTTPGitHub{}}, 2, 4096)
 
 	for _, token := range []string{"", "user"} {
 		request := httptest.NewRequest(http.MethodGet, "/v1/admin/overview", nil)
@@ -38,10 +40,10 @@ func TestAdminRoutesRequireAdministrator(t *testing.T) {
 
 func TestAdminRoutesExposeBoundedDataAndActions(t *testing.T) {
 	store := &adminHTTPStore{}
-	service := &admin.Service{Store: store, GitHub: adminHTTPGitHub{}, Reconciler: adminHTTPReconciler{}}
+	service := &admin.Service{Store: store, GitHub: adminHTTPGitHub{}}
 	mux := http.NewServeMux()
 	RegisterAdmin(mux, authn.NewStatic(map[string]authn.Principal{
-		"admin": {Administrator: true},
+		"admin": {Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}},
 	}), service, 2, 4096)
 
 	for _, path := range []string{
@@ -78,6 +80,21 @@ func TestAdminRoutesExposeBoundedDataAndActions(t *testing.T) {
 	if store.reindexed != 7 || store.retried != 42 {
 		t.Fatalf("reindexed=%d retried=%d", store.reindexed, store.retried)
 	}
+
+	request := httptest.NewRequest(http.MethodPost, "/v1/admin/repositories/202/reindex", nil)
+	request.Header.Set("Authorization", "Bearer admin")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("cross-scope reindex status=%d body=%q", response.Code, response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodPost, "/v1/admin/jobs/99/retry", nil)
+	request.Header.Set("Authorization", "Bearer admin")
+	response = httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("cross-scope retry status=%d body=%q", response.Code, response.Body.String())
+	}
 }
 
 type adminHTTPStore struct {
@@ -85,36 +102,45 @@ type adminHTTPStore struct {
 	retried   int64
 }
 
-func (adminHTTPStore) AdminOverview(context.Context) (admin.Overview, error) {
+func (adminHTTPStore) AdminOverview(context.Context, int64, []int64) (admin.Overview, error) {
 	return admin.Overview{Repositories: map[string]int64{"ready": 1}}, nil
 }
-func (adminHTTPStore) AdminRepositories(context.Context, int) ([]admin.Repository, bool, error) {
+func (adminHTTPStore) AdminRepositories(context.Context, int64, []int64, int) ([]admin.Repository, bool, error) {
 	return []admin.Repository{{GitHubID: 101, Name: "acme/one"}}, false, nil
 }
-func (adminHTTPStore) AdminJobs(context.Context, int) ([]admin.Job, bool, error) {
+func (adminHTTPStore) AdminJobs(context.Context, int64, []int64, int) ([]admin.Job, bool, error) {
 	return []admin.Job{{ID: 42, RepositoryID: 101}}, false, nil
 }
-func (adminHTTPStore) AdminSCIPUploads(context.Context, int) ([]admin.SCIPUpload, bool, error) {
+func (adminHTTPStore) AdminSCIPUploads(context.Context, int64, []int64, int) ([]admin.SCIPUpload, bool, error) {
 	return []admin.SCIPUpload{}, false, nil
 }
-func (adminHTTPStore) AdminSCIPDependencies(context.Context, int) ([]admin.SCIPDependency, bool, error) {
+func (adminHTTPStore) AdminSCIPDependencies(context.Context, int64, []int64, int) ([]admin.SCIPDependency, bool, error) {
 	return []admin.SCIPDependency{}, false, nil
 }
-func (adminHTTPStore) AdminDeliveries(context.Context, int) ([]admin.Delivery, bool, error) {
+func (adminHTTPStore) AdminDeliveries(context.Context, int64, []int64, int) ([]admin.Delivery, bool, error) {
 	return []admin.Delivery{}, false, nil
 }
-func (adminHTTPStore) AdminGitHub(context.Context, admin.GitHubConfig, int) (admin.GitHub, error) {
+func (adminHTTPStore) AdminGitHub(context.Context, int64, []int64, admin.GitHubConfig, int) (admin.GitHub, error) {
 	return admin.GitHub{AppID: 7, PrivateKeyConfigured: true, WebhookSecretConfigured: true}, nil
 }
-func (adminHTTPStore) AdminRepository(context.Context, int64) (repository.Repository, error) {
+func (adminHTTPStore) AdminRepository(_ context.Context, installationID int64, repositoryIDs []int64, githubID int64) (repository.Repository, error) {
+	if installationID != 10 || len(repositoryIDs) != 1 || repositoryIDs[0] != 101 || githubID != 101 {
+		return repository.Repository{}, pgx.ErrNoRows
+	}
 	return repository.Repository{ID: 7, InstallationID: 10, GitHubID: 101, Name: "acme/one", Branch: "main", Enabled: true}, nil
 }
 func (store *adminHTTPStore) EnqueueAdminIndex(_ context.Context, request admin.IndexRequest) error {
 	store.reindexed = request.RepositoryID
 	return nil
 }
-func (store *adminHTTPStore) RetryAdminJob(_ context.Context, id int64) error {
+func (store *adminHTTPStore) RetryAdminJob(_ context.Context, installationID int64, repositoryIDs []int64, id int64) error {
+	if installationID != 10 || len(repositoryIDs) != 1 || repositoryIDs[0] != 101 || id != 42 {
+		return pgx.ErrNoRows
+	}
 	store.retried = id
+	return nil
+}
+func (*adminHTTPStore) ReconcileAdminRepositories(context.Context, int64, []int64, []githubapp.Repository) error {
 	return nil
 }
 
@@ -123,7 +149,6 @@ type adminHTTPGitHub struct{}
 func (adminHTTPGitHub) DefaultBranchSHA(context.Context, int64, string, string, string) (string, error) {
 	return strings.Repeat("a", 40), nil
 }
-
-type adminHTTPReconciler struct{}
-
-func (adminHTTPReconciler) All(context.Context) error { return nil }
+func (adminHTTPGitHub) InstallationRepositories(context.Context, int64) ([]githubapp.Repository, error) {
+	return []githubapp.Repository{{ID: 101, InstallationID: 10, Owner: "acme", Name: "one", DefaultBranch: "main"}}, nil
+}
