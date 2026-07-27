@@ -45,6 +45,32 @@ func TestConsoleClearsPrincipalSearchStateOnSignOut(t *testing.T) {
 	}
 }
 
+func TestConsoleClearsPrincipalFileAndNavigationStateOnSignOut(t *testing.T) {
+	for _, want := range []string{
+		"fileController:null",
+		"navigationController:null",
+		"fileGeneration:0",
+		"navigationGeneration:0",
+		"fileRetry:null",
+		"navigationRetry:null",
+		"selectedIdentifier:null",
+		"function resetFileState()",
+		"state.fileController.abort()",
+		"state.navigationController.abort()",
+		"state.fileRetry=null",
+		"state.navigationRetry=null",
+		"state.selectedIdentifier=null",
+		`$("file-lines").replaceChildren()`,
+		`$("navigation-locations").replaceChildren()`,
+		`$("navigation-status").textContent=""`,
+		"resetSearchState();resetRepositories();resetFileState()",
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console is missing file/navigation lifecycle reset %q", want)
+		}
+	}
+}
+
 func TestConsoleKeepsTouchTargetsAtLeast44Pixels(t *testing.T) {
 	for _, want := range []string{
 		"fieldset label{display:flex;gap:8px;align-items:center;min-width:0;min-height:44px;overflow-wrap:anywhere}",
@@ -63,6 +89,7 @@ func TestConsoleKeepsHiddenApplicationStatesAuthoritative(t *testing.T) {
 		`<div id="application" class="app" hidden>`,
 		`<section id="search-view" data-screen="search">`,
 		`<section id="repository-view" data-screen="repositories" hidden`,
+		`<section id="file-view" data-screen="file" hidden`,
 		`<section id="token-gate"`,
 		`$("token-gate").hidden=true`,
 		`$("application").hidden=false`,
@@ -71,6 +98,7 @@ func TestConsoleKeepsHiddenApplicationStatesAuthoritative(t *testing.T) {
 		`function showScreen(screen)`,
 		`$("search-view").hidden=screen!=="search"`,
 		`$("repository-view").hidden=screen!=="repositories"`,
+		`$("file-view").hidden=screen!=="file"`,
 	} {
 		if !bytes.Contains(document, []byte(want)) {
 			t.Fatalf("console is missing authoritative state transition %q", want)

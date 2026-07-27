@@ -171,6 +171,13 @@ func performanceBudgetError(doc []byte) error {
 	if err := rendererBudgetError(renderer); err != nil {
 		return err
 	}
+	fileRenderer, err := functionBody(script, "renderFile")
+	if err != nil {
+		return err
+	}
+	if err := fileRendererBudgetError(fileRenderer); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -412,6 +419,22 @@ func rendererBudgetError(renderer string) error {
 	return nil
 }
 
+func fileRendererBudgetError(renderer string) error {
+	compact := compactSource(renderer)
+	if got := strings.Count(compact, "document.createdocumentfragment()"); got != 1 {
+		return fmt.Errorf("renderFile detached fragments=%d, want 1", got)
+	}
+	if got := strings.Count(compact, `$("file-lines").replacechildren(fragment)`); got != 1 {
+		return fmt.Errorf("renderFile replacements=%d, want 1", got)
+	}
+	for _, unsafe := range []string{"innerhtml", "outerhtml", "insertadjacenthtml"} {
+		if strings.Contains(compact, unsafe) {
+			return fmt.Errorf("renderFile contains unsafe write %s", unsafe)
+		}
+	}
+	return nil
+}
+
 func compactSource(source string) string {
 	return strings.ToLower(strings.Join(strings.Fields(source), ""))
 }
@@ -429,5 +452,9 @@ const code=document.createElement("code");code.textContent=text;fragment.append(
 $("results").replaceChildren(fragment);
 }
 function blobURL(match){return match.path}
+function renderFile(response){
+const fragment=document.createDocumentFragment();
+$("file-lines").replaceChildren(fragment);
+}
 if(state.controller)state.controller.abort();
 </script></body></html>`

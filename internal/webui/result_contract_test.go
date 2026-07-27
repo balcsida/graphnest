@@ -46,3 +46,44 @@ func TestConsoleBoundsLongRepositoryLabels(t *testing.T) {
 		t.Fatal("repository popup is capped by its narrow details parent")
 	}
 }
+
+func TestConsoleOpensIndexedFilesInAFileViewer(t *testing.T) {
+	for _, want := range []string{
+		`id="file-view"`,
+		`id="file-lines"`,
+		`id="navigation-panel"`,
+		`function openFile(match)`,
+		`request("/v1/files/read"`,
+		`body:JSON.stringify({repository_id:match.repository.id,path:match.path})`,
+		`gutter.textContent=String(response.start_line+offset)`,
+		`$("file-lines").replaceChildren(fragment)`,
+		`response.truncated?"File content was truncated.":""`,
+		`fallback.href=blobURL(match)`,
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console is missing indexed file behavior %q", want)
+		}
+	}
+}
+
+func TestConsoleNavigatesIdentifiersAtExactOffsets(t *testing.T) {
+	for _, want := range []string{
+		`/[\p{L}_$][\p{L}\p{N}_$]*/gu`,
+		`character_utf8:new TextEncoder().encode(prefix).length`,
+		`character_utf16:prefix.length`,
+		`character_utf32:Array.from(prefix).length`,
+		`button.dataset.line=String(line)`,
+		`function selectIdentifier(button)`,
+		`function runNavigation(operation)`,
+		`request("/v1/scip/navigation"`,
+		`data-operation="definitions"`,
+		`data-operation="references"`,
+		`data-operation="implementations"`,
+		`location.approximate?"Approximate":""`,
+		`link.href=indexedLocationURL(location)`,
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console is missing exact SCIP navigation behavior %q", want)
+		}
+	}
+}

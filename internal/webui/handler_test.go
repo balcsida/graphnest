@@ -41,7 +41,8 @@ func TestRegisterServesBoundedConsoleAtExactPaths(t *testing.T) {
 		}
 		for _, want := range []string{
 			`id="token-form"`, `id="search-form"`, `id="repository-picker"`,
-			`id="status"`, "prefers-reduced-motion: reduce",
+			`id="status"`, `id="file-view"`, `id="navigation-panel"`,
+			"prefers-reduced-motion: reduce",
 		} {
 			if !bytes.Contains(body, []byte(want)) {
 				t.Fatalf("%s missing %q", path, want)
