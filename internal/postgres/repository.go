@@ -46,9 +46,8 @@ func (s *Store) AdminOverview(ctx context.Context, installationID int64, reposit
 		 join installations on installations.id=repositories.installation_id where installations.github_id=$1 and repositories.github_id=any($2)),
 		(select count(*) from repository_packages packages join repositories on repositories.id=packages.repository_id
 		 join installations on installations.id=repositories.installation_id where installations.github_id=$1 and repositories.github_id=any($2)),
-		(select count(*) from installations where github_id=$1),
-		0::bigint`, installationID, repositoryIDs).
-		Scan(&r.SCIPUploads, &r.Dependencies, &r.Installations, &r.SearchNodes)
+		(select count(*) from installations where github_id=$1)`, installationID, repositoryIDs).
+		Scan(&r.SCIPUploads, &r.Dependencies, &r.Installations)
 	return r, err
 }
 

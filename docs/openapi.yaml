@@ -303,7 +303,7 @@ components:
     AdminOverview:
       type: object
       additionalProperties: false
-      required: [repositories, jobs, deliveries, scip_uploads, dependencies, installations, search_nodes]
+      required: [repositories, jobs, deliveries, scip_uploads, dependencies, installations]
       properties:
         repositories: {type: object, additionalProperties: {type: integer, format: int64}}
         jobs: {type: object, additionalProperties: {type: integer, format: int64}}
@@ -311,7 +311,6 @@ components:
         scip_uploads: {type: integer, format: int64}
         dependencies: {type: integer, format: int64}
         installations: {type: integer, format: int64}
-        search_nodes: {type: integer, format: int64}
     AdminRepositoryList:
       type: object
       additionalProperties: false

@@ -58,6 +58,9 @@ func TestAdminRoutesExposeBoundedDataAndActions(t *testing.T) {
 		if response.Code != http.StatusOK || response.Body.Len() > 4096 {
 			t.Fatalf("%s status=%d bytes=%d body=%q", path, response.Code, response.Body.Len(), response.Body.String())
 		}
+		if path == "/v1/admin/overview" && strings.Contains(response.Body.String(), "search_nodes") {
+			t.Fatalf("overview exposed unsupported search-node metrics: %q", response.Body.String())
+		}
 		if path == "/v1/admin/github" && (strings.Contains(response.Body.String(), "private_key_file") ||
 			strings.Contains(response.Body.String(), "webhook_secret_file")) {
 			t.Fatalf("GitHub response exposed secret: %q", response.Body.String())

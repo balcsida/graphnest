@@ -20,7 +20,6 @@ type Overview struct {
 	SCIPUploads   int64            `json:"scip_uploads"`
 	Dependencies  int64            `json:"dependencies"`
 	Installations int64            `json:"installations"`
-	SearchNodes   int64            `json:"search_nodes"`
 }
 
 type Repository struct {

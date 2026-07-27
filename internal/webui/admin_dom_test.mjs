@@ -89,7 +89,7 @@ for (const name of ["overview", "repositories", "queue", "scip", "webhooks", "gi
 }
 
 const responses = {
-  "/v1/admin/overview": {repositories:{ready:1},jobs:{queued:1,running:1,succeeded:1,failed:1,superseded:1},deliveries:{succeeded:1},scip_uploads:1,dependencies:1,installations:1,search_nodes:1},
+  "/v1/admin/overview": {repositories:{ready:1},jobs:{queued:1,running:1,succeeded:1,failed:1,superseded:1},deliveries:{succeeded:1},scip_uploads:1,dependencies:1,installations:1},
   "/v1/admin/repositories": {repositories:[
     {github_id:7,name:"acme/repo",default_branch:"main",status:"mystery",error_code:""},
     {github_id:8,name:"acme/failed",default_branch:"main",status:"failed",error_code:"clone_failed"},

@@ -36,6 +36,7 @@ func TestAdminDocumentContract(t *testing.T) {
 	for _, forbidden := range []string{
 		"localStorage", "innerHTML", "outerHTML", "insertAdjacentHTML",
 		"support.js", "fonts.googleapis.com", "private_key_path", "webhook_secret_path",
+		"Search nodes", "search_nodes",
 	} {
 		if bytes.Contains(adminDocument, []byte(forbidden)) {
 			t.Errorf("admin document contains forbidden %q", forbidden)
