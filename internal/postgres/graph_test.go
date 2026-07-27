@@ -3,8 +3,101 @@
 package postgres
 
 import (
+	"bytes"
+	"errors"
 	"testing"
+
+	"github.com/grepnest/grepnest/internal/graphartifact"
 )
+
+func TestReplaceGraphExternalWins(t *testing.T) {
+	store, repositoryID := readyGraphStore(t, testSHA('a'))
+	managed := artifactFor(repositoryID, testSHA('a'), "managed")
+	if got, err := store.ReplaceGraph(t.Context(), repositoryID, GraphSourceManaged, managed); err != nil || !got.Applied {
+		t.Fatalf("managed = %#v, %v", got, err)
+	}
+	external := artifactFor(repositoryID, testSHA('a'), "external")
+	if got, err := store.ReplaceGraph(t.Context(), repositoryID, GraphSourceExternal, external); err != nil || !got.Applied {
+		t.Fatalf("external = %#v, %v", got, err)
+	}
+	if got, err := store.ReplaceGraph(t.Context(), repositoryID, GraphSourceManaged, managed); err != nil || got.Applied {
+		t.Fatalf("late managed = %#v, %v", got, err)
+	}
+	loaded, err := store.LoadGraph(t.Context(), 2)
+	if err != nil || loaded.Analyzer.Name != "external" {
+		t.Fatalf("load external = %#v, %v", loaded, err)
+	}
+}
+
+func TestReplaceGraphStaleCommitDoesNotReplaceCurrentUpload(t *testing.T) {
+	store, repositoryID := readyGraphStore(t, testSHA('a'))
+	current := artifactFor(repositoryID, testSHA('a'), "current")
+	if _, err := store.ReplaceGraph(t.Context(), repositoryID, GraphSourceManaged, current); err != nil {
+		t.Fatal(err)
+	}
+	stale := artifactFor(repositoryID, testSHA('b'), "stale")
+	if got, err := store.ReplaceGraph(t.Context(), repositoryID, GraphSourceExternal, stale); err != nil || got.Applied {
+		t.Fatalf("stale = %#v, %v", got, err)
+	}
+	loaded, err := store.LoadGraph(t.Context(), 1)
+	if err != nil || loaded.Analyzer.Name != "current" {
+		t.Fatalf("load current = %#v, %v", loaded, err)
+	}
+}
+
+func TestReplaceGraphInvalidEdgePreservesOldUpload(t *testing.T) {
+	store, repositoryID := readyGraphStore(t, testSHA('a'))
+	old := artifactFor(repositoryID, testSHA('a'), "old")
+	if _, err := store.ReplaceGraph(t.Context(), repositoryID, GraphSourceManaged, old); err != nil {
+		t.Fatal(err)
+	}
+	invalid := artifactFor(repositoryID, testSHA('a'), "invalid")
+	invalid.Edges[0].TargetUID = "missing"
+	if _, err := store.ReplaceGraph(t.Context(), repositoryID, GraphSourceExternal, invalid); !errors.Is(err, graphartifact.ErrInvalidArtifact) {
+		t.Fatalf("invalid edge error = %v", err)
+	}
+	loaded, err := store.LoadGraph(t.Context(), 1)
+	if err != nil || loaded.Analyzer.Name != "old" {
+		t.Fatalf("load old = %#v, %v", loaded, err)
+	}
+}
+
+func TestReplaceGraphRoundTripsArtifact(t *testing.T) {
+	store, repositoryID := readyGraphStore(t, testSHA('a'))
+	want := artifactFor(repositoryID, testSHA('a'), "round-trip")
+	got, err := store.ReplaceGraph(t.Context(), repositoryID, GraphSourceManaged, want)
+	if err != nil || !got.Applied {
+		t.Fatalf("replace = %#v, %v", got, err)
+	}
+	loaded, err := store.LoadGraph(t.Context(), got.Upload.ID)
+	if err != nil || !graphArtifactsEqual(loaded, want) {
+		t.Fatalf("load = %#v, %v", loaded, err)
+	}
+}
+
+func readyGraphStore(t *testing.T, sha string) (*Store, int64) {
+	t.Helper()
+	store := migratedStore(t)
+	return store, seedReadyRepository(t, store, 101, sha)
+}
+
+func artifactFor(repositoryID int64, commit, analyzer string) graphartifact.Artifact {
+	return graphartifact.Artifact{
+		SchemaVersion: 1, RepositoryID: repositoryID, Commit: commit, ContentHash: bytes.Repeat([]byte{1}, 32),
+		Analyzer: graphartifact.Analyzer{Name: analyzer, Version: "1"},
+		Nodes: []graphartifact.Node{
+			{UID: "repository", Kind: graphartifact.NodeRepository},
+			{UID: "symbol", Kind: graphartifact.NodeSymbol, Path: "a.go", Language: "go", QualifiedName: "Thing", Range: graphartifact.Range{EndCharacter: 1}},
+		},
+		Edges: []graphartifact.Edge{{SourceUID: "repository", TargetUID: "symbol", Kind: graphartifact.EdgeContains, Path: "a.go", Confidence: 1}},
+	}
+}
+
+func graphArtifactsEqual(got, want graphartifact.Artifact) bool {
+	return got.SchemaVersion == want.SchemaVersion && got.RepositoryID == want.RepositoryID && got.Commit == want.Commit &&
+		got.Analyzer == want.Analyzer && bytes.Equal(got.ContentHash, want.ContentHash) && len(got.Nodes) == len(want.Nodes) && len(got.Edges) == len(want.Edges) &&
+		got.Nodes[0] == want.Nodes[0] && got.Nodes[1] == want.Nodes[1] && got.Edges[0] == want.Edges[0]
+}
 
 func TestGraphSchemaEnforcesArtifactBoundaries(t *testing.T) {
 	store := migratedStore(t)
