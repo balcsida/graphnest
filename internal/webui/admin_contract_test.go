@@ -22,6 +22,8 @@ func TestAdminDocumentContract(t *testing.T) {
 		`/v1/admin/scip/uploads`, `/v1/admin/scip/dependencies`,
 		`/v1/admin/webhook-deliveries`, `/v1/admin/github`,
 		`/v1/scip/uploads`, `/v1/scip/dependencies/github`, `/healthz`, `/readyz`,
+		`button{min-width:44px}`, `.aside-foot a{min-height:44px;display:flex;align-items:center}`,
+		`input[type=checkbox]{width:44px;min-width:44px}`,
 	} {
 		if !bytes.Contains(adminDocument, []byte(want)) {
 			t.Errorf("admin document missing %q", want)
