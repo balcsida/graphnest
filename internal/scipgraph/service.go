@@ -161,7 +161,7 @@ func (service *Service) Navigate(ctx context.Context, principal authn.Principal,
 			continue
 		}
 		response.Locations = append(response.Locations, api.SCIPLocation{
-			RepositoryID: location.RepositoryID, RepositoryName: location.RepositoryName, WebURL: location.WebURL,
+			RepositoryID: location.RepositoryID, RepositoryName: location.RepositoryName, Branch: target.Branch, WebURL: location.WebURL,
 			Commit: location.Commit, Path: location.Path, Symbol: location.Symbol,
 			StartLine: int(location.StartLine) + 1, StartCharacter: int(location.StartCharacter),
 			EndLine: int(location.EndLine) + 1, EndCharacter: int(location.EndCharacter),

@@ -557,10 +557,11 @@ components:
     SCIPLocation:
       type: object
       additionalProperties: false
-      required: [repository_id, repository_name, web_url, commit, path, symbol, start_line, start_character, end_line, end_character, position_encoding, roles, approximate]
+      required: [repository_id, repository_name, branch, web_url, commit, path, symbol, start_line, start_character, end_line, end_character, position_encoding, roles, approximate]
       properties:
         repository_id: {type: integer, format: int64, minimum: 1}
         repository_name: {type: string}
+        branch: {type: string}
         web_url: {type: string, format: uri}
         commit: {type: string, pattern: '^[0-9a-f]{40}$'}
         path: {type: string}

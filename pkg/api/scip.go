@@ -20,6 +20,7 @@ type SCIPNavigationResponse struct {
 type SCIPLocation struct {
 	RepositoryID     int64  `json:"repository_id"`
 	RepositoryName   string `json:"repository_name"`
+	Branch           string `json:"branch"`
 	WebURL           string `json:"web_url"`
 	Commit           string `json:"commit"`
 	Path             string `json:"path"`

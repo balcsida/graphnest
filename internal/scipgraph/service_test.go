@@ -129,8 +129,10 @@ func intPointer(value int) *int {
 func TestNavigateAuthorizesEveryLocationAndConvertsLines(t *testing.T) {
 	principal := userPrincipal
 	principal.RepositoryNames = []string{"acme/one"}
+	target := serviceRepository
+	target.Branch = "release/2026"
 	store := &fakeStore{
-		repositories: map[int64]repository.Repository{101: serviceRepository},
+		repositories: map[int64]repository.Repository{101: target},
 		origin:       StoredOccurrence{RepositoryID: 1, Commit: serviceSHA},
 		locations: []Location{
 			{RepositoryID: 101, RepositoryName: "acme/one", WebURL: "https://github.example/acme/one", Commit: serviceSHA, Path: "allowed.go", StartLine: 2, EndLine: 3, PositionEncoding: 2, Approximate: true},
@@ -144,6 +146,7 @@ func TestNavigateAuthorizesEveryLocationAndConvertsLines(t *testing.T) {
 	got, err := service.Navigate(t.Context(), principal, api.SCIPNavigationRequest{RepositoryID: 101, Path: "a.go", Line: 3, Character: 4, Operation: "definitions"})
 	if err != nil || len(got.Locations) != 1 || got.Locations[0].RepositoryID != 101 || got.Locations[0].StartLine != 3 || got.Locations[0].EndLine != 4 ||
 		got.Locations[0].WebURL != "https://github.example/acme/one" ||
+		got.Locations[0].Branch != "release/2026" ||
 		got.Locations[0].PositionEncoding != "UTF16CodeUnitOffsetFromLineStart" || !got.Locations[0].Approximate || !got.Truncated {
 		t.Fatalf("Navigate() = %#v, %v", got, err)
 	}
