@@ -33,34 +33,40 @@ func TestConsoleAnnouncesSearchErrors(t *testing.T) {
 	}
 }
 
-func TestConsoleMatchesApprovedSearchWorkspaceContract(t *testing.T) {
+func TestConsoleMatchesSuppliedApplicationVisualSystem(t *testing.T) {
 	for _, want := range []string{
-		`:root{--ink:#172033;--canvas:#F6F8FA;--surface:#FFFFFF;--border:#D8DEE8;--signal:#2563EB;--match:#FFE08A;`,
+		`--bg:#0A0D15`,
+		`--accent:#8B93FF`,
+		`--disp:ui-rounded,"SF Pro Rounded",system-ui,sans-serif`,
+		`--body:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif`,
+		`--mono:ui-monospace,SFMono-Regular,Menlo,monospace`,
+		`body.light{--bg:#F4F6FB`,
 		`[hidden]{display:none!important}`,
 		`class="app-bar"`,
-		`class="search-strip"`,
+		`data-screen="search"`,
+		`data-screen="repositories"`,
+		`id="theme-toggle"`,
+		`id="repository-view"`,
 		`class="token-panel"`,
-		`class="context-rail"`,
+		`class="search-rail"`,
 		`class="results-panel"`,
-		`grid-template-columns:232px minmax(0,1fr)`,
-		`@media(max-width:760px)`,
-		`#search-form{grid-template-columns:minmax(0,1fr) auto`,
+		`grid-template-columns:252px minmax(0,1fr)`,
+		`height:56px`,
+		`@media(max-width:800px)`,
 		`link.rel="noopener noreferrer"`,
 	} {
 		if !bytes.Contains(document, []byte(want)) {
-			t.Fatalf("console is missing search workspace contract %q", want)
+			t.Fatalf("console is missing supplied application contract %q", want)
 		}
 	}
 }
 
-func TestConsoleUsesOnlyTheScopedSearchWorkspaceShell(t *testing.T) {
+func TestConsoleRemovesTheObsoleteSearchWorkspaceShell(t *testing.T) {
 	for _, obsolete := range []string{
-		`form{display:flex;gap:10px;align-items:center}`,
-		`.command-strip{`,
-		`--night:#132238`,
-		`#token-form{width:min(440px,100%)`,
-		`grid-template-columns:minmax(200px,280px) minmax(0,1fr)`,
-		`@media(max-width:720px)`,
+		`--canvas:#F6F8FA`,
+		`class="search-strip"`,
+		`class="context-rail"`,
+		`grid-template-columns:232px minmax(0,1fr)`,
 	} {
 		if bytes.Contains(document, []byte(obsolete)) {
 			t.Fatalf("console retains obsolete shell rule %q", obsolete)

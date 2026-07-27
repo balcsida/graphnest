@@ -49,7 +49,7 @@ func TestConsoleKeepsTouchTargetsAtLeast44Pixels(t *testing.T) {
 	for _, want := range []string{
 		"fieldset label{display:flex;gap:8px;align-items:center;min-width:0;min-height:44px;overflow-wrap:anywhere}",
 		"fieldset input{width:44px;min-width:44px;min-height:44px}",
-		".file-header a{color:var(--signal);display:inline-flex;min-height:44px;align-items:center}",
+		".file-header a,.repository-link{color:var(--accent);display:inline-flex;min-height:44px;align-items:center}",
 	} {
 		if !bytes.Contains(document, []byte(want)) {
 			t.Fatalf("console is missing 44px touch target %q", want)
@@ -60,15 +60,17 @@ func TestConsoleKeepsTouchTargetsAtLeast44Pixels(t *testing.T) {
 func TestConsoleKeepsHiddenApplicationStatesAuthoritative(t *testing.T) {
 	for _, want := range []string{
 		`[hidden]{display:none!important}`,
-		`<form id="search-form" class="search-strip" hidden>`,
-		`<section id="workspace" hidden>`,
+		`<div id="application" class="app" hidden>`,
+		`<section id="search-view" data-screen="search">`,
+		`<section id="repository-view" data-screen="repositories" hidden`,
 		`<section id="token-gate"`,
 		`$("token-gate").hidden=true`,
-		`$("workspace").hidden=false`,
-		`$("search-form").hidden=false`,
-		`$("workspace").hidden=true`,
-		`$("search-form").hidden=true`,
+		`$("application").hidden=false`,
+		`$("application").hidden=true`,
 		`$("token-gate").hidden=false`,
+		`function showScreen(screen)`,
+		`$("search-view").hidden=screen!=="search"`,
+		`$("repository-view").hidden=screen!=="repositories"`,
 	} {
 		if !bytes.Contains(document, []byte(want)) {
 			t.Fatalf("console is missing authoritative state transition %q", want)
