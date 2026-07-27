@@ -303,11 +303,12 @@ components:
       properties:
         repository_id: {type: integer, format: int64, minimum: 1}
         path: {type: string, minLength: 1, description: Clean relative slash-separated path}
-        line: {type: integer, minimum: 1, description: One-based source line}
-        character: {type: integer, minimum: 0, default: 0, description: Legacy offset applied to every position encoding}
-        character_utf8: {type: integer, minimum: 0, description: UTF-8 code-unit offset; provide with character_utf16 and character_utf32}
-        character_utf16: {type: integer, minimum: 0, description: UTF-16 code-unit offset; provide with character_utf8 and character_utf32}
-        character_utf32: {type: integer, minimum: 0, description: UTF-32 code-unit offset; provide with character_utf8 and character_utf16}
+        commit: {type: string, pattern: '^[0-9a-f]{40}$', description: Optional indexed commit; stale supplied commits are rejected}
+        line: {type: integer, minimum: 1, maximum: 2147483647, description: One-based source line}
+        character: {type: integer, minimum: 0, maximum: 2147483647, default: 0, description: Legacy offset applied to every position encoding}
+        character_utf8: {type: integer, minimum: 0, maximum: 2147483647, description: UTF-8 code-unit offset; provide with character_utf16 and character_utf32}
+        character_utf16: {type: integer, minimum: 0, maximum: 2147483647, description: UTF-16 code-unit offset; provide with character_utf8 and character_utf32}
+        character_utf32: {type: integer, minimum: 0, maximum: 2147483647, description: UTF-32 code-unit offset; provide with character_utf8 and character_utf16}
         operation: {type: string, enum: [definitions, references, implementations]}
     SCIPNavigationResponse:
       type: object

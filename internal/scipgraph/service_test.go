@@ -71,7 +71,7 @@ func TestNavigateValidatesRequestAndUsesZeroBasedStorageLine(t *testing.T) {
 	service := Service{Store: store, MaxResults: 7}
 	utf8, utf16, utf32 := 5, 4, 3
 	request := api.SCIPNavigationRequest{
-		RepositoryID: 101, Path: "a.go", Line: 3,
+		RepositoryID: 101, Path: "a.go", Commit: serviceSHA, Line: 3,
 		CharacterUTF8: &utf8, CharacterUTF16: &utf16, CharacterUTF32: &utf32,
 		Operation: "definitions",
 	}
@@ -86,15 +86,39 @@ func TestNavigateValidatesRequestAndUsesZeroBasedStorageLine(t *testing.T) {
 
 	for _, invalid := range []api.SCIPNavigationRequest{
 		{RepositoryID: 101, Path: "a.go", Line: 0, Operation: "definitions"},
+		{RepositoryID: 101, Path: "a.go", Line: 1 << 31, Operation: "definitions"},
 		{RepositoryID: 101, Path: "../a.go", Line: 1, Operation: "definitions"},
 		{RepositoryID: 101, Path: "a.go", Line: 1, Character: -1, Operation: "definitions"},
+		{RepositoryID: 101, Path: "a.go", Line: 1, Character: 1 << 31, Operation: "definitions"},
+		{RepositoryID: 101, Path: "a.go", Line: 1, Character: -1, CharacterUTF8: intPointer(0), CharacterUTF16: intPointer(0), CharacterUTF32: intPointer(0), Operation: "definitions"},
 		{RepositoryID: 101, Path: "a.go", Line: 1, CharacterUTF8: intPointer(-1), CharacterUTF16: intPointer(0), CharacterUTF32: intPointer(0), Operation: "definitions"},
+		{RepositoryID: 101, Path: "a.go", Line: 1, CharacterUTF8: intPointer(1 << 31), CharacterUTF16: intPointer(0), CharacterUTF32: intPointer(0), Operation: "definitions"},
+		{RepositoryID: 101, Path: "a.go", Line: 1, CharacterUTF8: intPointer(0), CharacterUTF16: intPointer(1 << 31), CharacterUTF32: intPointer(0), Operation: "definitions"},
+		{RepositoryID: 101, Path: "a.go", Line: 1, CharacterUTF8: intPointer(0), CharacterUTF16: intPointer(0), CharacterUTF32: intPointer(1 << 31), Operation: "definitions"},
 		{RepositoryID: 101, Path: "a.go", Line: 1, CharacterUTF8: intPointer(0), Operation: "definitions"},
+		{RepositoryID: 101, Path: "a.go", Commit: strings.Repeat("A", 40), Line: 1, Operation: "definitions"},
 		{RepositoryID: 101, Path: "a.go", Line: 1, Operation: "unknown"},
 	} {
 		if _, err := service.Navigate(t.Context(), userPrincipal, invalid); !errors.Is(err, ErrInvalidRequest) {
 			t.Fatalf("Navigate(%#v) error = %v", invalid, err)
 		}
+	}
+}
+
+func TestNavigateRejectsSuppliedStaleCommit(t *testing.T) {
+	store := &fakeStore{repositories: map[int64]repository.Repository{101: serviceRepository}}
+	_, err := (&Service{Store: store}).Navigate(t.Context(), userPrincipal, api.SCIPNavigationRequest{
+		RepositoryID: 101,
+		Path:         "a.go",
+		Commit:       strings.Repeat("b", 40),
+		Line:         1,
+		Operation:    "definitions",
+	})
+	if !errors.Is(err, ErrNotIndexed) {
+		t.Fatalf("Navigate() error = %v", err)
+	}
+	if store.occurrenceRepositoryID != 0 {
+		t.Fatal("stale navigation reached occurrence lookup")
 	}
 }
 

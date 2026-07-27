@@ -3,6 +3,7 @@ package api
 type SCIPNavigationRequest struct {
 	RepositoryID   int64  `json:"repository_id"`
 	Path           string `json:"path"`
+	Commit         string `json:"commit,omitempty"`
 	Line           int    `json:"line"`
 	Character      int    `json:"character"`
 	CharacterUTF8  *int   `json:"character_utf8,omitempty"`

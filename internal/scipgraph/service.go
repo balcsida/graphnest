@@ -13,7 +13,10 @@ import (
 	"github.com/scip-code/scip/bindings/go/scip"
 )
 
-const defaultMaxResults = 100
+const (
+	defaultMaxResults = 100
+	maxPostgresInt    = 1<<31 - 1
+)
 
 var (
 	ErrForbidden      = errors.New("forbidden")
@@ -137,6 +140,9 @@ func (service *Service) Navigate(ctx context.Context, principal authn.Principal,
 	if repository.IndexedSHA == "" {
 		return api.SCIPNavigationResponse{}, ErrNotIndexed
 	}
+	if request.Commit != "" && request.Commit != repository.IndexedSHA {
+		return api.SCIPNavigationResponse{}, ErrNotIndexed
+	}
 	origin, err := service.Store.OccurrenceAt(ctx, repository.ID, repository.IndexedSHA, request.Path, request.Line-1, navigationPosition(request))
 	if errors.Is(err, ErrOccurrenceNotFound) {
 		return api.SCIPNavigationResponse{}, ErrNotIndexed
@@ -208,7 +214,9 @@ func (service *Service) maxResults() int {
 }
 
 func validNavigationRequest(request api.SCIPNavigationRequest) bool {
-	if request.RepositoryID <= 0 || request.Line < 1 || !validNavigationPosition(request) {
+	if request.RepositoryID <= 0 || request.Line < 1 || request.Line > maxPostgresInt ||
+		request.Character < 0 || request.Character > maxPostgresInt ||
+		request.Commit != "" && !validCommit(request.Commit) || !validNavigationPosition(request) {
 		return false
 	}
 	if request.Operation != "definitions" && request.Operation != "references" && request.Operation != "implementations" {
@@ -221,10 +229,24 @@ func validNavigationRequest(request api.SCIPNavigationRequest) bool {
 
 func validNavigationPosition(request api.SCIPNavigationRequest) bool {
 	if request.CharacterUTF8 == nil && request.CharacterUTF16 == nil && request.CharacterUTF32 == nil {
-		return request.Character >= 0
+		return true
 	}
 	return request.CharacterUTF8 != nil && request.CharacterUTF16 != nil && request.CharacterUTF32 != nil &&
-		*request.CharacterUTF8 >= 0 && *request.CharacterUTF16 >= 0 && *request.CharacterUTF32 >= 0
+		*request.CharacterUTF8 >= 0 && *request.CharacterUTF8 <= maxPostgresInt &&
+		*request.CharacterUTF16 >= 0 && *request.CharacterUTF16 <= maxPostgresInt &&
+		*request.CharacterUTF32 >= 0 && *request.CharacterUTF32 <= maxPostgresInt
+}
+
+func validCommit(value string) bool {
+	if len(value) != 40 {
+		return false
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' && character < 'a' || character > 'f' {
+			return false
+		}
+	}
+	return true
 }
 
 func navigationPosition(request api.SCIPNavigationRequest) OccurrencePosition {
