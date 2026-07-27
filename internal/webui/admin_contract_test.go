@@ -38,7 +38,7 @@ func TestAdminDocumentContract(t *testing.T) {
 }
 
 func TestAdminDOMContract(t *testing.T) {
-	command := exec.Command("node", "admin_dom_test.mjs")
+	command := exec.Command(requireNode(t), "admin_dom_test.mjs")
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("admin DOM contract: %v\n%s", err, output)

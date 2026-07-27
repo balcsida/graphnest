@@ -103,7 +103,7 @@ document.activeElement=opener;setSyntaxOpen(true);opener.isConnected=false;
 document.activeElement={isConnected:true};setSyntaxOpen(false);
 if(focused.at(-1)!=="query")throw new Error("query fallback was not restored");
 `
-	if output, err := exec.Command("node", "-e", harness).CombinedOutput(); err != nil {
+	if output, err := exec.Command(requireNode(t), "-e", harness).CombinedOutput(); err != nil {
 		t.Fatalf("drawer behavior failed: %v\n%s", err, output)
 	}
 }
