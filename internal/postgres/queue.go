@@ -212,6 +212,11 @@ func enqueueGraph(ctx context.Context, tx pgx.Tx, repositoryID int64, targetSHA 
 	if err != nil {
 		return err
 	}
+	var exists bool
+	if err := tx.QueryRow(ctx, `select exists(select 1 from graph_jobs
+		where repository_id=$1 and target_sha=$2 and state in ('queued','running'))`, repositoryID, targetSHA).Scan(&exists); err != nil || exists {
+		return err
+	}
 	_, err = tx.Exec(ctx, `insert into graph_jobs(repository_id,target_sha,state,max_attempts)
 		values($1,$2,'queued',5)
 		on conflict do nothing`, repositoryID, targetSHA)

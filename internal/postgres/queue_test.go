@@ -507,6 +507,37 @@ func TestCompleteIndexEnqueuesGraphAtomically(t *testing.T) {
 	}
 }
 
+func TestCompleteIndexDoesNotQueueGraphAlreadyRunningForSHA(t *testing.T) {
+	store, first := runningIndexJob(t)
+	if err := store.CompleteIndex(t.Context(), first.ID, first.LeaseOwner); err != nil {
+		t.Fatal(err)
+	}
+	graph, err := store.ClaimGraph(t.Context(), "scanner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.EnqueueIndex(t.Context(), IndexRequest{RepositoryID: first.RepositoryID, TargetSHA: first.TargetSHA}); err != nil {
+		t.Fatal(err)
+	}
+	repeated, err := store.ClaimIndex(t.Context(), "indexer-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteIndex(t.Context(), repeated.ID, repeated.LeaseOwner); err != nil {
+		t.Fatal(err)
+	}
+	var running, queued int
+	if err := store.pool.QueryRow(t.Context(), `select
+		count(*) filter (where state='running' and target_sha=$2),
+		count(*) filter (where state='queued' and target_sha=$2)
+		from graph_jobs where repository_id=$1`, graph.RepositoryID, graph.TargetSHA).Scan(&running, &queued); err != nil {
+		t.Fatal(err)
+	}
+	if running != 1 || queued != 0 {
+		t.Fatalf("running=%d queued=%d", running, queued)
+	}
+}
+
 func TestCompleteIndexRollsBackWhenGraphEnqueueFails(t *testing.T) {
 	store, job := runningIndexJob(t)
 	if _, err := store.pool.Exec(t.Context(), `create function reject_graph_enqueue() returns trigger language plpgsql as $$
