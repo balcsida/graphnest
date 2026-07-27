@@ -2,6 +2,8 @@ package graphscan
 
 import (
 	"context"
+	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,6 +69,41 @@ func TestScanEnforcesGraphAndParserLimits(t *testing.T) {
 				t.Fatal("Scan() error = nil")
 			}
 		})
+	}
+}
+
+func TestScanRejectsParserThatReturnsAfterTimeout(t *testing.T) {
+	root := t.TempDir()
+	writeScanFile(t, filepath.Join(root, "main.go"), "package main")
+	limits := scanLimits()
+	limits.ParseTimeout = time.Millisecond
+	_, err := Scan(t.Context(), scanRequest(root), map[string]Parser{".go": func(ctx context.Context, _ string, _ []byte) (File, error) {
+		<-ctx.Done()
+		return File{}, nil
+	}}, limits)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Scan() error = %v, want deadline exceeded", err)
+	}
+}
+
+func TestReadBoundedDoesNotFollowSymlink(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "target")
+	writeScanFile(t, target, "secret")
+	link := filepath.Join(root, "link.go")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readBounded(link, 100, 100); err == nil {
+		t.Fatal("readBounded() error = nil, want symlink rejection")
+	}
+}
+
+func TestScanRejectsMaxIntFileLimit(t *testing.T) {
+	limits := scanLimits()
+	limits.MaxFileBytes = math.MaxInt64
+	if _, err := Scan(t.Context(), scanRequest(t.TempDir()), nil, limits); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("Scan() error = %v, want invalid request", err)
 	}
 }
 

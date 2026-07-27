@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,12 +80,13 @@ func Scan(ctx context.Context, request Request, parsers map[string]Parser, limit
 		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() > limits.MaxFileBytes || info.Size() > limits.MaxTotalBytes-total || count == limits.MaxFiles {
 			return ErrLimitExceeded
 		}
-		data, err := readBounded(path, limits.MaxFileBytes)
+		data, err := readBounded(path, limits.MaxFileBytes, limits.MaxTotalBytes-total)
 		if err != nil {
 			return err
 		}
-		if int64(len(data)) > limits.MaxFileBytes || int64(len(data)) > limits.MaxTotalBytes-total || bytes.IndexByte(data, 0) >= 0 {
-			if bytes.IndexByte(data, 0) >= 0 {
+		nul := bytes.IndexByte(data, 0)
+		if int64(len(data)) > limits.MaxFileBytes || int64(len(data)) > limits.MaxTotalBytes-total || nul >= 0 {
+			if nul >= 0 {
 				return nil
 			}
 			return ErrLimitExceeded
@@ -96,9 +98,13 @@ func Scan(ctx context.Context, request Request, parsers map[string]Parser, limit
 		rel = filepath.ToSlash(filepath.Clean(rel))
 		parseCtx, cancel := context.WithTimeout(ctx, limits.ParseTimeout)
 		file, err := parser(parseCtx, rel, data)
+		parseErr := parseCtx.Err()
 		cancel()
 		if err != nil {
 			return err
+		}
+		if parseErr != nil {
+			return parseErr
 		}
 		file.Path = rel
 		if !within(nodes, 1, limits.MaxNodes) || !within(nodes+1, len(file.Declarations), limits.MaxNodes) ||
@@ -129,7 +135,7 @@ func Scan(ctx context.Context, request Request, parsers map[string]Parser, limit
 }
 
 func validRequest(request Request, limits Limits) error {
-	if request.RepositoryID <= 0 || request.Root == "" || limits.MaxFileBytes <= 0 || limits.MaxTotalBytes <= 0 || limits.MaxFiles <= 0 || limits.MaxNodes <= 0 || limits.MaxEdges <= 0 || limits.ParseTimeout <= 0 {
+	if request.RepositoryID <= 0 || request.Root == "" || limits.MaxFileBytes <= 0 || limits.MaxFileBytes == math.MaxInt64 || limits.MaxTotalBytes <= 0 || limits.MaxFiles <= 0 || limits.MaxNodes <= 0 || limits.MaxEdges <= 0 || limits.ParseTimeout <= 0 {
 		return ErrInvalidRequest
 	}
 	if _, err := Resolve(request.RepositoryID, request.Commit, nil); err != nil {
@@ -138,12 +144,19 @@ func validRequest(request Request, limits Limits) error {
 	return nil
 }
 
-func readBounded(path string, max int64) ([]byte, error) {
-	file, err := os.Open(path)
+func readBounded(path string, max, remaining int64) ([]byte, error) {
+	file, err := openNoFollow(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > max || info.Size() > remaining {
+		return nil, ErrLimitExceeded
+	}
 	return io.ReadAll(io.LimitReader(file, max+1))
 }
 
