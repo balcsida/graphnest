@@ -33,6 +33,100 @@ func TestConsoleRendersGroupedCodeResults(t *testing.T) {
 	}
 }
 
+func TestConsoleRendersRepositoryGroupMetadata(t *testing.T) {
+	script, err := elementBody(string(document), "script")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderResults, err := functionBody(script, "renderResults")
+	if err != nil {
+		t.Fatal(err)
+	}
+	groupMatches, err := functionBody(script, "groupMatches")
+	if err != nil {
+		t.Fatal(err)
+	}
+	blobURL, err := functionBody(script, "blobURL")
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness := `
+class Node {
+  constructor(tag){this.tag=tag;this.children=[];this.textContent=""}
+  append(...children){this.children.push(...children)}
+  replaceChildren(...children){this.children=children}
+  addEventListener(){}
+}
+const roots=new Map(),$=id=>{if(!roots.has(id))roots.set(id,new Node(id));return roots.get(id)},document={
+  createDocumentFragment:()=>new Node("fragment"),
+  createElement:tag=>new Node(tag)
+},state={},openFile=()=>{},countLabel=(n,s)=>n+" "+(n===1?s:s==="match"?"matches":"repositories");
+` + blobURL + groupMatches + renderResults + `
+const sha="0123456789abcdef0123456789abcdef01234567",repository={id:1,name:"acme/one",branch:"main",web_url:""};
+renderResults({matches:[
+  {repository,sha,path:"main.go",line_number:1,preview:"x"},
+  {repository,sha,path:"main.go",line_number:3,preview:"y"},
+  {repository,sha,path:"other.go",line_number:5,preview:"z"}
+]});
+const title=$("results").children[0].children[0].children[0];
+if(title.textContent!=="acme/one · 3 matches · 0123456")throw new Error("repository group metadata = "+title.textContent);
+`
+	if output, err := exec.Command(requireNode(t), "-e", harness).CombinedOutput(); err != nil {
+		t.Fatalf("repository group metadata failed: %v\n%s", err, output)
+	}
+}
+
+func TestConsoleShowsBranchWithIndexedRevision(t *testing.T) {
+	script, err := elementBody(string(document), "script")
+	if err != nil {
+		t.Fatal(err)
+	}
+	openFile, err := functionBody(script, "openFile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	blobURL, err := functionBody(script, "blobURL")
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness := `
+class Node {
+  constructor(){this.textContent="";this.hidden=false}
+  replaceChildren(){}
+  removeAttribute(){}
+  focus(){}
+}
+const elements=new Map(),$=id=>{if(!elements.has(id))elements.set(id,new Node());return elements.get(id)};
+const state={fileController:null,navigationController:null,navigationGeneration:0,selectedIdentifier:null,navigationRetry:null,fileGeneration:0,fileMatch:null,fileRetry:null};
+const request=async()=>({indexed_sha:sha,content:"",start_line:1,truncated:false}),renderFile=()=>{},showScreen=()=>{},showStatusError=()=>{};
+` + blobURL + "async " + openFile + `
+const sha="0123456789abcdef0123456789abcdef01234567",base={id:1,name:"acme/one",web_url:""};
+await openFile({repository:{...base,branch:"main"},sha,path:"main.go",line_number:1});
+if($("file-revision").textContent!=="main · 0123456")throw new Error("branch revision = "+$("file-revision").textContent);
+await openFile({repository:base,sha,path:"main.go",line_number:1});
+if($("file-revision").textContent!=="0123456")throw new Error("SHA-only revision = "+$("file-revision").textContent);
+`
+	if output, err := exec.Command(requireNode(t), "--input-type=module", "-e", harness).CombinedOutput(); err != nil {
+		t.Fatalf("file revision metadata failed: %v\n%s", err, output)
+	}
+}
+
+func TestAuthenticatedHeaderHasAccessibleAdminNavigation(t *testing.T) {
+	var primary, admin bool
+	for _, tag := range parseStartTags(string(document)) {
+		if tag.name == "nav" && tag.attributes["aria-label"] == "primary" {
+			primary = true
+		}
+		if tag.name == "a" && tag.attributes["href"] == "/admin" &&
+			bytes.Contains([]byte(tag.attributes["class"]), []byte("nav-button")) {
+			admin = true
+		}
+	}
+	if !primary || !admin {
+		t.Fatalf("authenticated header navigation: primary=%v admin=%v", primary, admin)
+	}
+}
+
 func TestConsoleBoundsLongRepositoryLabels(t *testing.T) {
 	for _, want := range []string{
 		`width:min(300px,calc(100vw - 40px))`,
@@ -124,13 +218,13 @@ const root=new Node("root"),document={
 const openFile=match=>opened.push(match);
 ` + blobURL + indexedLocationURL + renderNavigation + `
 const sha="0123456789abcdef0123456789abcdef01234567";
-renderNavigation({locations:[{repository_id:202,repository_name:"acme/lib",web_url:"https://github.example/acme/lib",commit:sha,path:"lib.go",start_line:7,symbol:"sym"}]});
+	renderNavigation({locations:[{repository_id:202,repository_name:"acme/lib",branch:"release/with-a-long-name",web_url:"https://github.example/acme/lib",commit:sha,path:"lib.go",start_line:7,symbol:"sym"}]});
 const nodes=root.children[0].children[0].children;
 const button=nodes.find(node=>node.tag==="button"),link=nodes.find(node=>node.tag==="a");
 if(!button)throw new Error("SCIP location has no in-app control");
 button.click();
 const match=opened[0];
-if(match.repository.id!==202||match.repository.name!=="acme/lib"||match.repository.web_url!=="https://github.example/acme/lib"||match.sha!==sha||match.path!=="lib.go"||match.line_number!==7)throw new Error("SCIP location opened the wrong indexed file");
+	if(match.repository.id!==202||match.repository.name!=="acme/lib"||match.repository.branch!=="release/with-a-long-name"||match.repository.web_url!=="https://github.example/acme/lib"||match.sha!==sha||match.path!=="lib.go"||match.line_number!==7)throw new Error("SCIP location opened the wrong indexed file");
 if(state.fileTrigger.id!=="search-result")throw new Error("search-result focus trigger was replaced");
 if(!link||link.href!=="https://github.example/acme/lib/blob/"+sha+"/lib.go#L7")throw new Error("indexed-source fallback is missing");
 renderNavigation({locations:[{repository_id:303,repository_name:"acme/cross",web_url:"",commit:sha,path:"cross.go",start_line:9}]});
@@ -140,6 +234,12 @@ if(crossNodes.some(node=>node.tag==="a"))throw new Error("cross-repository locat
 `
 	if output, err := exec.Command(requireNode(t), "-e", harness).CombinedOutput(); err != nil {
 		t.Fatalf("SCIP location behavior failed: %v\n%s", err, output)
+	}
+}
+
+func TestConsoleWrapsLongBranchMetadata(t *testing.T) {
+	if !bytes.Contains(document, []byte(`.file-meta{min-width:0;color:var(--muted);overflow-wrap:anywhere}`)) {
+		t.Fatal("file metadata does not wrap long branch names on narrow screens")
 	}
 }
 

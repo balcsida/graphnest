@@ -5,6 +5,17 @@ import (
 	"testing"
 )
 
+func TestConsoleKeepsTokenGateDesignSystemBackground(t *testing.T) {
+	for _, want := range []string{
+		`background-image:radial-gradient(640px 400px at 50% 8%,var(--accent-soft),transparent 70%),linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px)`,
+		`background-size:auto,48px 48px,48px 48px`,
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console is missing token-gate background %q", want)
+		}
+	}
+}
+
 func TestConsoleInvalidatesCredentialScopedRepositoryState(t *testing.T) {
 	for _, want := range []string{
 		"repositoryController:null",
@@ -90,8 +101,9 @@ func TestConsoleClearsPrincipalFileAndNavigationStateOnSignOut(t *testing.T) {
 
 func TestConsoleKeepsTouchTargetsAtLeast44Pixels(t *testing.T) {
 	for _, want := range []string{
+		`.wordmark{display:flex;align-items:center;gap:9px;padding:9px`,
 		".nav-button{min-height:44px",
-		"#query{height:44px;min-height:44px",
+		"#query{min-height:44px",
 		"fieldset label{display:flex;gap:8px;align-items:center;min-width:0;min-height:44px;overflow-wrap:anywhere}",
 		"fieldset input{width:44px;min-width:44px;min-height:44px}",
 		".file-header a,.repository-link{color:var(--accent);display:inline-flex;min-height:44px;align-items:center}",
