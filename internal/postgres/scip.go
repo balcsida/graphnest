@@ -93,8 +93,8 @@ func (s *Store) OccurrenceAt(ctx context.Context, repositoryID int64, commit, pa
 		join repositories on repositories.id=uploads.repository_id and repositories.indexed_sha=uploads.commit
 		join scip_occurrences occurrences on occurrences.upload_id=uploads.id
 		where uploads.repository_id=$1 and uploads.commit=$2 and occurrences.path=$3
-		and (occurrences.start_line<$4 or occurrences.start_line=$4 and occurrences.start_character<=case uploads.position_encoding when 1 then $5 when 2 then $6 when 3 then $7 end)
-		and (occurrences.end_line>$4 or occurrences.end_line=$4 and occurrences.end_character>case uploads.position_encoding when 1 then $5 when 2 then $6 when 3 then $7 end)
+		and (occurrences.start_line<$4 or occurrences.start_line=$4 and occurrences.start_character<=case occurrences.position_encoding when 1 then $5::integer when 2 then $6::integer when 3 then $7::integer end)
+		and (occurrences.end_line>$4 or occurrences.end_line=$4 and occurrences.end_character>case occurrences.position_encoding when 1 then $5::integer when 2 then $6::integer when 3 then $7::integer end)
 		order by occurrences.start_line desc, occurrences.start_character desc,
 			occurrences.end_line, occurrences.end_character
 		limit 1`, repositoryID, commit, path, line, position.UTF8, position.UTF16, position.UTF32).Scan(
