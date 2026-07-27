@@ -318,8 +318,8 @@ const showScreen=()=>{},renderFile=response=>{rendered=response},showStatusError
 let rendered;
 ` + blobURL + indexedLocationURL + openFile + renderNavigation + `
 const sha="0123456789abcdef0123456789abcdef01234567",repository={id:202,name:"acme/lib",web_url:""};
-await openFile({repository,sha,path:"lib.go",line_number:12});
-if("start_line" in requests[0].body)throw new Error("ordinary search result changed its file window");
+	await openFile({repository,sha,path:"lib.go",line_number:1500});
+	if(requests[0].body.start_line!==1500)throw new Error("ordinary search result did not request its matching line");
 renderNavigation({locations:[{repository_id:202,repository_name:"acme/lib",web_url:"",commit:sha,path:"lib.go",start_line:1500}]});
 const button=$("navigation-locations").children[0].children[0].children.find(node=>node.tag==="button");
 button.click();
