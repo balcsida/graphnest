@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/graphartifact"
+	"github.com/grepnest/grepnest/pkg/api"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -34,6 +35,52 @@ type GraphJob struct {
 	State, LeaseOwner    string
 	Attempt, MaxAttempts int
 	LeaseExpiresAt       time.Time
+}
+
+func (s *Store) GraphStatus(ctx context.Context, repositoryID int64) (api.GraphStatus, error) {
+	var status api.GraphStatus
+	var indexedSHA string
+	var source, jobState, errorCode, scipCommit *string
+	err := s.pool.QueryRow(ctx, `select repositories.github_id, coalesce(repositories.indexed_sha, ''),
+		upload.source, job.state, job.error_code, scip.commit
+		from repositories
+		left join graph_uploads upload on upload.repository_id=repositories.id and upload.commit=repositories.indexed_sha
+		left join lateral (
+			select state, error_code from graph_jobs
+			where repository_id=repositories.id and target_sha=repositories.indexed_sha
+			order by updated_at desc, id desc limit 1
+		) job on true
+		left join scip_uploads scip on scip.repository_id=repositories.id and scip.commit=repositories.indexed_sha
+		where repositories.id=$1`, repositoryID).Scan(&status.RepositoryID, &indexedSHA, &source, &jobState, &errorCode, &scipCommit)
+	if err != nil {
+		return api.GraphStatus{}, err
+	}
+	if indexedSHA == "" {
+		status.State = "not_indexed"
+		return status, nil
+	}
+	status.Commit = indexedSHA
+	if source != nil {
+		status.State, status.Source = "ready", *source
+		return status, nil
+	}
+	if jobState != nil {
+		status.JobState = *jobState
+	}
+	if jobState != nil && *jobState == "failed" {
+		status.State = "degraded"
+		if errorCode != nil {
+			status.ErrorCode = *errorCode
+		}
+	} else if scipCommit != nil {
+		status.State = "fallback"
+	} else {
+		status.State = "pending"
+	}
+	if scipCommit != nil {
+		status.SCIPFallback = &api.SCIPFallbackStatus{Commit: *scipCommit}
+	}
+	return status, nil
 }
 
 func (s *Store) ReplaceGraph(ctx context.Context, repositoryID int64, source GraphSource, artifact graphartifact.Artifact) (GraphReplacement, error) {

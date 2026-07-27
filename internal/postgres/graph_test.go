@@ -29,6 +29,41 @@ func TestReplaceGraphExternalWins(t *testing.T) {
 	}
 }
 
+func TestGraphStatusCurrentStatesAndSCIPFallback(t *testing.T) {
+	store, repositoryID := readyGraphStore(t, testSHA('a'))
+	assertStatus := func(want string, fallback bool) {
+		t.Helper()
+		got, err := store.GraphStatus(t.Context(), repositoryID)
+		if err != nil || got.State != want || (got.SCIPFallback != nil) != fallback {
+			t.Fatalf("status=%#v err=%v", got, err)
+		}
+	}
+	assertStatus("pending", false)
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("a.go", globalSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	assertStatus("fallback", true)
+	if _, err := store.pool.Exec(t.Context(), "update repositories set indexed_sha=$2 where id=$1", repositoryID, testSHA('b')); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GraphStatus(t.Context(), repositoryID)
+	if err != nil || got.State != "pending" || got.SCIPFallback != nil {
+		t.Fatalf("stale SCIP status=%#v err=%v", got, err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into graph_jobs (repository_id, target_sha, state, error_code)
+		values ($1, $2, 'failed', 'parse_failed')`, repositoryID, testSHA('b')); err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.GraphStatus(t.Context(), repositoryID)
+	if err != nil || got.State != "degraded" || got.ErrorCode != "parse_failed" {
+		t.Fatalf("degraded status=%#v err=%v", got, err)
+	}
+	if _, err := store.pool.Exec(t.Context(), "update repositories set indexed_sha=null where id=$1", repositoryID); err != nil {
+		t.Fatal(err)
+	}
+	assertStatus("not_indexed", false)
+}
+
 func TestReplaceGraphStaleCommitDoesNotReplaceCurrentUpload(t *testing.T) {
 	store, repositoryID := readyGraphStore(t, testSHA('a'))
 	current := artifactFor(repositoryID, testSHA('a'), "current")
