@@ -2,6 +2,7 @@ package webui
 
 import (
 	"bytes"
+	"os/exec"
 	"testing"
 )
 
@@ -15,6 +16,7 @@ func TestAdminDocumentContract(t *testing.T) {
 		`data-screen="scip"`, `data-screen="webhooks"`, `data-screen="github"`,
 		`id="repo-filter"`, `id="repo-statuses"`, `id="reconcile"`, `id="reindex-selected"`,
 		`id="scip-upload"`, `id="dependency-refresh"`, `id="admin-status"`,
+		`id="inventory-notices"`,
 		`href="/"`, `sessionStorage`, `prefers-reduced-motion: reduce`,
 		`/v1/admin/overview`, `/v1/admin/repositories`, `/v1/admin/jobs`,
 		`/v1/admin/scip/uploads`, `/v1/admin/scip/dependencies`,
@@ -32,6 +34,14 @@ func TestAdminDocumentContract(t *testing.T) {
 		if bytes.Contains(adminDocument, []byte(forbidden)) {
 			t.Errorf("admin document contains forbidden %q", forbidden)
 		}
+	}
+}
+
+func TestAdminDOMContract(t *testing.T) {
+	command := exec.Command("node", "admin_dom_test.mjs")
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("admin DOM contract: %v\n%s", err, output)
 	}
 }
 
