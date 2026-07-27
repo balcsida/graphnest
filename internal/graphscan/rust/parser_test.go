@@ -47,6 +47,28 @@ func TestParseRustPreservesUTF8ByteColumns(t *testing.T) {
 	}
 }
 
+func TestParseRustEmitsTraitMethods(t *testing.T) {
+	got, err := Parse(t.Context(), "lib.rs", []byte("trait Run { fn run(&self); }\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasDeclaration(got, "lib::Run::run", "Method") ||
+		hasDeclaration(got, "lib::run", "Function") {
+		t.Fatalf("Parse() = %#v", got)
+	}
+}
+
+func TestParseRustEmitsExternalModules(t *testing.T) {
+	got, err := Parse(t.Context(), "lib.rs", []byte("mod worker;\nmod inline {}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasDeclaration(got, "lib::worker", "Module") ||
+		!hasDeclaration(got, "lib::inline", "Module") {
+		t.Fatalf("Parse() = %#v", got)
+	}
+}
+
 func parseFixture(t *testing.T, name string) graphscan.File {
 	t.Helper()
 	source, err := os.ReadFile(filepath.Join("testdata", name))

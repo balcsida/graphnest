@@ -45,6 +45,22 @@ func TestParseJavaPreservesUTF8ByteColumns(t *testing.T) {
 	}
 }
 
+func TestParseJavaEmitsInterfaceInheritance(t *testing.T) {
+	got, err := Parse(t.Context(), "Types.java", []byte(`
+package example;
+import java.io.Serializable;
+interface Base {}
+interface Child extends Base, Serializable {}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasHeritage(got, "example.Child", graphartifact.EdgeExtends, "example.Base", "Base") ||
+		!hasHeritage(got, "example.Child", graphartifact.EdgeExtends, "java.io.Serializable", "Serializable") ||
+		hasHeritage(got, "example.Child", graphartifact.EdgeImplements, "example.Base", "Base") {
+		t.Fatalf("Parse() = %#v", got)
+	}
+}
+
 func parseFixture(t *testing.T, name string) graphscan.File {
 	t.Helper()
 	source, err := os.ReadFile(filepath.Join("testdata", name))

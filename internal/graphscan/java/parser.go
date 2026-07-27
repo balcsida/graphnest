@@ -91,8 +91,11 @@ func addJavaHeritage(file *graphscan.File, path, child string, node *tree_sitter
 	for _, field := range []struct {
 		name string
 		kind graphartifact.EdgeKind
-	}{{"superclass", graphartifact.EdgeExtends}, {"interfaces", graphartifact.EdgeImplements}} {
+	}{{"superclass", graphartifact.EdgeExtends}, {"interfaces", graphartifact.EdgeImplements}, {"extends_interfaces", graphartifact.EdgeExtends}} {
 		parent := node.ChildByFieldName(field.name)
+		if field.name == "extends_interfaces" {
+			parent = firstKind(node, field.name)
+		}
 		if parent == nil {
 			continue
 		}

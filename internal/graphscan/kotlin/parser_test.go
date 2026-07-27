@@ -47,6 +47,23 @@ func TestParseKotlinPreservesUTF8ByteColumns(t *testing.T) {
 	}
 }
 
+func TestParseKotlinRecognizesModifiedInterfaces(t *testing.T) {
+	got, err := Parse(t.Context(), "types.kt", []byte(`
+package example
+public interface Visible
+@Deprecated("legacy")
+internal interface Annotated`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasDeclaration(got, "example.Visible", "Interface") ||
+		!hasDeclaration(got, "example.Annotated", "Interface") ||
+		hasDeclaration(got, "example.Visible", "Class") ||
+		hasDeclaration(got, "example.Annotated", "Class") {
+		t.Fatalf("Parse() = %#v", got)
+	}
+}
+
 func parseFixture(t *testing.T, name string) graphscan.File {
 	t.Helper()
 	source, err := os.ReadFile(filepath.Join("testdata", name))

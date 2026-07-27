@@ -56,7 +56,7 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 			name := text(nameNode, source)
 			qualified := qualify(file.Module, name)
 			kind := "Class"
-			if strings.HasPrefix(strings.TrimSpace(text(node, source)), "interface ") {
+			if hasDirectChild(node, "interface") {
 				kind = "Interface"
 			}
 			file.Declarations = append(file.Declarations, declaration(path, qualified, name, kind, nameNode))
@@ -156,6 +156,15 @@ func firstKind(node *tree_sitter.Node, kind string) *tree_sitter.Node {
 		}
 	}
 	return nil
+}
+
+func hasDirectChild(node *tree_sitter.Node, kind string) bool {
+	for i := uint(0); i < node.ChildCount(); i++ {
+		if node.Child(i).Kind() == kind {
+			return true
+		}
+	}
+	return false
 }
 
 func declaration(path, qualified, name, kind string, node *tree_sitter.Node) graphscan.Declaration {

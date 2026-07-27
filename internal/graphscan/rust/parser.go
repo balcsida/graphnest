@@ -42,15 +42,16 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 
 	file := graphscan.File{Path: path, Module: strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)), Language: graphscan.Rust}
 	var walk func(*tree_sitter.Node, string, string, string)
-	walk = func(node *tree_sitter.Node, module, scope, implType string) {
-		nextModule, nextScope, nextImpl := module, scope, implType
+	walk = func(node *tree_sitter.Node, module, scope, owner string) {
+		nextModule, nextScope, nextOwner := module, scope, owner
 		switch node.Kind() {
 		case "mod_item":
 			nameNode := node.ChildByFieldName("name")
 			name := text(nameNode, source)
+			qualified := qualify(module, name)
+			file.Declarations = append(file.Declarations, declaration(path, qualified, name, "Module", nameNode))
 			if node.ChildByFieldName("body") != nil {
-				nextModule = qualify(module, name)
-				file.Declarations = append(file.Declarations, declaration(path, nextModule, name, "Module", nameNode))
+				nextModule = qualified
 			}
 		case "use_declaration":
 			addUses(&file, path, node.ChildByFieldName("argument"), "", source)
@@ -64,20 +65,23 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 			qualified := qualify(module, name)
 			file.Declarations = append(file.Declarations, declaration(path, qualified, name, kind, nameNode))
 			nextScope = qualified
+			if node.Kind() == "trait_item" {
+				nextOwner = name
+			}
 		case "impl_item":
 			typeName := text(node.ChildByFieldName("type"), source)
-			nextImpl = typeName
+			nextOwner = typeName
 			if trait := node.ChildByFieldName("trait"); trait != nil {
 				traitName := text(trait, source)
 				child := qualify(module, typeName)
 				file.Heritage = append(file.Heritage, graphscan.Heritage{Path: path, ChildLocalID: child, Candidates: []string{qualify(module, traitName), traitName}, Kind: graphartifact.EdgeImplements, Range: nodeRange(trait)})
 			}
-		case "function_item":
+		case "function_item", "function_signature_item":
 			nameNode := node.ChildByFieldName("name")
 			name := text(nameNode, source)
 			kind, qualified := "Function", qualify(module, name)
-			if implType != "" {
-				kind, qualified = "Method", qualify(qualify(module, implType), name)
+			if owner != "" {
+				kind, qualified = "Method", qualify(qualify(module, owner), name)
 			}
 			file.Declarations = append(file.Declarations, declaration(path, qualified, name, kind, nameNode))
 			nextScope = qualified
@@ -90,10 +94,10 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 			} else if index := strings.LastIndex(raw, "::"); index >= 0 {
 				name = raw[index+2:]
 			}
-			file.References = append(file.References, graphscan.Reference{Path: path, FromLocalID: scope, Name: name, Candidates: rustCallCandidates(module, implType, name, raw), Range: nodeRange(function), Call: true})
+			file.References = append(file.References, graphscan.Reference{Path: path, FromLocalID: scope, Name: name, Candidates: rustCallCandidates(module, owner, name, raw), Range: nodeRange(function), Call: true})
 		}
 		for i := uint(0); i < node.NamedChildCount(); i++ {
-			walk(node.NamedChild(i), nextModule, nextScope, nextImpl)
+			walk(node.NamedChild(i), nextModule, nextScope, nextOwner)
 		}
 	}
 	walk(tree.RootNode(), file.Module, "", "")
