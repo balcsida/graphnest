@@ -251,6 +251,14 @@ func TestAdminDataIsBoundedAndSanitized(t *testing.T) {
 	if _, err := store.UpsertRepository(t.Context(), RepositoryUpdate{GitHubID: 102, InstallationID: 10, Owner: "acme", Name: "unscoped", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.pool.Exec(t.Context(), `insert into search_nodes(node_id,base_url,state,capacity_weight)
+		values('unrelated-node','https://zoekt.example','active',1)`); err != nil {
+		t.Fatal(err)
+	}
+	var globalNodes int
+	if err := store.pool.QueryRow(t.Context(), "select count(*) from search_nodes").Scan(&globalNodes); err != nil || globalNodes == 0 {
+		t.Fatalf("global search nodes=%d err=%v", globalNodes, err)
+	}
 	if _, err := store.pool.Exec(t.Context(), `insert into scip_uploads(repository_id, commit, project_root, indexer_name, indexer_version)
 		values($1,$2,'','scip-go','1')`, repositoryID, shaA); err != nil {
 		t.Fatal(err)
@@ -277,7 +285,8 @@ func TestAdminDataIsBoundedAndSanitized(t *testing.T) {
 	}
 	overview, err := store.AdminOverview(t.Context(), 10, []int64{101})
 	if err != nil || overview.Repositories["pending"] != 1 || overview.Jobs["queued"] != 1 ||
-		overview.SCIPUploads != 1 || overview.Dependencies != 1 || overview.Installations != 1 {
+		overview.SCIPUploads != 1 || overview.Dependencies != 1 || overview.Installations != 1 ||
+		overview.SearchNodes != 0 {
 		t.Fatalf("overview=%#v err=%v", overview, err)
 	}
 	github, err := store.AdminGitHub(t.Context(), 10, []int64{101}, admin.GitHubConfig{
