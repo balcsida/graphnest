@@ -117,7 +117,8 @@ func TestOIDCCrossReplicaSessions(t *testing.T) {
 		response = callbackOIDC(t, browser, public, "A", callback)
 		assertAuthFailure(t, response)
 
-		response = requestOIDC(t, browser, public, "A", http.MethodPost, "/auth/logout", nil, nil)
+		response = requestOIDC(t, browser, public, "A", http.MethodPost, "/auth/logout", nil,
+			map[string]string{"Origin": public.url()})
 		drainClose(response)
 		if response.StatusCode != http.StatusNoContent {
 			t.Fatalf("logout status = %d", response.StatusCode)
@@ -660,7 +661,8 @@ func drainClose(response *http.Response) {
 
 func logoutOIDC(t *testing.T, browser *http.Client, public *oidcPublicOrigin) {
 	t.Helper()
-	response := requestOIDC(t, browser, public, "A", http.MethodPost, "/auth/logout", nil, nil)
+	response := requestOIDC(t, browser, public, "A", http.MethodPost, "/auth/logout", nil,
+		map[string]string{"Origin": public.url()})
 	drainClose(response)
 	if response.StatusCode != http.StatusNoContent {
 		t.Fatalf("logout status = %d", response.StatusCode)
