@@ -77,3 +77,17 @@ func TestConsoleKeepsHiddenApplicationStatesAuthoritative(t *testing.T) {
 		}
 	}
 }
+
+func TestConsoleMarksOnlyTheVisibleScreenAsCurrentPage(t *testing.T) {
+	for _, want := range []string{
+		`active.setAttribute("aria-current","page")`,
+		`inactive.removeAttribute("aria-current")`,
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console is missing current-page navigation behavior %q", want)
+		}
+	}
+	if bytes.Contains(document, []byte(`toggleAttribute("aria-current"`)) {
+		t.Fatal("console can expose aria-current without the page value")
+	}
+}

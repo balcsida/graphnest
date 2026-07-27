@@ -81,3 +81,18 @@ func TestConsoleKeepsResultsStaticUntilTheNextShellTask(t *testing.T) {
 		}
 	}
 }
+
+func TestConsoleUsesNativeRepositoryTableSemantics(t *testing.T) {
+	for _, want := range []string{
+		`<table class="repository-table">`,
+		`<thead class="repository-head"><tr>`,
+		`<th scope="col">Repository</th>`,
+		`<tbody id="repository-rows"></tbody>`,
+		`document.createElement("tr")`,
+		`document.createElement("td")`,
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console is missing repository table semantics %q", want)
+		}
+	}
+}
