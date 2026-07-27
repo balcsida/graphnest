@@ -1,0 +1,129 @@
+package httpapi
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/grepnest/grepnest/internal/admin"
+	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/grepnest/grepnest/internal/repository"
+)
+
+func TestAdminRoutesRequireAdministrator(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterAdmin(mux, authn.NewStatic(map[string]authn.Principal{
+		"user":  {Subject: "user"},
+		"admin": {Subject: "admin", Administrator: true},
+	}), &admin.Service{Store: &adminHTTPStore{}, GitHub: adminHTTPGitHub{}, Reconciler: adminHTTPReconciler{}}, 2, 4096)
+
+	for _, token := range []string{"", "user"} {
+		request := httptest.NewRequest(http.MethodGet, "/v1/admin/overview", nil)
+		if token != "" {
+			request.Header.Set("Authorization", "Bearer "+token)
+		}
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, request)
+		want := http.StatusUnauthorized
+		if token == "user" {
+			want = http.StatusForbidden
+		}
+		if response.Code != want || strings.Contains(response.Body.String(), "secret") {
+			t.Fatalf("token=%q status=%d body=%q", token, response.Code, response.Body.String())
+		}
+	}
+}
+
+func TestAdminRoutesExposeBoundedDataAndActions(t *testing.T) {
+	store := &adminHTTPStore{}
+	service := &admin.Service{Store: store, GitHub: adminHTTPGitHub{}, Reconciler: adminHTTPReconciler{}}
+	mux := http.NewServeMux()
+	RegisterAdmin(mux, authn.NewStatic(map[string]authn.Principal{
+		"admin": {Administrator: true},
+	}), service, 2, 4096)
+
+	for _, path := range []string{
+		"/v1/admin/overview", "/v1/admin/repositories", "/v1/admin/jobs",
+		"/v1/admin/scip/uploads", "/v1/admin/scip/dependencies",
+		"/v1/admin/webhook-deliveries", "/v1/admin/github",
+	} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.Header.Set("Authorization", "Bearer admin")
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, request)
+		if response.Code != http.StatusOK || response.Body.Len() > 4096 {
+			t.Fatalf("%s status=%d bytes=%d body=%q", path, response.Code, response.Body.Len(), response.Body.String())
+		}
+		if path == "/v1/admin/github" && (strings.Contains(response.Body.String(), "private_key_file") ||
+			strings.Contains(response.Body.String(), "webhook_secret_file")) {
+			t.Fatalf("GitHub response exposed secret: %q", response.Body.String())
+		}
+	}
+
+	for _, path := range []string{
+		"/v1/admin/repositories/101/reindex",
+		"/v1/admin/reconcile",
+		"/v1/admin/jobs/42/retry",
+	} {
+		request := httptest.NewRequest(http.MethodPost, path, nil)
+		request.Header.Set("Authorization", "Bearer admin")
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, request)
+		if response.Code != http.StatusNoContent {
+			t.Fatalf("%s status=%d body=%q", path, response.Code, response.Body.String())
+		}
+	}
+	if store.reindexed != 7 || store.retried != 42 {
+		t.Fatalf("reindexed=%d retried=%d", store.reindexed, store.retried)
+	}
+}
+
+type adminHTTPStore struct {
+	reindexed int64
+	retried   int64
+}
+
+func (adminHTTPStore) AdminOverview(context.Context) (admin.Overview, error) {
+	return admin.Overview{Repositories: map[string]int64{"ready": 1}}, nil
+}
+func (adminHTTPStore) AdminRepositories(context.Context, int) ([]admin.Repository, bool, error) {
+	return []admin.Repository{{GitHubID: 101, Name: "acme/one"}}, false, nil
+}
+func (adminHTTPStore) AdminJobs(context.Context, int) ([]admin.Job, bool, error) {
+	return []admin.Job{{ID: 42, RepositoryID: 101}}, false, nil
+}
+func (adminHTTPStore) AdminSCIPUploads(context.Context, int) ([]admin.SCIPUpload, bool, error) {
+	return []admin.SCIPUpload{}, false, nil
+}
+func (adminHTTPStore) AdminSCIPDependencies(context.Context, int) ([]admin.SCIPDependency, bool, error) {
+	return []admin.SCIPDependency{}, false, nil
+}
+func (adminHTTPStore) AdminDeliveries(context.Context, int) ([]admin.Delivery, bool, error) {
+	return []admin.Delivery{}, false, nil
+}
+func (adminHTTPStore) AdminGitHub(context.Context, admin.GitHubConfig, int) (admin.GitHub, error) {
+	return admin.GitHub{AppID: 7, PrivateKeyConfigured: true, WebhookSecretConfigured: true}, nil
+}
+func (adminHTTPStore) AdminRepository(context.Context, int64) (repository.Repository, error) {
+	return repository.Repository{ID: 7, InstallationID: 10, GitHubID: 101, Name: "acme/one", Branch: "main", Enabled: true}, nil
+}
+func (store *adminHTTPStore) EnqueueAdminIndex(_ context.Context, request admin.IndexRequest) error {
+	store.reindexed = request.RepositoryID
+	return nil
+}
+func (store *adminHTTPStore) RetryAdminJob(_ context.Context, id int64) error {
+	store.retried = id
+	return nil
+}
+
+type adminHTTPGitHub struct{}
+
+func (adminHTTPGitHub) DefaultBranchSHA(context.Context, int64, string, string, string) (string, error) {
+	return strings.Repeat("a", 40), nil
+}
+
+type adminHTTPReconciler struct{}
+
+func (adminHTTPReconciler) All(context.Context) error { return nil }

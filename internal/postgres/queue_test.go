@@ -162,6 +162,41 @@ func TestQueueStopsAtConfiguredMaxAttempts(t *testing.T) {
 	}
 }
 
+func TestAdminRetryOnlyRequeuesCurrentFailedWork(t *testing.T) {
+	store := migratedStore(t)
+	repositoryID := queueRepository(t, store)
+	if err := store.EnqueueIndex(t.Context(), IndexRequest{RepositoryID: repositoryID, TargetSHA: shaA}); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.ClaimIndex(t.Context(), "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FailIndex(t.Context(), job.ID, "owner", "permanent", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RetryAdminJob(t.Context(), job.ID); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	var attempt int
+	if err := store.pool.QueryRow(t.Context(), "select state,attempt from index_jobs where id=$1", job.ID).Scan(&state, &attempt); err != nil || state != "queued" || attempt != 0 {
+		t.Fatalf("state=%q attempt=%d err=%v", state, attempt, err)
+	}
+	if err := store.RetryAdminJob(t.Context(), job.ID); err == nil {
+		t.Fatal("queued job was retried")
+	}
+	if _, err := store.pool.Exec(t.Context(), "update repositories set enabled=false where id=$1", repositoryID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), "update index_jobs set state='failed' where id=$1", job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RetryAdminJob(t.Context(), job.ID); err == nil {
+		t.Fatal("disabled repository job was retried")
+	}
+}
+
 func TestQueueClaimsOnceWithSkipLocked(t *testing.T) {
 	store := migratedStore(t)
 	repositoryID := queueRepository(t, store)

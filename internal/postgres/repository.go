@@ -4,9 +4,101 @@ import (
 	"context"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/admin"
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/repository"
 )
+
+func (s *Store) AdminOverview(ctx context.Context) (admin.Overview, error) {
+	r := admin.Overview{Repositories: map[string]int64{}, Jobs: map[string]int64{}, Deliveries: map[string]int64{}}
+	for query, target := range map[string]map[string]int64{
+		"select status,count(*) from repositories group by status":     r.Repositories,
+		"select state,count(*) from index_jobs group by state":         r.Jobs,
+		"select state,count(*) from webhook_deliveries group by state": r.Deliveries,
+	} {
+		rows, err := s.pool.Query(ctx, query)
+		if err != nil {
+			return admin.Overview{}, err
+		}
+		for rows.Next() {
+			var state string
+			var count int64
+			if err := rows.Scan(&state, &count); err != nil {
+				rows.Close()
+				return admin.Overview{}, err
+			}
+			target[state] = count
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return admin.Overview{}, err
+		}
+		rows.Close()
+	}
+	err := s.pool.QueryRow(ctx, `select (select count(*) from scip_uploads),
+		(select count(*) from repository_packages),(select count(*) from installations),
+		(select count(*) from search_nodes)`).Scan(&r.SCIPUploads, &r.Dependencies, &r.Installations, &r.SearchNodes)
+	return r, err
+}
+
+func (s *Store) AdminRepositories(ctx context.Context, limit int) ([]admin.Repository, bool, error) {
+	rows, err := s.pool.Query(ctx, `select repositories.id,repositories.github_id,installations.github_id,
+		repositories.owner||'/'||repositories.name,repositories.default_branch,coalesce(repositories.desired_sha,''),
+		coalesce(repositories.indexed_sha,''),repositories.status,coalesce(repositories.error_code,''),
+		repositories.web_url,repositories.enabled,repositories.private,repositories.archived,repositories.last_indexed_at
+		from repositories join installations on installations.id=repositories.installation_id
+		order by repositories.owner,repositories.name limit $1`, limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	items := make([]admin.Repository, 0, limit+1)
+	for rows.Next() {
+		var x admin.Repository
+		if err := rows.Scan(&x.ID, &x.GitHubID, &x.InstallationID, &x.Name, &x.DefaultBranch, &x.DesiredSHA,
+			&x.IndexedSHA, &x.Status, &x.ErrorCode, &x.WebURL, &x.Enabled, &x.Private, &x.Archived, &x.LastIndexedAt); err != nil {
+			return nil, false, err
+		}
+		items = append(items, x)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	more := len(items) > limit
+	if more {
+		items = items[:limit]
+	}
+	return items, more, nil
+}
+
+func (s *Store) AdminRepository(ctx context.Context, githubID int64) (repository.Repository, error) {
+	return scanRepository(s.pool.QueryRow(ctx, allRepositoriesQuery+" and repositories.github_id=$2", []string{}, githubID))
+}
+
+func (s *Store) AdminGitHub(ctx context.Context, c admin.GitHubConfig, limit int) (admin.GitHub, error) {
+	r := admin.GitHub{AppID: c.AppID, WebURL: c.WebURL, APIURL: c.APIURL, UploadURL: c.UploadURL, GitURL: c.GitURL, APIVersion: c.APIVersion,
+		PrivateKeyConfigured: c.PrivateKeyConfigured, WebhookSecretConfigured: c.WebhookSecretConfigured, CAConfigured: c.CAConfigured, Installations: []admin.Installation{}}
+	rows, err := s.pool.Query(ctx, `select github_id,account_login,account_type,status,suspended_at from installations order by github_id limit $1`, limit+1)
+	if err != nil {
+		return admin.GitHub{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var x admin.Installation
+		if err := rows.Scan(&x.GitHubID, &x.AccountLogin, &x.AccountType, &x.Status, &x.SuspendedAt); err != nil {
+			return admin.GitHub{}, err
+		}
+		r.Installations = append(r.Installations, x)
+	}
+	if err := rows.Err(); err != nil {
+		return admin.GitHub{}, err
+	}
+	r.Truncated = len(r.Installations) > limit
+	if r.Truncated {
+		r.Installations = r.Installations[:limit]
+	}
+	return r, nil
+}
 
 type InstallationUpdate struct {
 	GitHubID                          int64

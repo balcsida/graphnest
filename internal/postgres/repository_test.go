@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/admin"
 	"github.com/grepnest/grepnest/internal/githubapp"
 )
 
@@ -230,3 +231,47 @@ func TestAuthorizedRepositoriesExcludeInactiveStates(t *testing.T) {
 }
 
 func timePtr(value time.Time) *time.Time { return &value }
+
+func TestAdminDataIsBoundedAndSanitized(t *testing.T) {
+	store := migratedStore(t)
+	repositoryID := queueRepository(t, store)
+	if err := store.EnqueueIndex(t.Context(), IndexRequest{RepositoryID: repositoryID, TargetSHA: shaA}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into scip_uploads(repository_id, commit, project_root, indexer_name, indexer_version)
+		values($1,$2,'','scip-go','1')`, repositoryID, shaA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into repository_packages(repository_id,source,relation,purl,manager,name,version)
+		values($1,'manual','depends_on','pkg:golang/example.com/dep@v1','golang','example.com/dep','v1')`, repositoryID); err != nil {
+		t.Fatal(err)
+	}
+	repositories, truncated, err := store.AdminRepositories(t.Context(), 1)
+	if err != nil || len(repositories) != 1 || truncated {
+		t.Fatalf("repositories=%#v truncated=%v err=%v", repositories, truncated, err)
+	}
+	jobs, _, err := store.AdminJobs(t.Context(), 1)
+	if err != nil || len(jobs) != 1 || jobs[0].RepositoryID != 101 {
+		t.Fatalf("jobs=%#v err=%v", jobs, err)
+	}
+	uploads, _, err := store.AdminSCIPUploads(t.Context(), 1)
+	if err != nil || len(uploads) != 1 || uploads[0].RepositoryID != 101 {
+		t.Fatalf("uploads=%#v err=%v", uploads, err)
+	}
+	dependencies, _, err := store.AdminSCIPDependencies(t.Context(), 1)
+	if err != nil || len(dependencies) != 1 || dependencies[0].PURL != "pkg:golang/example.com/dep@v1" {
+		t.Fatalf("dependencies=%#v err=%v", dependencies, err)
+	}
+	overview, err := store.AdminOverview(t.Context())
+	if err != nil || overview.Repositories["pending"] != 1 || overview.Jobs["queued"] != 1 ||
+		overview.SCIPUploads != 1 || overview.Dependencies != 1 || overview.Installations != 1 {
+		t.Fatalf("overview=%#v err=%v", overview, err)
+	}
+	github, err := store.AdminGitHub(t.Context(), admin.GitHubConfig{
+		AppID: 7, WebURL: "https://github.example", PrivateKeyConfigured: true, WebhookSecretConfigured: true,
+	}, 1)
+	if err != nil || github.AppID != 7 || len(github.Installations) != 1 ||
+		!github.PrivateKeyConfigured || !github.WebhookSecretConfigured {
+		t.Fatalf("github=%#v err=%v", github, err)
+	}
+}

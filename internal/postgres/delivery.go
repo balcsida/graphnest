@@ -3,9 +3,38 @@ package postgres
 import (
 	"context"
 
+	"github.com/grepnest/grepnest/internal/admin"
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/jackc/pgx/v5"
 )
+
+func (s *Store) AdminDeliveries(ctx context.Context, limit int) ([]admin.Delivery, bool, error) {
+	rows, err := s.pool.Query(ctx, `select deliveries.id,deliveries.delivery_id,deliveries.event_name,
+		installations.github_id,deliveries.received_at,deliveries.processed_at,deliveries.state,
+		coalesce(deliveries.error_code,'') from webhook_deliveries deliveries
+		join installations on installations.id=deliveries.installation_id
+		order by deliveries.received_at desc,deliveries.id desc limit $1`, limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	items := make([]admin.Delivery, 0, limit+1)
+	for rows.Next() {
+		var x admin.Delivery
+		if err := rows.Scan(&x.ID, &x.DeliveryID, &x.Event, &x.InstallationID, &x.ReceivedAt, &x.ProcessedAt, &x.State, &x.ErrorCode); err != nil {
+			return nil, false, err
+		}
+		items = append(items, x)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	more := len(items) > limit
+	if more {
+		items = items[:limit]
+	}
+	return items, more, nil
+}
 
 type Delivery struct {
 	ID, Event, State, ErrorCode string

@@ -1,0 +1,248 @@
+package admin
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"time"
+
+	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/grepnest/grepnest/internal/repository"
+)
+
+var ErrForbidden = errors.New("administrator access required")
+
+type Overview struct {
+	Repositories  map[string]int64 `json:"repositories"`
+	Jobs          map[string]int64 `json:"jobs"`
+	Deliveries    map[string]int64 `json:"deliveries"`
+	SCIPUploads   int64            `json:"scip_uploads"`
+	Dependencies  int64            `json:"dependencies"`
+	Installations int64            `json:"installations"`
+	SearchNodes   int64            `json:"search_nodes"`
+}
+
+type Repository struct {
+	ID             int64      `json:"id"`
+	GitHubID       int64      `json:"github_id"`
+	InstallationID int64      `json:"installation_id"`
+	Name           string     `json:"name"`
+	DefaultBranch  string     `json:"default_branch"`
+	DesiredSHA     string     `json:"desired_sha"`
+	IndexedSHA     string     `json:"indexed_sha"`
+	Status         string     `json:"status"`
+	ErrorCode      string     `json:"error_code"`
+	WebURL         string     `json:"web_url"`
+	Enabled        bool       `json:"enabled"`
+	Private        bool       `json:"private"`
+	Archived       bool       `json:"archived"`
+	LastIndexedAt  *time.Time `json:"last_indexed_at,omitempty"`
+}
+
+type Job struct {
+	ID           int64     `json:"id"`
+	RepositoryID int64     `json:"repository_id"`
+	Repository   string    `json:"repository"`
+	TargetSHA    string    `json:"target_sha"`
+	TargetRef    string    `json:"target_ref"`
+	Reason       string    `json:"reason"`
+	State        string    `json:"state"`
+	ErrorCode    string    `json:"error_code"`
+	Attempt      int       `json:"attempt"`
+	MaxAttempts  int       `json:"max_attempts"`
+	Priority     int       `json:"priority"`
+	RunAfter     time.Time `json:"run_after"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type SCIPUpload struct {
+	ID             int64     `json:"id"`
+	RepositoryID   int64     `json:"repository_id"`
+	Repository     string    `json:"repository"`
+	Commit         string    `json:"commit"`
+	ProjectRoot    string    `json:"project_root"`
+	IndexerName    string    `json:"indexer_name"`
+	IndexerVersion string    `json:"indexer_version"`
+	UploadedAt     time.Time `json:"uploaded_at"`
+}
+
+type SCIPDependency struct {
+	RepositoryID int64  `json:"repository_id"`
+	Repository   string `json:"repository"`
+	Source       string `json:"source"`
+	Relation     string `json:"relation"`
+	PURL         string `json:"purl"`
+	Manager      string `json:"manager"`
+	Name         string `json:"name"`
+	Version      string `json:"version"`
+}
+
+type Delivery struct {
+	ID             int64      `json:"id"`
+	DeliveryID     string     `json:"delivery_id"`
+	Event          string     `json:"event"`
+	State          string     `json:"state"`
+	ErrorCode      string     `json:"error_code"`
+	InstallationID int64      `json:"installation_id"`
+	ReceivedAt     time.Time  `json:"received_at"`
+	ProcessedAt    *time.Time `json:"processed_at,omitempty"`
+}
+
+type Installation struct {
+	GitHubID     int64      `json:"github_id"`
+	AccountLogin string     `json:"account_login"`
+	AccountType  string     `json:"account_type"`
+	Status       string     `json:"status"`
+	SuspendedAt  *time.Time `json:"suspended_at,omitempty"`
+}
+
+type GitHub struct {
+	AppID                   int64          `json:"app_id"`
+	WebURL                  string         `json:"web_url"`
+	APIURL                  string         `json:"api_url"`
+	UploadURL               string         `json:"upload_url"`
+	GitURL                  string         `json:"git_url"`
+	APIVersion              string         `json:"api_version"`
+	PrivateKeyConfigured    bool           `json:"private_key_configured"`
+	WebhookSecretConfigured bool           `json:"webhook_secret_configured"`
+	CAConfigured            bool           `json:"ca_configured"`
+	Installations           []Installation `json:"installations"`
+	Truncated               bool           `json:"truncated"`
+}
+
+type GitHubConfig struct {
+	AppID                                                       int64
+	WebURL, APIURL, UploadURL, GitURL, APIVersion               string
+	PrivateKeyConfigured, WebhookSecretConfigured, CAConfigured bool
+}
+
+type IndexRequest struct {
+	RepositoryID                 int64
+	TargetSHA, TargetRef, Reason string
+}
+
+type Store interface {
+	AdminOverview(context.Context) (Overview, error)
+	AdminRepositories(context.Context, int) ([]Repository, bool, error)
+	AdminJobs(context.Context, int) ([]Job, bool, error)
+	AdminSCIPUploads(context.Context, int) ([]SCIPUpload, bool, error)
+	AdminSCIPDependencies(context.Context, int) ([]SCIPDependency, bool, error)
+	AdminDeliveries(context.Context, int) ([]Delivery, bool, error)
+	AdminGitHub(context.Context, GitHubConfig, int) (GitHub, error)
+	AdminRepository(context.Context, int64) (repository.Repository, error)
+	EnqueueAdminIndex(context.Context, IndexRequest) error
+	RetryAdminJob(context.Context, int64) error
+}
+
+type GitHubClient interface {
+	DefaultBranchSHA(context.Context, int64, string, string, string) (string, error)
+}
+
+type Reconciler interface{ All(context.Context) error }
+
+type Service struct {
+	Store      Store
+	GitHub     GitHubClient
+	Reconciler Reconciler
+	Config     GitHubConfig
+	MaxItems   int
+}
+
+func (service *Service) Overview(ctx context.Context, principal authn.Principal) (Overview, error) {
+	if err := requireAdmin(principal); err != nil {
+		return Overview{}, err
+	}
+	return service.Store.AdminOverview(ctx)
+}
+
+func (service *Service) Repositories(ctx context.Context, principal authn.Principal) ([]Repository, bool, error) {
+	if err := requireAdmin(principal); err != nil {
+		return nil, false, err
+	}
+	return service.Store.AdminRepositories(ctx, service.limit())
+}
+
+func (service *Service) Jobs(ctx context.Context, principal authn.Principal) ([]Job, bool, error) {
+	if err := requireAdmin(principal); err != nil {
+		return nil, false, err
+	}
+	return service.Store.AdminJobs(ctx, service.limit())
+}
+
+func (service *Service) SCIPUploads(ctx context.Context, principal authn.Principal) ([]SCIPUpload, bool, error) {
+	if err := requireAdmin(principal); err != nil {
+		return nil, false, err
+	}
+	return service.Store.AdminSCIPUploads(ctx, service.limit())
+}
+
+func (service *Service) SCIPDependencies(ctx context.Context, principal authn.Principal) ([]SCIPDependency, bool, error) {
+	if err := requireAdmin(principal); err != nil {
+		return nil, false, err
+	}
+	return service.Store.AdminSCIPDependencies(ctx, service.limit())
+}
+
+func (service *Service) Deliveries(ctx context.Context, principal authn.Principal) ([]Delivery, bool, error) {
+	if err := requireAdmin(principal); err != nil {
+		return nil, false, err
+	}
+	return service.Store.AdminDeliveries(ctx, service.limit())
+}
+
+func (service *Service) GitHubInfo(ctx context.Context, principal authn.Principal) (GitHub, error) {
+	if err := requireAdmin(principal); err != nil {
+		return GitHub{}, err
+	}
+	return service.Store.AdminGitHub(ctx, service.Config, service.limit())
+}
+
+func (service *Service) Reindex(ctx context.Context, principal authn.Principal, githubID int64) error {
+	if err := requireAdmin(principal); err != nil {
+		return err
+	}
+	repo, err := service.Store.AdminRepository(ctx, githubID)
+	if err != nil {
+		return err
+	}
+	owner, name, ok := strings.Cut(repo.Name, "/")
+	if !ok {
+		return errors.New("repository name is invalid")
+	}
+	sha, err := service.GitHub.DefaultBranchSHA(ctx, repo.InstallationID, owner, name, repo.Branch)
+	if err != nil {
+		return err
+	}
+	return service.Store.EnqueueAdminIndex(ctx, IndexRequest{
+		RepositoryID: repo.ID, TargetSHA: sha, TargetRef: "refs/heads/" + repo.Branch, Reason: "admin_reindex",
+	})
+}
+
+func (service *Service) Reconcile(ctx context.Context, principal authn.Principal) error {
+	if err := requireAdmin(principal); err != nil {
+		return err
+	}
+	return service.Reconciler.All(ctx)
+}
+
+func (service *Service) Retry(ctx context.Context, principal authn.Principal, id int64) error {
+	if err := requireAdmin(principal); err != nil {
+		return err
+	}
+	return service.Store.RetryAdminJob(ctx, id)
+}
+
+func requireAdmin(principal authn.Principal) error {
+	if !principal.Administrator {
+		return ErrForbidden
+	}
+	return nil
+}
+
+func (service *Service) limit() int {
+	if service.MaxItems > 0 {
+		return service.MaxItems
+	}
+	return 100
+}

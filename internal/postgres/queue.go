@@ -5,9 +5,56 @@ import (
 	"errors"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/admin"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
+
+func (s *Store) AdminJobs(ctx context.Context, limit int) ([]admin.Job, bool, error) {
+	rows, err := s.pool.Query(ctx, `select jobs.id,repositories.github_id,repositories.owner||'/'||repositories.name,
+		jobs.target_sha,jobs.target_ref,jobs.reason,jobs.state,coalesce(jobs.error_code,''),jobs.attempt,jobs.max_attempts,
+		jobs.priority,jobs.run_after,jobs.created_at,jobs.updated_at from index_jobs jobs
+		join repositories on repositories.id=jobs.repository_id order by jobs.updated_at desc,jobs.id desc limit $1`, limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	items := make([]admin.Job, 0, limit+1)
+	for rows.Next() {
+		var x admin.Job
+		if err := rows.Scan(&x.ID, &x.RepositoryID, &x.Repository, &x.TargetSHA, &x.TargetRef, &x.Reason, &x.State, &x.ErrorCode, &x.Attempt, &x.MaxAttempts, &x.Priority, &x.RunAfter, &x.CreatedAt, &x.UpdatedAt); err != nil {
+			return nil, false, err
+		}
+		items = append(items, x)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	more := len(items) > limit
+	if more {
+		items = items[:limit]
+	}
+	return items, more, nil
+}
+
+func (s *Store) EnqueueAdminIndex(ctx context.Context, r admin.IndexRequest) error {
+	return s.EnqueueIndex(ctx, IndexRequest{RepositoryID: r.RepositoryID, TargetSHA: r.TargetSHA, TargetRef: r.TargetRef, Reason: r.Reason})
+}
+
+func (s *Store) RetryAdminJob(ctx context.Context, id int64) error {
+	result, err := s.pool.Exec(ctx, `update index_jobs jobs set state='queued',run_after=now(),lease_owner=null,
+		lease_expires_at=null,error_code=null,error_message=null,attempt=0,updated_at=now() from repositories
+		join installations on installations.id=repositories.installation_id where jobs.id=$1
+		and jobs.repository_id=repositories.id and jobs.state='failed' and jobs.target_sha=repositories.desired_sha
+		and repositories.enabled and not repositories.archived and installations.status='active'`, id)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
 
 var ErrNoJob = errors.New("no index job available")
 var ErrLeaseLost = errors.New("index job lease lost")

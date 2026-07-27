@@ -4,11 +4,66 @@ import (
 	"context"
 	"errors"
 
+	"github.com/grepnest/grepnest/internal/admin"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/scipgraph"
 	"github.com/jackc/pgx/v5"
 	"github.com/scip-code/scip/bindings/go/scip"
 )
+
+func (s *Store) AdminSCIPUploads(ctx context.Context, limit int) ([]admin.SCIPUpload, bool, error) {
+	rows, err := s.pool.Query(ctx, `select uploads.id,repositories.github_id,repositories.owner||'/'||repositories.name,
+		uploads.commit,uploads.project_root,uploads.indexer_name,uploads.indexer_version,uploads.uploaded_at
+		from scip_uploads uploads join repositories on repositories.id=uploads.repository_id
+		order by uploads.uploaded_at desc,uploads.id desc limit $1`, limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	items := make([]admin.SCIPUpload, 0, limit+1)
+	for rows.Next() {
+		var x admin.SCIPUpload
+		if err := rows.Scan(&x.ID, &x.RepositoryID, &x.Repository, &x.Commit, &x.ProjectRoot, &x.IndexerName, &x.IndexerVersion, &x.UploadedAt); err != nil {
+			return nil, false, err
+		}
+		items = append(items, x)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	more := len(items) > limit
+	if more {
+		items = items[:limit]
+	}
+	return items, more, nil
+}
+
+func (s *Store) AdminSCIPDependencies(ctx context.Context, limit int) ([]admin.SCIPDependency, bool, error) {
+	rows, err := s.pool.Query(ctx, `select repositories.github_id,repositories.owner||'/'||repositories.name,
+		packages.source,packages.relation,packages.purl,packages.manager,packages.name,packages.version
+		from repository_packages packages join repositories on repositories.id=packages.repository_id
+		order by repositories.github_id,packages.source,packages.relation,packages.purl limit $1`, limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	items := make([]admin.SCIPDependency, 0, limit+1)
+	for rows.Next() {
+		var x admin.SCIPDependency
+		if err := rows.Scan(&x.RepositoryID, &x.Repository, &x.Source, &x.Relation, &x.PURL, &x.Manager, &x.Name, &x.Version); err != nil {
+			return nil, false, err
+		}
+		items = append(items, x)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	more := len(items) > limit
+	if more {
+		items = items[:limit]
+	}
+	return items, more, nil
+}
 
 func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit string, upload scipgraph.Upload) error {
 	tx, err := s.pool.Begin(ctx)
