@@ -1,0 +1,5 @@
+version: v2
+plugins:
+  - local: [go, tool, protoc-gen-go]
+    out: internal/graphartifact/v1
+    opt: paths=source_relative
