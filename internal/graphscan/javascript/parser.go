@@ -223,12 +223,11 @@ func callCandidates(node *tree_sitter.Node, source []byte, aliases map[string]st
 	name := text(node, source)
 	if node.Kind() == "member_expression" {
 		name = text(node.ChildByFieldName("property"), source)
-		candidates := []string{name}
 		member := text(node, source)
 		if text(node.ChildByFieldName("object"), source) == "this" && class != "" {
-			candidates = append(candidates, class+"."+name)
+			return name, []string{class + "." + name, name, member}
 		}
-		return name, append(candidates, member)
+		return name, []string{name, member}
 	}
 	candidates := []string{name}
 	if original := aliases[name]; original != "" && original != name {

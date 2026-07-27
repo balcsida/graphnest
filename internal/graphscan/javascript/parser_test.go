@@ -89,13 +89,13 @@ func TestParseJavaScriptEmitsAllRelativeImportShapes(t *testing.T) {
 
 func TestParseTypeScriptMethodCallResolvesToClassMethod(t *testing.T) {
 	got := parseFixture(t, "method-call.ts")
-	if !hasCall(got, "run", "run", "Service.run", "this.run") ||
-		!hasCall(got, "run", "run", "obj.run") {
-		t.Fatalf("Parse() = %#v", got)
-	}
 	artifact, err := graphscan.Resolve(1, strings.Repeat("a", 40), []graphscan.File{got})
 	if err != nil || !hasResolvedCall(artifact, "Service.start", "Service.run") {
 		t.Fatalf("Resolve() = %#v, %v", artifact, err)
+	}
+	if !hasCall(got, "run", "Service.run", "run", "this.run") ||
+		!hasCall(got, "run", "run", "obj.run") {
+		t.Fatalf("Parse() = %#v", got)
 	}
 }
 

@@ -1,3 +1,5 @@
+function run() {}
+
 class Service {
 	run() {}
 	start() {
