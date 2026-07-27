@@ -30,17 +30,17 @@ func TestReplaceSCIPIsAtomicAndCurrent(t *testing.T) {
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("b.go", globalSymbol, definitionRole)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "a.go", 0, 1); !errors.Is(err, scipgraph.ErrOccurrenceNotFound) || errors.Is(err, pgx.ErrNoRows) {
+	if _, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "a.go", 0, occurrencePosition(1)); !errors.Is(err, scipgraph.ErrOccurrenceNotFound) || errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("removed occurrence err = %v", err)
 	}
-	if _, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('b'), "b.go", 0, 1); !errors.Is(err, scipgraph.ErrOccurrenceNotFound) || errors.Is(err, pgx.ErrNoRows) {
+	if _, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('b'), "b.go", 0, occurrencePosition(1)); !errors.Is(err, scipgraph.ErrOccurrenceNotFound) || errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("stale occurrence err = %v", err)
 	}
 
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('b'), uploadWith("stale.go", globalSymbol, definitionRole)); !errors.Is(err, scipgraph.ErrStaleIndex) {
 		t.Fatalf("stale replacement err = %v", err)
 	}
-	if occurrence, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "b.go", 0, 1); err != nil || occurrence.Path != "b.go" {
+	if occurrence, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "b.go", 0, occurrencePosition(1)); err != nil || occurrence.Path != "b.go" {
 		t.Fatalf("current occurrence = %#v, err = %v", occurrence, err)
 	}
 	duplicate := uploadWith("duplicate.go", globalSymbol, definitionRole)
@@ -48,7 +48,7 @@ func TestReplaceSCIPIsAtomicAndCurrent(t *testing.T) {
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), duplicate); err == nil {
 		t.Fatal("duplicate replacement succeeded")
 	}
-	if occurrence, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "b.go", 0, 1); err != nil || occurrence.Path != "b.go" {
+	if occurrence, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "b.go", 0, occurrencePosition(1)); err != nil || occurrence.Path != "b.go" {
 		t.Fatalf("occurrence after rollback = %#v, err = %v", occurrence, err)
 	}
 }
@@ -64,12 +64,28 @@ func TestOccurrenceAtReturnsSmallestContainingRange(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	occurrence, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "a.go", 2, 4)
+	occurrence, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "a.go", 2, occurrencePosition(4))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if occurrence.StartLine != 2 || occurrence.StartCharacter != 2 || occurrence.EndLine != 2 || occurrence.EndCharacter != 6 || occurrence.PositionEncoding != 2 {
 		t.Fatalf("OccurrenceAt() = %#v", occurrence)
+	}
+}
+
+func TestOccurrenceAtUsesUploadPositionEncoding(t *testing.T) {
+	store := migratedStore(t)
+	position := scipgraph.OccurrencePosition{UTF8: 5, UTF16: 4, UTF32: 3}
+	for encoding, character := range []int32{5, 4, 3} {
+		repositoryID := seedReadyRepository(t, store, int64(101+encoding), testSHA(byte('a'+encoding)))
+		if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA(byte('a'+encoding)), scipgraph.Upload{Occurrences: []scipgraph.Occurrence{{
+			Path: "a.go", Symbol: globalSymbol, StartCharacter: character, EndCharacter: character + 1, PositionEncoding: int32(encoding + 1),
+		}}}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA(byte('a'+encoding)), "a.go", 0, position); err != nil {
+			t.Fatalf("encoding %d: %v", encoding+1, err)
+		}
 	}
 }
 
@@ -126,15 +142,16 @@ func TestSCIPLocationsAuthorizeAndScopeSymbols(t *testing.T) {
 	}
 
 	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101, 102}}
-	origin, err := store.OccurrenceAt(t.Context(), firstID, testSHA('a'), "origin.go", 0, 1)
+	origin, err := store.OccurrenceAt(t.Context(), firstID, testSHA('a'), "origin.go", 0, occurrencePosition(1))
 	if err != nil {
 		t.Fatal(err)
 	}
 	definitions, truncated, err := store.Locations(t.Context(), principal, origin, "definitions", 10)
-	if err != nil || truncated || len(definitions) != 1 || definitions[0].RepositoryID != 102 || definitions[0].Path != "definition.go" {
+	if err != nil || truncated || len(definitions) != 1 || definitions[0].RepositoryID != 102 ||
+		definitions[0].WebURL != "web" || definitions[0].Path != "definition.go" {
 		t.Fatalf("definitions = %#v, truncated = %v, err = %v", definitions, truncated, err)
 	}
-	definition, err := store.OccurrenceAt(t.Context(), secondID, testSHA('b'), "definition.go", 0, 1)
+	definition, err := store.OccurrenceAt(t.Context(), secondID, testSHA('b'), "definition.go", 0, occurrencePosition(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +164,7 @@ func TestSCIPLocationsAuthorizeAndScopeSymbols(t *testing.T) {
 		t.Fatalf("implementations = %#v, truncated = %v, err = %v", implementations, truncated, err)
 	}
 
-	localOrigin, err := store.OccurrenceAt(t.Context(), firstID, testSHA('a'), "local.go", 0, 1)
+	localOrigin, err := store.OccurrenceAt(t.Context(), firstID, testSHA('a'), "local.go", 0, occurrencePosition(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +173,7 @@ func TestSCIPLocationsAuthorizeAndScopeSymbols(t *testing.T) {
 		t.Fatalf("local definitions = %#v, truncated = %v, err = %v", locations, truncated, err)
 	}
 
-	unauthorizedOrigin, err := store.OccurrenceAt(t.Context(), fourthID, testSHA('d'), "forbidden-origin.go", 0, 1)
+	unauthorizedOrigin, err := store.OccurrenceAt(t.Context(), fourthID, testSHA('d'), "forbidden-origin.go", 0, occurrencePosition(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +195,7 @@ func TestSCIPLocalSymbolsAreDocumentScoped(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	origin, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "a.go", 0, 1)
+	origin, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "a.go", 0, occurrencePosition(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +246,7 @@ func TestSCIPRelationshipsNavigateDefinitionsAndReferences(t *testing.T) {
 		{"reference-target.go", "references", []string{"reference-source.go", "reference-target.go"}},
 		{"reference-source.go", "references", []string{"reference-source.go", "reference-target.go"}},
 	} {
-		origin, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), test.originPath, 0, 1)
+		origin, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), test.originPath, 0, occurrencePosition(1))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -251,7 +268,7 @@ func TestSCIPLocationsRejectStaleOrigin(t *testing.T) {
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("origin.go", globalSymbol, 0)); err != nil {
 		t.Fatal(err)
 	}
-	origin, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "origin.go", 0, 1)
+	origin, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "origin.go", 0, occurrencePosition(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +297,7 @@ func TestSCIPLocalRelationshipsAreDocumentScoped(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	origin, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "a.go", 0, 1)
+	origin, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "a.go", 0, occurrencePosition(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +375,7 @@ func TestSCIPLocationsUseDeterministicTotalOrder(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	origin, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "origin.go", 0, 1)
+	origin, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "origin.go", 0, occurrencePosition(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +400,7 @@ func TestSCIPLocationsReportTruncation(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	origin, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "origin.go", 0, 1)
+	origin, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "origin.go", 0, occurrencePosition(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,7 +498,7 @@ func TestDependencyAssistedLocationsRequireDependencyAndPreferManualProvider(t *
 		t.Fatal(err)
 	}
 	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101, 102, 103}}
-	origin, err := store.OccurrenceAt(t.Context(), originID, testSHA('a'), "origin.go", 0, 1)
+	origin, err := store.OccurrenceAt(t.Context(), originID, testSHA('a'), "origin.go", 0, occurrencePosition(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -552,7 +569,7 @@ func TestDependencyAssistedLocationsTraverseRelationships(t *testing.T) {
 		{"reference-target-origin-definition.go", "references", []string{"reference-source.go", "reference-target.go"}},
 		{"reference-source-origin-definition.go", "references", []string{"reference-source.go", "reference-target.go"}},
 	} {
-		origin, err := store.OccurrenceAt(t.Context(), originID, testSHA('a'), test.originPath, 0, 1)
+		origin, err := store.OccurrenceAt(t.Context(), originID, testSHA('a'), test.originPath, 0, occurrencePosition(1))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -613,7 +630,7 @@ func TestDependencyAssistedLocationsAreBoundedAndExactFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{201, 202, 203, 204, 205, 207}}
-	origin, err := store.OccurrenceAt(t.Context(), originID, testSHA('a'), "origin.go", 0, 1)
+	origin, err := store.OccurrenceAt(t.Context(), originID, testSHA('a'), "origin.go", 0, occurrencePosition(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -627,7 +644,7 @@ func TestDependencyAssistedLocationsAreBoundedAndExactFirst(t *testing.T) {
 	if _, err := store.pool.Exec(t.Context(), "update repositories set indexed_sha=$2 where id=$1", staleID, testSHA('2')); err != nil {
 		t.Fatal(err)
 	}
-	origin, err = store.OccurrenceAt(t.Context(), originID, testSHA('a'), "origin.go", 0, 1)
+	origin, err = store.OccurrenceAt(t.Context(), originID, testSHA('a'), "origin.go", 0, occurrencePosition(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -649,6 +666,10 @@ func uploadWith(path, symbol string, roles int32) scipgraph.Upload {
 	return scipgraph.Upload{ProjectRoot: "file:///src", IndexerName: "test", IndexerVersion: "1", Occurrences: []scipgraph.Occurrence{{
 		Path: path, Symbol: symbol, EndCharacter: 2, PositionEncoding: 1, Roles: roles,
 	}}}
+}
+
+func occurrencePosition(character int) scipgraph.OccurrencePosition {
+	return scipgraph.OccurrencePosition{UTF8: character, UTF16: character, UTF32: character}
 }
 
 func seedReadyRepository(t *testing.T, store *Store, githubID int64, sha string) int64 {

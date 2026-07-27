@@ -310,7 +310,7 @@ func (store *deadlineSCIPStore) ReplaceSCIP(context.Context, int64, string, scip
 	}
 	return nil
 }
-func (*deadlineSCIPStore) OccurrenceAt(context.Context, int64, string, string, int, int) (scipgraph.StoredOccurrence, error) {
+func (*deadlineSCIPStore) OccurrenceAt(context.Context, int64, string, string, int, scipgraph.OccurrencePosition) (scipgraph.StoredOccurrence, error) {
 	return scipgraph.StoredOccurrence{}, errors.New("not found")
 }
 func (*deadlineSCIPStore) Locations(context.Context, authn.Principal, scipgraph.StoredOccurrence, string, int) ([]scipgraph.Location, bool, error) {

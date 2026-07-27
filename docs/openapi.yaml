@@ -292,11 +292,21 @@ components:
       type: object
       additionalProperties: false
       required: [repository_id, path, line, operation]
+      oneOf:
+        - required: [character_utf8, character_utf16, character_utf32]
+        - not:
+            anyOf:
+              - required: [character_utf8]
+              - required: [character_utf16]
+              - required: [character_utf32]
       properties:
         repository_id: {type: integer, format: int64, minimum: 1}
         path: {type: string, minLength: 1, description: Clean relative slash-separated path}
         line: {type: integer, minimum: 1, description: One-based source line}
-        character: {type: integer, minimum: 0, default: 0}
+        character: {type: integer, minimum: 0, default: 0, description: Legacy offset applied to every position encoding}
+        character_utf8: {type: integer, minimum: 0, description: UTF-8 code-unit offset; provide with character_utf16 and character_utf32}
+        character_utf16: {type: integer, minimum: 0, description: UTF-16 code-unit offset; provide with character_utf8 and character_utf32}
+        character_utf32: {type: integer, minimum: 0, description: UTF-32 code-unit offset; provide with character_utf8 and character_utf16}
         operation: {type: string, enum: [definitions, references, implementations]}
     SCIPNavigationResponse:
       type: object
@@ -308,10 +318,11 @@ components:
     SCIPLocation:
       type: object
       additionalProperties: false
-      required: [repository_id, repository_name, commit, path, symbol, start_line, start_character, end_line, end_character, position_encoding, roles, approximate]
+      required: [repository_id, repository_name, web_url, commit, path, symbol, start_line, start_character, end_line, end_character, position_encoding, roles, approximate]
       properties:
         repository_id: {type: integer, format: int64, minimum: 1}
         repository_name: {type: string}
+        web_url: {type: string, format: uri}
         commit: {type: string, pattern: '^[0-9a-f]{40}$'}
         path: {type: string}
         symbol: {type: string}

@@ -83,7 +83,7 @@ func (s *Store) ReplacePackages(ctx context.Context, repositoryID int64, source 
 	return tx.Commit(ctx)
 }
 
-func (s *Store) OccurrenceAt(ctx context.Context, repositoryID int64, commit, path string, line, character int) (scipgraph.StoredOccurrence, error) {
+func (s *Store) OccurrenceAt(ctx context.Context, repositoryID int64, commit, path string, line int, position scipgraph.OccurrencePosition) (scipgraph.StoredOccurrence, error) {
 	var occurrence scipgraph.StoredOccurrence
 	err := s.pool.QueryRow(ctx, `select uploads.id, uploads.repository_id, uploads.commit,
 		occurrences.path, occurrences.start_line, occurrences.start_character,
@@ -93,11 +93,11 @@ func (s *Store) OccurrenceAt(ctx context.Context, repositoryID int64, commit, pa
 		join repositories on repositories.id=uploads.repository_id and repositories.indexed_sha=uploads.commit
 		join scip_occurrences occurrences on occurrences.upload_id=uploads.id
 		where uploads.repository_id=$1 and uploads.commit=$2 and occurrences.path=$3
-		and (occurrences.start_line<$4 or occurrences.start_line=$4 and occurrences.start_character<=$5)
-		and (occurrences.end_line>$4 or occurrences.end_line=$4 and occurrences.end_character>$5)
+		and (occurrences.start_line<$4 or occurrences.start_line=$4 and occurrences.start_character<=case uploads.position_encoding when 1 then $5 when 2 then $6 when 3 then $7 end)
+		and (occurrences.end_line>$4 or occurrences.end_line=$4 and occurrences.end_character>case uploads.position_encoding when 1 then $5 when 2 then $6 when 3 then $7 end)
 		order by occurrences.start_line desc, occurrences.start_character desc,
 			occurrences.end_line, occurrences.end_character
-		limit 1`, repositoryID, commit, path, line, character).Scan(
+		limit 1`, repositoryID, commit, path, line, position.UTF8, position.UTF16, position.UTF32).Scan(
 		&occurrence.UploadID, &occurrence.RepositoryID, &occurrence.Commit,
 		&occurrence.Path, &occurrence.StartLine, &occurrence.StartCharacter,
 		&occurrence.EndLine, &occurrence.EndCharacter, &occurrence.PositionEncoding, &occurrence.Symbol,
@@ -133,7 +133,7 @@ func (s *Store) Locations(ctx context.Context, principal authn.Principal, origin
 }
 
 const exactLocationsSQL = `with authorized_uploads as (
-		select uploads.id, uploads.repository_id, repositories.github_id, repositories.owner || '/' || repositories.name repository_name, uploads.commit
+		select uploads.id, uploads.repository_id, repositories.github_id, repositories.owner || '/' || repositories.name repository_name, repositories.web_url, uploads.commit
 		from scip_uploads uploads
 		join repositories on repositories.id=uploads.repository_id and repositories.indexed_sha=uploads.commit
 		join installations on installations.id=repositories.installation_id
@@ -177,7 +177,7 @@ const exactLocationsSQL = `with authorized_uploads as (
 			or targets.role_filter=1 and occurrences.roles & 1 <> 0
 			or targets.role_filter=0 and occurrences.roles & 1 = 0
 	)
-	select authorized_uploads.github_id, authorized_uploads.repository_name, authorized_uploads.commit,
+	select authorized_uploads.github_id, authorized_uploads.repository_name, authorized_uploads.web_url, authorized_uploads.commit,
 		matches.path, matches.start_line, matches.start_character,
 		matches.end_line, matches.end_character, matches.position_encoding, matches.symbol, matches.roles
 	from matches
@@ -200,7 +200,7 @@ func (s *Store) exactLocations(ctx context.Context, tx pgx.Tx, principal authn.P
 	locations := make([]scipgraph.Location, 0, max+1)
 	for rows.Next() {
 		var location scipgraph.Location
-		if err := rows.Scan(&location.RepositoryID, &location.RepositoryName, &location.Commit,
+		if err := rows.Scan(&location.RepositoryID, &location.RepositoryName, &location.WebURL, &location.Commit,
 			&location.Path, &location.StartLine, &location.StartCharacter, &location.EndLine,
 			&location.EndCharacter, &location.PositionEncoding, &location.Symbol, &location.Roles); err != nil {
 			return nil, false, err
@@ -228,7 +228,7 @@ func (s *Store) approximateLocations(ctx context.Context, tx pgx.Tx, principal a
 	}
 	rows, err := tx.Query(ctx, `with authorized_uploads as (
 		select uploads.id, uploads.repository_id, repositories.github_id,
-			repositories.owner || '/' || repositories.name repository_name, uploads.commit
+			repositories.owner || '/' || repositories.name repository_name, repositories.web_url, uploads.commit
 		from scip_uploads uploads
 		join repositories on repositories.id=uploads.repository_id and repositories.indexed_sha=uploads.commit
 		join installations on installations.id=repositories.installation_id
@@ -280,7 +280,7 @@ func (s *Store) approximateLocations(ctx context.Context, tx pgx.Tx, principal a
 		where ($9='references' and relationships.is_reference and occurrences.roles & 1 = 0)
 			or ($9='implementations' and relationships.is_implementation and occurrences.roles & 1 <> 0)
 	)
-	select authorized_uploads.github_id, authorized_uploads.repository_name, authorized_uploads.commit,
+	select authorized_uploads.github_id, authorized_uploads.repository_name, authorized_uploads.web_url, authorized_uploads.commit,
 		matches.path, matches.start_line, matches.start_character, matches.end_line,
 		matches.end_character, matches.position_encoding, matches.symbol, matches.roles
 	from matches join authorized_uploads on authorized_uploads.id=matches.upload_id
@@ -295,7 +295,7 @@ func (s *Store) approximateLocations(ctx context.Context, tx pgx.Tx, principal a
 	locations := make([]scipgraph.Location, 0, max+1)
 	for rows.Next() {
 		var location scipgraph.Location
-		if err := rows.Scan(&location.RepositoryID, &location.RepositoryName, &location.Commit,
+		if err := rows.Scan(&location.RepositoryID, &location.RepositoryName, &location.WebURL, &location.Commit,
 			&location.Path, &location.StartLine, &location.StartCharacter, &location.EndLine,
 			&location.EndCharacter, &location.PositionEncoding, &location.Symbol, &location.Roles); err != nil {
 			return nil, false, err
