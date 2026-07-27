@@ -55,6 +55,7 @@ func TestConsoleOpensIndexedFilesInAFileViewer(t *testing.T) {
 		`function openFile(match)`,
 		`request("/v1/files/read"`,
 		`body:JSON.stringify({repository_id:match.repository.id,path:match.path})`,
+		`if(response.indexed_sha!==match.sha)throw new Error("Indexed revision changed. Search again.")`,
 		`gutter.textContent=String(response.start_line+offset)`,
 		`$("file-lines").replaceChildren(fragment)`,
 		`response.truncated?"File content was truncated.":""`,
@@ -76,6 +77,7 @@ func TestConsoleNavigatesIdentifiersAtExactOffsets(t *testing.T) {
 		`function selectIdentifier(button)`,
 		`function runNavigation(operation)`,
 		`request("/v1/scip/navigation"`,
+		`commit:match.sha`,
 		`data-operation="definitions"`,
 		`data-operation="references"`,
 		`data-operation="implementations"`,
@@ -84,6 +86,20 @@ func TestConsoleNavigatesIdentifiersAtExactOffsets(t *testing.T) {
 	} {
 		if !bytes.Contains(document, []byte(want)) {
 			t.Fatalf("console is missing exact SCIP navigation behavior %q", want)
+		}
+	}
+}
+
+func TestConsoleUsesSingularCountGrammar(t *testing.T) {
+	for _, want := range []string{
+		"function countLabel(count,noun){return `${count} ${noun}${count===1?\"\":\"s\"}`}",
+		`countLabel(response.matches.length,"match")`,
+		`countLabel(repositories.size,"repository")`,
+		`countLabel(groups.size,"repository")`,
+		`countLabel(selected.length,"repository")`,
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console is missing singular count grammar %q", want)
 		}
 	}
 }

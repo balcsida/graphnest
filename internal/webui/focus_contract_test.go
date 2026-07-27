@@ -21,3 +21,18 @@ func TestConsoleUsesAccentForSharedFocusOutline(t *testing.T) {
 		}
 	}
 }
+
+func TestConsoleMovesFocusIntoAndBackFromFileViewer(t *testing.T) {
+	for _, want := range []string{
+		`fileTrigger:null`,
+		`state.fileTrigger=null`,
+		`state.fileTrigger=pathButton;void openFile(matches[0])`,
+		`$("file-back").focus()`,
+		`function closeFile(){const trigger=state.fileTrigger;showScreen("search");(trigger&&trigger.isConnected?trigger:$("query")).focus()}`,
+		`$("file-back").addEventListener("click",closeFile)`,
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console is missing file-view focus behavior %q", want)
+		}
+	}
+}

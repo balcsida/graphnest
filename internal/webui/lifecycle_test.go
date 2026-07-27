@@ -13,6 +13,7 @@ func TestConsoleInvalidatesCredentialScopedRepositoryState(t *testing.T) {
 		"state.repositoryController.abort()",
 		"state.repositories=[]",
 		"$(\"repository-options\").replaceChildren()",
+		`$("repository-status").textContent=""`,
 		"$(\"all-repositories\").checked=true",
 		"generation!==state.repositoryGeneration",
 		"signal:controller.signal",
@@ -20,6 +21,22 @@ func TestConsoleInvalidatesCredentialScopedRepositoryState(t *testing.T) {
 		if !bytes.Contains(document, []byte(want)) {
 			t.Fatalf("console is missing credential-state protection %q", want)
 		}
+	}
+}
+
+func TestConsoleRendersTruncatedAuthorizedRepositories(t *testing.T) {
+	for _, want := range []string{
+		`id="repository-status"`,
+		`if(!Array.isArray(response.repositories))return`,
+		`state.repositories=response.repositories`,
+		`$("repository-status").textContent=response.truncated?"Only the first authorized repositories are shown.":""`,
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console is missing truncated repository lifecycle %q", want)
+		}
+	}
+	if bytes.Contains(document, []byte(`if(response.truncated||!Array.isArray(response.repositories))return`)) {
+		t.Fatal("console discards the authorized repository prefix when it is truncated")
 	}
 }
 
@@ -73,9 +90,13 @@ func TestConsoleClearsPrincipalFileAndNavigationStateOnSignOut(t *testing.T) {
 
 func TestConsoleKeepsTouchTargetsAtLeast44Pixels(t *testing.T) {
 	for _, want := range []string{
+		".nav-button{min-height:44px",
+		"#query{height:44px;min-height:44px",
 		"fieldset label{display:flex;gap:8px;align-items:center;min-width:0;min-height:44px;overflow-wrap:anywhere}",
 		"fieldset input{width:44px;min-width:44px;min-height:44px}",
 		".file-header a,.repository-link{color:var(--accent);display:inline-flex;min-height:44px;align-items:center}",
+		".file-line{display:grid;grid-template-columns:58px max-content;min-width:max-content;min-height:44px}",
+		".identifier{min-width:44px;min-height:44px",
 	} {
 		if !bytes.Contains(document, []byte(want)) {
 			t.Fatalf("console is missing 44px touch target %q", want)
