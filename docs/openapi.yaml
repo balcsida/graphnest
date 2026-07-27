@@ -3,6 +3,93 @@ info:
   title: GrepNest REST API
   version: 0.1.0
 paths:
+  /v1/admin/overview:
+    get:
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Durable service totals, content: {application/json: {schema: {$ref: '#/components/schemas/AdminOverview'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/repositories:
+    get:
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Bounded durable repository inventory, content: {application/json: {schema: {$ref: '#/components/schemas/AdminList'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/jobs:
+    get:
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Bounded indexing job inventory, content: {application/json: {schema: {$ref: '#/components/schemas/AdminList'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/scip/uploads:
+    get:
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Bounded SCIP upload inventory, content: {application/json: {schema: {$ref: '#/components/schemas/AdminList'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/scip/dependencies:
+    get:
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Bounded SCIP dependency inventory, content: {application/json: {schema: {$ref: '#/components/schemas/AdminList'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/webhook-deliveries:
+    get:
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Bounded webhook delivery inventory, content: {application/json: {schema: {$ref: '#/components/schemas/AdminList'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/github:
+    get:
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Sanitized GitHub App settings and installations, content: {application/json: {schema: {$ref: '#/components/schemas/AdminGitHub'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/repositories/{github_id}/reindex:
+    post:
+      security: [{bearerAuth: []}]
+      parameters: [{name: github_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}]
+      responses:
+        '204': {description: Current default branch SHA resolved and queued}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/reconcile:
+    post:
+      security: [{bearerAuth: []}]
+      responses:
+        '204': {description: GitHub App installations reconciled}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/jobs/{id}/retry:
+    post:
+      security: [{bearerAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}]
+      responses:
+        '204': {description: Current authorized failed job requeued}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/Unavailable'}
   /v1/repositories:
     get:
       security: [{bearerAuth: []}]
@@ -213,6 +300,45 @@ components:
     Unavailable: {description: Service unavailable, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     Timeout: {description: Search timed out, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
   schemas:
+    AdminOverview:
+      type: object
+      additionalProperties: false
+      required: [repositories, jobs, deliveries, scip_uploads, dependencies, installations, search_nodes]
+      properties:
+        repositories: {type: object, additionalProperties: {type: integer, format: int64}}
+        jobs: {type: object, additionalProperties: {type: integer, format: int64}}
+        deliveries: {type: object, additionalProperties: {type: integer, format: int64}}
+        scip_uploads: {type: integer, format: int64}
+        dependencies: {type: integer, format: int64}
+        installations: {type: integer, format: int64}
+        search_nodes: {type: integer, format: int64}
+    AdminList:
+      type: object
+      description: Endpoint-specific bounded items plus a truncation indicator.
+      required: [truncated]
+      properties:
+        repositories: {type: array, maxItems: 100, items: {type: object}}
+        jobs: {type: array, maxItems: 100, items: {type: object}}
+        uploads: {type: array, maxItems: 100, items: {type: object}}
+        dependencies: {type: array, maxItems: 100, items: {type: object}}
+        deliveries: {type: array, maxItems: 100, items: {type: object}}
+        truncated: {type: boolean}
+    AdminGitHub:
+      type: object
+      additionalProperties: false
+      required: [app_id, web_url, api_url, upload_url, git_url, api_version, private_key_configured, webhook_secret_configured, ca_configured, installations, truncated]
+      properties:
+        app_id: {type: integer, format: int64}
+        web_url: {type: string, format: uri}
+        api_url: {type: string, format: uri}
+        upload_url: {type: string, format: uri}
+        git_url: {type: string, format: uri}
+        api_version: {type: string}
+        private_key_configured: {type: boolean}
+        webhook_secret_configured: {type: boolean}
+        ca_configured: {type: boolean}
+        installations: {type: array, maxItems: 100, items: {type: object}}
+        truncated: {type: boolean}
     RepositoryList:
       type: object
       additionalProperties: false
