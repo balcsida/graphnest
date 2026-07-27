@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/grepnest/grepnest/internal/graphartifact"
@@ -55,6 +56,49 @@ func TestParseTypeScriptPreservesUTF8ByteColumns(t *testing.T) {
 	t.Fatalf("Parse() = %#v", got)
 }
 
+func TestParseJavaScriptEmitsDefaultArrowDeclaration(t *testing.T) {
+	got := parseFixture(t, "default-arrow.js")
+	if !hasDeclaration(got, "defaultExport", "Function") {
+		t.Fatalf("Parse() = %#v", got)
+	}
+}
+
+func TestParseJavaScriptEmitsAnonymousDefaultClass(t *testing.T) {
+	got := parseFixture(t, "default-class.js")
+	if !hasDeclaration(got, "defaultExport", "Class") || !hasDeclaration(got, "defaultExport.run", "Method") {
+		t.Fatalf("Parse() = %#v", got)
+	}
+}
+
+func TestParseJavaScriptEmitsExportClauseAlias(t *testing.T) {
+	got := parseFixture(t, "named-export.js")
+	if !hasDeclaration(got, "bar", "Function") {
+		t.Fatalf("Parse() = %#v", got)
+	}
+}
+
+func TestParseJavaScriptEmitsAllRelativeImportShapes(t *testing.T) {
+	got := parseFixture(t, "imports.js")
+	if !hasImport(got, "./default.js", "thing") ||
+		!hasImport(got, "./namespace.js", "all") ||
+		!hasImport(got, "./named.js", "alias") ||
+		!hasImport(got, "./setup.js", "") {
+		t.Fatalf("Parse() = %#v", got)
+	}
+}
+
+func TestParseTypeScriptMethodCallResolvesToClassMethod(t *testing.T) {
+	got := parseFixture(t, "method-call.ts")
+	if !hasCall(got, "run", "run", "Service.run", "this.run") ||
+		!hasCall(got, "run", "run", "obj.run") {
+		t.Fatalf("Parse() = %#v", got)
+	}
+	artifact, err := graphscan.Resolve(1, strings.Repeat("a", 40), []graphscan.File{got})
+	if err != nil || !hasResolvedCall(artifact, "Service.start", "Service.run") {
+		t.Fatalf("Resolve() = %#v, %v", artifact, err)
+	}
+}
+
 func parseFixture(t *testing.T, name string) graphscan.File {
 	t.Helper()
 	source, err := os.ReadFile(filepath.Join("testdata", name))
@@ -89,5 +133,15 @@ func hasCall(file graphscan.File, name string, candidates ...string) bool {
 func hasHeritage(file graphscan.File, child string, kind graphartifact.EdgeKind, candidates ...string) bool {
 	return slices.ContainsFunc(file.Heritage, func(value graphscan.Heritage) bool {
 		return value.ChildLocalID == child && value.Kind == kind && slices.Equal(value.Candidates, candidates)
+	})
+}
+
+func hasResolvedCall(artifact graphartifact.Artifact, source, target string) bool {
+	names := map[string]string{}
+	for _, node := range artifact.Nodes {
+		names[node.UID] = node.QualifiedName
+	}
+	return slices.ContainsFunc(artifact.Edges, func(edge graphartifact.Edge) bool {
+		return edge.Kind == graphartifact.EdgeCalls && names[edge.SourceUID] == source && names[edge.TargetUID] == target
 	})
 }

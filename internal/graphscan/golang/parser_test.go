@@ -24,7 +24,8 @@ func TestParseGoEmitsCallsAndInterfaceEvidence(t *testing.T) {
 	got := parseFixture(t, "service.go")
 	if !hasCall(got, "Run", "Run", "Runner.Run") ||
 		!hasHeritage(got, "Runner", graphartifact.EdgeImplements, "Worker") ||
-		!hasHeritage(got, "Worker", graphartifact.EdgeExtends, "Base") {
+		!hasHeritage(got, "Worker", graphartifact.EdgeExtends, "Base") ||
+		hasHeritage(got, "Partial", graphartifact.EdgeImplements, "Worker") {
 		t.Fatalf("Parse() = %#v", got)
 	}
 }
@@ -40,6 +41,20 @@ func TestParseGoPreservesUTF8ByteColumns(t *testing.T) {
 		}
 	}
 	t.Fatalf("Parse() = %#v", got)
+}
+
+func TestParseGoRejectsImplicitInterfaceSignatureMismatch(t *testing.T) {
+	got := parseFixture(t, "interface-mismatch.go")
+	if hasHeritage(got, "Wrong", graphartifact.EdgeImplements, "Runner") {
+		t.Fatalf("Parse() = %#v", got)
+	}
+}
+
+func TestParseGoExcludesPointerMethodsFromValueMethodSet(t *testing.T) {
+	got := parseFixture(t, "interface-pointer.go")
+	if hasHeritage(got, "PointerOnly", graphartifact.EdgeImplements, "Closer") {
+		t.Fatalf("Parse() = %#v", got)
+	}
 }
 
 func parseFixture(t *testing.T, name string) graphscan.File {

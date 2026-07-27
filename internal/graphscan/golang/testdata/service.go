@@ -12,9 +12,11 @@ type Worker interface {
 }
 
 type Runner struct{}
+type Partial struct{}
 
 func (Runner) Run()   {}
 func (Runner) Close() {}
+func (Partial) Run()  {}
 
 func Start() {
 	logging.Print("start")
