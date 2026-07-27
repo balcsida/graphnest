@@ -6,25 +6,28 @@ import (
 	"testing"
 )
 
-func TestConsoleExplainsUnavailableSignInChoices(t *testing.T) {
-	for _, want := range []string{
+func TestConsoleProvidesBearerTokenSignInWithoutUnsupportedProviders(t *testing.T) {
+	for _, forbidden := range []string{
 		`Continue with GitHub`,
 		`Continue with SSO (SAML)`,
-		`disabled aria-describedby="provider-help"`,
 		`id="provider-help"`,
-		`not configured on this server`,
-		`Tokens are kept for this browser session only and are never written to disk.`,
+		`button:disabled{cursor:not-allowed;opacity:.65}`,
 	} {
-		if !bytes.Contains(document, []byte(want)) {
-			t.Fatalf("console is missing truthful sign-in choice %q", want)
+		if bytes.Contains(document, []byte(forbidden)) {
+			t.Fatalf("console still offers unsupported provider %q", forbidden)
 		}
 	}
-}
-
-func TestConsoleMarksDisabledProvidersAsUnavailable(t *testing.T) {
-	want := `button:disabled{cursor:not-allowed;opacity:.65}`
-	if !bytes.Contains(document, []byte(want)) {
-		t.Fatalf("console is missing disabled-button affordance %q", want)
+	for _, want := range []string{
+		`id="token-gate"`,
+		`id="token-form" class="token-panel"`,
+		`<label for="token">Bearer token</label>`,
+		`<button class="connect" type="submit">Connect</button>`,
+		`#token-gate{display:grid;min-height:100vh;place-items:center`,
+		`.connect{background:var(--accent);border-color:var(--accent)`,
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console is missing usable bearer-token gate %q", want)
+		}
 	}
 }
 
