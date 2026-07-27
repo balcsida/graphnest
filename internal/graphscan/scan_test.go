@@ -94,8 +94,30 @@ func TestReadBoundedDoesNotFollowSymlink(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readBounded(link, 100, 100); err == nil {
+	source, err := openSourceRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	if _, err := readBounded(source, "link.go", 100, 100); err == nil {
 		t.Fatal("readBounded() error = nil, want symlink rejection")
+	}
+}
+
+func TestReadBoundedDoesNotFollowParentSymlink(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	writeScanFile(t, filepath.Join(outside, "main.go"), "secret")
+	if err := os.Symlink(outside, filepath.Join(root, "nested")); err != nil {
+		t.Fatal(err)
+	}
+	source, err := openSourceRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	if _, err := readBounded(source, "nested/main.go", 100, 100); err == nil {
+		t.Fatal("readBounded() error = nil, want parent symlink rejection")
 	}
 }
 

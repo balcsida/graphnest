@@ -46,6 +46,11 @@ func Scan(ctx context.Context, request Request, parsers map[string]Parser, limit
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return graphartifact.Artifact{}, ErrInvalidRequest
 	}
+	source, err := openSourceRoot(root)
+	if err != nil {
+		return graphartifact.Artifact{}, err
+	}
+	defer source.Close()
 	skip := map[string]bool{".git": true}
 	for _, directory := range limits.SkipDirectories {
 		skip[directory] = true
@@ -73,6 +78,11 @@ func Scan(ctx context.Context, request Request, parsers map[string]Parser, limit
 		if parser == nil {
 			return nil
 		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil || rel == "." || filepath.IsAbs(rel) || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return ErrInvalidRequest
+		}
+		rel = filepath.ToSlash(filepath.Clean(rel))
 		info, err := os.Lstat(path)
 		if err != nil {
 			return err
@@ -80,7 +90,7 @@ func Scan(ctx context.Context, request Request, parsers map[string]Parser, limit
 		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() > limits.MaxFileBytes || info.Size() > limits.MaxTotalBytes-total || count == limits.MaxFiles {
 			return ErrLimitExceeded
 		}
-		data, err := readBounded(path, limits.MaxFileBytes, limits.MaxTotalBytes-total)
+		data, err := readBounded(source, rel, limits.MaxFileBytes, limits.MaxTotalBytes-total)
 		if err != nil {
 			return err
 		}
@@ -91,11 +101,6 @@ func Scan(ctx context.Context, request Request, parsers map[string]Parser, limit
 			}
 			return ErrLimitExceeded
 		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil || rel == "." || filepath.IsAbs(rel) || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return ErrInvalidRequest
-		}
-		rel = filepath.ToSlash(filepath.Clean(rel))
 		parseCtx, cancel := context.WithTimeout(ctx, limits.ParseTimeout)
 		file, err := parser(parseCtx, rel, data)
 		parseErr := parseCtx.Err()
@@ -144,8 +149,8 @@ func validRequest(request Request, limits Limits) error {
 	return nil
 }
 
-func readBounded(path string, max, remaining int64) ([]byte, error) {
-	file, err := openNoFollow(path)
+func readBounded(root *sourceRoot, path string, max, remaining int64) ([]byte, error) {
+	file, err := openSourceFile(root, path)
 	if err != nil {
 		return nil, err
 	}
