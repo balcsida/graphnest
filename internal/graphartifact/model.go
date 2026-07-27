@@ -48,4 +48,13 @@ const (
 	EdgeImplements
 )
 
+const (
+	DefaultMaxNodes           = 500_000
+	DefaultMaxEdges           = 2_000_000
+	HardMaxNodes              = 2_000_000
+	HardMaxEdges              = 10_000_000
+	DefaultMaxPathBytes       = 4_096
+	DefaultMaxIdentifierBytes = 16_384
+)
+
 type Limits struct{ MaxNodes, MaxEdges, MaxPathBytes, MaxIdentifierBytes int }

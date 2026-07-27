@@ -25,6 +25,10 @@ func Parse(data []byte, limits Limits) (Artifact, error) {
 }
 
 func Validate(artifact Artifact, limits Limits) error {
+	var ok bool
+	if limits, ok = normalizedLimits(limits); !ok {
+		return ErrInvalidArtifact
+	}
 	if artifact.SchemaVersion != 1 || artifact.RepositoryID <= 0 || !validCommit(artifact.Commit) || len(artifact.ContentHash) != sha256.Size ||
 		!validIdentifier(artifact.Analyzer.Name, limits) || !validIdentifier(artifact.Analyzer.Version, limits) ||
 		len(artifact.Nodes) > limits.MaxNodes || len(artifact.Edges) > limits.MaxEdges {
@@ -62,9 +66,14 @@ func Validate(artifact Artifact, limits Limits) error {
 
 func Identity(node Node) (string, error) {
 	if node.SCIPSymbol != "" {
+		if len(node.SCIPSymbol) > DefaultMaxIdentifierBytes {
+			return "", ErrInvalidArtifact
+		}
 		return node.SCIPSymbol, nil
 	}
-	if !validNodeKind(node.Kind) || node.Language == "" || !validPath(node.Path, math.MaxInt) || node.QualifiedName == "" {
+	limits := Limits{MaxPathBytes: DefaultMaxPathBytes, MaxIdentifierBytes: DefaultMaxIdentifierBytes}
+	if !validNodeKind(node.Kind) || !validIdentifier(node.Language, limits) || !validPath(node.Path, limits.MaxPathBytes) || !validIdentifier(node.QualifiedName, limits) ||
+		!validOptionalIdentifier(node.SymbolKind, limits) || !validOptionalIdentifier(node.Signature, limits) {
 		return "", ErrInvalidArtifact
 	}
 	hash := sha256.New()
@@ -75,6 +84,23 @@ func Identity(node Node) (string, error) {
 		_, _ = hash.Write([]byte(value))
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func normalizedLimits(limits Limits) (Limits, bool) {
+	if limits.MaxNodes == 0 {
+		limits.MaxNodes = DefaultMaxNodes
+	}
+	if limits.MaxEdges == 0 {
+		limits.MaxEdges = DefaultMaxEdges
+	}
+	if limits.MaxPathBytes == 0 {
+		limits.MaxPathBytes = DefaultMaxPathBytes
+	}
+	if limits.MaxIdentifierBytes == 0 {
+		limits.MaxIdentifierBytes = DefaultMaxIdentifierBytes
+	}
+	return limits, limits.MaxNodes > 0 && limits.MaxNodes <= HardMaxNodes && limits.MaxEdges > 0 && limits.MaxEdges <= HardMaxEdges &&
+		limits.MaxPathBytes > 0 && limits.MaxPathBytes <= DefaultMaxPathBytes && limits.MaxIdentifierBytes > 0 && limits.MaxIdentifierBytes <= DefaultMaxIdentifierBytes
 }
 
 type edgeKey struct {

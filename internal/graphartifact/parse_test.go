@@ -34,6 +34,31 @@ func TestIdentityFallbackIsLengthPrefixed(t *testing.T) {
 	}
 }
 
+func TestIdentityRejectsOversizedCanonicalFields(t *testing.T) {
+	oversized := strings.Repeat("a", 16385)
+	for _, node := range []Node{
+		{SCIPSymbol: oversized},
+		{Language: "go", Path: "a.go", Kind: NodeSymbol, QualifiedName: oversized},
+	} {
+		if _, err := Identity(node); !errors.Is(err, ErrInvalidArtifact) {
+			t.Fatalf("Identity(%#v) error = %v, want ErrInvalidArtifact", node, err)
+		}
+	}
+}
+
+func TestParseUsesDefaultsAndRejectsLimitsAboveHardCaps(t *testing.T) {
+	data := marshalArtifact(t, validWireArtifact())
+	if _, err := Parse(data, Limits{}); err != nil {
+		t.Fatalf("Parse() with defaults error = %v", err)
+	}
+	if _, err := Parse(data, Limits{MaxNodes: 2_000_001, MaxEdges: 10, MaxPathBytes: 4096, MaxIdentifierBytes: 16384}); !errors.Is(err, ErrInvalidArtifact) {
+		t.Fatalf("Parse() with excessive node limit error = %v, want ErrInvalidArtifact", err)
+	}
+	if _, err := Parse(data, Limits{MaxNodes: 10, MaxEdges: 10_000_001, MaxPathBytes: 4096, MaxIdentifierBytes: 16384}); !errors.Is(err, ErrInvalidArtifact) {
+		t.Fatalf("Parse() with excessive edge limit error = %v, want ErrInvalidArtifact", err)
+	}
+}
+
 func TestParseRejectsInvalidArtifacts(t *testing.T) {
 	tests := []struct {
 		name   string
