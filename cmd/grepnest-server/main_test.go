@@ -505,6 +505,14 @@ func (repositoryStoreStub) AuthorizedRepository(context.Context, int64, []int64,
 	return repository.Repository{}, nil
 }
 
+func (repositoryStoreStub) AllAuthorizedRepositories(context.Context, []string) ([]repository.Repository, error) {
+	return nil, nil
+}
+
+func (repositoryStoreStub) AnyAuthorizedRepository(context.Context, int64) (repository.Repository, error) {
+	return repository.Repository{}, nil
+}
+
 func TestStaticHandlerRegistersSystemRoutes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "repositories.json")
 	if err := os.WriteFile(path, []byte(`[{"id":1,"zoekt_id":7,"name":"acme/one"}]`), 0o600); err != nil {

@@ -79,6 +79,30 @@ func TestServiceStatus(t *testing.T) {
 	}
 }
 
+func TestServiceAdministratorUsesGlobalAuthorization(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	repository := Repository{ID: 2, InstallationID: 20, GitHubID: 201, Name: "other/two", IndexedSHA: sha, SearchNode: "node-a"}
+	store := &serviceStore{globalRepositories: []Repository{repository}, globalRepository: repository}
+	reader := &contentReader{content: githubapp.Content{Type: "file", Encoding: "base64", Content: base64.StdEncoding.EncodeToString([]byte("one")), SHA: "blob", Size: 3}}
+	service := &Service{Store: store, GitHub: reader}
+	principal := authn.Principal{Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}}
+
+	list, err := service.List(t.Context(), principal)
+	if err != nil || len(list) != 1 || list[0].GitHubID != 201 {
+		t.Fatalf("list = %#v, err = %v", list, err)
+	}
+	status, err := service.Status(t.Context(), principal, 201)
+	if err != nil || status.GitHubID != 201 {
+		t.Fatalf("status = %#v, err = %v", status, err)
+	}
+	if _, err := service.ReadFile(t.Context(), principal, api.ReadFileRequest{RepositoryID: 201, Path: "file"}); err != nil {
+		t.Fatal(err)
+	}
+	if store.globalLists != 1 || store.globalLookups != 3 || store.authorizedCalls != 0 {
+		t.Fatalf("global lists=%d lookups=%d scoped lookups=%d", store.globalLists, store.globalLookups, store.authorizedCalls)
+	}
+}
+
 func TestServiceReadFile(t *testing.T) {
 	sha := strings.Repeat("a", 40)
 	repository := Repository{ID: 1, InstallationID: 10, GitHubID: 101, Name: "acme/one", IndexedSHA: sha, SearchNode: "node-a"}
@@ -261,6 +285,10 @@ type serviceStore struct {
 	names              []string
 	authorizedID       int64
 	authorizedCalls    int
+	globalRepositories []Repository
+	globalRepository   Repository
+	globalLists        int
+	globalLookups      int
 }
 
 func (store *serviceStore) AuthorizedRepositories(_ context.Context, installationID int64, repositoryIDs []int64, names []string) ([]Repository, error) {
@@ -283,6 +311,19 @@ func (store *serviceStore) AuthorizedRepository(_ context.Context, installationI
 		return store.repositoriesByCall[call], nil
 	}
 	return store.repository, store.err
+}
+
+func (store *serviceStore) AllAuthorizedRepositories(context.Context, []string) ([]Repository, error) {
+	store.globalLists++
+	return store.globalRepositories, store.err
+}
+
+func (store *serviceStore) AnyAuthorizedRepository(_ context.Context, repositoryID int64) (Repository, error) {
+	store.globalLookups++
+	if repositoryID != store.globalRepository.GitHubID {
+		return Repository{}, errors.New("not found")
+	}
+	return store.globalRepository, store.err
 }
 
 type contentReader struct {
