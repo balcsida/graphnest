@@ -13,9 +13,9 @@ func (s *Store) AdminDeliveries(ctx context.Context, installationID int64, repos
 		installations.github_id,deliveries.received_at,deliveries.processed_at,deliveries.state,
 		coalesce(deliveries.error_code,'') from webhook_deliveries deliveries
 		join installations on installations.id=deliveries.installation_id
-		join repositories on repositories.id=deliveries.repository_id
+		left join repositories on repositories.id=deliveries.repository_id
 			and repositories.installation_id=deliveries.installation_id
-		where installations.github_id=$1 and repositories.github_id=any($2)
+		where installations.github_id=$1 and (deliveries.repository_id is null or repositories.github_id=any($2))
 		order by deliveries.received_at desc,deliveries.id desc limit $3`, installationID, repositoryIDs, limit+1)
 	if err != nil {
 		return nil, false, err

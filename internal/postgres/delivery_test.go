@@ -36,6 +36,7 @@ func TestAdminDeliveriesOnlyIncludeAllowedRepositories(t *testing.T) {
 		{ID: "scoped", Event: "push", State: "accepted", InstallationID: &installationID, RepositoryID: &scopedRepositoryID},
 		{ID: "unscoped", Event: "push", State: "failed", InstallationID: &installationID, RepositoryID: &unscopedRepositoryID},
 		{ID: "installation-wide", Event: "installation", State: "accepted", InstallationID: &installationID},
+		{ID: "installation-repositories", Event: "installation_repositories", State: "accepted", InstallationID: &installationID},
 		{ID: "other", Event: "push", State: "accepted", InstallationID: &otherInstallationID, RepositoryID: &otherRepositoryID},
 	} {
 		if inserted, err := store.ApplyDelivery(t.Context(), delivery, nil); err != nil || !inserted {
@@ -44,11 +45,12 @@ func TestAdminDeliveriesOnlyIncludeAllowedRepositories(t *testing.T) {
 	}
 
 	deliveries, more, err := store.AdminDeliveries(t.Context(), 10, []int64{101}, 10)
-	if err != nil || more || len(deliveries) != 1 || deliveries[0].DeliveryID != "scoped" {
+	if err != nil || more || len(deliveries) != 3 || deliveries[0].DeliveryID != "installation-repositories" ||
+		deliveries[1].DeliveryID != "installation-wide" || deliveries[2].DeliveryID != "scoped" {
 		t.Fatalf("deliveries=%#v more=%v err=%v", deliveries, more, err)
 	}
 	overview, err := store.AdminOverview(t.Context(), 10, []int64{101})
-	if err != nil || len(overview.Deliveries) != 1 || overview.Deliveries["accepted"] != 1 {
+	if err != nil || len(overview.Deliveries) != 1 || overview.Deliveries["accepted"] != 3 {
 		t.Fatalf("delivery overview=%#v err=%v", overview.Deliveries, err)
 	}
 }
