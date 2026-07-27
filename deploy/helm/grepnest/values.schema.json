@@ -249,6 +249,11 @@
                   "contains": {
                     "const": "openid"
                   },
+                  "not": {
+                    "contains": {
+                      "const": "offline_access"
+                    }
+                  },
                   "items": {
                     "$ref": "#/definitions/nonEmptyString"
                   }

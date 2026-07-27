@@ -236,7 +236,7 @@ for setting in \
   'GREPNEST_OIDC_CLIENT_ID: "grepnest"' \
   'GREPNEST_OIDC_CLIENT_SECRET_FILE: /var/run/secrets/grepnest/oidc/client-secret' \
   'GREPNEST_OIDC_CA_FILE: /var/run/secrets/grepnest/oidc-ca/ca.crt' \
-  'GREPNEST_OIDC_SCOPES: "openid,profile,email,offline_access"' \
+  'GREPNEST_OIDC_SCOPES: "openid,profile,email"' \
   'GREPNEST_OIDC_GROUPS_CLAIM: "roles"' \
   'GREPNEST_OIDC_ALLOWED_GROUPS: "engineering,security"' \
   'GREPNEST_OIDC_DISPLAY_NAME_CLAIM: "preferred_username"'; do
@@ -441,6 +441,9 @@ expect_failure "$tmp/ipv6-prefix.err" helm template bad "$chart" -f "$minimal" \
   --set-json='networkPolicy.externalEgress.github.cidrs=[{"address":"2001:db8::1","prefix":0}]'
 expect_failure "$tmp/optional-selector.err" helm template bad "$chart" -f "$minimal" -f "$optional" \
   --set-json='networkPolicy.serverIngress.ingressControllerNamespaceSelector.matchLabels=null'
+expect_failure "$tmp/offline-scope.err" helm template bad "$chart" -f "$minimal" -f "$optional" \
+  --set-json='server.sso.oidc.scopes=["openid","offline_access"]' \
+  --api-versions monitoring.coreos.com/v1/ServiceMonitor
 expect_failure "$tmp/dns-selectors.err" helm template bad "$chart" -f "$minimal" \
   --set=networkPolicy.externalEgress.enabled=true \
   --set-json='networkPolicy.externalEgress.postgresql.cidrs=[{"address":"192.0.2.1","prefix":32}]' \
@@ -461,6 +464,7 @@ require "/networkPolicy/externalEgress/github/cidrs/0/address.*'2001:db8::zz'.*n
 require '/networkPolicy/externalEgress/postgresql/cidrs/0/prefix.*minimum: got 0, want 1' "$tmp/ipv4-prefix.err"
 require '/networkPolicy/externalEgress/github/cidrs/0/prefix.*minimum: got 0, want 1' "$tmp/ipv6-prefix.err"
 require '/networkPolicy/serverIngress/ingressControllerNamespaceSelector/matchLabels.*got null, want object' "$tmp/optional-selector.err"
+require "/server/sso/oidc/scopes.*'not' failed" "$tmp/offline-scope.err"
 require "/networkPolicy/externalEgress/dns.*missing properties 'namespaceSelector', 'podSelector'" "$tmp/dns-selectors.err"
 
 echo 'helm render tests passed'

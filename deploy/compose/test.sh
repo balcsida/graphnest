@@ -73,7 +73,7 @@ config=$(render \
   GREPNEST_OIDC_CLIENT_ID=grepnest \
   GREPNEST_OIDC_CLIENT_SECRET_FILE=/tmp/oidc-client-secret \
   GREPNEST_OIDC_CA_FILE=/tmp/oidc-ca.pem \
-  GREPNEST_OIDC_SCOPES=openid,profile,email,offline_access \
+  GREPNEST_OIDC_SCOPES=openid,profile,email \
   GREPNEST_OIDC_GROUPS_CLAIM=roles \
   GREPNEST_OIDC_ALLOWED_GROUPS=engineering,security \
   GREPNEST_OIDC_DISPLAY_NAME_CLAIM=preferred_username)
@@ -111,7 +111,7 @@ printf '%s' "$config" | jq -e '
   and $server.environment.GREPNEST_OIDC_CLIENT_ID == "grepnest"
   and $server.environment.GREPNEST_OIDC_CLIENT_SECRET_FILE == "/run/secrets/grepnest/oidc-client-secret"
   and $server.environment.GREPNEST_OIDC_CA_FILE == "/run/secrets/grepnest/oidc-ca.pem"
-  and $server.environment.GREPNEST_OIDC_SCOPES == "openid,profile,email,offline_access"
+  and $server.environment.GREPNEST_OIDC_SCOPES == "openid,profile,email"
   and $server.environment.GREPNEST_OIDC_GROUPS_CLAIM == "roles"
   and $server.environment.GREPNEST_OIDC_ALLOWED_GROUPS == "engineering,security"
   and $server.environment.GREPNEST_OIDC_DISPLAY_NAME_CLAIM == "preferred_username"

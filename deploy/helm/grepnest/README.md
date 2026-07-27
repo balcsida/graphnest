@@ -36,7 +36,8 @@ Enable OIDC with `server.sso.oidc.enabled` and set the HTTPS
 `server.sso.publicURL`, HTTPS issuer URL, client ID, and `secrets.oidc.name`.
 The server reads the selected client-secret key from a read-only file; secret
 contents never enter chart values or a ConfigMap. Configure scopes and group
-claims under `server.sso.oidc`; scopes must include `openid`. Set
+claims under `server.sso.oidc`; scopes must include `openid` and cannot include
+`offline_access`. Set
 `secrets.oidcCA.name` only when the provider needs a private CA.
 
 ## Validate and install
