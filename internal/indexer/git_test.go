@@ -55,7 +55,7 @@ func TestGitNumericPathsStayContained(t *testing.T) {
 	}
 }
 
-func TestGitPrepareFetchesOnlyTargetBranch(t *testing.T) {
+func TestGitPrepareCommitFetchesOnlyTargetBranch(t *testing.T) {
 	requireGit(t)
 	projectRoot := t.TempDir()
 	origin := filepath.Join(projectRoot, "acme", "repo.git")
@@ -118,9 +118,12 @@ func TestGitPrepareFetchesOnlyTargetBranch(t *testing.T) {
 	}
 	repo := repository.Repository{ID: 7, ZoektID: 17, Name: "acme/repo", Branch: "main", WebURL: "https://ghe.example/acme/repo"}
 	job := postgres.IndexJob{ID: 11, RepositoryID: 7, TargetSHA: target}
-	mirror, worktree, err := git.Prepare(t.Context(), repo, job, "token-that-must-not-persist")
+	mirror, worktree, err := git.PrepareCommit(t.Context(), repo, job.ID, job.TargetSHA, "token-that-must-not-persist")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if want := filepath.Join(git.WorktreesDir, "7", "11"); worktree != want {
+		t.Fatalf("worktree=%q want=%q", worktree, want)
 	}
 	if got := strings.TrimSpace(runGit(t, "", "--git-dir", mirror, "config", "--get", "remote.origin.url")); got != server.URL+"/acme/repo.git" || strings.Contains(got, "token") {
 		t.Fatalf("remote=%q", got)

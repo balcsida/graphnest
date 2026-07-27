@@ -26,7 +26,14 @@ type Git struct {
 }
 
 func (git *Git) Prepare(ctx context.Context, repo repository.Repository, job postgres.IndexJob, token string) (string, string, error) {
-	if git == nil || git.Binary == "" || git.AskPass == "" || token == "" || git.MirrorsDir == "" || git.WorktreesDir == "" || git.Runner.MaxOutput <= 0 || git.Runner.KillGrace <= 0 || repo.ID <= 0 || repo.ZoektID == 0 || repo.Name == "" || repo.WebURL == "" || job.ID <= 0 || job.RepositoryID != repo.ID || !validSHA(job.TargetSHA) || repo.Branch == "" {
+	if job.RepositoryID != repo.ID {
+		return "", "", errors.New("invalid Git repository job")
+	}
+	return git.PrepareCommit(ctx, repo, job.ID, job.TargetSHA, token)
+}
+
+func (git *Git) PrepareCommit(ctx context.Context, repo repository.Repository, jobID int64, targetSHA, token string) (string, string, error) {
+	if git == nil || git.Binary == "" || git.AskPass == "" || token == "" || git.MirrorsDir == "" || git.WorktreesDir == "" || git.Runner.MaxOutput <= 0 || git.Runner.KillGrace <= 0 || repo.ID <= 0 || repo.ZoektID == 0 || repo.Name == "" || repo.WebURL == "" || jobID <= 0 || !validSHA(targetSHA) || repo.Branch == "" {
 		return "", "", errors.New("invalid Git repository job")
 	}
 	remote, err := git.remoteURL(repo.Name)
@@ -42,7 +49,7 @@ func (git *Git) Prepare(ctx context.Context, repo repository.Repository, job pos
 		return "", "", err
 	}
 	mirror := mirrorBase + ".git"
-	worktree, err := numericPath(git.WorktreesDir, strconv.FormatInt(repo.ID, 10), strconv.FormatInt(job.ID, 10))
+	worktree, err := numericPath(git.WorktreesDir, strconv.FormatInt(repo.ID, 10), strconv.FormatInt(jobID, 10))
 	if err != nil {
 		return "", "", err
 	}
@@ -79,7 +86,7 @@ func (git *Git) Prepare(ctx context.Context, repo repository.Repository, job pos
 			return "", "", err
 		}
 	}
-	if err := git.run(ctx, environment, "--git-dir", mirror, "cat-file", "-e", job.TargetSHA+"^{commit}"); err != nil {
+	if err := git.run(ctx, environment, "--git-dir", mirror, "cat-file", "-e", targetSHA+"^{commit}"); err != nil {
 		return "", "", errors.Join(ErrTargetMissing, err)
 	}
 	if _, err := os.Lstat(worktree); err == nil {
@@ -87,7 +94,7 @@ func (git *Git) Prepare(ctx context.Context, repo repository.Repository, job pos
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", "", err
 	}
-	if err := git.run(ctx, environment, "--git-dir", mirror, "worktree", "add", "--detach", worktree, job.TargetSHA); err != nil {
+	if err := git.run(ctx, environment, "--git-dir", mirror, "worktree", "add", "--detach", worktree, targetSHA); err != nil {
 		return "", "", err
 	}
 	return mirror, worktree, nil
