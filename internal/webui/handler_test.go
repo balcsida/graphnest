@@ -56,6 +56,24 @@ func TestRegisterServesBoundedConsoleAtExactPaths(t *testing.T) {
 	}
 }
 
+func TestRegisterServesAdminWithConsoleSecurityHeaders(t *testing.T) {
+	mux := http.NewServeMux()
+	Register(mux)
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/admin", nil))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d", response.Code)
+	}
+	if got := response.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control=%q", got)
+	}
+	policy := response.Header().Get("Content-Security-Policy")
+	if !strings.Contains(policy, "script-src 'sha256-") || strings.Contains(policy, "unsafe-inline") {
+		t.Fatalf("CSP=%q", policy)
+	}
+}
+
 func TestRegisterRestrictsConsoleRoutes(t *testing.T) {
 	for _, test := range []struct {
 		method string
@@ -64,7 +82,9 @@ func TestRegisterRestrictsConsoleRoutes(t *testing.T) {
 	}{
 		{http.MethodGet, "/missing", http.StatusNotFound},
 		{http.MethodGet, "/index.html/", http.StatusNotFound},
+		{http.MethodGet, "/admin/", http.StatusNotFound},
 		{http.MethodPost, "/", http.StatusMethodNotAllowed},
+		{http.MethodPost, "/admin", http.StatusMethodNotAllowed},
 	} {
 		t.Run(test.method+" "+test.path, func(t *testing.T) {
 			mux := http.NewServeMux()

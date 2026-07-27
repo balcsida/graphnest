@@ -592,7 +592,7 @@ func TestAPIHandlerMountsWebUIWithoutFallback(t *testing.T) {
 		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}},
 		observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil,
 	)
-	for _, path := range []string{"/", "/index.html"} {
+	for _, path := range []string{"/", "/index.html", "/admin"} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
 		if response.Code != http.StatusOK {

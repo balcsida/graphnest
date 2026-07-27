@@ -9,35 +9,42 @@ import (
 	"strings"
 )
 
-//go:embed index.html
+//go:embed index.html admin.html
 var assets embed.FS
 
 var document = mustReadDocument()
 var contentSecurityPolicy = policyFor(document)
+var adminDocument = mustRead("admin.html")
+var adminContentSecurityPolicy = policyFor(adminDocument)
 
 func Register(mux *http.ServeMux) {
-	mux.Handle("GET /{$}", handler())
-	mux.Handle("GET /index.html", handler())
+	mux.Handle("GET /{$}", handler(document, contentSecurityPolicy))
+	mux.Handle("GET /index.html", handler(document, contentSecurityPolicy))
+	mux.Handle("GET /admin", handler(adminDocument, adminContentSecurityPolicy))
 }
 
-func handler() http.Handler {
+func handler(body []byte, policy string) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Cache-Control", "no-store")
-		writer.Header().Set("Content-Security-Policy", contentSecurityPolicy)
+		writer.Header().Set("Content-Security-Policy", policy)
 		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 		writer.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
 		writer.Header().Set("Permissions-Policy", "camera=(), geolocation=(), microphone=(), payment=(), usb=()")
 		writer.Header().Set("Referrer-Policy", "no-referrer")
 		writer.Header().Set("X-Content-Type-Options", "nosniff")
 		writer.Header().Set("X-Frame-Options", "DENY")
-		_, _ = writer.Write(document)
+		_, _ = writer.Write(body)
 	})
 }
 
 func mustReadDocument() []byte {
-	document, err := assets.ReadFile("index.html")
+	return mustRead("index.html")
+}
+
+func mustRead(name string) []byte {
+	document, err := assets.ReadFile(name)
 	if err != nil {
-		panic(fmt.Sprintf("read embedded index.html: %v", err))
+		panic(fmt.Sprintf("read embedded %s: %v", name, err))
 	}
 	return document
 }
