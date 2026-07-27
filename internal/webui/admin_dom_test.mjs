@@ -91,13 +91,16 @@ for (const name of ["overview", "repositories", "queue", "scip", "webhooks", "gi
 const responses = {
   "/v1/admin/overview": {repositories:{ready:1},jobs:{queued:1,running:1,succeeded:1,failed:1,superseded:1},deliveries:{succeeded:1},scip_uploads:1,dependencies:1,installations:1,search_nodes:1},
   "/v1/admin/repositories": {repositories:[
-    {github_id:7,name:"acme/repo",default_branch:"main",status:"mystery"},
-    {github_id:8,name:"acme/failed",default_branch:"main",status:"failed"},
+    {github_id:7,name:"acme/repo",default_branch:"main",status:"mystery",error_code:""},
+    {github_id:8,name:"acme/failed",default_branch:"main",status:"failed",error_code:"clone_failed"},
   ],truncated:true},
-  "/v1/admin/jobs": {jobs:["queued","running","succeeded","failed","superseded"].map((state,id)=>({id:id+1,repository:"acme/repo",target_sha:"a".repeat(40),state,attempt:1,max_attempts:3,updated_at:"2026-01-01T00:00:00Z"})),truncated:true},
+  "/v1/admin/jobs": {jobs:["queued","running","succeeded","failed","superseded"].map((state,id)=>({id:id+1,repository:"acme/repo",target_ref:id === 0 ? "refs/heads/main" : "",target_sha:"a".repeat(40),state,error_code:id === 3 ? "index_failed" : "",attempt:1,max_attempts:3,updated_at:"2026-01-01T00:00:00Z"})),truncated:true},
   "/v1/admin/scip/uploads": {uploads:[],truncated:true},
   "/v1/admin/scip/dependencies": {dependencies:[],truncated:true},
-  "/v1/admin/webhook-deliveries": {deliveries:[],truncated:true},
+  "/v1/admin/webhook-deliveries": {deliveries:[
+    {delivery_id:"delivery-1",event:"push",state:"succeeded",installation_id:1,error_code:"",received_at:"2026-01-01T00:00:00Z",processed_at:"2026-01-02T00:00:00Z"},
+    {delivery_id:"delivery-2",event:"push",state:"queued",installation_id:1,error_code:"",received_at:"2026-01-03T00:00:00Z",processed_at:null},
+  ],truncated:true},
   "/v1/admin/github": {app_id:1,web_url:"https://example",api_url:"https://example/api",upload_url:"https://example/upload",git_url:"https://example",api_version:"1",private_key_configured:true,webhook_secret_configured:true,ca_configured:false,installations:[],truncated:true},
 };
 const requests = [];
@@ -125,6 +128,19 @@ assert.match(text(ids.get("queue-cards")), /queued.*running.*succeeded.*failed.*
 const mystery = all.find(node => node.textContent === "mystery");
 assert.ok(mystery && !mystery.className.includes("ok"), "unknown status must not be green");
 assert.match(text(ids.get("inventory-notices")), /partial/i);
+const repositoryRows = ids.get("repo-rows").children;
+assert.equal(repositoryRows[0].children[1].textContent, "7");
+assert.equal(repositoryRows[0].children[5].textContent, "—");
+assert.equal(repositoryRows[1].children[5].textContent, "clone_failed");
+const jobRows = ids.get("job-rows").children;
+assert.equal(jobRows[0].children[2].textContent, "refs/heads/main");
+assert.equal(jobRows[1].children[2].textContent, "—");
+assert.equal(jobRows[0].children[7].textContent, "—");
+assert.equal(jobRows[3].children[7].textContent, "index_failed");
+const deliveryRows = ids.get("delivery-rows").children;
+const processedAt = new Intl.DateTimeFormat(undefined,{dateStyle:"medium",timeStyle:"short"}).format(new Date("2026-01-02T00:00:00Z"));
+assert.equal(deliveryRows[0].children[6].textContent, processedAt);
+assert.equal(deliveryRows[1].children[6].textContent, "—");
 const failedRepositoryRow = ids.get("repo-rows").children.find(row => text(row).includes("acme/failed"));
 const repositoryRetry = failedRepositoryRow?.children.at(-1).children[0];
 assert.equal(repositoryRetry?.textContent, "Retry", "failed repositories must be labeled Retry");
