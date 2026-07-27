@@ -95,16 +95,22 @@ func (processor *GitHubProcessor) Process(ctx context.Context, delivery Delivery
 		return inserted, resultErr
 	}
 	var payload eventPayload
-	if err := json.Unmarshal(delivery.Body, &payload); err != nil || !validPayload(delivery.Event, payload) {
-		inserted, resultErr = processor.invalidDelivery(ctx, delivery)
+	decodeErr := json.Unmarshal(delivery.Body, &payload)
+	var installationID, repositoryID *int64
+	if decodeErr == nil {
+		if payload.Installation.ID > 0 {
+			installationID = &payload.Installation.ID
+		}
+		if payload.Repository.ID > 0 && (delivery.Event == "push" || delivery.Event == "repository") {
+			repositoryID = &payload.Repository.ID
+		}
+	}
+	if decodeErr != nil || !validPayload(delivery.Event, payload) {
+		inserted, resultErr = processor.invalidDelivery(ctx, delivery, installationID, repositoryID)
 		if resultErr == nil && !inserted {
 			result = "duplicate"
 		}
 		return inserted, resultErr
-	}
-	var installationID *int64
-	if payload.Installation.ID > 0 {
-		installationID = &payload.Installation.ID
 	}
 	reconcile := delivery.Event == "installation" || delivery.Event == "installation_repositories" || delivery.Event == "repository"
 	state := "ignored"
@@ -112,7 +118,8 @@ func (processor *GitHubProcessor) Process(ctx context.Context, delivery Delivery
 		state = "accepted"
 	}
 	inserted, err := processor.store.ApplyDelivery(ctx, postgres.Delivery{
-		ID: delivery.ID, Event: delivery.Event, State: state, InstallationID: installationID,
+		ID: delivery.ID, Event: delivery.Event, State: state,
+		InstallationID: installationID, RepositoryID: repositoryID,
 	}, func(ctx context.Context, tx *postgres.DeliveryTx) error {
 		switch delivery.Event {
 		case "push":
@@ -169,12 +176,13 @@ func (processor *GitHubProcessor) Process(ctx context.Context, delivery Delivery
 	return inserted, nil
 }
 
-func (processor *GitHubProcessor) invalidDelivery(ctx context.Context, delivery Delivery) (bool, error) {
+func (processor *GitHubProcessor) invalidDelivery(ctx context.Context, delivery Delivery, installationID, repositoryID *int64) (bool, error) {
 	if processor.store == nil {
 		return false, InvalidDeliveryError{}
 	}
 	inserted, err := processor.store.ApplyDelivery(ctx, postgres.Delivery{
 		ID: delivery.ID, Event: delivery.Event, State: "failed", ErrorCode: "invalid_payload",
+		InstallationID: installationID, RepositoryID: repositoryID,
 	}, nil)
 	if err != nil || !inserted {
 		return inserted, err

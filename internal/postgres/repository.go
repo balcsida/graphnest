@@ -19,7 +19,8 @@ func (s *Store) AdminOverview(ctx context.Context, installationID int64, reposit
 			join installations on installations.id=repositories.installation_id where installations.github_id=$1
 			and repositories.github_id=any($2) group by jobs.state`: r.Jobs,
 		`select deliveries.state,count(*) from webhook_deliveries deliveries join installations on installations.id=deliveries.installation_id
-			where installations.github_id=$1 and cardinality($2::bigint[])>=0 group by deliveries.state`: r.Deliveries,
+			join repositories on repositories.id=deliveries.repository_id and repositories.installation_id=deliveries.installation_id
+			where installations.github_id=$1 and repositories.github_id=any($2) group by deliveries.state`: r.Deliveries,
 	} {
 		rows, err := s.pool.Query(ctx, query, installationID, repositoryIDs)
 		if err != nil {

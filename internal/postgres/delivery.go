@@ -8,13 +8,15 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (s *Store) AdminDeliveries(ctx context.Context, installationID int64, _ []int64, limit int) ([]admin.Delivery, bool, error) {
+func (s *Store) AdminDeliveries(ctx context.Context, installationID int64, repositoryIDs []int64, limit int) ([]admin.Delivery, bool, error) {
 	rows, err := s.pool.Query(ctx, `select deliveries.id,deliveries.delivery_id,deliveries.event_name,
 		installations.github_id,deliveries.received_at,deliveries.processed_at,deliveries.state,
 		coalesce(deliveries.error_code,'') from webhook_deliveries deliveries
 		join installations on installations.id=deliveries.installation_id
-		where installations.github_id=$1
-		order by deliveries.received_at desc,deliveries.id desc limit $2`, installationID, limit+1)
+		join repositories on repositories.id=deliveries.repository_id
+			and repositories.installation_id=deliveries.installation_id
+		where installations.github_id=$1 and repositories.github_id=any($2)
+		order by deliveries.received_at desc,deliveries.id desc limit $3`, installationID, repositoryIDs, limit+1)
 	if err != nil {
 		return nil, false, err
 	}
@@ -38,8 +40,8 @@ func (s *Store) AdminDeliveries(ctx context.Context, installationID int64, _ []i
 }
 
 type Delivery struct {
-	ID, Event, State, ErrorCode string
-	InstallationID              *int64
+	ID, Event, State, ErrorCode  string
+	InstallationID, RepositoryID *int64
 }
 
 type DeliveryTx struct{ tx pgx.Tx }
@@ -52,9 +54,13 @@ func (s *Store) ApplyDelivery(ctx context.Context, delivery Delivery, callback f
 	defer tx.Rollback(ctx)
 
 	result, err := tx.Exec(ctx, `
-		insert into webhook_deliveries (delivery_id, event_name, installation_id, processed_at, state, error_code)
-		values ($1, $2, (select id from installations where github_id=$3), now(), $4, nullif($5, ''))
-		on conflict (delivery_id) do nothing`, delivery.ID, delivery.Event, delivery.InstallationID, delivery.State, delivery.ErrorCode)
+		insert into webhook_deliveries (delivery_id, event_name, installation_id, repository_id, processed_at, state, error_code)
+		values ($1, $2, (select id from installations where github_id=$3),
+			(select repositories.id from repositories join installations on installations.id=repositories.installation_id
+				where installations.github_id=$3 and repositories.github_id=$4),
+			now(), $5, nullif($6, ''))
+		on conflict (delivery_id) do nothing`, delivery.ID, delivery.Event, delivery.InstallationID,
+		delivery.RepositoryID, delivery.State, delivery.ErrorCode)
 	if err != nil {
 		return false, err
 	}
