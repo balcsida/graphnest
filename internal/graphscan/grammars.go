@@ -14,7 +14,7 @@ func LanguageForExtension(extension string) (*tree_sitter.Language, bool) {
 	switch extension {
 	case ".go":
 		return tree_sitter.NewLanguage(tree_sitter_go.Language()), true
-	case ".js":
+	case ".js", ".jsx":
 		return tree_sitter.NewLanguage(tree_sitter_javascript.Language()), true
 	case ".ts":
 		return tree_sitter.NewLanguage(tree_sitter_typescript.LanguageTypescript()), true
