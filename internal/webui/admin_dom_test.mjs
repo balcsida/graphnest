@@ -106,9 +106,11 @@ const responses = {
 const requests = [];
 let mutationDenial = 0;
 let allowMutation = false;
+let delayedOverview;
 globalThis.fetch = async (path, options = {}) => {
   requests.push({path, options});
   if (path === "/healthz" || path === "/readyz") return {ok:true,status:200};
+  if (path === "/v1/admin/overview" && delayedOverview) return delayedOverview;
   if (mutationDenial && options.method === "POST") return {ok:false,status:mutationDenial,json:async()=>({})};
   if (allowMutation && options.method === "POST") return {ok:true,status:200,json:async()=>({})};
   const body = responses[path];
@@ -199,5 +201,21 @@ await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(ids.get("admin-shell").hidden, true);
 assert.match(ids.get("access-message").textContent, /static mode/i);
 assert.equal(storageRemovals, 3);
+
+responses["/v1/admin/overview"] = {repositories:{ready:1},jobs:{queued:1,running:1,succeeded:1,failed:1,superseded:1},deliveries:{succeeded:1},scip_uploads:1,dependencies:1,installations:1};
+let resolveOverview;
+delayedOverview = new Promise(resolve => { resolveOverview = resolve; });
+ids.get("token").value = "admin";
+await ids.get("token-form").dispatch("submit");
+await new Promise(resolve => setTimeout(resolve, 0));
+await ids.get("logout").dispatch("click");
+const pendingOverview = requests.findLast(request => request.path === "/v1/admin/overview");
+assert.equal(pendingOverview.options.signal.aborted, true, "locking must abort the active admin load");
+assert.equal(ids.get("token").value, "", "locking must clear the bearer-token input");
+assert.equal(ids.get("admin-shell").hidden, true, "locking must hide privileged content");
+resolveOverview({ok:true,status:200,json:async()=>responses["/v1/admin/overview"]});
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(ids.get("admin-shell").hidden, true, "a stale load must not reopen privileged content after lock");
+assert.equal(ids.get("access-panel").hidden, false, "a stale load must not hide the access panel after lock");
 
 assert.doesNotMatch(source, /\.aside-foot\{display:none/);
