@@ -193,6 +193,9 @@ func (s *Store) CompleteIndex(ctx context.Context, id int64, owner string) error
 		if _, err := tx.Exec(ctx, `update repositories set indexed_sha=$2, status='ready', error_code=null, last_indexed_at=now(), updated_at=now() where id=$1`, repositoryID, targetSHA); err != nil {
 			return err
 		}
+		if err := enqueueGraph(ctx, tx, repositoryID, targetSHA); err != nil {
+			return err
+		}
 	} else if !available {
 		errorCode = "repository_unavailable"
 	}
@@ -201,6 +204,18 @@ func (s *Store) CompleteIndex(ctx context.Context, id int64, owner string) error
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+func enqueueGraph(ctx context.Context, tx pgx.Tx, repositoryID int64, targetSHA string) error {
+	_, err := tx.Exec(ctx, `update graph_jobs set state='superseded', updated_at=now()
+		where repository_id=$1 and state='queued' and target_sha<>$2`, repositoryID, targetSHA)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `insert into graph_jobs(repository_id,target_sha,state,max_attempts)
+		values($1,$2,'queued',5)
+		on conflict do nothing`, repositoryID, targetSHA)
+	return err
 }
 
 func (s *Store) FailIndex(ctx context.Context, id int64, owner, errorCode string, retry bool) error {

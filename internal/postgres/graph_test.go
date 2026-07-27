@@ -75,6 +75,116 @@ func TestReplaceGraphRoundTripsArtifact(t *testing.T) {
 	}
 }
 
+func TestCompleteGraphPublishesManagedArtifact(t *testing.T) {
+	store, index := runningIndexJob(t)
+	if err := store.CompleteIndex(t.Context(), index.ID, index.LeaseOwner); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.ClaimGraph(t.Context(), "scanner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact := artifactFor(job.RepositoryID, job.TargetSHA, "managed")
+	if err := store.CompleteGraph(t.Context(), job.ID, job.LeaseOwner, artifact); err != nil {
+		t.Fatal(err)
+	}
+	var state, source string
+	if err := store.pool.QueryRow(t.Context(), "select state from graph_jobs where id=$1", job.ID).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.pool.QueryRow(t.Context(), "select source from graph_uploads where repository_id=$1", job.RepositoryID).Scan(&source); err != nil {
+		t.Fatal(err)
+	}
+	if state != "succeeded" || source != string(GraphSourceManaged) {
+		t.Fatalf("state=%q source=%q", state, source)
+	}
+}
+
+func TestCompleteGraphExternalArtifactWins(t *testing.T) {
+	store, index := runningIndexJob(t)
+	if err := store.CompleteIndex(t.Context(), index.ID, index.LeaseOwner); err != nil {
+		t.Fatal(err)
+	}
+	external := artifactFor(index.RepositoryID, index.TargetSHA, "external")
+	if got, err := store.ReplaceGraph(t.Context(), index.RepositoryID, GraphSourceExternal, external); err != nil || !got.Applied {
+		t.Fatalf("external=%#v err=%v", got, err)
+	}
+	job, err := store.ClaimGraph(t.Context(), "scanner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteGraph(t.Context(), job.ID, job.LeaseOwner, artifactFor(job.RepositoryID, job.TargetSHA, "managed")); err != nil {
+		t.Fatal(err)
+	}
+	var state, source, analyzer string
+	if err := store.pool.QueryRow(t.Context(), `select graph_jobs.state, graph_uploads.source, graph_uploads.analyzer_name
+		from graph_jobs join graph_uploads using(repository_id) where graph_jobs.id=$1`, job.ID).Scan(&state, &source, &analyzer); err != nil {
+		t.Fatal(err)
+	}
+	if state != "superseded" || source != string(GraphSourceExternal) || analyzer != "external" {
+		t.Fatalf("state=%q source=%q analyzer=%q", state, source, analyzer)
+	}
+}
+
+func TestCompleteGraphSupersedesStaleArtifact(t *testing.T) {
+	store, index := runningIndexJob(t)
+	if err := store.CompleteIndex(t.Context(), index.ID, index.LeaseOwner); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.ClaimGraph(t.Context(), "scanner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), "update repositories set indexed_sha=$2 where id=$1", job.RepositoryID, shaB); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteGraph(t.Context(), job.ID, job.LeaseOwner, artifactFor(job.RepositoryID, job.TargetSHA, "stale")); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	var uploads int
+	if err := store.pool.QueryRow(t.Context(), "select state from graph_jobs where id=$1", job.ID).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.pool.QueryRow(t.Context(), "select count(*) from graph_uploads where repository_id=$1", job.RepositoryID).Scan(&uploads); err != nil {
+		t.Fatal(err)
+	}
+	if state != "superseded" || uploads != 0 {
+		t.Fatalf("state=%q uploads=%d", state, uploads)
+	}
+}
+
+func TestCompleteGraphRollsBackReplacementWhenLeaseCompletionFails(t *testing.T) {
+	store, index := runningIndexJob(t)
+	if err := store.CompleteIndex(t.Context(), index.ID, index.LeaseOwner); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.ClaimGraph(t.Context(), "scanner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `create function reject_graph_completion() returns trigger language plpgsql as $$
+		begin if new.state <> 'running' then raise exception 'reject graph completion'; end if; return new; end $$;
+		create trigger reject_graph_completion before update on graph_jobs
+		for each row execute function reject_graph_completion()`); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteGraph(t.Context(), job.ID, job.LeaseOwner, artifactFor(job.RepositoryID, job.TargetSHA, "managed")); err == nil {
+		t.Fatal("CompleteGraph() succeeded")
+	}
+	var state string
+	var uploads int
+	if err := store.pool.QueryRow(t.Context(), "select state from graph_jobs where id=$1", job.ID).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.pool.QueryRow(t.Context(), "select count(*) from graph_uploads where repository_id=$1", job.RepositoryID).Scan(&uploads); err != nil {
+		t.Fatal(err)
+	}
+	if state != "running" || uploads != 0 {
+		t.Fatalf("state=%q uploads=%d", state, uploads)
+	}
+}
+
 func readyGraphStore(t *testing.T, sha string) (*Store, int64) {
 	t.Helper()
 	store := migratedStore(t)
