@@ -56,26 +56,26 @@ func (s *Store) GraphStatus(ctx context.Context, repositoryID int64) (api.GraphS
 		return api.GraphStatus{}, err
 	}
 	if indexedSHA == "" {
-		status.State = "not_indexed"
+		status.State = api.GraphStateNotIndexed
 		return status, nil
 	}
 	status.Commit = indexedSHA
 	if source != nil {
-		status.State, status.Source = "ready", *source
+		status.State, status.Source = api.GraphStateReady, api.GraphSource(*source)
 		return status, nil
 	}
 	if jobState != nil {
-		status.JobState = *jobState
+		status.JobState = api.GraphJobState(*jobState)
 	}
-	if jobState != nil && *jobState == "failed" {
-		status.State = "degraded"
+	if jobState != nil && *jobState == string(api.GraphJobStateFailed) {
+		status.State = api.GraphStateDegraded
 		if errorCode != nil {
 			status.ErrorCode = *errorCode
 		}
 	} else if scipCommit != nil {
-		status.State = "fallback"
+		status.State = api.GraphStateFallback
 	} else {
-		status.State = "pending"
+		status.State = api.GraphStatePending
 	}
 	if scipCommit != nil {
 		status.SCIPFallback = &api.SCIPFallbackStatus{Commit: *scipCommit}

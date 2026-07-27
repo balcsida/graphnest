@@ -13,6 +13,7 @@ import (
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -26,9 +27,9 @@ func TestUploadExternalAuthorizesBeforeParsing(t *testing.T) {
 }
 
 func TestUploadExternalRequiresAuthorizedCurrentRepository(t *testing.T) {
-	store := &fakeStore{repository: readyRepository(101, testCommit), authorizeErr: errUnauthorizedRepository}
+	store := &fakeStore{repository: readyRepository(101, testCommit), authorizeErr: pgx.ErrNoRows}
 	service := Service{Store: store, Limits: testArtifactLimits()}
-	if _, err := service.UploadExternal(t.Context(), adminPrincipal(101), 101, testCommit, validArtifactBytes(t, 101)); !errors.Is(err, errUnauthorizedRepository) || store.replaced {
+	if _, err := service.UploadExternal(t.Context(), adminPrincipal(101), 101, testCommit, validArtifactBytes(t, 101)); !errors.Is(err, pgx.ErrNoRows) || store.replaced {
 		t.Fatalf("err=%v replaced=%v", err, store.replaced)
 	}
 	store.authorizeErr = nil
@@ -56,11 +57,49 @@ func TestUploadExternalRevalidatesAfterParse(t *testing.T) {
 	}
 }
 
+func TestUploadExternalConvertsPublicArtifactRepositoryID(t *testing.T) {
+	store := &fakeStore{repository: readyRepository(101, testCommit), status: api.GraphStatus{State: api.GraphStateReady}}
+	service := Service{Store: store, Limits: testArtifactLimits()}
+	if _, err := service.UploadExternal(t.Context(), adminPrincipal(101), 101, testCommit, validArtifactBytes(t, 101)); err != nil {
+		t.Fatal(err)
+	}
+	if store.replacedRepositoryID != store.repository.ID || store.replacedArtifact.RepositoryID != store.repository.ID {
+		t.Fatalf("repositoryID=%d artifact=%#v", store.replacedRepositoryID, store.replacedArtifact)
+	}
+}
+
+func TestUploadExternalRejectsFinalStaleReplacement(t *testing.T) {
+	store := &fakeStore{repository: readyRepository(101, testCommit), replacement: postgres.GraphReplacement{Applied: false}, replacementSet: true}
+	service := Service{Store: store, Limits: testArtifactLimits()}
+	if _, err := service.UploadExternal(t.Context(), adminPrincipal(101), 101, testCommit, validArtifactBytes(t, 101)); !errors.Is(err, ErrNotIndexed) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestStatusAllowsAuthorizedUser(t *testing.T) {
-	store := &fakeStore{repository: readyRepository(101, testCommit), status: api.GraphStatus{RepositoryID: 101, Commit: testCommit, State: "ready", Source: "external"}}
+	store := &fakeStore{repository: readyRepository(101, testCommit), status: api.GraphStatus{RepositoryID: 101, Commit: testCommit, State: api.GraphStateReady, Source: api.GraphSourceExternal}}
 	got, err := (&Service{Store: store}).Status(t.Context(), authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}, 101)
-	if err != nil || got.State != "ready" || got.Source != "external" {
+	if err != nil || got.State != api.GraphStateReady || got.Source != api.GraphSourceExternal {
 		t.Fatalf("status=%#v err=%v", got, err)
+	}
+}
+
+func TestAuthorizationErrorsAreBounded(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		err  error
+		want error
+	}{
+		{name: "not found", err: pgx.ErrNoRows, want: pgx.ErrNoRows},
+		{name: "backend", err: errors.New("database password"), want: ErrUnavailable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := &fakeStore{authorizeErr: test.err}
+			err := (&Service{Store: store}).ValidateExternalUpload(t.Context(), adminPrincipal(101), 101, testCommit)
+			if !errors.Is(err, test.want) || strings.Contains(err.Error(), "password") {
+				t.Fatalf("err=%v", err)
+			}
+		})
 	}
 }
 
@@ -74,12 +113,12 @@ func TestStatusBoundsStorageError(t *testing.T) {
 
 func TestStatusPreservesGraphStates(t *testing.T) {
 	for _, status := range []api.GraphStatus{
-		{RepositoryID: 101, State: "not_indexed"},
-		{RepositoryID: 101, Commit: testCommit, State: "pending"},
-		{RepositoryID: 101, Commit: testCommit, State: "fallback", SCIPFallback: &api.SCIPFallbackStatus{Commit: testCommit}},
-		{RepositoryID: 101, Commit: testCommit, State: "degraded", ErrorCode: "parse_failed", SCIPFallback: &api.SCIPFallbackStatus{Commit: testCommit}},
+		{RepositoryID: 101, State: api.GraphStateNotIndexed},
+		{RepositoryID: 101, Commit: testCommit, State: api.GraphStatePending},
+		{RepositoryID: 101, Commit: testCommit, State: api.GraphStateFallback, SCIPFallback: &api.SCIPFallbackStatus{Commit: testCommit}},
+		{RepositoryID: 101, Commit: testCommit, State: api.GraphStateDegraded, ErrorCode: "parse_failed", SCIPFallback: &api.SCIPFallbackStatus{Commit: testCommit}},
 	} {
-		t.Run(status.State, func(t *testing.T) {
+		t.Run(string(status.State), func(t *testing.T) {
 			store := &fakeStore{repository: readyRepository(101, testCommit), status: status}
 			got, err := (&Service{Store: store}).Status(t.Context(), authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}, 101)
 			if err != nil || got != status {
@@ -94,13 +133,17 @@ const testCommit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 var errUnauthorizedRepository = errors.New("unauthorized repository")
 
 type fakeStore struct {
-	repository      repository.Repository
-	authorizeErr    error
-	status          api.GraphStatus
-	statusErr       error
-	afterAuthorize  func()
-	authorizedCalls int
-	replaced        bool
+	repository           repository.Repository
+	authorizeErr         error
+	status               api.GraphStatus
+	statusErr            error
+	replacement          postgres.GraphReplacement
+	replacementSet       bool
+	afterAuthorize       func()
+	authorizedCalls      int
+	replaced             bool
+	replacedRepositoryID int64
+	replacedArtifact     graphartifact.Artifact
 }
 
 func (store *fakeStore) AuthorizedRepository(_ context.Context, _ int64, _ []int64, _ int64) (repository.Repository, error) {
@@ -111,9 +154,13 @@ func (store *fakeStore) AuthorizedRepository(_ context.Context, _ int64, _ []int
 	return store.repository, store.authorizeErr
 }
 
-func (store *fakeStore) ReplaceGraph(_ context.Context, _ int64, _ postgres.GraphSource, _ graphartifact.Artifact) (postgres.GraphReplacement, error) {
+func (store *fakeStore) ReplaceGraph(_ context.Context, repositoryID int64, _ postgres.GraphSource, artifact graphartifact.Artifact) (postgres.GraphReplacement, error) {
 	store.replaced = true
-	return postgres.GraphReplacement{Applied: true}, nil
+	store.replacedRepositoryID, store.replacedArtifact = repositoryID, artifact
+	if !store.replacementSet {
+		return postgres.GraphReplacement{Applied: true}, nil
+	}
+	return store.replacement, nil
 }
 
 func (store *fakeStore) GraphStatus(_ context.Context, _ int64) (api.GraphStatus, error) {

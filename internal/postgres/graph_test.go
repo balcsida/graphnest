@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/grepnest/grepnest/internal/graphartifact"
+	"github.com/grepnest/grepnest/pkg/api"
 )
 
 func TestReplaceGraphExternalWins(t *testing.T) {
@@ -31,23 +32,23 @@ func TestReplaceGraphExternalWins(t *testing.T) {
 
 func TestGraphStatusCurrentStatesAndSCIPFallback(t *testing.T) {
 	store, repositoryID := readyGraphStore(t, testSHA('a'))
-	assertStatus := func(want string, fallback bool) {
+	assertStatus := func(want api.GraphState, fallback bool) {
 		t.Helper()
 		got, err := store.GraphStatus(t.Context(), repositoryID)
 		if err != nil || got.State != want || (got.SCIPFallback != nil) != fallback {
 			t.Fatalf("status=%#v err=%v", got, err)
 		}
 	}
-	assertStatus("pending", false)
+	assertStatus(api.GraphStatePending, false)
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("a.go", globalSymbol, definitionRole)); err != nil {
 		t.Fatal(err)
 	}
-	assertStatus("fallback", true)
+	assertStatus(api.GraphStateFallback, true)
 	if _, err := store.pool.Exec(t.Context(), "update repositories set indexed_sha=$2 where id=$1", repositoryID, testSHA('b')); err != nil {
 		t.Fatal(err)
 	}
 	got, err := store.GraphStatus(t.Context(), repositoryID)
-	if err != nil || got.State != "pending" || got.SCIPFallback != nil {
+	if err != nil || got.State != api.GraphStatePending || got.SCIPFallback != nil {
 		t.Fatalf("stale SCIP status=%#v err=%v", got, err)
 	}
 	if _, err := store.pool.Exec(t.Context(), `insert into graph_jobs (repository_id, target_sha, state, error_code)
@@ -55,13 +56,13 @@ func TestGraphStatusCurrentStatesAndSCIPFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err = store.GraphStatus(t.Context(), repositoryID)
-	if err != nil || got.State != "degraded" || got.ErrorCode != "parse_failed" {
+	if err != nil || got.State != api.GraphStateDegraded || got.ErrorCode != "parse_failed" {
 		t.Fatalf("degraded status=%#v err=%v", got, err)
 	}
 	if _, err := store.pool.Exec(t.Context(), "update repositories set indexed_sha=null where id=$1", repositoryID); err != nil {
 		t.Fatal(err)
 	}
-	assertStatus("not_indexed", false)
+	assertStatus(api.GraphStateNotIndexed, false)
 }
 
 func TestReplaceGraphStaleCommitDoesNotReplaceCurrentUpload(t *testing.T) {

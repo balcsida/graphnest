@@ -9,6 +9,7 @@ import (
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/jackc/pgx/v5"
 )
 
 var (
@@ -38,24 +39,34 @@ func (service *Service) ValidateExternalUpload(ctx context.Context, principal au
 }
 
 func (service *Service) UploadExternal(ctx context.Context, principal authn.Principal, repositoryID int64, commit string, data []byte) (api.GraphStatus, error) {
-	if err := service.ValidateExternalUpload(ctx, principal, repositoryID, commit); err != nil {
+	if !principal.Administrator {
+		return api.GraphStatus{}, ErrForbidden
+	}
+	repository, err := service.validate(ctx, principal, repositoryID, commit)
+	if err != nil {
 		return api.GraphStatus{}, err
 	}
 	artifact, err := graphartifact.Parse(data, service.Limits)
 	if err != nil || artifact.RepositoryID != repositoryID || artifact.Commit != commit {
 		return api.GraphStatus{}, ErrInvalidArtifact
 	}
-	if err := service.ValidateExternalUpload(ctx, principal, repositoryID, commit); err != nil {
+	repository, err = service.validate(ctx, principal, repositoryID, commit)
+	if err != nil {
 		return api.GraphStatus{}, err
 	}
-	if _, err := service.Store.ReplaceGraph(ctx, repositoryID, postgres.GraphSourceExternal, artifact); err != nil {
+	artifact.RepositoryID = repository.ID
+	replacement, err := service.Store.ReplaceGraph(ctx, repository.ID, postgres.GraphSourceExternal, artifact)
+	if err != nil {
 		return api.GraphStatus{}, unavailable(err)
+	}
+	if !replacement.Applied {
+		return api.GraphStatus{}, ErrNotIndexed
 	}
 	return service.Status(ctx, principal, repositoryID)
 }
 
 func (service *Service) Status(ctx context.Context, principal authn.Principal, repositoryID int64) (api.GraphStatus, error) {
-	repository, err := service.Store.AuthorizedRepository(ctx, principal.InstallationID, principal.RepositoryIDs, repositoryID)
+	repository, err := service.authorizedRepository(ctx, principal, repositoryID)
 	if err != nil {
 		return api.GraphStatus{}, err
 	}
@@ -67,7 +78,7 @@ func (service *Service) Status(ctx context.Context, principal authn.Principal, r
 }
 
 func (service *Service) validate(ctx context.Context, principal authn.Principal, repositoryID int64, commit string) (repository.Repository, error) {
-	repository, err := service.Store.AuthorizedRepository(ctx, principal.InstallationID, principal.RepositoryIDs, repositoryID)
+	repository, err := service.authorizedRepository(ctx, principal, repositoryID)
 	if err != nil {
 		return repository, err
 	}
@@ -75,6 +86,14 @@ func (service *Service) validate(ctx context.Context, principal authn.Principal,
 		return repository, ErrNotIndexed
 	}
 	return repository, nil
+}
+
+func (service *Service) authorizedRepository(ctx context.Context, principal authn.Principal, repositoryID int64) (repository.Repository, error) {
+	repository, err := service.Store.AuthorizedRepository(ctx, principal.InstallationID, principal.RepositoryIDs, repositoryID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return repository, unavailable(err)
+	}
+	return repository, err
 }
 
 func unavailable(error) error { return ErrUnavailable }
