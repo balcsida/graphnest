@@ -217,9 +217,11 @@ paths:
         '405': {$ref: '#/components/responses/InvalidRequest'}
   /auth/logout:
     post:
-      security: [{sessionCookie: []}]
+      security: [{sessionCookie: []}, {}]
       responses:
         '204': {description: Session cookie cleared}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '503': {$ref: '#/components/responses/Unavailable'}
         '405': {$ref: '#/components/responses/InvalidRequest'}
   /auth/oidc/login:
     get:

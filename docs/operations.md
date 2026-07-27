@@ -83,7 +83,7 @@ OIDC is disabled until all required OIDC settings are configured in durable
 mode. Set `GREPNEST_PUBLIC_URL` to the external HTTPS origin registered with
 the IdP; it is authoritative behind ingress or a reverse proxy, so do not
 derive it from forwarded headers. Permit server egress to the provider's
-discovery, authorization, token, and JWKS endpoints and install its issuing CA
+discovery, token, and JWKS endpoints and install its issuing CA
 in system trust or supply `GREPNEST_OIDC_CA_FILE` as a readable regular PEM
 file. Register exactly `https://<public-host>/auth/oidc/callback`, Authorization
 Code with S256 PKCE, and `openid profile email` plus any provider-specific
