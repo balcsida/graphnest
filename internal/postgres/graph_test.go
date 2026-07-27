@@ -87,6 +87,9 @@ func TestGraphSchemaEnforcesArtifactBoundaries(t *testing.T) {
 	}
 	mustReject(`insert into graph_jobs (repository_id, target_sha, state, max_attempts)
 		values ($1, $2, 'queued', 5)`, secondRepositoryID, testSHA('b'))
+	mustReject(`insert into graph_jobs
+		(repository_id, target_sha, state, max_attempts, lease_owner, lease_expires_at)
+		values ($1, $2, 'running', 5, 'other-worker', now())`, secondRepositoryID, testSHA('b'))
 	if _, err := store.pool.Exec(t.Context(), `delete from repositories where id=$1`, firstRepositoryID); err != nil {
 		t.Fatal(err)
 	}
