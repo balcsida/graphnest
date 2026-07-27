@@ -201,6 +201,24 @@ available to ordinary repository-scoped principals. An optional repository
 selector may be supplied for convenience and snapshot readiness checks, but it
 does not weaken the administrator requirement.
 
+## Initial agent skills
+
+The first graph release ships four static skills: Guide, Exploring, Debugging,
+and Impact Analysis. They teach agents the GrepNest graph schema and direct
+them to the bounded `context`, `impact`, and `trace` tools; only Guide documents
+administrator-only `cypher`.
+
+`grepnest-mcp install-skills` installs the embedded skill files beneath
+`.claude/skills/` in a selected repository root and mirrors them beneath
+`.agents/skills/` when that repository already contains `.agents/`. It updates
+only directories carrying a GrepNest-generated marker, rejects symbolic-link
+destinations, and writes each directory through an atomic sibling rename.
+Normal MCP proxy startup never writes to the working tree.
+
+Working-tree-aware Plan, Work, Review, LFG, CLI, PDG, Taint, and generated area
+skills remain follow-on capabilities because their required local analysis and
+tool surfaces are outside this release.
+
 ## Repository and version selection
 
 `repo` accepts a positive numeric repository ID or an exact repository name.
