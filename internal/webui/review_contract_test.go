@@ -96,3 +96,17 @@ func TestConsoleUsesNativeRepositoryTableSemantics(t *testing.T) {
 		}
 	}
 }
+
+func TestConsoleStacksRepositoryRowsOnNarrowScreens(t *testing.T) {
+	for _, want := range []string{
+		`.repository-scroll{overflow-x:visible}`,
+		`.repository-table,.repository-table tbody,.repository-table tr,.repository-table td{display:block;width:100%;min-width:0}`,
+		`.repository-table td:before{`,
+		`content:"Repository"`,
+		`content:"Open"`,
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Fatalf("console does not contain narrow repository rows %q", want)
+		}
+	}
+}
