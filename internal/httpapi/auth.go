@@ -44,8 +44,13 @@ func RegisterAuth(
 		}{principal.Method, principal.DisplayName}, 4<<10)
 	})))))
 	mux.Handle("/auth/logout", privateAuth(exactMethod(http.MethodPost, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		token, count := namedCookie(request, authn.SessionCookieName)
+		if count > 0 && (count != 1 || len(request.Header.Values("Authorization")) > 0 || request.Header.Get("Origin") != authenticator.PublicOrigin) {
+			writeUnauthenticated(writer)
+			return
+		}
 		http.SetCookie(writer, sso.ClearSessionCookie())
-		if token, count := namedCookie(request, authn.SessionCookieName); count == 1 && sessions != nil {
+		if count == 1 && sessions != nil {
 			if err := sessions.Revoke(request.Context(), token); err != nil {
 				result := "error"
 				if errors.Is(err, authn.ErrUnauthenticated) {

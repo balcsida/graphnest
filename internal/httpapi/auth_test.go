@@ -153,6 +153,50 @@ func TestRegisterAuthLogoutIsIdempotentAndClearsCookie(t *testing.T) {
 	}
 }
 
+func TestRegisterAuthLogoutRequiresSessionRequestBoundary(t *testing.T) {
+	const publicOrigin = "https://grepnest.example.test"
+	tests := []struct {
+		name, origin, authorization, cookie string
+		wantStatus                          int
+		wantRevoked                         bool
+	}{
+		{"exact Origin", publicOrigin, "", "valid-session", http.StatusNoContent, true},
+		{"missing Origin", "", "", "valid-session", http.StatusUnauthorized, false},
+		{"null Origin", "null", "", "valid-session", http.StatusUnauthorized, false},
+		{"wrong scheme", "http://grepnest.example.test", "", "valid-session", http.StatusUnauthorized, false},
+		{"wrong host", "https://other.example.test", "", "valid-session", http.StatusUnauthorized, false},
+		{"wrong port", publicOrigin + ":8443", "", "valid-session", http.StatusUnauthorized, false},
+		{"mixed credentials", publicOrigin, "Bearer token", "valid-session", http.StatusUnauthorized, false},
+		{"cookie-less", "", "", "", http.StatusNoContent, false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			sessions := &authSessionService{}
+			mux := http.NewServeMux()
+			RegisterAuth(mux, true, nil, authn.RequestAuthenticator{PublicOrigin: publicOrigin}, sessions, nil)
+			request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+			request.Header.Set("Origin", test.origin)
+			if test.authorization != "" {
+				request.Header.Set("Authorization", test.authorization)
+			}
+			if test.cookie != "" {
+				request.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: test.cookie})
+			}
+			recorder := httptest.NewRecorder()
+			mux.ServeHTTP(recorder, request)
+			if recorder.Code != test.wantStatus {
+				t.Fatalf("status = %d, want %d", recorder.Code, test.wantStatus)
+			}
+			if (len(sessions.revoked) == 1) != test.wantRevoked {
+				t.Fatalf("revoked = %#v", sessions.revoked)
+			}
+			if test.wantStatus == http.StatusUnauthorized && !strings.Contains(recorder.Body.String(), `"code":"unauthenticated"`) {
+				t.Fatalf("body = %q", recorder.Body.String())
+			}
+		})
+	}
+}
+
 func TestRegisterAuthEnforcesMethodsAndExactPaths(t *testing.T) {
 	tests := []struct {
 		method, path string
