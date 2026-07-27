@@ -96,6 +96,20 @@ func TestResolveDeduplicatesDeclarationsAndIsDeterministic(t *testing.T) {
 	}
 }
 
+func TestResolveOrdersEqualKeyDuplicateDeclarations(t *testing.T) {
+	first := Declaration{LocalID: "same", Name: "F", QualifiedName: "a.F", Kind: "Function", Range: Range{Start: Point{Line: 1}, End: Point{Line: 2}}}
+	second := first
+	second.Range = Range{Start: Point{Line: 3}, End: Point{Line: 4}}
+	left, err := Resolve(101, strings.Repeat("a", 40), []File{{Path: "a.go", Language: Go, Declarations: []Declaration{first, second}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err := Resolve(101, strings.Repeat("a", 40), []File{{Path: "a.go", Language: Go, Declarations: []Declaration{second, first}}})
+	if err != nil || !sameArtifact(left, right) {
+		t.Fatalf("Resolve() = %#v, %#v, %v", left, right, err)
+	}
+}
+
 func TestResolveBoundsReasonsAndConfidence(t *testing.T) {
 	artifact, err := Resolve(101, strings.Repeat("a", 40), []File{{Path: "a.go", Language: Go, Declarations: []Declaration{
 		{LocalID: "from", Name: "from", QualifiedName: "from", Kind: "Function"},

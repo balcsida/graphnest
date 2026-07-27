@@ -60,7 +60,7 @@ func Resolve(repositoryID int64, commit string, files []File) (graphartifact.Art
 		}
 		declarations := append([]Declaration(nil), file.Declarations...)
 		sort.SliceStable(declarations, func(i, j int) bool {
-			return declarationKey(declarations[i], file.Path) < declarationKey(declarations[j], file.Path)
+			return declarationLess(declarations[i], declarations[j], file.Path)
 		})
 		for _, declaration := range declarations {
 			path := declaration.Path
@@ -192,12 +192,26 @@ func heritagePath(value Heritage, fallback string) string {
 func resolvedEdge(source, target string, kind graphartifact.EdgeKind, path string, r Range, reason string, confidence float32) graphartifact.Edge {
 	return graphartifact.Edge{SourceUID: source, TargetUID: target, Kind: kind, Path: path, Range: graphRange(r), ResolutionReason: reason, Confidence: confidence}
 }
-func declarationKey(value Declaration, fallback string) string {
-	path := value.Path
-	if path == "" {
-		path = fallback
+func declarationLess(left, right Declaration, fallback string) bool {
+	leftPath, rightPath := left.Path, right.Path
+	if leftPath == "" {
+		leftPath = fallback
 	}
-	return value.SCIPSymbol + "\x00" + path + "\x00" + value.QualifiedName + "\x00" + value.Signature + "\x00" + value.LocalID
+	if rightPath == "" {
+		rightPath = fallback
+	}
+	leftFields := [...]string{left.SCIPSymbol, leftPath, left.Name, left.QualifiedName, left.Signature, left.Kind, left.ScopeID, left.Receiver, left.TypeName, left.LocalID}
+	rightFields := [...]string{right.SCIPSymbol, rightPath, right.Name, right.QualifiedName, right.Signature, right.Kind, right.ScopeID, right.Receiver, right.TypeName, right.LocalID}
+	for i := range leftFields {
+		if leftFields[i] != rightFields[i] {
+			return leftFields[i] < rightFields[i]
+		}
+	}
+	return pointLess(left.Range.Start, right.Range.Start) || left.Range.Start == right.Range.Start && pointLess(left.Range.End, right.Range.End)
+}
+
+func pointLess(left, right Point) bool {
+	return left.Line < right.Line || left.Line == right.Line && left.Column < right.Column
 }
 func edgeKey(value graphartifact.Edge) string {
 	return fmt.Sprintf("%s\x00%s\x00%d\x00%s\x00%d\x00%d\x00%d\x00%d", value.SourceUID, value.TargetUID, value.Kind, value.Path, value.Range.StartLine, value.Range.StartCharacter, value.Range.EndLine, value.Range.EndCharacter)
