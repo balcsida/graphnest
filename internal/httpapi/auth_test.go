@@ -118,11 +118,14 @@ func TestRegisterAuthLogoutIsIdempotentAndClearsCookie(t *testing.T) {
 	tests := []struct {
 		name, cookie, wantResult string
 		revokeErr                error
+		wantStatus               int
+		wantClear                bool
 	}{
-		{"missing", "", "success", nil},
-		{"valid", "valid-session", "success", nil},
-		{"malformed", "bad", "invalid", authn.ErrUnauthenticated},
-		{"store failure", "valid-session", "error", errors.New("database unavailable")},
+		{"missing", "", "success", nil, http.StatusNoContent, true},
+		{"valid", "valid-session", "success", nil, http.StatusNoContent, true},
+		{"unknown", "unknown-session", "success", nil, http.StatusNoContent, true},
+		{"malformed", "bad", "invalid", authn.ErrUnauthenticated, http.StatusNoContent, true},
+		{"store failure", "valid-session", "error", errors.New("database unavailable"), http.StatusServiceUnavailable, false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -136,9 +139,15 @@ func TestRegisterAuthLogoutIsIdempotentAndClearsCookie(t *testing.T) {
 			}
 			recorder := httptest.NewRecorder()
 			mux.ServeHTTP(recorder, request)
-			if recorder.Code != http.StatusNoContent || len(recorder.Result().Cookies()) != 1 ||
-				recorder.Result().Cookies()[0].Name != authn.SessionCookieName || recorder.Result().Cookies()[0].MaxAge != -1 {
+			cookies := recorder.Result().Cookies()
+			if recorder.Code != test.wantStatus || (len(cookies) == 1) != test.wantClear {
 				t.Fatalf("response = %d cookies=%#v", recorder.Code, recorder.Result().Cookies())
+			}
+			if test.wantClear && (cookies[0].Name != authn.SessionCookieName || cookies[0].MaxAge != -1) {
+				t.Fatalf("cleared cookie = %#v", cookies[0])
+			}
+			if test.wantStatus == http.StatusServiceUnavailable && !strings.Contains(recorder.Body.String(), `"code":"unavailable"`) {
+				t.Fatalf("body = %q", recorder.Body.String())
 			}
 			if (len(sessions.revoked) == 1) != (test.cookie != "") {
 				t.Fatalf("revoked = %#v", sessions.revoked)

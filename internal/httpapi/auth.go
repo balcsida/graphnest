@@ -49,20 +49,24 @@ func RegisterAuth(
 			writeUnauthenticated(writer)
 			return
 		}
-		http.SetCookie(writer, sso.ClearSessionCookie())
 		if count == 1 && sessions != nil {
 			if err := sessions.Revoke(request.Context(), token); err != nil {
-				result := "error"
 				if errors.Is(err, authn.ErrUnauthenticated) {
-					result = "invalid"
+					http.SetCookie(writer, sso.ClearSessionCookie())
+					if metrics != nil {
+						metrics.ObserveAuth("session", "logout", "invalid")
+					}
+					writer.WriteHeader(http.StatusNoContent)
+					return
 				}
 				if metrics != nil {
-					metrics.ObserveAuth("session", "logout", result)
+					metrics.ObserveAuth("session", "logout", "error")
 				}
-				writer.WriteHeader(http.StatusNoContent)
+				writeError(writer, http.StatusServiceUnavailable, "unavailable", "service unavailable", true)
 				return
 			}
 		}
+		http.SetCookie(writer, sso.ClearSessionCookie())
 		if metrics != nil {
 			metrics.ObserveAuth("session", "logout", "success")
 		}
