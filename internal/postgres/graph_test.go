@@ -58,6 +58,23 @@ func TestGraphManifestsOmitStaleAndUnavailableRepositories(t *testing.T) {
 	}
 }
 
+func TestGraphSnapshotIDsReserveTheSCIPManifestRange(t *testing.T) {
+	store, repositoryID := readyGraphStore(t, testSHA('a'))
+	if _, err := store.pool.Exec(t.Context(), `insert into graph_uploads
+		(repository_id, commit, schema_version, source, analyzer_name, analyzer_version, content_hash, node_count, edge_count)
+		values ($1, $2, 1, 'managed', 'test', '1', decode(repeat('01', 32), 'hex'), 0, 0)`, repositoryID, testSHA('a')); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `update graph_uploads set id=$1 where repository_id=$2`, scipManifestOffset+1, repositoryID); err == nil {
+		t.Fatal("graph upload entered reserved SCIP manifest range")
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into scip_uploads
+		(id, repository_id, commit, project_root, indexer_name, indexer_version)
+		values ($1, $2, $3, '', 'test', '1')`, scipManifestOffset+1, repositoryID, testSHA('a')); err == nil {
+		t.Fatal("SCIP upload exceeded its derivable ID range")
+	}
+}
+
 func containsSCIPSymbol(artifact graphartifact.Artifact) bool {
 	for _, node := range artifact.Nodes {
 		if node.SCIPSymbol == globalSymbol {

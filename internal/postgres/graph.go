@@ -12,10 +12,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const scipUploadOffset = int64(math.MaxInt64)
+const scipManifestOffset = int64(math.MaxInt64 / 2)
 
-func scipManifestID(uploadID int64) int64 { return scipUploadOffset - uploadID }
-func scipUploadID(manifestID int64) int64 { return scipUploadOffset - manifestID }
+func scipManifestID(uploadID int64) int64 { return scipManifestOffset + uploadID }
+func scipUploadID(manifestID int64) int64 { return manifestID - scipManifestOffset }
 
 func (s *Store) GraphManifests(ctx context.Context) ([]graphartifact.Manifest, error) {
 	rows, err := s.pool.Query(ctx, `select repositories.id, repositories.indexed_sha,
@@ -43,7 +43,7 @@ func (s *Store) GraphManifests(ctx context.Context) ([]graphartifact.Manifest, e
 			manifests = append(manifests, graphartifact.Manifest{RepositoryID: *repositoryID, UploadID: *graphID, Commit: *commit, Source: *source, SchemaVersion: *schemaVersion, ContentHash: contentHash})
 			continue
 		}
-		artifact, err := s.scipArtifact(ctx, *repositoryID, *scipID, *commit)
+		artifact, err := s.scipArtifact(ctx, s.pool, *repositoryID, *scipID, *commit)
 		if err != nil {
 			return nil, err
 		}
@@ -53,16 +53,25 @@ func (s *Store) GraphManifests(ctx context.Context) ([]graphartifact.Manifest, e
 }
 
 func (s *Store) GraphArtifact(ctx context.Context, repositoryID, uploadID int64) (graphartifact.Artifact, error) {
-	if uploadID > scipUploadOffset/2 {
+	if uploadID > scipManifestOffset {
+		tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
+		if err != nil {
+			return graphartifact.Artifact{}, err
+		}
+		defer tx.Rollback(ctx)
 		var commit string
-		err := s.pool.QueryRow(ctx, `select repositories.indexed_sha from repositories join scip_uploads on scip_uploads.repository_id=repositories.id
+		err = tx.QueryRow(ctx, `select repositories.indexed_sha from repositories join scip_uploads on scip_uploads.repository_id=repositories.id
 			join installations on installations.id=repositories.installation_id
 			where repositories.id=$1 and scip_uploads.id=$2 and scip_uploads.commit=repositories.indexed_sha
 			and repositories.enabled and not repositories.archived and installations.status='active'`, repositoryID, scipUploadID(uploadID)).Scan(&commit)
 		if err != nil {
 			return graphartifact.Artifact{}, err
 		}
-		return s.scipArtifact(ctx, repositoryID, scipUploadID(uploadID), commit)
+		artifact, err := s.scipArtifact(ctx, tx, repositoryID, scipUploadID(uploadID), commit)
+		if err != nil {
+			return graphartifact.Artifact{}, err
+		}
+		return artifact, tx.Commit(ctx)
 	}
 	artifact, err := s.LoadGraph(ctx, uploadID)
 	if err != nil {
@@ -80,8 +89,12 @@ func (s *Store) GraphArtifact(ctx context.Context, repositoryID, uploadID int64)
 	return artifact, nil
 }
 
-func (s *Store) scipArtifact(ctx context.Context, repositoryID, uploadID int64, commit string) (graphartifact.Artifact, error) {
-	occurrences, err := s.pool.Query(ctx, `select path, symbol, start_line, start_character, end_line, end_character, position_encoding, roles, local
+type graphQueryer interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}
+
+func (s *Store) scipArtifact(ctx context.Context, queryer graphQueryer, repositoryID, uploadID int64, commit string) (graphartifact.Artifact, error) {
+	occurrences, err := queryer.Query(ctx, `select path, symbol, start_line, start_character, end_line, end_character, position_encoding, roles, local
 		from scip_occurrences where upload_id=$1 order by path, start_line, start_character, end_line, end_character, symbol`, uploadID)
 	if err != nil {
 		return graphartifact.Artifact{}, err
@@ -98,7 +111,7 @@ func (s *Store) scipArtifact(ctx context.Context, repositoryID, uploadID int64, 
 	if err := occurrences.Err(); err != nil {
 		return graphartifact.Artifact{}, err
 	}
-	relationships, err := s.pool.Query(ctx, `select document_path, source_symbol, target_symbol, is_definition, is_reference, is_implementation, is_type_definition
+	relationships, err := queryer.Query(ctx, `select document_path, source_symbol, target_symbol, is_definition, is_reference, is_implementation, is_type_definition
 		from scip_relationships where upload_id=$1 order by document_path, source_symbol, target_symbol, is_definition, is_reference, is_implementation, is_type_definition`, uploadID)
 	if err != nil {
 		return graphartifact.Artifact{}, err
