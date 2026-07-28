@@ -14,9 +14,21 @@ definitions, references, and implementations without leaving the console.
 
 ![GrepNest code search with SCIP navigation](docs/images/grepnest-ui.png)
 
-The [Helm chart](deploy/helm/grepnest/README.md) is structurally lintable and
-renderable, but not currently deployable. This repository does not build or
-publish the required images, and the chart has not been cluster-tested.
+The [Helm chart](deploy/helm/grepnest/README.md) supports Kubernetes 1.25 or
+newer. Releases publish multi-architecture images and an OCI chart; the
+released chart embeds immutable image digests.
+
+## Local images
+
+Build and smoke-test the local images with:
+
+```sh
+make image-test
+```
+
+The local tags are `grepnest-application:dev` and `grepnest-node:dev`. They
+are for local use only; a released chart uses immutable multi-architecture
+image digests.
 
 ## Local quick start
 
@@ -236,9 +248,8 @@ Optional limits are positive and cannot exceed their server caps:
 Run `make fmt lint staticcheck govulncheck test test-race postgres-integration
 integration e2e build compose-test` before proposing a change. `make e2e` starts its pinned
 PostgreSQL dependency and runs real TLS smart-Git and Zoekt processes. `make
-helm-lint helm-test` validates the chart structure without
-contacting a cluster. `make image` intentionally fails with
-`image: milestone not implemented`; no deployable image is produced.
+helm-lint helm-test` validates the chart structure without contacting a
+cluster. `make image-test` builds and smoke-tests the two local images.
 
 ## Policies
 

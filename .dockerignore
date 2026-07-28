@@ -1,0 +1,8 @@
+.git
+.cache
+.codex
+.agents
+docs/superpowers/plans
+docs/superpowers/specs
+*.out
+coverage*

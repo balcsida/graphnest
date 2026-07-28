@@ -3,5 +3,5 @@ name: grepnest
 description: Generic Kubernetes chart for the GrepNest single-node pilot
 type: application
 version: 0.1.0
-appVersion: 0.0.0-pilot
+appVersion: 0.1.0
 kubeVersion: ">=1.25.0-0"

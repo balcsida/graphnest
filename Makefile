@@ -3,8 +3,11 @@ STATICCHECK_VERSION := v0.7.0
 GOVULNCHECK_VERSION := v1.1.4
 POSTGRES_COMPOSE := docker compose -p grepnest-postgres
 GREPNEST_TEST_POSTGRES_DSN ?= $(GREPNEST_TEST_DATABASE_URL)
+IMAGE_PLATFORM ?= linux/amd64
+APPLICATION_IMAGE ?= grepnest-application:dev
+NODE_IMAGE ?= grepnest-node:dev
 
-.PHONY: fmt lint staticcheck govulncheck test test-race integration postgres-test postgres-integration e2e e2e-test tools build server image helm-lint helm-test compose-test openapi-check
+.PHONY: fmt lint staticcheck govulncheck test test-race integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
@@ -72,15 +75,27 @@ build:
 server:
 	go run ./cmd/grepnest-server
 
+zoekt-version:
+	@printf '%s\\n' '$(ZOEKT_VERSION)'
+
 image:
-	@echo "image: milestone not implemented" >&2
-	@false
+	docker buildx build --load --platform $(IMAGE_PLATFORM) --target application \
+		--build-arg ZOEKT_VERSION=$(ZOEKT_VERSION) -t $(APPLICATION_IMAGE) .
+	docker buildx build --load --platform $(IMAGE_PLATFORM) --target node \
+		--build-arg ZOEKT_VERSION=$(ZOEKT_VERSION) -t $(NODE_IMAGE) .
+
+image-test: image
+	APPLICATION_IMAGE=$(APPLICATION_IMAGE) NODE_IMAGE=$(NODE_IMAGE) \
+		sh deploy/images/test.sh
 
 helm-lint:
 	helm lint deploy/helm/grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml
 
 helm-test:
 	sh deploy/helm/grepnest/tests/render.sh
+
+release-chart-test:
+	ruby scripts/stage_release_chart_test.rb
 
 compose-test:
 	sh deploy/compose/test.sh

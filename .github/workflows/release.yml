@@ -1,0 +1,297 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.validate.outputs.version }}
+      commit: ${{ steps.validate.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: validate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+
+          ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME")
+          [[ $(jq -er '.object.type' <<<"$ref") == tag ]]
+          tag=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$(jq -er '.object.sha' <<<"$ref")")
+          [[ $(jq -er '.verification.verified' <<<"$tag") == true ]]
+          [[ $(jq -er '.object.type' <<<"$tag") == commit ]]
+
+          commit=$(jq -er '.object.sha' <<<"$tag")
+          [[ "$commit" == "$(git rev-list -n 1 "$GITHUB_REF_NAME")" ]]
+          git fetch origin main
+          git merge-base --is-ancestor "$commit" origin/main
+
+          version=${GITHUB_REF_NAME#v}
+          chart_version=$(ruby -e 'require "yaml"; puts YAML.load_file(ARGV[0]).fetch("version")' \
+            deploy/helm/grepnest/Chart.yaml)
+          app_version=$(ruby -e 'require "yaml"; puts YAML.load_file(ARGV[0]).fetch("appVersion")' \
+            deploy/helm/grepnest/Chart.yaml)
+          [[ "$chart_version" == "$version" ]]
+          [[ "$app_version" == "$version" ]]
+
+          message=$(git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME")
+          grep -q '^Compatibility:' <<<"$message"
+          grep -q '^Security:' <<<"$message"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release already exists: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+
+          {
+            echo "version=$version"
+            echo "commit=$commit"
+          } >>"$GITHUB_OUTPUT"
+
+  ci:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+
+  smoke:
+    needs: [validate, ci]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - run: |
+          set -euo pipefail
+          platform='${{ matrix.platform }}'
+          suffix=${platform#linux/}
+          zoekt_version=$(make -s zoekt-version)
+          docker buildx build --load --platform "$platform" --target application \
+            --build-arg "ZOEKT_VERSION=$zoekt_version" \
+            -t "grepnest-application:smoke-$suffix" .
+          docker buildx build --load --platform "$platform" --target node \
+            --build-arg "ZOEKT_VERSION=$zoekt_version" \
+            -t "grepnest-node:smoke-$suffix" .
+          APPLICATION_IMAGE="grepnest-application:smoke-$suffix" \
+          NODE_IMAGE="grepnest-node:smoke-$suffix" \
+            sh deploy/images/test.sh
+
+  publish:
+    needs: [validate, ci, smoke]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.2.3
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io \
+            -u "$GITHUB_ACTOR" --password-stdin
+          printf '%s' "$GH_TOKEN" | helm registry login ghcr.io \
+            -u "$GITHUB_ACTOR" --password-stdin
+      - name: Push images
+        id: images
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          COMMIT: ${{ needs.validate.outputs.commit }}
+        run: |
+          set -euo pipefail
+          repository=${GITHUB_REPOSITORY,,}
+          application="ghcr.io/$repository/application"
+          node="ghcr.io/$repository/node"
+          zoekt_version=$(make -s zoekt-version)
+
+          docker buildx build --push --platform linux/amd64,linux/arm64 \
+            --target application --build-arg "ZOEKT_VERSION=$zoekt_version" \
+            --tag "$application:$VERSION" --tag "$application:sha-$COMMIT" \
+            --sbom=true --provenance=mode=max \
+            --metadata-file "$RUNNER_TEMP/application.json" .
+          docker buildx build --push --platform linux/amd64,linux/arm64 \
+            --target node --build-arg "ZOEKT_VERSION=$zoekt_version" \
+            --tag "$node:$VERSION" --tag "$node:sha-$COMMIT" \
+            --sbom=true --provenance=mode=max \
+            --metadata-file "$RUNNER_TEMP/node.json" .
+
+          application_digest=$(jq -er '."containerimage.digest"' \
+            "$RUNNER_TEMP/application.json")
+          node_digest=$(jq -er '."containerimage.digest"' "$RUNNER_TEMP/node.json")
+          [[ "$application_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$node_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          docker buildx imagetools inspect "$application@$application_digest"
+          docker buildx imagetools inspect "$node@$node_digest"
+
+          {
+            echo "application=$application"
+            echo "application_digest=$application_digest"
+            echo "node=$node"
+            echo "node_digest=$node_digest"
+          } >>"$GITHUB_OUTPUT"
+      - name: Attest application image
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ steps.images.outputs.application }}
+          subject-digest: ${{ steps.images.outputs.application_digest }}
+          push-to-registry: true
+      - name: Attest node image
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ steps.images.outputs.node }}
+          subject-digest: ${{ steps.images.outputs.node_digest }}
+          push-to-registry: true
+      - name: Publish chart
+        id: chart
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          APPLICATION: ${{ steps.images.outputs.application }}
+          APPLICATION_DIGEST: ${{ steps.images.outputs.application_digest }}
+          NODE: ${{ steps.images.outputs.node }}
+          NODE_DIGEST: ${{ steps.images.outputs.node_digest }}
+        run: |
+          set -euo pipefail
+
+          ruby scripts/stage_release_chart.rb \
+            --chart deploy/helm/grepnest \
+            --output "$RUNNER_TEMP/release-chart" \
+            --version "$VERSION" \
+            --application-repository "$APPLICATION" \
+            --application-digest "$APPLICATION_DIGEST" \
+            --node-repository "$NODE" \
+            --node-digest "$NODE_DIGEST"
+          chart="$RUNNER_TEMP/release-chart/grepnest"
+          values="$chart/ci/minimal-values.yaml"
+          helm lint "$chart" -f "$values" \
+            --set-string "images.application.repository=$APPLICATION" \
+            --set-string "images.application.digest=$APPLICATION_DIGEST" \
+            --set-string "images.node.repository=$NODE" \
+            --set-string "images.node.digest=$NODE_DIGEST"
+          helm template release "$chart" -f "$values" \
+            --set-string "images.application.repository=$APPLICATION" \
+            --set-string "images.application.digest=$APPLICATION_DIGEST" \
+            --set-string "images.node.repository=$NODE" \
+            --set-string "images.node.digest=$NODE_DIGEST" \
+            >"$RUNNER_TEMP/release.yaml"
+
+          mapfile -t rendered_images < <(
+            sed -nE 's/^[[:space:]]*image:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/p' \
+              "$RUNNER_TEMP/release.yaml"
+          )
+          ((${#rendered_images[@]} > 0))
+          for image in "${rendered_images[@]}"; do
+            [[ "$image" == *"@$APPLICATION_DIGEST" || "$image" == *"@$NODE_DIGEST" ]]
+          done
+
+          mkdir -p "$RUNNER_TEMP/packages"
+          helm package "$chart" --destination "$RUNNER_TEMP/packages"
+          chart_archive="$RUNNER_TEMP/packages/grepnest-$VERSION.tgz"
+          push_output="$RUNNER_TEMP/helm-push.txt"
+          helm push "$chart_archive" oci://ghcr.io/balcsida/grep-nest/charts \
+            | tee "$push_output"
+          chart_digest=$(awk '$1 == "Digest:" {print $2}' "$push_output")
+          [[ "$chart_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          chart_reference="oci://ghcr.io/balcsida/grep-nest/charts/grepnest:$VERSION@$chart_digest"
+
+          pull_dir="$RUNNER_TEMP/pulled-chart"
+          mkdir "$pull_dir"
+          helm pull oci://ghcr.io/balcsida/grep-nest/charts/grepnest \
+            --version "$VERSION" --destination "$pull_dir"
+          pulled_archive="$pull_dir/grepnest-$VERSION.tgz"
+          cmp "$chart_archive" "$pulled_archive"
+          helm template release "$pulled_archive" -f "$values" \
+            --set-string "images.application.repository=$APPLICATION" \
+            --set-string "images.application.digest=$APPLICATION_DIGEST" \
+            --set-string "images.node.repository=$NODE" \
+            --set-string "images.node.digest=$NODE_DIGEST" \
+            >"$RUNNER_TEMP/pulled-release.yaml"
+
+          {
+            echo "archive=$chart_archive"
+            echo "digest=$chart_digest"
+            echo "reference=$chart_reference"
+          } >>"$GITHUB_OUTPUT"
+      - name: Attest chart
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: ${{ steps.chart.outputs.archive }}
+      - name: Verify attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          verify() {
+            for attempt in {1..12}; do
+              if "$@"; then
+                return
+              fi
+              ((attempt < 12)) && sleep 5
+            done
+            return 1
+          }
+          verify gh attestation verify \
+            "oci://${{ steps.images.outputs.application }}@${{ steps.images.outputs.application_digest }}" \
+            --repo "$GITHUB_REPOSITORY"
+          verify gh attestation verify \
+            "oci://${{ steps.images.outputs.node }}@${{ steps.images.outputs.node_digest }}" \
+            --repo "$GITHUB_REPOSITORY"
+          verify gh attestation verify "${{ steps.chart.outputs.archive }}" \
+            --repo "$GITHUB_REPOSITORY"
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPLICATION: ${{ steps.images.outputs.application }}@${{ steps.images.outputs.application_digest }}
+          NODE: ${{ steps.images.outputs.node }}@${{ steps.images.outputs.node_digest }}
+          CHART: ${{ steps.chart.outputs.reference }}
+          CHART_ARCHIVE: ${{ steps.chart.outputs.archive }}
+        run: |
+          set -euo pipefail
+          tag_message=$(git for-each-ref --format='%(contents)' \
+            "refs/tags/$GITHUB_REF_NAME")
+
+          {
+            printf '%s\n\n' "$tag_message"
+            printf '## Immutable artifacts\n\n'
+            printf -- "- \`%s\`\n- \`%s\`\n- \`%s\`\n\n" "$APPLICATION" "$NODE" "$CHART"
+            printf '## Verification\n\n```sh\n'
+            printf 'gh attestation verify "oci://%s" --repo "%s"\n' \
+              "$APPLICATION" "$GITHUB_REPOSITORY"
+            printf 'gh attestation verify "oci://%s" --repo "%s"\n' \
+              "$NODE" "$GITHUB_REPOSITORY"
+            printf 'gh attestation verify "%s" --repo "%s"\n' \
+              "$(basename "$CHART_ARCHIVE")" "$GITHUB_REPOSITORY"
+            printf '```\n'
+          } >"$RUNNER_TEMP/release-notes.md"
+
+          gh release create "$GITHUB_REF_NAME" "$CHART_ARCHIVE" \
+            --verify-tag --title "$GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" --generate-notes
+          {
+            printf '## Immutable release artifacts\n\n'
+            printf -- "- \`%s\`\n- \`%s\`\n- \`%s\`\n" "$APPLICATION" "$NODE" "$CHART"
+          } >>"$GITHUB_STEP_SUMMARY"
