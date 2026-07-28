@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -62,21 +63,33 @@ func TestExecuteAppliesRowLimit(t *testing.T) {
 func TestExecuteAppliesEncodedByteLimit(t *testing.T) {
 	db := testDatabase(t, Options{})
 	err := db.View(t.Context(), func(session *Session) error {
-		result, err := session.Execute(t.Context(), `UNWIND ["12345678", "abcdefgh"] AS value RETURN value`, nil, QueryLimits{MaxBytes: 15})
+		result, err := session.Execute(t.Context(), `UNWIND ["12345678", "abcdefgh"] AS value RETURN value`, nil, QueryLimits{MaxBytes: 65})
 		if err != nil {
 			return err
 		}
-		encoded, err := json.Marshal(result.Rows)
+		encoded, err := json.Marshal(result)
 		if err != nil {
 			return err
 		}
-		if len(encoded) > 15 || !result.Truncated {
+		if len(encoded) > 65 || !result.Truncated {
 			t.Fatalf("encoded result is %d bytes, truncated=%v", len(encoded), result.Truncated)
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestExecuteRejectsMetadataOverByteLimit(t *testing.T) {
+	db := testDatabase(t, Options{})
+	alias := strings.Repeat("a", 100)
+	err := db.View(t.Context(), func(session *Session) error {
+		_, err := session.Execute(t.Context(), `MATCH (f:File) RETURN f.uid AS `+alias+` LIMIT 0`, nil, QueryLimits{MaxBytes: 80})
+		return err
+	})
+	if err == nil {
+		t.Fatal("oversized result metadata unexpectedly succeeded")
 	}
 }
 

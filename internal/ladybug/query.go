@@ -3,6 +3,7 @@ package ladybug
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -34,6 +35,7 @@ type Session struct {
 	database       *Database
 	reusable       atomic.Bool
 	executeMu      sync.Mutex
+	active         bool
 }
 
 type queryOutcome struct {
@@ -44,6 +46,9 @@ type queryOutcome struct {
 func (session *Session) Execute(ctx context.Context, query string, parameters map[string]any, limits QueryLimits) (Result, error) {
 	session.executeMu.Lock()
 	defer session.executeMu.Unlock()
+	if !session.active {
+		return Result{}, errors.New("ladybug session callback has returned")
+	}
 	if !session.reusable.Load() {
 		return Result{}, errUnhealthy
 	}
@@ -82,6 +87,12 @@ func (session *Session) Execute(ctx context.Context, query string, parameters ma
 	}
 }
 
+func (session *Session) invalidate() {
+	session.executeMu.Lock()
+	session.active = false
+	session.executeMu.Unlock()
+}
+
 func normalizeLimits(limits QueryLimits) QueryLimits {
 	if limits.MaxRows <= 0 || limits.MaxRows > defaultMaxRows {
 		limits.MaxRows = defaultMaxRows
@@ -115,6 +126,11 @@ func executeQuery(connection *lbug.Connection, query string, parameters map[stri
 		Columns: append([]string(nil), queryResult.GetColumnNames()...),
 		Rows:    make([][]any, 0),
 	}
+	if encoded, encodeErr := json.Marshal(result); encodeErr != nil {
+		return Result{}, encodeErr
+	} else if len(encoded) > limits.MaxBytes {
+		return Result{}, fmt.Errorf("query result metadata exceeds %d-byte limit", limits.MaxBytes)
+	}
 	for queryResult.HasNext() {
 		if len(result.Rows) == limits.MaxRows {
 			result.Truncated = true
@@ -129,7 +145,8 @@ func executeQuery(connection *lbug.Connection, query string, parameters map[stri
 		if rowErr != nil {
 			return Result{}, rowErr
 		}
-		candidate := append(result.Rows, row)
+		candidate := result
+		candidate.Rows = append(result.Rows, row)
 		encoded, encodeErr := json.Marshal(candidate)
 		if encodeErr != nil {
 			return Result{}, encodeErr
@@ -138,7 +155,7 @@ func executeQuery(connection *lbug.Connection, query string, parameters map[stri
 			result.Truncated = true
 			break
 		}
-		result.Rows = candidate
+		result = candidate
 	}
 	return result, nil
 }
