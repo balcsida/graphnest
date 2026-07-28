@@ -7,7 +7,7 @@ IMAGE_PLATFORM ?= linux/amd64
 APPLICATION_IMAGE ?= grepnest-application:dev
 NODE_IMAGE ?= grepnest-node:dev
 
-.PHONY: fmt lint staticcheck govulncheck test test-race integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test
+.PHONY: fmt lint staticcheck govulncheck test test-race scanner-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
@@ -30,6 +30,9 @@ test:
 
 test-race:
 	@if test -n "$$(go list ./... 2>/dev/null)"; then go test -race ./...; fi
+
+scanner-test:
+	CGO_ENABLED=1 go test -race ./internal/graphscan/... ./internal/graphscanner ./cmd/grepnest-scanner
 
 openapi-check:
 	ruby scripts/check_openapi.rb

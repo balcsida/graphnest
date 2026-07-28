@@ -35,6 +35,19 @@ type Indexer struct {
 	MinFreeBytes, MaxRepositoryBytes                    int64
 }
 
+type GraphScanLimits struct {
+	MaxFileBytes, MaxTotalBytes  int64
+	MaxFiles, MaxNodes, MaxEdges int
+	ParseTimeout                 time.Duration
+	SkipDirectories              []string
+}
+
+type Scanner struct {
+	DatabaseURL, DataDir, GitPath, WorkerID, MetricsListenAddress string
+	GitHub                                                        GitHub
+	Limits                                                        GraphScanLimits
+}
+
 type Config struct {
 	ListenAddress, ZoektURL, RepositoriesFile string
 	UserToken, AdminToken                     string
@@ -172,12 +185,99 @@ func LoadIndexer() (Indexer, error) {
 	if indexer.MaxRepositoryBytes, err = strconv.ParseInt(valueOr("GREPNEST_MAX_REPOSITORY_BYTES", "5368709120"), 10, 64); err != nil || indexer.MaxRepositoryBytes <= 0 {
 		return Indexer{}, invalid("GREPNEST_MAX_REPOSITORY_BYTES must be a positive integer")
 	}
-	_, port, err := net.SplitHostPort(indexer.MetricsListenAddress)
-	portNumber, portErr := strconv.Atoi(port)
-	if err != nil || portErr != nil || portNumber < 1 || portNumber > 65535 {
-		return Indexer{}, invalid("GREPNEST_METRICS_LISTEN_ADDRESS must be a host:port address")
+	if err := validListenAddress(indexer.MetricsListenAddress); err != nil {
+		return Indexer{}, err
 	}
 	return indexer, nil
+}
+
+func LoadScanner() (Scanner, error) {
+	scanner := Scanner{
+		DatabaseURL:          os.Getenv("GREPNEST_DATABASE_URL"),
+		DataDir:              os.Getenv("GREPNEST_DATA_DIR"),
+		GitPath:              os.Getenv("GREPNEST_GIT_PATH"),
+		WorkerID:             os.Getenv("GREPNEST_WORKER_ID"),
+		MetricsListenAddress: valueOr("GREPNEST_METRICS_LISTEN_ADDRESS", ":9090"),
+		Limits: GraphScanLimits{
+			MaxFileBytes: 2 << 20, MaxTotalBytes: 1 << 30, MaxFiles: 100_000,
+			MaxNodes: 500_000, MaxEdges: 2_000_000, ParseTimeout: 30 * time.Second,
+			SkipDirectories: []string{"node_modules", "vendor", "target", "build", "dist", ".gradle"},
+		},
+	}
+	parsed, err := url.Parse(scanner.DatabaseURL)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") {
+		return Scanner{}, invalid("GREPNEST_DATABASE_URL must be a PostgreSQL URL")
+	}
+	if scanner.GitHub, err = loadGitHub(false); err != nil {
+		return Scanner{}, err
+	}
+	if scanner.DataDir == "" || scanner.GitPath == "" || scanner.WorkerID == "" {
+		return Scanner{}, invalid("scanner paths and worker ID are required")
+	}
+	if err := loadGraphScanLimits(&scanner.Limits); err != nil {
+		return Scanner{}, err
+	}
+	if err := validListenAddress(scanner.MetricsListenAddress); err != nil {
+		return Scanner{}, err
+	}
+	return scanner, nil
+}
+
+func loadGraphScanLimits(limits *GraphScanLimits) error {
+	if err := int64Value("GREPNEST_GRAPH_SCAN_MAX_FILE_BYTES", &limits.MaxFileBytes); err != nil {
+		return err
+	}
+	if err := int64Value("GREPNEST_GRAPH_SCAN_MAX_TOTAL_BYTES", &limits.MaxTotalBytes); err != nil {
+		return err
+	}
+	if err := intValue("GREPNEST_GRAPH_SCAN_MAX_FILES", &limits.MaxFiles); err != nil {
+		return err
+	}
+	if err := intValue("GREPNEST_GRAPH_SCAN_MAX_NODES", &limits.MaxNodes); err != nil {
+		return err
+	}
+	if err := intValue("GREPNEST_GRAPH_SCAN_MAX_EDGES", &limits.MaxEdges); err != nil {
+		return err
+	}
+	if err := durationValue("GREPNEST_GRAPH_SCAN_PARSE_TIMEOUT", &limits.ParseTimeout); err != nil {
+		return err
+	}
+	if limits.MaxFileBytes > 2<<20 || limits.MaxTotalBytes > 1<<30 || limits.MaxFiles > 100_000 ||
+		limits.MaxNodes > 500_000 || limits.MaxEdges > 2_000_000 || limits.ParseTimeout > 30*time.Second {
+		return invalid("graph scan limits exceed safety caps")
+	}
+	if value, present := os.LookupEnv("GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES"); present {
+		var err error
+		if limits.SkipDirectories, err = skipDirectories(value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func skipDirectories(value string) ([]string, error) {
+	seen := map[string]bool{}
+	var result []string
+	for _, part := range strings.Split(value, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" || part == "." || part == ".." || strings.ContainsAny(part, `/\`) {
+			return nil, invalid("GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES must contain directory names")
+		}
+		if !seen[part] {
+			seen[part] = true
+			result = append(result, part)
+		}
+	}
+	return result, nil
+}
+
+func validListenAddress(address string) error {
+	_, port, err := net.SplitHostPort(address)
+	portNumber, portErr := strconv.Atoi(port)
+	if err != nil || portErr != nil || portNumber < 1 || portNumber > 65535 {
+		return invalid("GREPNEST_METRICS_LISTEN_ADDRESS must be a host:port address")
+	}
+	return nil
 }
 
 func loadLimits(limits *Limits) error {

@@ -23,6 +23,9 @@ type Metrics struct {
 	indexQueueDepth   *prometheus.GaugeVec
 	indexPhases       *prometheus.CounterVec
 	indexDuration     *prometheus.HistogramVec
+	graphQueueDepth   *prometheus.GaugeVec
+	graphPhases       *prometheus.CounterVec
+	graphDuration     *prometheus.HistogramVec
 }
 
 func New() *Metrics {
@@ -38,7 +41,10 @@ func New() *Metrics {
 	metrics.indexQueueDepth = prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "grepnest_index_queue_depth", Help: "Index queue jobs."}, []string{"state"})
 	metrics.indexPhases = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "grepnest_index_phase_total", Help: "Index phase executions."}, []string{"phase", "result"})
 	metrics.indexDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "grepnest_index_phase_duration_seconds", Help: "Index phase duration."}, []string{"phase", "result"})
-	metrics.registry.MustRegister(metrics.activeRequests, metrics.httpRequests, metrics.httpDuration, metrics.httpResponseSize, metrics.backendCalls, metrics.backendDuration, metrics.githubRequests, metrics.webhookDeliveries, metrics.indexQueueDepth, metrics.indexPhases, metrics.indexDuration)
+	metrics.graphQueueDepth = prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "grepnest_graph_queue_depth", Help: "Graph scan queue jobs."}, []string{"state"})
+	metrics.graphPhases = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "grepnest_graph_scan_phase_total", Help: "Graph scan phase executions."}, []string{"phase", "result"})
+	metrics.graphDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "grepnest_graph_scan_phase_duration_seconds", Help: "Graph scan phase duration."}, []string{"phase", "result"})
+	metrics.registry.MustRegister(metrics.activeRequests, metrics.httpRequests, metrics.httpDuration, metrics.httpResponseSize, metrics.backendCalls, metrics.backendDuration, metrics.githubRequests, metrics.webhookDeliveries, metrics.indexQueueDepth, metrics.indexPhases, metrics.indexDuration, metrics.graphQueueDepth, metrics.graphPhases, metrics.graphDuration)
 	return metrics
 }
 
@@ -96,6 +102,16 @@ func (metrics *Metrics) ObserveIndexPhase(phase, result string, duration time.Du
 	labels := []string{fixed(phase, "fetch", "index", "visibility"), successOrError(result)}
 	metrics.indexPhases.WithLabelValues(labels...).Inc()
 	metrics.indexDuration.WithLabelValues(labels...).Observe(duration.Seconds())
+}
+
+func (metrics *Metrics) SetGraphQueueDepth(state string, depth int64) {
+	metrics.graphQueueDepth.WithLabelValues(fixed(state, "queued", "running", "succeeded", "failed", "superseded")).Set(float64(depth))
+}
+
+func (metrics *Metrics) ObserveGraphPhase(phase, result string, duration time.Duration) {
+	labels := []string{fixed(phase, "token", "checkout", "scan", "publish"), successOrError(result)}
+	metrics.graphPhases.WithLabelValues(labels...).Inc()
+	metrics.graphDuration.WithLabelValues(labels...).Observe(duration.Seconds())
 }
 
 func fixed(value string, allowed ...string) string {

@@ -8,6 +8,7 @@ import (
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/graphartifact"
 	"github.com/grepnest/grepnest/internal/graphscan"
+	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/grepnest/grepnest/internal/repository"
 )
@@ -46,6 +47,7 @@ type Worker struct {
 	RenewEvery     time.Duration
 	ReapEvery      time.Duration
 	CleanupTimeout time.Duration
+	Metrics        *observability.Metrics
 	lastReap       time.Time
 }
 
@@ -78,6 +80,7 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 	if err := worker.reapExpired(ctx); err != nil {
 		return false, err
 	}
+	worker.refreshQueueDepths(ctx)
 	job, err := worker.Queue.ClaimGraph(ctx, worker.ID)
 	if errors.Is(err, postgres.ErrNoJob) {
 		return false, nil
@@ -121,19 +124,25 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 		resultErr = errors.Join(resultErr, worker.Git.Cleanup(cleanupCtx, repo.ID, job.ID))
 	}()
 
+	started := time.Now()
 	token, err := worker.Tokens.InstallationToken(jobCtx, repo.InstallationID, []int64{repo.GitHubID})
+	worker.observePhase("token", started, err)
 	if err != nil {
 		return fail("token_failed", true)
 	}
+	started = time.Now()
 	_, root, err := worker.Git.PrepareCommit(jobCtx, repo, job.ID, job.TargetSHA, token.Value)
+	worker.observePhase("checkout", started, err)
 	if err != nil {
 		return fail("git_failed", true)
 	}
+	started = time.Now()
 	artifact, err := worker.Analyzer.Scan(jobCtx, graphscan.Request{
 		RepositoryID: job.RepositoryID,
 		Commit:       job.TargetSHA,
 		Root:         root,
 	})
+	worker.observePhase("scan", started, err)
 	if errors.Is(err, graphscan.ErrLimitExceeded) {
 		return fail("scan_limit", false)
 	}
@@ -150,13 +159,43 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 	if leaseErr := receive(renewErrors); leaseErr != nil {
 		return true, leaseErr
 	}
-	if err := worker.Queue.CompleteGraph(ctx, job.ID, worker.ID, artifact); err != nil {
+	started = time.Now()
+	err = worker.Queue.CompleteGraph(ctx, job.ID, worker.ID, artifact)
+	worker.observePhase("publish", started, err)
+	if err != nil {
 		if errors.Is(err, postgres.ErrLeaseLost) {
 			return true, err
 		}
 		return fail("publish_failed", true)
 	}
 	return true, nil
+}
+
+func (worker *Worker) refreshQueueDepths(ctx context.Context) {
+	queue, ok := worker.Queue.(interface {
+		GraphQueueDepths(context.Context) (map[string]int64, error)
+	})
+	if worker.Metrics == nil || !ok {
+		return
+	}
+	depths, err := queue.GraphQueueDepths(ctx)
+	if err != nil {
+		return
+	}
+	for _, state := range []string{"queued", "running", "succeeded", "failed", "superseded"} {
+		worker.Metrics.SetGraphQueueDepth(state, depths[state])
+	}
+}
+
+func (worker *Worker) observePhase(phase string, started time.Time, err error) {
+	if worker.Metrics == nil {
+		return
+	}
+	result := "success"
+	if err != nil {
+		result = "error"
+	}
+	worker.Metrics.ObserveGraphPhase(phase, result, time.Since(started))
 }
 
 func (worker *Worker) reapExpired(ctx context.Context) error {

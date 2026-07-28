@@ -3,6 +3,8 @@ package graphscanner
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +16,7 @@ import (
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/graphartifact"
 	"github.com/grepnest/grepnest/internal/graphscan"
+	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/grepnest/grepnest/internal/repository"
 )
@@ -33,6 +36,7 @@ type fakeQueue struct {
 	failedRetry     bool
 	store           *fakeStore
 	externalCurrent bool
+	depths          map[string]int64
 }
 
 type reapingQueue struct {
@@ -81,6 +85,10 @@ func (queue *fakeQueue) FailGraph(_ context.Context, _ int64, _ string, code str
 	queue.record("fail")
 	queue.failedCode, queue.failedRetry = code, retry
 	return queue.failErr
+}
+
+func (queue *fakeQueue) GraphQueueDepths(context.Context) (map[string]int64, error) {
+	return queue.depths, nil
 }
 
 type fakeStore struct {
@@ -220,6 +228,31 @@ func TestRunOnePublishesExactCommit(t *testing.T) {
 	}
 	if !git.cleaned {
 		t.Fatal("worktree was not cleaned")
+	}
+}
+
+func TestRunOneRecordsBoundedQueueAndPhaseMetrics(t *testing.T) {
+	worker, queue, _, _, _ := workerFixture()
+	queue.depths = map[string]int64{"queued": 3, "running": 1}
+	worker.Metrics = observability.New()
+
+	if worked, err := worker.RunOne(t.Context()); err != nil || !worked {
+		t.Fatalf("RunOne() = %v, %v", worked, err)
+	}
+
+	recorder := httptest.NewRecorder()
+	worker.Metrics.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := recorder.Body.String()
+	for _, want := range []string{
+		`grepnest_graph_queue_depth{state="queued"} 3`,
+		`grepnest_graph_scan_phase_total{phase="token",result="success"} 1`,
+		`grepnest_graph_scan_phase_total{phase="checkout",result="success"} 1`,
+		`grepnest_graph_scan_phase_total{phase="scan",result="success"} 1`,
+		`grepnest_graph_scan_phase_total{phase="publish",result="success"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics missing %q:\n%s", want, body)
+		}
 	}
 }
 

@@ -3,7 +3,9 @@ package config
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadKeepsStaticConfiguration(t *testing.T) {
@@ -120,6 +122,97 @@ func TestLoadIndexerRejectsMissingCredentials(t *testing.T) {
 			t.Setenv(name, "")
 			if _, err := LoadIndexer(); !errors.Is(err, ErrInvalid) {
 				t.Fatalf("LoadIndexer() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadScannerDefaults(t *testing.T) {
+	setDurableEnvironment(t)
+
+	got, err := LoadScanner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" ||
+		got.DataDir != "/var/lib/grepnest/data" || got.GitPath != "/usr/bin/git" ||
+		got.WorkerID != "worker-1" || got.MetricsListenAddress != ":9090" ||
+		got.GitHub.AppID != 123 || got.GitHub.WebhookSecretFile != "" {
+		t.Fatalf("configuration = %#v", got)
+	}
+	wantLimits := GraphScanLimits{
+		MaxFileBytes: 2 << 20, MaxTotalBytes: 1 << 30, MaxFiles: 100_000,
+		MaxNodes: 500_000, MaxEdges: 2_000_000, ParseTimeout: 30 * time.Second,
+		SkipDirectories: []string{"node_modules", "vendor", "target", "build", "dist", ".gradle"},
+	}
+	if !reflect.DeepEqual(got.Limits, wantLimits) {
+		t.Fatalf("limits = %#v, want %#v", got.Limits, wantLimits)
+	}
+}
+
+func TestLoadScannerAcceptsBoundedOverrides(t *testing.T) {
+	setDurableEnvironment(t)
+	t.Setenv("GREPNEST_GRAPH_SCAN_MAX_FILE_BYTES", "1")
+	t.Setenv("GREPNEST_GRAPH_SCAN_MAX_TOTAL_BYTES", "2")
+	t.Setenv("GREPNEST_GRAPH_SCAN_MAX_FILES", "3")
+	t.Setenv("GREPNEST_GRAPH_SCAN_MAX_NODES", "4")
+	t.Setenv("GREPNEST_GRAPH_SCAN_MAX_EDGES", "5")
+	t.Setenv("GREPNEST_GRAPH_SCAN_PARSE_TIMEOUT", "6ms")
+	t.Setenv("GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", " vendor,dist,vendor,.cache ")
+
+	got, err := LoadScanner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := GraphScanLimits{
+		MaxFileBytes: 1, MaxTotalBytes: 2, MaxFiles: 3, MaxNodes: 4, MaxEdges: 5,
+		ParseTimeout: 6 * time.Millisecond, SkipDirectories: []string{"vendor", "dist", ".cache"},
+	}
+	if !reflect.DeepEqual(got.Limits, want) {
+		t.Fatalf("limits = %#v, want %#v", got.Limits, want)
+	}
+}
+
+func TestLoadScannerRejectsInvalidLimitsAndSkips(t *testing.T) {
+	tests := []struct{ name, env, value string }{
+		{"zero file bytes", "GREPNEST_GRAPH_SCAN_MAX_FILE_BYTES", "0"},
+		{"file bytes over cap", "GREPNEST_GRAPH_SCAN_MAX_FILE_BYTES", "2097153"},
+		{"total bytes over cap", "GREPNEST_GRAPH_SCAN_MAX_TOTAL_BYTES", "1073741825"},
+		{"files over cap", "GREPNEST_GRAPH_SCAN_MAX_FILES", "100001"},
+		{"nodes over cap", "GREPNEST_GRAPH_SCAN_MAX_NODES", "500001"},
+		{"edges over cap", "GREPNEST_GRAPH_SCAN_MAX_EDGES", "2000001"},
+		{"timeout over cap", "GREPNEST_GRAPH_SCAN_PARSE_TIMEOUT", "31s"},
+		{"empty skip", "GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", "vendor,,dist"},
+		{"slash skip", "GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", "vendor/a"},
+		{"backslash skip", "GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", `vendor\a`},
+		{"dot skip", "GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", "."},
+		{"dotdot skip", "GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", ".."},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			setDurableEnvironment(t)
+			t.Setenv(test.env, test.value)
+			if _, err := LoadScanner(); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("LoadScanner() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadScannerRejectsMissingRequiredSettingsWithoutSecrets(t *testing.T) {
+	for _, name := range []string{
+		"GREPNEST_DATABASE_URL", "GREPNEST_DATA_DIR", "GREPNEST_GIT_PATH",
+		"GREPNEST_WORKER_ID", "GREPNEST_GITHUB_PRIVATE_KEY_FILE",
+	} {
+		t.Run(name, func(t *testing.T) {
+			setDurableEnvironment(t)
+			t.Setenv(name, "")
+			_, err := LoadScanner()
+			if !errors.Is(err, ErrInvalid) {
+				t.Fatalf("LoadScanner() error = %v", err)
+			}
+			if strings.Contains(err.Error(), "grepnest:secret") {
+				t.Fatalf("error exposed credential: %v", err)
 			}
 		})
 	}
