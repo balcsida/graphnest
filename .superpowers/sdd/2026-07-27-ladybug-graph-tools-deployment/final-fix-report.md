@@ -57,6 +57,7 @@ All commands passed. `govulncheck` reported no vulnerabilities.
 - `ce3f7b1` `test(compose): reuse graph render setup`
 - `bc8dd52` `test(helm): verify graph scheduling overrides`
 - `fc12eb5` `docs: correct graph guidance`
+- `cd6868d` `fix(graph): expose anchored ambiguity`
 
 Each commit verifies as a good ED25519 signature for
 `SHA256:WjfLjYSGqwAvhKk36hJZdaFyPAyKJcSxfoien1VavOU`.
