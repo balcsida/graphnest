@@ -141,10 +141,12 @@ func (db *Database) View(ctx context.Context, fn func(*Session) error) error {
 			db.readers <- connection
 		}
 	}()
+	defer session.invalidate()
 	if err := executeAndClose(connection, `BEGIN TRANSACTION READ ONLY`); err != nil {
 		return err
 	}
 	err := fn(session)
+	session.invalidate()
 	if !session.reusable.Load() {
 		return err
 	}
@@ -166,10 +168,12 @@ func (db *Database) Update(ctx context.Context, fn func(*Session) error) error {
 		return err
 	}
 	session := db.session(db.writer)
+	defer session.invalidate()
 	if err := executeAndClose(db.writer, `BEGIN TRANSACTION`); err != nil {
 		return err
 	}
 	err := fn(session)
+	session.invalidate()
 	if !session.reusable.Load() {
 		return err
 	}
@@ -189,6 +193,7 @@ func (db *Database) session(connection *lbug.Connection) *Session {
 		timeout:        db.options.QueryTimeout,
 		interruptGrace: db.options.InterruptGrace,
 		database:       db,
+		active:         true,
 	}
 	session.reusable.Store(true)
 	return session

@@ -118,6 +118,20 @@ func TestViewRejectsWrites(t *testing.T) {
 	}
 }
 
+func TestSessionRejectsExecuteAfterCallbackReturns(t *testing.T) {
+	db := testDatabase(t, Options{})
+	var escaped *Session
+	if err := db.View(t.Context(), func(session *Session) error {
+		escaped = session
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := escaped.Execute(t.Context(), `RETURN 1`, nil, QueryLimits{}); err == nil {
+		t.Fatal("escaped session executed after callback returned")
+	}
+}
+
 func TestCloseIsIdempotent(t *testing.T) {
 	db := testDatabase(t, Options{})
 	if err := db.Close(); err != nil {
