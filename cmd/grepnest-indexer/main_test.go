@@ -5,13 +5,18 @@ package main
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/config"
 	"github.com/grepnest/grepnest/internal/githubapp"
+	"github.com/grepnest/grepnest/internal/graphartifact"
+	"github.com/grepnest/grepnest/internal/graphruntime"
 	"github.com/grepnest/grepnest/internal/indexer"
+	"github.com/grepnest/grepnest/internal/ladybug"
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/grepnest/grepnest/internal/repository"
 )
@@ -128,6 +133,60 @@ func TestRuntimeStartsEmbeddedGraphAfterHealthyInitialization(t *testing.T) {
 	if got := strings.Join(events[:5], ","); got != "ping,migrate,upsert,reap,prune" {
 		t.Fatalf("initialization = %q", got)
 	}
+}
+
+func TestGraphServiceSkipsSeparateMode(t *testing.T) {
+	called := false
+	old := startGraphRuntime
+	startGraphRuntime = func(context.Context, graphruntime.Config, ladybug.SnapshotSource, *slog.Logger) error {
+		called = true
+		return nil
+	}
+	t.Cleanup(func() { startGraphRuntime = old })
+	if run := graphService(config.Graph{Mode: "separate"}, nil, nil); run != nil {
+		t.Fatal("separate mode returned graph service")
+	}
+	if called {
+		t.Fatal("separate mode opened Ladybug")
+	}
+}
+
+func TestGraphServicePropagatesEmbeddedLimits(t *testing.T) {
+	var got graphruntime.Config
+	old := startGraphRuntime
+	startGraphRuntime = func(_ context.Context, settings graphruntime.Config, _ ladybug.SnapshotSource, _ *slog.Logger) error {
+		got = settings
+		return nil
+	}
+	t.Cleanup(func() { startGraphRuntime = old })
+	settings := config.Graph{
+		Mode: "embedded", DataDir: "/graph",
+		QueryLimits: config.GraphQueryLimits{
+			DefaultImpactDepth: 2, MaxDepth: 7, DefaultTraceDepth: 4,
+			MaxTraceDepth: 9, MaxRows: 321,
+		},
+	}
+	run := graphService(settings, emptySnapshotSource{}, nil)
+	if run == nil {
+		t.Fatal("embedded mode omitted graph service")
+	}
+	if err := run(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got.QueryLimits.DefaultImpactDepth != 2 || got.QueryLimits.MaxDepth != 7 ||
+		got.QueryLimits.DefaultTraceDepth != 4 || got.QueryLimits.MaxTraceDepth != 9 ||
+		got.QueryLimits.MaxRows != 321 {
+		t.Fatalf("runtime limits = %#v", got.QueryLimits)
+	}
+}
+
+type emptySnapshotSource struct{}
+
+func (emptySnapshotSource) GraphManifests(context.Context) ([]graphartifact.Manifest, error) {
+	return nil, nil
+}
+func (emptySnapshotSource) GraphArtifact(context.Context, int64, int64) (graphartifact.Artifact, error) {
+	return graphartifact.Artifact{}, errors.New("unexpected artifact")
 }
 
 func TestRuntimeWaitsForCancelledWorkerBeforeClosing(t *testing.T) {

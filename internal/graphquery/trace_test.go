@@ -22,6 +22,17 @@ func TestTraceReturnsOneShortestDirectedPath(t *testing.T) {
 	}
 }
 
+func TestTraceUsesConfiguredDefaultDepth(t *testing.T) {
+	service := seededQueryService(t, callChain("A", "B", "C"))
+	service.Limits = Limits{DefaultTraceDepth: 1, MaxTraceDepth: 9}
+	got, err := service.Trace(t.Context(), graphprotocol.TraceRequest{
+		Scope: scope(testCommit), SourceUID: "A", TargetUID: "C",
+	})
+	if err != nil || got.Status != graphprotocol.StatusNoPath {
+		t.Fatalf("Trace()=%#v,%v", got, err)
+	}
+}
+
 func TestTraceReportsFanoutBoundary(t *testing.T) {
 	artifact := callChain("A", "B", "C")
 	artifact.Nodes = append(artifact.Nodes, graphartifact.Node{

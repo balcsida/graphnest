@@ -30,6 +30,10 @@ func (service *Service) Cypher(ctx context.Context, request graphprotocol.Cypher
 		}
 	}
 	response := graphprotocol.CypherResponse{}
+	maxRows := request.MaxRows
+	if maxRows <= 0 || maxRows > service.limits().MaxRows {
+		maxRows = service.limits().MaxRows
+	}
 	if len(request.Scope.Repositories) > 0 {
 		ready, err := service.ready(ctx, request.Scope)
 		if err != nil {
@@ -39,7 +43,7 @@ func (service *Service) Cypher(ctx context.Context, request graphprotocol.Cypher
 	}
 	err := service.Database.View(ctx, func(session *ladybug.Session) error {
 		result, err := session.Execute(ctx, request.Statement, request.Parameters, ladybug.QueryLimits{
-			MaxRows: request.MaxRows, MaxBytes: request.MaxBytes,
+			MaxRows: maxRows, MaxBytes: request.MaxBytes,
 		})
 		if err == nil {
 			response.Columns, response.Rows, response.Truncated = result.Columns, result.Rows, result.Truncated

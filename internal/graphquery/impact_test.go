@@ -19,6 +19,17 @@ func TestImpactGroupsByDepth(t *testing.T) {
 	}
 }
 
+func TestImpactUsesConfiguredDefaultDepth(t *testing.T) {
+	service := seededQueryService(t, callChain("A", "B", "C", "D"))
+	service.Limits = Limits{DefaultImpactDepth: 2, MaxDepth: 7}
+	got, err := service.Impact(t.Context(), graphprotocol.ImpactRequest{
+		Scope: scope(testCommit), TargetUID: "A", Direction: "downstream",
+	})
+	if err != nil || len(got.ByDepth[2]) != 1 || len(got.ByDepth[3]) != 0 {
+		t.Fatalf("Impact()=%#v,%v", got, err)
+	}
+}
+
 func TestImpactFiltersAndReturnsStoredConfidence(t *testing.T) {
 	artifact := callChain("A", "B", "C")
 	for index := range artifact.Edges {

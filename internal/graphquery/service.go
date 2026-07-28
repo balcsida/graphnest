@@ -29,7 +29,9 @@ const (
 )
 
 type Limits struct {
-	PerCategory, MaxDepth, MaxTraceDepth, MaxNodes, MaxEdges, MaxFanout int
+	PerCategory, DefaultImpactDepth, MaxDepth int
+	DefaultTraceDepth, MaxTraceDepth, MaxRows int
+	MaxNodes, MaxEdges, MaxFanout             int
 }
 
 type Service struct {
@@ -106,8 +108,21 @@ func (service *Service) limits() Limits {
 	if limits.MaxDepth <= 0 || limits.MaxDepth > defaultMaxDepth {
 		limits.MaxDepth = defaultMaxDepth
 	}
+	if limits.DefaultImpactDepth <= 0 {
+		limits.DefaultImpactDepth = defaultImpactDepth
+	} else if limits.DefaultImpactDepth > limits.MaxDepth {
+		limits.DefaultImpactDepth = limits.MaxDepth
+	}
 	if limits.MaxTraceDepth <= 0 || limits.MaxTraceDepth > defaultMaxTraceDepth {
 		limits.MaxTraceDepth = defaultMaxTraceDepth
+	}
+	if limits.DefaultTraceDepth <= 0 {
+		limits.DefaultTraceDepth = defaultTraceDepth
+	} else if limits.DefaultTraceDepth > limits.MaxTraceDepth {
+		limits.DefaultTraceDepth = limits.MaxTraceDepth
+	}
+	if limits.MaxRows <= 0 || limits.MaxRows > 1_000 {
+		limits.MaxRows = 1_000
 	}
 	if limits.MaxNodes <= 0 || limits.MaxNodes > defaultMaxNodes {
 		limits.MaxNodes = defaultMaxNodes

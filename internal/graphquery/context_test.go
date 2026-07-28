@@ -12,6 +12,16 @@ import (
 	"github.com/grepnest/grepnest/internal/ladybug"
 )
 
+func TestLimitsPreserveConfiguredDefaultsAndRows(t *testing.T) {
+	got := (&Service{Limits: Limits{
+		DefaultImpactDepth: 2, MaxDepth: 7,
+		DefaultTraceDepth: 4, MaxTraceDepth: 9, MaxRows: 321,
+	}}).limits()
+	if got.DefaultImpactDepth != 2 || got.DefaultTraceDepth != 4 || got.MaxRows != 321 {
+		t.Fatalf("limits = %#v", got)
+	}
+}
+
 const testCommit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 func TestContextRequiresReadyScope(t *testing.T) {

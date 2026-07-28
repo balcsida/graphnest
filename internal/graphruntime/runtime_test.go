@@ -103,12 +103,21 @@ func TestEmbeddedAndStandaloneHandlersReturnIdenticalBytes(t *testing.T) {
 		return runtime
 	}
 	embedded, standalone := newRuntime("embedded"), newRuntime("standalone")
-	for _, path := range []string{"/healthz", "/readyz", "/internal/v1/graph/context"} {
+	const body = `{"scope":{"repositories":[{"id":1,"name":"acme/repo","commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]},"uid":"symbol"}`
+	for _, path := range []string{"/internal/v1/graph/context"} {
 		left := httptest.NewRecorder()
 		right := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodGet, path, nil)
-		embedded.Handler().ServeHTTP(left, request)
-		standalone.Handler().ServeHTTP(right, request.Clone(request.Context()))
+		request := func() *http.Request {
+			value := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+			value.Header.Set("Authorization", "Bearer graph-secret")
+			value.Header.Set("Content-Type", "application/json")
+			return value
+		}
+		embedded.Handler().ServeHTTP(left, request())
+		standalone.Handler().ServeHTTP(right, request())
+		if left.Code != http.StatusOK {
+			t.Fatalf("%s status = %d body=%q", path, left.Code, left.Body.String())
+		}
 		if left.Code != right.Code || left.Body.String() != right.Body.String() ||
 			left.Header().Get("Content-Type") != right.Header().Get("Content-Type") {
 			t.Fatalf("%s differs: embedded=%d %q standalone=%d %q", path, left.Code, left.Body.String(), right.Code, right.Body.String())

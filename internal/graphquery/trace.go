@@ -24,7 +24,7 @@ func (service *Service) Trace(ctx context.Context, request graphprotocol.TraceRe
 	limits := service.limits()
 	depth := request.MaxDepth
 	if depth <= 0 {
-		depth = defaultTraceDepth
+		depth = limits.DefaultTraceDepth
 	}
 	if depth > limits.MaxTraceDepth {
 		depth = limits.MaxTraceDepth
