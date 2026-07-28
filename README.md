@@ -14,6 +14,14 @@ definitions, references, and implementations without leaving the console.
 
 ![GrepNest code search with SCIP navigation](docs/images/grepnest-ui.png)
 
+Graph analysis is available in durable mode. PostgreSQL remains authoritative;
+LadybugDB is a rebuildable derived store owned by one embedded (default) or
+separate graph runtime. The server is always its internal authenticated client.
+Native scanners cover Go, TypeScript, JavaScript, Java, Kotlin, and Rust.
+The currently exposed graph tools are `context`, `impact`, `trace`, and
+administrator-only read-only Cypher. See [architecture](docs/architecture.md),
+[operations](docs/operations.md), and [compatibility](docs/compatibility.md).
+
 The [Helm chart](deploy/helm/grepnest/README.md) supports Kubernetes 1.25 or
 newer. Releases publish multi-architecture images and an OCI chart; the
 released chart embeds immutable image digests.
@@ -169,6 +177,16 @@ GREPNEST_TOKEN=grepnest-dev-user-token \
 ```
 
 The proxy appends `/mcp`; do not set Zoekt or server configuration on the proxy.
+
+Install GrepNest's graph skills only when wanted; ordinary proxy startup does
+not write to the current repository:
+
+```sh
+/tmp/grepnest-mcp install-skills --root /path/to/repository
+```
+
+The installer writes `.claude/skills/` and mirrors to `.agents/skills/` only
+when `.agents/` already exists. It updates only its marked destinations.
 
 ## Server environment
 

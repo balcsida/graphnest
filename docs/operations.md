@@ -90,6 +90,55 @@ docker compose -f deploy/compose/compose.yml -f deploy/compose/durable.yml \
 
 Replace `graph-embedded.yml` with `graph-separate.yml` for standalone ownership.
 
+## Graph operation and recovery
+
+Graph analysis requires durable PostgreSQL. Keep PostgreSQL backups for graph
+artifacts and graph-job state; LadybugDB data files are derived cache and can
+be rebuilt. Use one mode at a time: `embedded` is the default single owner in
+the indexer, while `separate` starts one `grepnest-graph` owner. Do not run two
+owners against the same graph data directory.
+
+The graph process opens and synchronizes its derived database before serving.
+Server readiness remains a separate Zoekt/PostgreSQL concern. Check a repository's graph state through
+the authenticated `GET /v1/graph/repositories/{id}/status`. `pending` means
+there is no current native graph, `fallback` is an exact-SHA SCIP fallback,
+`degraded` records a native processing failure, and `ready` is current native
+graph data. Queries can still return `409 graph_not_ready` when the indexed
+SHA changes during selection or reauthorization.
+
+To recover a damaged or incompatible LadybugDB file, stop its sole owner,
+retain PostgreSQL, remove only that derived graph file/volume, then start the
+same owner again. Startup rebuilds from stored snapshots and preserves an
+incompatible live file if rebuild fails. Do not delete PostgreSQL graph
+artifacts merely to clear a derived-store problem. A fresh native artifact can
+also be uploaded by an administrator only for the repository's exact current
+indexed SHA; `.scip` ingestion remains separate and supplies compatibility
+fallback, not native scanning.
+
+Graph REST/MCP queries are bounded: context categories and impact result lists
+default and cap at 100, impact depth defaults to 3 and caps at 32, trace depth
+defaults to 10 and caps at 30, and administrator Cypher caps at 100 rows and
+262144 encoded bytes. Use the [OpenAPI contract](openapi.yaml) for the exact
+schemas and response status discriminators; only context, impact, trace, and
+administrator-only Cypher are currently exposed.
+
+Enable independently scalable native scanners in Helm with
+`scanner.enabled=true` and set `scanner.replicas`; their checkouts are
+ephemeral. Compose's durable graph overlays include the scanner service. The
+native scanner supports Go, TypeScript, JavaScript, Java, Kotlin, and Rust.
+
+Install the four embedded agent skills explicitly; normal MCP proxy startup
+makes no checkout changes:
+
+```sh
+go build -o /tmp/grepnest-mcp ./cmd/grepnest-mcp
+/tmp/grepnest-mcp install-skills --root /path/to/repository
+```
+
+This creates or updates GrepNest-owned skills under `.claude/skills/` and,
+only when `.agents/` already exists, `.agents/skills/`. It refuses symlink or
+unowned destinations.
+
 ## Kubernetes chart boundary
 
 Releases publish multi-architecture images and an OCI chart. Replace each
@@ -135,3 +184,9 @@ External egress isolation is also optional; before enabling it, CIDRs and DNS
 selectors must cover DNS, GitHub, and PostgreSQL endpoints. Security defaults
 include non-root containers, read-only root filesystems, dropped capabilities,
 disabled API-token automounting, default-deny ingress, and internal-only Zoekt.
+They do not fix a UID: this permits OpenShift-style arbitrary UIDs, with the
+image/root-group permissions and writable PVC/`emptyDir` mounts supplying
+access. Kubernetes projects the source graph secret as group-readable `0440`;
+an init container validates and atomically stages the bounded secret into an
+`emptyDir` as `0600` before the server or graph owner reads it. Keep that
+staged path private and do not mount the source Secret into those processes.
