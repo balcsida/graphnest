@@ -144,6 +144,17 @@ func (service *Service) authorizedRepository(ctx context.Context, principal auth
 	return service.Store.AuthorizedRepository(ctx, principal.InstallationID, principal.RepositoryIDs, repositoryID)
 }
 
+func (service *Service) ReadFileAt(ctx context.Context, principal authn.Principal, request api.ReadFileRequest, expectedSHA string) (api.ReadFileResponse, error) {
+	file, err := service.ReadFile(ctx, principal, request)
+	if err != nil {
+		return api.ReadFileResponse{}, err
+	}
+	if file.IndexedSHA != expectedSHA {
+		return api.ReadFileResponse{}, ErrNotIndexed
+	}
+	return file, nil
+}
+
 func summarize(repository Repository) (api.RepositorySummary, error) {
 	if repository.SearchNode == "" {
 		return api.RepositorySummary{}, ErrSearchNodeUnavailable
