@@ -99,14 +99,15 @@ schemas = document.fetch("components").fetch("schemas")
 {
   "GraphContextResponse" => %w[found not_found ambiguous],
   "GraphImpactResponse" => %w[found not_found ambiguous],
-  "GraphTraceResponse" => %w[found no_path ambiguous]
+  "GraphTraceResponse" => %w[ok no_path ambiguous]
 }.each do |name, statuses|
   schema = schemas.fetch(name)
   variants = schema["oneOf"]
   raise OpenAPIError, "#{name} is not discriminated" unless variants.is_a?(Array) && variants.length == statuses.length
   require_value(schema.dig("discriminator", "propertyName"), "status", "#{name} discriminator")
   statuses.each do |status|
-    variant = variants.find { |value| value["$ref"] == "#/components/schemas/#{name.sub("Response", "")}#{status.split("_").map(&:capitalize).join}Response" }
+    suffix = status == "ok" ? "OK" : status.split("_").map(&:capitalize).join
+    variant = variants.find { |value| value["$ref"] == "#/components/schemas/#{name.sub("Response", "")}#{suffix}Response" }
     raise OpenAPIError, "#{name} #{status} variant is missing" unless variant
     resolved = schemas.fetch(variant["$ref"].split("/").last)
     require_value(resolved.dig("properties", "status", "const"), status, "#{name} #{status} status")
@@ -118,10 +119,11 @@ end
   ["GraphContextResponse", "found"] => "symbol",
   ["GraphContextResponse", "ambiguous"] => "candidates",
   ["GraphImpactResponse", "ambiguous"] => "candidates",
-  ["GraphTraceResponse", "found"] => "nodes",
+  ["GraphTraceResponse", "ok"] => "nodes",
   ["GraphTraceResponse", "ambiguous"] => "candidates"
 }.each do |(name, status), field|
-  variant_name = "#{name.sub("Response", "")}#{status.split("_").map(&:capitalize).join}Response"
+  suffix = status == "ok" ? "OK" : status.split("_").map(&:capitalize).join
+  variant_name = "#{name.sub("Response", "")}#{suffix}Response"
   variant = schemas.fetch(variant_name)
   raise OpenAPIError, "#{variant_name} must require #{field}" unless variant.fetch("required").include?(field)
   items = variant.dig("properties", field)
