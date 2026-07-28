@@ -3,12 +3,120 @@ package postgres
 import (
 	"context"
 	"errors"
+	"math"
 	"time"
 
 	"github.com/grepnest/grepnest/internal/graphartifact"
+	"github.com/grepnest/grepnest/internal/scipgraph"
 	"github.com/grepnest/grepnest/pkg/api"
 	"github.com/jackc/pgx/v5"
 )
+
+const scipUploadOffset = int64(math.MaxInt64)
+
+func scipManifestID(uploadID int64) int64 { return scipUploadOffset - uploadID }
+func scipUploadID(manifestID int64) int64 { return scipUploadOffset - manifestID }
+
+func (s *Store) GraphManifests(ctx context.Context) ([]graphartifact.Manifest, error) {
+	rows, err := s.pool.Query(ctx, `select repositories.id, repositories.indexed_sha,
+		graph_uploads.id, graph_uploads.schema_version, graph_uploads.content_hash, graph_uploads.source, scip_uploads.id
+		from installations join repositories on repositories.installation_id=installations.id
+		left join graph_uploads on graph_uploads.repository_id=repositories.id and graph_uploads.commit=repositories.indexed_sha
+		left join scip_uploads on scip_uploads.repository_id=repositories.id and scip_uploads.commit=repositories.indexed_sha
+		where installations.status='active' and repositories.enabled and not repositories.archived and repositories.indexed_sha is not null
+		and (graph_uploads.id is not null or scip_uploads.id is not null)
+		order by repositories.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var manifests []graphartifact.Manifest
+	for rows.Next() {
+		var repositoryID, graphID, scipID *int64
+		var commit, source *string
+		var schemaVersion *uint32
+		var contentHash []byte
+		if err := rows.Scan(&repositoryID, &commit, &graphID, &schemaVersion, &contentHash, &source, &scipID); err != nil {
+			return nil, err
+		}
+		if graphID != nil {
+			manifests = append(manifests, graphartifact.Manifest{RepositoryID: *repositoryID, UploadID: *graphID, Commit: *commit, Source: *source, SchemaVersion: *schemaVersion, ContentHash: contentHash})
+			continue
+		}
+		artifact, err := s.scipArtifact(ctx, *repositoryID, *scipID, *commit)
+		if err != nil {
+			return nil, err
+		}
+		manifests = append(manifests, graphartifact.Manifest{RepositoryID: *repositoryID, UploadID: scipManifestID(*scipID), Commit: *commit, Source: "scip", SchemaVersion: artifact.SchemaVersion, ContentHash: artifact.ContentHash})
+	}
+	return manifests, rows.Err()
+}
+
+func (s *Store) GraphArtifact(ctx context.Context, repositoryID, uploadID int64) (graphartifact.Artifact, error) {
+	if uploadID > scipUploadOffset/2 {
+		var commit string
+		err := s.pool.QueryRow(ctx, `select repositories.indexed_sha from repositories join scip_uploads on scip_uploads.repository_id=repositories.id
+			join installations on installations.id=repositories.installation_id
+			where repositories.id=$1 and scip_uploads.id=$2 and scip_uploads.commit=repositories.indexed_sha
+			and repositories.enabled and not repositories.archived and installations.status='active'`, repositoryID, scipUploadID(uploadID)).Scan(&commit)
+		if err != nil {
+			return graphartifact.Artifact{}, err
+		}
+		return s.scipArtifact(ctx, repositoryID, scipUploadID(uploadID), commit)
+	}
+	artifact, err := s.LoadGraph(ctx, uploadID)
+	if err != nil {
+		return graphartifact.Artifact{}, err
+	}
+	if artifact.RepositoryID != repositoryID {
+		return graphartifact.Artifact{}, pgx.ErrNoRows
+	}
+	var current bool
+	err = s.pool.QueryRow(ctx, `select exists(select 1 from repositories join installations on installations.id=repositories.installation_id
+		where repositories.id=$1 and repositories.indexed_sha=$2 and repositories.enabled and not repositories.archived and installations.status='active')`, repositoryID, artifact.Commit).Scan(&current)
+	if err != nil || !current {
+		return graphartifact.Artifact{}, pgx.ErrNoRows
+	}
+	return artifact, nil
+}
+
+func (s *Store) scipArtifact(ctx context.Context, repositoryID, uploadID int64, commit string) (graphartifact.Artifact, error) {
+	occurrences, err := s.pool.Query(ctx, `select path, symbol, start_line, start_character, end_line, end_character, position_encoding, roles, local
+		from scip_occurrences where upload_id=$1 order by path, start_line, start_character, end_line, end_character, symbol`, uploadID)
+	if err != nil {
+		return graphartifact.Artifact{}, err
+	}
+	defer occurrences.Close()
+	var values []scipgraph.Occurrence
+	for occurrences.Next() {
+		var occurrence scipgraph.Occurrence
+		if err := occurrences.Scan(&occurrence.Path, &occurrence.Symbol, &occurrence.StartLine, &occurrence.StartCharacter, &occurrence.EndLine, &occurrence.EndCharacter, &occurrence.PositionEncoding, &occurrence.Roles, &occurrence.Local); err != nil {
+			return graphartifact.Artifact{}, err
+		}
+		values = append(values, occurrence)
+	}
+	if err := occurrences.Err(); err != nil {
+		return graphartifact.Artifact{}, err
+	}
+	relationships, err := s.pool.Query(ctx, `select document_path, source_symbol, target_symbol, is_definition, is_reference, is_implementation, is_type_definition
+		from scip_relationships where upload_id=$1 order by document_path, source_symbol, target_symbol, is_definition, is_reference, is_implementation, is_type_definition`, uploadID)
+	if err != nil {
+		return graphartifact.Artifact{}, err
+	}
+	defer relationships.Close()
+	var links []scipgraph.Relationship
+	for relationships.Next() {
+		var relationship scipgraph.Relationship
+		if err := relationships.Scan(&relationship.Path, &relationship.Source, &relationship.Target, &relationship.Definition, &relationship.Reference, &relationship.Implementation, &relationship.TypeDefinition); err != nil {
+			return graphartifact.Artifact{}, err
+		}
+		links = append(links, relationship)
+	}
+	if err := relationships.Err(); err != nil {
+		return graphartifact.Artifact{}, err
+	}
+	return graphartifact.FromSCIP(graphartifact.SCIPRepository{ID: repositoryID, Commit: commit}, values, links)
+}
 
 type GraphSource string
 

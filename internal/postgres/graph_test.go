@@ -11,6 +11,62 @@ import (
 	"github.com/grepnest/grepnest/pkg/api"
 )
 
+func TestGraphManifestsPreferCurrentArtifactAndFallBackToSCIP(t *testing.T) {
+	store, repositoryID := readyGraphStore(t, testSHA('a'))
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("b.go", globalSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	manifests, err := store.GraphManifests(t.Context())
+	if err != nil || len(manifests) != 1 || manifests[0].Source != "scip" || manifests[0].UploadID < 0 {
+		t.Fatalf("fallback manifests=%#v err=%v", manifests, err)
+	}
+	artifact, err := store.GraphArtifact(t.Context(), repositoryID, manifests[0].UploadID)
+	if err != nil || !containsSCIPSymbol(artifact) {
+		t.Fatalf("fallback artifact=%#v err=%v", artifact, err)
+	}
+	if _, err := store.ReplaceGraph(t.Context(), repositoryID, GraphSourceManaged, artifactFor(repositoryID, testSHA('a'), "managed")); err != nil {
+		t.Fatal(err)
+	}
+	manifests, err = store.GraphManifests(t.Context())
+	if err != nil || len(manifests) != 1 || manifests[0].Source != string(GraphSourceManaged) {
+		t.Fatalf("enriched manifests=%#v err=%v", manifests, err)
+	}
+}
+
+func TestGraphManifestsOmitStaleAndUnavailableRepositories(t *testing.T) {
+	store, repositoryID := readyGraphStore(t, testSHA('a'))
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("b.go", globalSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), "update repositories set indexed_sha=$2 where id=$1", repositoryID, testSHA('b')); err != nil {
+		t.Fatal(err)
+	}
+	if manifests, err := store.GraphManifests(t.Context()); err != nil || len(manifests) != 0 {
+		t.Fatalf("stale manifests=%#v err=%v", manifests, err)
+	}
+	if _, err := store.pool.Exec(t.Context(), "update repositories set indexed_sha=$2, enabled=false where id=$1", repositoryID, testSHA('a')); err != nil {
+		t.Fatal(err)
+	}
+	if manifests, err := store.GraphManifests(t.Context()); err != nil || len(manifests) != 0 {
+		t.Fatalf("disabled manifests=%#v err=%v", manifests, err)
+	}
+	if _, err := store.pool.Exec(t.Context(), "delete from repositories where id=$1", repositoryID); err != nil {
+		t.Fatal(err)
+	}
+	if manifests, err := store.GraphManifests(t.Context()); err != nil || len(manifests) != 0 {
+		t.Fatalf("deleted manifests=%#v err=%v", manifests, err)
+	}
+}
+
+func containsSCIPSymbol(artifact graphartifact.Artifact) bool {
+	for _, node := range artifact.Nodes {
+		if node.SCIPSymbol == globalSymbol {
+			return true
+		}
+	}
+	return false
+}
+
 func TestReplaceGraphExternalWins(t *testing.T) {
 	store, repositoryID := readyGraphStore(t, testSHA('a'))
 	managed := artifactFor(repositoryID, testSHA('a'), "managed")
