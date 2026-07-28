@@ -36,7 +36,7 @@ func TestClientClonesSecretAndRoundTripsFixedMethods(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		paths <- request.URL.Path
 		if request.Header.Get("Authorization") != "Bearer right" {
-			http.Error(writer, "bad auth", 401)
+			http.Error(writer, "bad auth", http.StatusUnauthorized)
 			return
 		}
 		writer.Header().Set("Content-Type", "application/json")
@@ -90,7 +90,7 @@ func TestClientBoundsAndMapsErrors(t *testing.T) {
 		limit int64
 	}{
 		{"oversized", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(strings.Repeat("x", 65))) }, "response_too_large", 64},
-		{"unknown status", func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "native details", 418) }, "unavailable", 256},
+		{"unknown status", func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "native details", http.StatusTeapot) }, "unavailable", 256},
 		{"stable status", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(400)
 			_, _ = w.Write([]byte(`{"error":{"code":"invalid_request","message":"unsafe statement"}}`))

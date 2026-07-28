@@ -96,4 +96,4 @@ func (service *Service) authorizedRepository(ctx context.Context, principal auth
 	return repository, err
 }
 
-func unavailable(error) error { return ErrUnavailable }
+func unavailable(_ error) error { return ErrUnavailable }
