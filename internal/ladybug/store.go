@@ -4,12 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/grepnest/grepnest/internal/graphartifact"
 )
 
-const storeBatchSize = 1_000
+const (
+	storeBatchSize  = 1_000
+	storeBatchBytes = 256 << 10
+)
 
 func (db *Database) Manifests(ctx context.Context) (map[int64]graphartifact.Manifest, error) {
 	manifests := map[int64]graphartifact.Manifest{}
@@ -32,7 +37,10 @@ func (db *Database) Manifests(ctx context.Context) (map[int64]graphartifact.Mani
 				}
 				after = id
 			}
-			if len(result.Rows) < defaultMaxRows {
+			if result.Truncated && len(result.Rows) == 0 {
+				return errors.New("ladybug manifest page exceeds result byte limit")
+			}
+			if !result.Truncated && len(result.Rows) < defaultMaxRows {
 				return nil
 			}
 		}
@@ -74,7 +82,7 @@ func (db *Database) DeleteRepository(ctx context.Context, repositoryID int64) er
 func validateReplacement(manifest graphartifact.Manifest, artifact graphartifact.Artifact) (graphartifact.Node, map[string]graphartifact.NodeKind, error) {
 	if err := graphartifact.Validate(artifact, graphartifact.Limits{}); err != nil ||
 		manifest.RepositoryID != artifact.RepositoryID || manifest.UploadID <= 0 || manifest.Commit != artifact.Commit ||
-		manifest.Source == "" || manifest.SchemaVersion != artifact.SchemaVersion || manifest.SchemaVersion != SchemaVersion ||
+		!validManifestSource(manifest.Source) || manifest.SchemaVersion != artifact.SchemaVersion || manifest.SchemaVersion != SchemaVersion ||
 		!bytes.Equal(manifest.ContentHash, artifact.ContentHash) {
 		return graphartifact.Node{}, nil, graphartifact.ErrInvalidArtifact
 	}
@@ -105,6 +113,10 @@ func validateReplacement(manifest graphartifact.Manifest, artifact graphartifact
 		}
 	}
 	return repository, kinds, nil
+}
+
+func validManifestSource(source string) bool {
+	return source == "managed" || source == "external" || source == "scip"
 }
 
 func deleteRepository(ctx context.Context, session *Session, repositoryID int64) error {
@@ -185,13 +197,37 @@ func edgeQuery(kind graphartifact.EdgeKind, sourceKind graphartifact.NodeKind) s
 }
 
 func executeBatches(ctx context.Context, session *Session, rows []map[string]any, query string, repositoryID int64) error {
-	for start := 0; start < len(rows); start += storeBatchSize {
-		end := min(start+storeBatchSize, len(rows))
+	for start := 0; start < len(rows); {
+		end, err := batchEnd(rows, start)
+		if err != nil {
+			return err
+		}
 		if err := executeStore(ctx, session, query, map[string]any{"repository_id": repositoryID, "rows": rows[start:end]}); err != nil {
 			return err
 		}
+		start = end
 	}
 	return nil
+}
+
+func batchEnd(rows []map[string]any, start int) (int, error) {
+	end, size := start, 2
+	for end < len(rows) && end-start < storeBatchSize {
+		encoded, err := json.Marshal(rows[end])
+		if err != nil {
+			return 0, err
+		}
+		rowSize := len(encoded) + 1
+		if rowSize+2 > storeBatchBytes {
+			return 0, fmt.Errorf("ladybug batch row exceeds %d-byte limit", storeBatchBytes)
+		}
+		if end > start && size+rowSize > storeBatchBytes {
+			break
+		}
+		size += rowSize
+		end++
+	}
+	return end, nil
 }
 
 func executeStore(ctx context.Context, session *Session, query string, parameters map[string]any) error {
