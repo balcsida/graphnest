@@ -8,6 +8,20 @@ import (
 	"github.com/grepnest/grepnest/internal/graphprotocol"
 )
 
+func TestImpactReturnsCandidatesInsteadOfMergingAmbiguousTargets(t *testing.T) {
+	service := seededQueryServiceWithArtifacts(t, callChain("A", "B"), repositoryCallChain(202, "A", "C"))
+	got, err := service.Impact(t.Context(), graphprotocol.ImpactRequest{
+		Scope: graphprotocol.Scope{Repositories: []graphprotocol.RepositorySnapshot{
+			{ID: 101, Name: "acme/one", Commit: testCommit},
+			{ID: 202, Name: "acme/two", Commit: testCommit},
+		}},
+		TargetUID: "A", Direction: "downstream",
+	})
+	if err != nil || got.Status != graphprotocol.StatusAmbiguous || len(got.Candidates) != 2 || len(got.ByDepth) != 0 {
+		t.Fatalf("Impact()=%#v,%v", got, err)
+	}
+}
+
 func TestImpactGroupsByDepth(t *testing.T) {
 	service := seededQueryService(t, callChain("A", "B", "C"))
 	got, err := service.Impact(t.Context(), graphprotocol.ImpactRequest{

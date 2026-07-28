@@ -40,6 +40,9 @@ func (service *Service) Cypher(ctx context.Context, request graphprotocol.Cypher
 			return response, err
 		}
 		response.Boundaries, response.Commits = ready.boundaries, ready.commits
+		if err := service.authorizeCypherScope(ctx, request.Scope); err != nil {
+			return response, err
+		}
 	}
 	err := service.Database.View(ctx, func(session *ladybug.Session) error {
 		result, err := session.Execute(ctx, request.Statement, request.Parameters, ladybug.QueryLimits{
@@ -65,7 +68,27 @@ func (service *Service) Cypher(ctx context.Context, request graphprotocol.Cypher
 		}
 		return err
 	})
+	if err == nil && len(request.Scope.Repositories) > 0 {
+		err = service.authorizeCypherScope(ctx, request.Scope)
+	}
 	return response, err
+}
+
+func (service *Service) authorizeCypherScope(ctx context.Context, scope graphprotocol.Scope) error {
+	manifests, err := service.Database.Manifests(ctx)
+	if err != nil {
+		return err
+	}
+	allowed := make(map[int64]string, len(scope.Repositories))
+	for _, snapshot := range scope.Repositories {
+		allowed[snapshot.ID] = snapshot.Commit
+	}
+	for id, manifest := range manifests {
+		if allowed[id] != manifest.Commit {
+			return ErrUnauthorizedScope
+		}
+	}
+	return nil
 }
 
 func scalar(value any) bool {

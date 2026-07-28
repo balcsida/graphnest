@@ -134,3 +134,14 @@ func TestCypherRejectsNegativeBounds(t *testing.T) {
 		})
 	}
 }
+
+func TestCypherRejectsRowsWhileUnauthorizedManifestRemains(t *testing.T) {
+	service := seededQueryServiceWithArtifacts(t, callChain("A"), repositoryCallChain(202, "SECRET"))
+	_, err := service.Cypher(t.Context(), graphprotocol.CypherRequest{
+		Scope: scope(testCommit), Admin: true,
+		Statement: `MATCH (s:Symbol) RETURN s.qualified_name`,
+	})
+	if !errors.Is(err, ErrUnauthorizedScope) {
+		t.Fatalf("Cypher() error = %v", err)
+	}
+}

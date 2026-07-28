@@ -30,13 +30,21 @@ func (service *Service) Trace(ctx context.Context, request graphprotocol.TraceRe
 		depth = limits.MaxTraceDepth
 		response.Boundaries = appendBoundary(response.Boundaries, "depth_limit", depth)
 	}
-	sources, err := service.lookupSymbols(ctx, ready, request.SourceUID)
+	sources, err := service.lookupSymbols(ctx, ready, request.SourceUID, true)
 	if err != nil {
 		return response, err
 	}
-	targets, err := service.lookupSymbols(ctx, ready, request.TargetUID)
+	targets, err := service.lookupSymbols(ctx, ready, request.TargetUID, false)
 	if err != nil {
 		return response, err
+	}
+	switch {
+	case len(sources) > 1:
+		response.Status, response.Candidates = graphprotocol.StatusAmbiguous, sources
+		return response, nil
+	case len(targets) > 1:
+		response.Status, response.Candidates = graphprotocol.StatusAmbiguous, targets
+		return response, nil
 	}
 	targetKeys := make(map[nodeKey]struct{}, len(targets))
 	symbols := make(map[nodeKey]graphprotocol.Symbol, len(sources)+len(targets))
@@ -126,13 +134,20 @@ func (service *Service) Trace(ctx context.Context, request graphprotocol.TraceRe
 	return response, nil
 }
 
-func (service *Service) lookupSymbols(ctx context.Context, ready readyScope, uid string) ([]graphprotocol.Symbol, error) {
+func (service *Service) lookupSymbols(ctx context.Context, ready readyScope, uid string, selected bool) ([]graphprotocol.Symbol, error) {
+	snapshots := ready.snapshots
+	if selected {
+		snapshots = ready.selectorSnapshots()
+	}
+	if len(snapshots) == 0 {
+		return nil, nil
+	}
 	var symbols []graphprotocol.Symbol
 	err := service.Database.View(ctx, func(session *ladybug.Session) error {
 		result, err := session.Execute(ctx, selectSymbols, map[string]any{
-			"scope": ready.parameters, "use_uid": true, "uids": selectorUIDs(ready.snapshots, uid),
-			"name": "", "path": "", "kind": "", "limit": int64(len(ready.snapshots)),
-		}, ladybug.QueryLimits{MaxRows: len(ready.snapshots)})
+			"scope": ready.parameters, "use_uid": true, "uids": selectorUIDs(snapshots, uid),
+			"name": "", "path": "", "kind": "", "limit": int64(len(snapshots)),
+		}, ladybug.QueryLimits{MaxRows: len(snapshots)})
 		if err == nil {
 			for _, row := range result.Rows {
 				symbols = append(symbols, symbolFromRow(row))

@@ -19,7 +19,8 @@ type RepositorySnapshot struct {
 }
 
 type Scope struct {
-	Repositories []RepositorySnapshot `json:"repositories"`
+	SelectedRepositoryID int64                `json:"selected_repository_id,omitempty"`
+	Repositories         []RepositorySnapshot `json:"repositories"`
 }
 
 type Position struct {
@@ -98,6 +99,7 @@ type ImpactRequest struct {
 
 type ImpactResponse struct {
 	Status     string            `json:"status"`
+	Candidates []Symbol          `json:"candidates,omitempty"`
 	ByDepth    map[int][]Symbol  `json:"by_depth"`
 	Edges      []Relationship    `json:"edges,omitempty"`
 	Boundaries []Boundary        `json:"boundaries,omitempty"`
@@ -114,6 +116,7 @@ type TraceRequest struct {
 
 type TraceResponse struct {
 	Status     string            `json:"status"`
+	Candidates []Symbol          `json:"candidates,omitempty"`
 	Nodes      []Symbol          `json:"nodes,omitempty"`
 	Edges      []Relationship    `json:"edges,omitempty"`
 	Boundaries []Boundary        `json:"boundaries,omitempty"`

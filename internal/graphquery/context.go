@@ -22,6 +22,9 @@ func (service *Service) Context(ctx context.Context, request graphprotocol.Conte
 	if len(ready.snapshots) == 0 {
 		return response, nil
 	}
+	if len(ready.selectorSnapshots()) == 0 {
+		return response, nil
+	}
 	if request.UID == "" && request.Name == "" || request.PerCategoryLimit < 0 || request.PerCategoryOffset < 0 {
 		return response, ErrInvalidRequest
 	}
@@ -36,7 +39,7 @@ func (service *Service) Context(ctx context.Context, request graphprotocol.Conte
 	var candidates []graphprotocol.Symbol
 	err = service.Database.View(ctx, func(session *ladybug.Session) error {
 		result, executeErr := session.Execute(ctx, selectSymbols, map[string]any{
-			"scope": ready.parameters, "use_uid": request.UID != "", "uids": selectorUIDs(ready.snapshots, request.UID),
+			"scope": ready.parameters, "use_uid": request.UID != "", "uids": selectorUIDs(ready.selectorSnapshots(), request.UID),
 			"name": request.Name, "path": request.FilePath, "kind": request.Kind, "limit": int64(101),
 		}, ladybug.QueryLimits{MaxRows: 101})
 		if executeErr != nil {
