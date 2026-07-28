@@ -26,36 +26,40 @@ $(error unsupported Ladybug platform: $(LADYBUG_OS)/$(LADYBUG_ARCH))
 endif
 
 LADYBUG_ARCHIVE_URL := https://github.com/LadybugDB/ladybug/releases/download/v$(LADYBUG_VERSION)/$(LADYBUG_ARCHIVE)
+LADYBUG_ENV := CGO_ENABLED=1 LBUG_VERSION=$(LADYBUG_VERSION) GOCACHE=$(CURDIR)/.cache/go-build XDG_CACHE_HOME=$(CURDIR)/.cache $(LADYBUG_RUNTIME_ENV) CGO_CFLAGS="-I$(LADYBUG_LIB_DIR)" CGO_LDFLAGS="-L$(LADYBUG_LIB_DIR)"
+LADYBUG_GO := $(LADYBUG_ENV) go
+LADYBUG_TAGS := -tags=system_ladybug
+LADYBUG_RPATH := -ldflags=-extldflags=-Wl,-rpath,$(LADYBUG_LIB_DIR)
 
 .PHONY: fmt lint staticcheck govulncheck test test-race scanner-test ladybug-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
 
-lint:
-	@if test -n "$$(go list ./... 2>/dev/null)"; then go vet ./...; fi
+lint: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
+	@if test -n "$$($(LADYBUG_GO) list $(LADYBUG_TAGS) ./... 2>/dev/null)"; then $(LADYBUG_GO) vet $(LADYBUG_TAGS) ./...; fi
 
-staticcheck:
+staticcheck: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
 	mkdir -p .cache/bin
 	GOBIN=$$(pwd)/.cache/bin go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)
-	.cache/bin/staticcheck ./...
+	$(LADYBUG_ENV) .cache/bin/staticcheck $(LADYBUG_TAGS) ./...
 
 govulncheck:
 	mkdir -p .cache/bin
 	GOBIN=$$(pwd)/.cache/bin go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
 	.cache/bin/govulncheck ./...
 
-test:
-	@if test -n "$$(go list ./... 2>/dev/null)"; then go test ./...; fi
+test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
+	@if test -n "$$($(LADYBUG_GO) list $(LADYBUG_TAGS) ./... 2>/dev/null)"; then $(LADYBUG_GO) test $(LADYBUG_TAGS) ./...; fi
 
-test-race:
-	@if test -n "$$(go list ./... 2>/dev/null)"; then go test -race ./...; fi
+test-race: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
+	@if test -n "$$($(LADYBUG_GO) list $(LADYBUG_TAGS) ./... 2>/dev/null)"; then $(LADYBUG_GO) test -race $(LADYBUG_TAGS) ./...; fi
 
 scanner-test:
 	CGO_ENABLED=1 go test -race ./internal/graphscan/... ./internal/graphscanner ./cmd/grepnest-scanner
 
 ladybug-test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-	CGO_ENABLED=1 LBUG_VERSION=0.18.3 GOCACHE=$(CURDIR)/.cache/go-build $(LADYBUG_RUNTIME_ENV) CGO_CFLAGS="-I$(LADYBUG_LIB_DIR)" CGO_LDFLAGS="-L$(LADYBUG_LIB_DIR)" go test -tags=system_ladybug ./internal/ladybug ./internal/graphquery
+	$(LADYBUG_GO) test $(LADYBUG_TAGS) ./internal/ladybug ./internal/graphquery
 
 $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY):
 	mkdir -p $(LADYBUG_LIB_DIR)
@@ -107,11 +111,11 @@ e2e: tools
 e2e-test:
 	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' GREPNEST_REQUIRE_POSTGRES=1 ZOEKT_GIT_INDEX=$$(pwd)/.cache/bin/zoekt-git-index ZOEKT_WEBSERVER=$$(pwd)/.cache/bin/zoekt-webserver go test -v -tags=e2e ./test/e2e
 
-build:
-	@if test -n "$$(go list ./cmd/... 2>/dev/null)"; then go build ./cmd/...; fi
+build: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
+	@if test -n "$$($(LADYBUG_GO) list $(LADYBUG_TAGS) ./cmd/... 2>/dev/null)"; then $(LADYBUG_GO) build $(LADYBUG_TAGS) $(LADYBUG_RPATH) ./cmd/...; fi
 
-server:
-	go run ./cmd/grepnest-server
+server: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
+	$(LADYBUG_GO) run $(LADYBUG_TAGS) ./cmd/grepnest-server
 
 zoekt-version:
 	@printf '%s\n' '$(ZOEKT_VERSION)'

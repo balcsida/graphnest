@@ -140,8 +140,6 @@ func TestStatusPreservesGraphStates(t *testing.T) {
 
 const testCommit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-var errUnauthorizedRepository = errors.New("unauthorized repository")
-
 type fakeStore struct {
 	repository           repository.Repository
 	authorizeErr         error
