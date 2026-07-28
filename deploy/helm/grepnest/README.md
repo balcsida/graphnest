@@ -1,8 +1,9 @@
 # GrepNest Helm chart
 
-This chart models the generic Kubernetes single-node pilot. It is structurally
-lintable and renderable, but not currently deployable: GrepNest images are not
-built or published, and it has not been cluster-tested.
+This chart models the generic Kubernetes single-node pilot. The source-tree
+chart is generic: it requires operator-supplied image repositories and
+digests. A released OCI chart is a copied chart with its version and both
+release image digests filled in.
 
 The chart requires an operator-managed PostgreSQL database and never installs
 PostgreSQL or creates Secrets. Supply both image repositories and immutable
@@ -31,6 +32,21 @@ Referenced object names must be Kubernetes DNS subdomains. Secret data keys
 may contain letters, digits, `-`, `_`, and `.`.
 
 ## Validate and install
+
+For a release, replace `sha256:RELEASE_DIGEST` with values copied from the
+GitHub Release; they are placeholders, not literal digest values. The OCI chart
+already embeds both copied release digests, so pull and install it directly:
+
+```sh
+docker pull ghcr.io/balcsida/grep-nest/application@sha256:RELEASE_DIGEST
+docker pull ghcr.io/balcsida/grep-nest/node@sha256:RELEASE_DIGEST
+helm pull oci://ghcr.io/balcsida/grep-nest/charts/grepnest --version 0.1.0
+helm upgrade --install grepnest grepnest-0.1.0.tgz -n grepnest --create-namespace -f my-values.yaml --wait --timeout 15m
+```
+
+Use the `gh attestation verify` commands copied from the GitHub Release to
+verify the images and packaged chart. Source-tree users must provide their own
+image values:
 
 Start from `values.yaml`, provide every required image, Secret, GitHub App ID,
 installation ID, and repository ID value, then run:

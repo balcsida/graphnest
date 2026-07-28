@@ -79,11 +79,27 @@ and the worker removes abandoned numeric-ID worktrees before claiming more work.
 
 ## Kubernetes chart boundary
 
-The [Helm chart](../deploy/helm/grepnest/README.md) is structurally lintable and
-renderable, but not currently deployable. Images are not built or published,
-and it has not been cluster-tested. `make helm-lint helm-test` verifies
-only rendered structure; `make image` remains an intentionally failing milestone
-boundary.
+Releases publish multi-architecture images and an OCI chart. Replace each
+`sha256:RELEASE_DIGEST` below with the digest copied from that GitHub Release;
+it is a placeholder, not a literal digest.
+
+```sh
+docker pull ghcr.io/balcsida/grep-nest/application@sha256:RELEASE_DIGEST
+docker pull ghcr.io/balcsida/grep-nest/node@sha256:RELEASE_DIGEST
+helm pull oci://ghcr.io/balcsida/grep-nest/charts/grepnest --version 0.1.0
+```
+
+Verify the copied artifacts with the commands included in the GitHub Release:
+
+```sh
+gh attestation verify "oci://ghcr.io/balcsida/grep-nest/application@sha256:RELEASE_DIGEST" --repo "balcsida/grep-nest"
+gh attestation verify "oci://ghcr.io/balcsida/grep-nest/node@sha256:RELEASE_DIGEST" --repo "balcsida/grep-nest"
+```
+
+The pulled OCI chart already embeds both release image digests. The source-tree
+chart remains generic, so its users must supply their own image repositories
+and digests. `make helm-lint helm-test` verifies source chart structure;
+`make image-test` builds and smoke-tests local images.
 
 An operator must provide external PostgreSQL, digest-pinned application and
 node images, and every existing Secret documented by the chart. The chart does
