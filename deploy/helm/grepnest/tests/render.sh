@@ -390,12 +390,27 @@ for pattern in '^kind: PersistentVolumeClaim$' 'app.kubernetes.io/component: gra
   require "$pattern" "$tmp/graph-separate.yaml"
 done
 
+awk 'BEGIN {RS="---"} /kind: Deployment/ && /app.kubernetes.io\/component: graph/ {print}' \
+  "$tmp/graph-separate.yaml" >"$tmp/graph-workload.yaml"
+for pattern in 'grepnest.example.invalid/pool: graph' \
+  'grepnest.example.invalid/tier' '^[[:space:]]*- graph$' \
+  'grepnest.example.invalid/dedicated' 'value: graph'; do
+  require "$pattern" "$tmp/graph-workload.yaml"
+done
+
 for pattern in 'app.kubernetes.io/component: scanner' '^  replicas: 3$' \
   'command: \["/usr/local/bin/grepnest-scanner"\]' \
   'name: worktree, mountPath: /data' 'name: worktree, emptyDir: \{\}' \
   'name: metrics, containerPort: 9090' 'requests:' 'limits:' \
   'automountServiceAccountToken: false' 'readOnlyRootFilesystem: true'; do
   require "$pattern" "$tmp/graph-separate.yaml"
+done
+awk 'BEGIN {RS="---"} /kind: Deployment/ && /app.kubernetes.io\/component: scanner/ {print}' \
+  "$tmp/graph-separate.yaml" >"$tmp/scanner-workload.yaml"
+for pattern in 'grepnest.example.invalid/pool: scanner' \
+  'grepnest.example.invalid/tier' '^[[:space:]]*- scanner$' \
+  'grepnest.example.invalid/dedicated' 'value: scanner'; do
+  require "$pattern" "$tmp/scanner-workload.yaml"
 done
 require 'values: \[server, node\]' "$tmp/graph-separate.yaml"
 require 'values: \[server, node, migration, graph, scanner\]' "$tmp/graph-separate.yaml"
