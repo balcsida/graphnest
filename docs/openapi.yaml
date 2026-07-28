@@ -288,7 +288,7 @@ paths:
       security: [{bearerAuth: []}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/GraphTraceRequest'}}}}
       responses:
-        '200': {description: Trace result; status is found, no_path, or ambiguous, content: {application/json: {schema: {$ref: '#/components/schemas/GraphTraceResponse'}}}}
+        '200': {description: Trace result; status is ok, no_path, or ambiguous, content: {application/json: {schema: {$ref: '#/components/schemas/GraphTraceResponse'}}}}
         '400': {$ref: '#/components/responses/InvalidRequest'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -787,16 +787,16 @@ components:
         partial: {type: boolean}
     GraphTraceResponse:
       oneOf:
-        - {$ref: '#/components/schemas/GraphTraceFoundResponse'}
+        - {$ref: '#/components/schemas/GraphTraceOKResponse'}
         - {$ref: '#/components/schemas/GraphTraceNoPathResponse'}
         - {$ref: '#/components/schemas/GraphTraceAmbiguousResponse'}
       discriminator: {propertyName: status}
-    GraphTraceFoundResponse:
+    GraphTraceOKResponse:
       type: object
       additionalProperties: false
       required: [status, nodes, commits]
       properties:
-        status: {type: string, const: found}
+        status: {type: string, const: ok}
         nodes: {type: array, minItems: 1, items: {$ref: '#/components/schemas/GraphSymbol'}}
         relations: {type: array, items: {$ref: '#/components/schemas/GraphReference'}}
         boundaries: {type: array, items: {$ref: '#/components/schemas/GraphBoundary'}}
