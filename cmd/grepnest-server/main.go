@@ -18,7 +18,9 @@ import (
 	"github.com/grepnest/grepnest/internal/authz"
 	"github.com/grepnest/grepnest/internal/config"
 	"github.com/grepnest/grepnest/internal/githubapp"
+	"github.com/grepnest/grepnest/internal/graphclient"
 	"github.com/grepnest/grepnest/internal/graphingest"
+	"github.com/grepnest/grepnest/internal/graphprotocol"
 	"github.com/grepnest/grepnest/internal/graphservice"
 	"github.com/grepnest/grepnest/internal/httpapi"
 	"github.com/grepnest/grepnest/internal/mcpserver"
@@ -178,6 +180,10 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	if err := postgres.Migrate(ctx, pool); err != nil {
 		return fail(err)
 	}
+	graphClient, err := graphclient.New(settings.Graph.URL, settings.Graph.InternalSecret, http.DefaultClient, settings.Graph.MaxResponseBytes)
+	if err != nil {
+		return fail(err)
+	}
 	metrics := observability.New()
 	store := postgres.New(pool)
 	if err := store.UpsertSearchNode(ctx, searchNodeID, settings.ZoektURL); err != nil {
@@ -212,6 +218,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	repositoryService := &repository.Service{Store: store, GitHub: githubClient}
 	scipService := &scipgraph.Service{Store: store, GitHub: githubClient, MaxResults: settings.Limits.MaxResults}
 	graphService := &graphingest.Service{Store: store}
+	graphQueries := &graphservice.Service{Store: store, Backend: instrumentGraphQueries(graphClient, metrics), Files: repositoryService, Limits: graphQueryLimits(settings.Graph)}
 	processor := webhook.NewGitHubProcessor(store, reconcileRequests, metrics)
 	adminService := &admin.Service{
 		Store: store, GitHub: githubClient,
@@ -222,7 +229,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 			CAConfigured: settings.GitHub.CAFile != "",
 		},
 	}
-	handler := newAPIHandler(settings, metrics, authenticator, searchService, repositoryService, scipService, graphService, nil, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend})
+	handler := newAPIHandler(settings, metrics, authenticator, searchService, repositoryService, scipService, graphService, graphQueries, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend})
 	return handler, func() {
 		cancel()
 		<-done
@@ -246,7 +253,7 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 		httpapi.RegisterGraphIngestion(mux, authenticator, graph, settings.Limits.GraphMaxUploadBytes, settings.Limits.MaxResponseBytes)
 	}
 	if graphQueries != nil {
-		httpapi.RegisterGraphQueries(mux, authenticator, graphQueries, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
+		httpapi.RegisterGraphQueries(mux, authenticator, graphQueries, settings.Graph.MaxRequestBytes, settings.Graph.MaxResponseBytes)
 	}
 	if adminService != nil {
 		httpapi.RegisterAdmin(mux, authenticator, adminService, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
@@ -263,6 +270,56 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 		mcpHandler.ServeHTTP(writer, request)
 	})))
 	return metrics.WrapHTTP(mux)
+}
+
+func graphQueryLimits(graph config.Graph) graphservice.Limits {
+	return graphservice.Limits{
+		PerCategory: graph.QueryLimits.PerCategory, DefaultImpactDepth: graph.QueryLimits.DefaultImpactDepth, MaxDepth: graph.QueryLimits.MaxDepth,
+		DefaultTraceDepth: graph.QueryLimits.DefaultTraceDepth, MaxTraceDepth: graph.QueryLimits.MaxTraceDepth, MaxRows: graph.QueryLimits.MaxRows,
+		MaxNodes: graph.QueryLimits.MaxNodes, MaxEdges: graph.QueryLimits.MaxEdges, MaxFanout: graph.QueryLimits.MaxFanout,
+		MaxResponseBytes: int(graph.MaxResponseBytes),
+	}
+}
+
+type instrumentedGraphQueries struct {
+	backend graphprotocol.QueryEngine
+	metrics *observability.Metrics
+}
+
+func instrumentGraphQueries(backend graphprotocol.QueryEngine, metrics *observability.Metrics) graphprotocol.QueryEngine {
+	return instrumentedGraphQueries{backend: backend, metrics: metrics}
+}
+
+func (queries instrumentedGraphQueries) Context(ctx context.Context, request graphprotocol.ContextRequest) (response graphprotocol.ContextResponse, err error) {
+	started := time.Now()
+	defer queries.observe(started, "context", &err)
+	return queries.backend.Context(ctx, request)
+}
+
+func (queries instrumentedGraphQueries) Impact(ctx context.Context, request graphprotocol.ImpactRequest) (response graphprotocol.ImpactResponse, err error) {
+	started := time.Now()
+	defer queries.observe(started, "impact", &err)
+	return queries.backend.Impact(ctx, request)
+}
+
+func (queries instrumentedGraphQueries) Trace(ctx context.Context, request graphprotocol.TraceRequest) (response graphprotocol.TraceResponse, err error) {
+	started := time.Now()
+	defer queries.observe(started, "trace", &err)
+	return queries.backend.Trace(ctx, request)
+}
+
+func (queries instrumentedGraphQueries) Cypher(ctx context.Context, request graphprotocol.CypherRequest) (response graphprotocol.CypherResponse, err error) {
+	started := time.Now()
+	defer queries.observe(started, "cypher", &err)
+	return queries.backend.Cypher(ctx, request)
+}
+
+func (queries instrumentedGraphQueries) observe(started time.Time, operation string, err *error) {
+	result := "success"
+	if *err != nil {
+		result = "error"
+	}
+	queries.metrics.ObserveGraphQuery(operation, result, time.Since(started))
 }
 
 func searchLimits(settings config.Config) search.Limits {
