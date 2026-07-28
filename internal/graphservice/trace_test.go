@@ -45,7 +45,7 @@ func TestTraceMapsAmbiguousCandidates(t *testing.T) {
 	}}
 	got, err := (&Service{Store: &fakeRepositoryStore{repositories: []repository.Repository{readyRepository("a")}}, Backend: backend}).
 		Trace(t.Context(), principalFor(101), api.GraphTraceRequest{Repo: api.GraphRepositorySelector{ID: 101}, SourceUID: "x", TargetUID: "y"})
-	if err != nil || len(got.Candidates) != 1 || got.Candidates[0].UID != "x" {
+	if err != nil || len(got.Candidates) != 1 || got.Candidates[0].UID != "x" || got.Candidates[0].RepositoryID != 101 {
 		t.Fatalf("Trace()=%#v,%v", got, err)
 	}
 }

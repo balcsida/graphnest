@@ -9,7 +9,7 @@ description: Use when logs, errors, or a failing test identify a code symbol and
 
 Anchor the investigation at the observed failure, not a guessed cause:
 
-1. Resolve it: `context({"repo":"acme/payments","name":"receipts.Deliver","file_path":"receipts/deliver.go"})`. On `ambiguous`, retry with the correct candidate UID.
+1. Resolve it: `context({"repo":"acme/payments","name":"receipts.Deliver","file_path":"receipts/deliver.go"})`. On `ambiguous`, retry with the candidate `repository_id` as `repo` and its `uid`.
 2. Find inputs/callers: `impact({"repo":"acme/payments","target_uid":"<observed>","direction":"upstream","max_depth":3,"limit":50,"include_tests":true})`.
 3. Find affected code: `impact({"repo":"acme/payments","target_uid":"<observed>","direction":"downstream","max_depth":3,"limit":50,"include_tests":true})`.
 4. Correlate nearby candidates with the deployed diff, logs, and failing input; select the single best-supported one. The graph shows relationships, not which change caused the incident.

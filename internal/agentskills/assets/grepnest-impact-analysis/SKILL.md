@@ -9,7 +9,7 @@ description: Use when planning a code change or preparing a review-ready blast-r
 
 1. Resolve the target:
    `context({"repo":"acme/api","name":"auth.ValidateToken","file_path":"internal/auth/token.go"})`.
-   If `ambiguous`, record the candidates and retry with the selected UID; if unresolved, stop.
+   If `ambiguous`, record the candidates and retry with the selected candidate's `repository_id` as `repo` and its `uid`; if unresolved, stop.
 2. Traverse dependents and tests:
    `impact({"repo":"acme/api","target_uid":"<uid>","direction":"upstream","max_depth":3,"limit":100,"include_tests":true,"min_confidence":0.5})`.
 3. Use `offset` for another page only when `partial: true` or the result cap requires it. Increase depth only when the review scope requires it.

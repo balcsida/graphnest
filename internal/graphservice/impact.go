@@ -15,7 +15,7 @@ func (s *Service) Impact(ctx context.Context, principal authn.Principal, request
 	if request.TargetUID == "" || (request.Direction != "upstream" && request.Direction != "downstream") || request.MinConfidence < 0 || request.MinConfidence > 1 || request.MaxDepth < 0 || request.Limit < 0 || request.Offset < 0 || !validRelations(request.Relations) {
 		return api.GraphImpactResponse{}, ErrInvalidRequest
 	}
-	selected, scope, _, err := s.scope(ctx, principal, request.Repo, request.Branch)
+	selected, scope, snapshots, err := s.scope(ctx, principal, request.Repo, request.Branch)
 	if err != nil {
 		return api.GraphImpactResponse{}, err
 	}
@@ -39,7 +39,11 @@ func (s *Service) Impact(ctx context.Context, principal authn.Principal, request
 	}
 	result = api.GraphImpactResponse{Status: response.Status, ByDepth: map[int][]api.GraphSymbol{}, Boundaries: boundaries(response.Boundaries), Commits: response.Commits, Partial: response.Partial}
 	for _, value := range response.Candidates {
-		result.Candidates = append(result.Candidates, candidate(value))
+		converted, convertErr := candidate(value, snapshots)
+		if convertErr != nil {
+			return api.GraphImpactResponse{}, convertErr
+		}
+		result.Candidates = append(result.Candidates, converted)
 	}
 	for depth, values := range response.ByDepth {
 		for _, value := range values {
