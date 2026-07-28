@@ -57,7 +57,7 @@ func TestTraceDoesNotStitchSameUIDAcrossRepositories(t *testing.T) {
 	second := repositoryCallChain(202, "B", "C")
 	service := seededQueryServiceWithArtifacts(t, first, second)
 	got, err := service.Trace(t.Context(), graphprotocol.TraceRequest{
-		Scope: graphprotocol.Scope{Repositories: []graphprotocol.RepositorySnapshot{
+		Scope: graphprotocol.Scope{SelectedRepositoryID: 101, Repositories: []graphprotocol.RepositorySnapshot{
 			{ID: 101, Name: "acme/one", Commit: testCommit},
 			{ID: 202, Name: "acme/two", Commit: testCommit},
 		}},
@@ -92,7 +92,7 @@ func TestTraceRejectsNegativeDepth(t *testing.T) {
 }
 
 func TestTraceChoosesStableLowestRepositoryPath(t *testing.T) {
-	higher := repositoryCallChain(10, "A", "B", "Y")
+	higher := repositoryCallChain(10, "X", "B", "Y")
 	lower := repositoryCallChain(2, "A", "B", "Z")
 	service := seededQueryServiceWithArtifacts(t, higher, lower)
 	request := graphprotocol.TraceRequest{

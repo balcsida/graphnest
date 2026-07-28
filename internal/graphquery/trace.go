@@ -30,10 +30,11 @@ func (service *Service) Trace(ctx context.Context, request graphprotocol.TraceRe
 		depth = limits.MaxTraceDepth
 		response.Boundaries = appendBoundary(response.Boundaries, "depth_limit", depth)
 	}
-	sources, err := service.lookupSymbols(ctx, ready, request.SourceUID, true)
+	sources, err := service.lookupSymbols(ctx, ready, request.SourceUID, false)
 	if err != nil {
 		return response, err
 	}
+	sources = ready.anchorCandidates(sources)
 	targets, err := service.lookupSymbols(ctx, ready, request.TargetUID, false)
 	if err != nil {
 		return response, err
