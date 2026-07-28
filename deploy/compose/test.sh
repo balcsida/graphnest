@@ -113,6 +113,7 @@ assert_graph_mode() {
     and ($scanner.command == ["GREPNEST_WORKER_ID=$$(hostname) exec grepnest-scanner"])
     and ($scanner.deploy.replicas >= 1)
     and ([ $services[] | .ports[]? | select(.target == 8081) ] | length == 0)
+    and ([ $services[] | .volumes[]? | select(.target == "/var/lib/grepnest/graph" and (.read_only // false | not)) ] | length == 1)
     and ([ $graph_owner.volumes[] | select(.target == "/var/lib/grepnest/graph" and (.read_only // false | not)) ] | length == 1)
     and ([ $server.volumes[] | select(.target == "/var/lib/grepnest/graph") ] | length == 0)
     and ([ $services[] | .volumes[]? | select(.source == $zoekt_index and (.read_only // false | not)) ] | length == 1)
@@ -120,8 +121,24 @@ assert_graph_mode() {
   ' >/dev/null
 }
 
+assert_rejects_extra_graph_writer() {
+  config=$1
+  owner=$2
+  extra_writer=$(printf '%s' "$config" | jq '
+    .services["unexpected-graph-writer"] = {
+      volumes: [{type: "volume", source: "grepnest-data", target: "/var/lib/grepnest/graph"}]
+    }
+  ')
+
+  if assert_graph_mode "$extra_writer" "$owner"; then
+    echo "expected graph mode assertion to reject an extra graph writer" >&2
+    exit 1
+  fi
+}
+
 embedded=$(render_graph deploy/compose/graph-embedded.yml)
 assert_graph_mode "$embedded" grepnest-indexer
+assert_rejects_extra_graph_writer "$embedded" grepnest-indexer
 
 separate=$(render_graph deploy/compose/graph-separate.yml)
 assert_graph_mode "$separate" grepnest-graph
