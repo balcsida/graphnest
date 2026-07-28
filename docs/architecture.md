@@ -72,6 +72,7 @@ source artifacts from PostgreSQL.
 
 The graph HTTP listener is an internal bearer-protected hop. Compose keeps it
 on the internal network. Helm provides a ClusterIP Service only and renders no
-graph Ingress. The server and graph owner share a staged internal secret, not
-a public endpoint. See [ADR-0012](adr/0012-derived-ladybug-graph.md) for the
-storage and topology decision.
+graph Ingress. The server and graph owner share an internal secret: Helm stages
+projected secrets while Compose mounts the source file read-only. See
+[ADR-0012](adr/0012-derived-ladybug-graph.md) for the storage and topology
+decision.
