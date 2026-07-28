@@ -13,6 +13,7 @@ import (
 func TestLoadGraphDefaultsAndClamps(t *testing.T) {
 	secret := writeGraphSecret(t, 0o600)
 	t.Setenv("GREPNEST_GRAPH_SECRET_FILE", secret)
+	t.Setenv("GREPNEST_GRAPH_URL", "http://127.0.0.1:8081")
 	t.Setenv("GREPNEST_DATABASE_URL", "postgres://grepnest:secret@db/grepnest")
 	t.Setenv("GREPNEST_GRAPH_READ_CONNECTIONS", "99")
 
@@ -56,6 +57,7 @@ func TestLoadGraphNormalizesAndValidatesBearerSecret(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv("GREPNEST_GRAPH_SECRET_FILE", path)
+			t.Setenv("GREPNEST_GRAPH_URL", "http://127.0.0.1:8081")
 			t.Setenv("GREPNEST_DATABASE_URL", "postgres://grepnest:secret@db/grepnest")
 			got, err := LoadGraph()
 			if !test.valid {
@@ -73,6 +75,7 @@ func TestLoadGraphNormalizesAndValidatesBearerSecret(t *testing.T) {
 
 func TestLoadGraphPropagatesQueryOverrides(t *testing.T) {
 	t.Setenv("GREPNEST_GRAPH_SECRET_FILE", writeGraphSecret(t, 0o600))
+	t.Setenv("GREPNEST_GRAPH_URL", "http://127.0.0.1:8081")
 	t.Setenv("GREPNEST_DATABASE_URL", "postgres://grepnest:secret@db/grepnest")
 	for name, value := range map[string]string{
 		"GREPNEST_GRAPH_DEFAULT_IMPACT_DEPTH": "2",
@@ -105,6 +108,7 @@ func TestLoadGraphRejectsUnsafeConfiguration(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("GREPNEST_GRAPH_SECRET_FILE", secret)
+			t.Setenv("GREPNEST_GRAPH_URL", "http://127.0.0.1:8081")
 			t.Setenv(test.env, test.value)
 			if _, err := LoadGraph(); !errors.Is(err, ErrInvalid) {
 				t.Fatalf("LoadGraph() error = %v", err)
@@ -132,6 +136,7 @@ func TestLoadGraphRequiresSecureRegularSecretFile(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("GREPNEST_GRAPH_SECRET_FILE", test.path(t))
+			t.Setenv("GREPNEST_GRAPH_URL", "http://127.0.0.1:8081")
 			if _, err := LoadGraph(); !errors.Is(err, ErrInvalid) {
 				t.Fatalf("LoadGraph() error = %v", err)
 			}
@@ -170,7 +175,7 @@ func TestLoadKeepsStaticConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.DatabaseURL != "" || got.GitHub.AppID != 0 {
+	if got.DatabaseURL != "" || got.GitHub.AppID != 0 || !reflect.DeepEqual(got.Graph, Graph{}) {
 		t.Fatalf("durable configuration = %#v", got)
 	}
 }
@@ -183,8 +188,33 @@ func TestLoadReadsDurableConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" || got.GitHub.WebURL != "https://ghe.example.com" || got.GitHub.APIURL != "https://ghe.example.com/api/v3" || got.GitHub.UploadURL != "https://ghe.example.com/uploads" || got.GitHub.GitURL != "https://ghe.example.com" || got.GitHub.AppID != 123 || got.GitHub.PrivateKeyFile != "/run/secrets/key.pem" || got.GitHub.WebhookSecretFile != "/run/secrets/webhook" || got.GitHub.CAFile != "/run/secrets/ca.pem" || got.GitHub.APIVersion != "2022-11-28" || got.UserInstallationID != 10 || !reflect.DeepEqual(got.UserRepositoryIDs, []int64{101, 102}) || got.AdminInstallationID != 10 || !reflect.DeepEqual(got.AdminRepositoryIDs, []int64{101, 102, 103}) || !reflect.DeepEqual(got.Indexer, Indexer{}) {
+	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" || got.GitHub.WebURL != "https://ghe.example.com" || got.GitHub.APIURL != "https://ghe.example.com/api/v3" || got.GitHub.UploadURL != "https://ghe.example.com/uploads" || got.GitHub.GitURL != "https://ghe.example.com" || got.GitHub.AppID != 123 || got.GitHub.PrivateKeyFile != "/run/secrets/key.pem" || got.GitHub.WebhookSecretFile != "/run/secrets/webhook" || got.GitHub.CAFile != "/run/secrets/ca.pem" || got.GitHub.APIVersion != "2022-11-28" || got.UserInstallationID != 10 || !reflect.DeepEqual(got.UserRepositoryIDs, []int64{101, 102}) || got.AdminInstallationID != 10 || !reflect.DeepEqual(got.AdminRepositoryIDs, []int64{101, 102, 103}) || !reflect.DeepEqual(got.Indexer, Indexer{}) || got.Graph.URL != "http://127.0.0.1:8081" || string(got.Graph.InternalSecret) != "graph-secret" || got.Graph.MaxRequestBytes != 64<<10 || got.Graph.MaxResponseBytes != 256<<10 {
 		t.Fatalf("configuration = %#v", got)
+	}
+}
+
+func TestLoadRejectsInvalidServerGraphConfiguration(t *testing.T) {
+	for _, test := range []struct{ name, value string }{
+		{"missing URL", ""},
+		{"invalid URL", "postgres://graph"},
+		{"URL with credentials", "http://user:secret@graph"},
+		{"request cap", "http://graph"},
+		{"response cap", "http://graph"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			setValidEnvironment(t)
+			setDurableEnvironment(t)
+			t.Setenv("GREPNEST_GRAPH_URL", test.value)
+			if test.name == "request cap" {
+				t.Setenv("GREPNEST_GRAPH_MAX_REQUEST_BYTES", "65537")
+			}
+			if test.name == "response cap" {
+				t.Setenv("GREPNEST_GRAPH_MAX_RESPONSE_BYTES", "262145")
+			}
+			if _, err := Load(); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("Load() error = %v", err)
+			}
+		})
 	}
 }
 
@@ -474,6 +504,7 @@ func setDurableEnvironment(t *testing.T) {
 	t.Setenv("GREPNEST_GITHUB_APP_ID", "123")
 	t.Setenv("GREPNEST_GITHUB_PRIVATE_KEY_FILE", "/run/secrets/key.pem")
 	t.Setenv("GREPNEST_GRAPH_SECRET_FILE", writeGraphSecret(t, 0o600))
+	t.Setenv("GREPNEST_GRAPH_URL", "http://127.0.0.1:8081")
 	t.Setenv("GREPNEST_GITHUB_WEBHOOK_SECRET_FILE", "/run/secrets/webhook")
 	t.Setenv("GREPNEST_GITHUB_CA_FILE", "/run/secrets/ca.pem")
 	t.Setenv("GREPNEST_USER_INSTALLATION_ID", "10")

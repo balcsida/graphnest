@@ -28,6 +28,7 @@ import (
 	"github.com/grepnest/grepnest/internal/config"
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/graphingest"
+	"github.com/grepnest/grepnest/internal/graphprotocol"
 	"github.com/grepnest/grepnest/internal/graphservice"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/repository"
@@ -622,6 +623,54 @@ func TestGraphQueryRoutesRegisterOnlyWithService(t *testing.T) {
 			t.Fatalf("%s status=%d want=%d", name, response.Code, want)
 		}
 	}
+}
+
+func TestInstrumentedGraphQueriesUseFixedMetricLabels(t *testing.T) {
+	metrics := observability.New()
+	queries := instrumentGraphQueries(graphMetricBackend{}, metrics)
+	if _, err := queries.Context(t.Context(), graphprotocol.ContextRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queries.Impact(t.Context(), graphprotocol.ImpactRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queries.Trace(t.Context(), graphprotocol.TraceRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queries.Cypher(t.Context(), graphprotocol.CypherRequest{}); err != nil {
+		t.Fatal(err)
+	}
+
+	response := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	for _, want := range []string{
+		`grepnest_graph_query_total{operation="context",result="success"} 1`,
+		`grepnest_graph_query_total{operation="impact",result="success"} 1`,
+		`grepnest_graph_query_total{operation="trace",result="success"} 1`,
+		`grepnest_graph_query_total{operation="cypher",result="success"} 1`,
+	} {
+		if !strings.Contains(response.Body.String(), want) {
+			t.Fatalf("metrics missing %q:\n%s", want, response.Body.String())
+		}
+	}
+}
+
+type graphMetricBackend struct{}
+
+func (graphMetricBackend) Context(context.Context, graphprotocol.ContextRequest) (graphprotocol.ContextResponse, error) {
+	return graphprotocol.ContextResponse{}, nil
+}
+
+func (graphMetricBackend) Impact(context.Context, graphprotocol.ImpactRequest) (graphprotocol.ImpactResponse, error) {
+	return graphprotocol.ImpactResponse{}, nil
+}
+
+func (graphMetricBackend) Trace(context.Context, graphprotocol.TraceRequest) (graphprotocol.TraceResponse, error) {
+	return graphprotocol.TraceResponse{}, nil
+}
+
+func (graphMetricBackend) Cypher(context.Context, graphprotocol.CypherRequest) (graphprotocol.CypherResponse, error) {
+	return graphprotocol.CypherResponse{}, nil
 }
 
 func TestAPIHandlerMountsWebUIWithoutFallback(t *testing.T) {

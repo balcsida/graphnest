@@ -41,13 +41,14 @@ type Indexer struct {
 }
 
 type Graph struct {
-	Mode, ListenAddress, DataDir, SecretFile, DatabaseURL string
-	InternalSecret                                        []byte
-	SyncInterval, QueryTimeout, InterruptGrace            time.Duration
-	ReadConnections, DefaultImpactDepth, MaxImpactDepth   int
-	DefaultTraceDepth, MaxTraceDepth, MaxRows             int
-	MaxNodes, MaxEdges                                    int
-	QueryLimits                                           GraphQueryLimits
+	Mode, URL, ListenAddress, DataDir, SecretFile, DatabaseURL string
+	InternalSecret                                             []byte
+	SyncInterval, QueryTimeout, InterruptGrace                 time.Duration
+	ReadConnections, DefaultImpactDepth, MaxImpactDepth        int
+	DefaultTraceDepth, MaxTraceDepth, MaxRows                  int
+	MaxNodes, MaxEdges                                         int
+	MaxRequestBytes, MaxResponseBytes                          int64
+	QueryLimits                                                GraphQueryLimits
 }
 
 type GraphQueryLimits struct {
@@ -75,6 +76,7 @@ type Config struct {
 	UserRepositories, AdminRepositories       []string
 	DatabaseURL                               string
 	GitHub                                    GitHub
+	Graph                                     Graph
 	Indexer                                   Indexer
 	UserInstallationID, AdminInstallationID   int64
 	UserRepositoryIDs, AdminRepositoryIDs     []int64
@@ -134,6 +136,9 @@ func Load() (Config, error) {
 			return Config{}, err
 		}
 		if config.AdminRepositoryIDs, err = repositoryIDs("GREPNEST_ADMIN_REPOSITORY_IDS"); err != nil {
+			return Config{}, err
+		}
+		if config.Graph, err = loadGraph(true); err != nil {
 			return Config{}, err
 		}
 	} else if config.RepositoriesFile == "" {
@@ -220,6 +225,7 @@ func LoadGraph() (Graph, error) { return loadGraph(true) }
 func loadGraph(force bool) (Graph, error) {
 	graph := Graph{
 		Mode:          valueOr("GREPNEST_GRAPH_MODE", "embedded"),
+		URL:           os.Getenv("GREPNEST_GRAPH_URL"),
 		ListenAddress: valueOr("GREPNEST_GRAPH_LISTEN_ADDRESS", "127.0.0.1:8081"),
 		DataDir:       valueOr("GREPNEST_GRAPH_DATA_DIR", "/var/lib/grepnest/graph"),
 		SecretFile:    os.Getenv("GREPNEST_GRAPH_SECRET_FILE"),
@@ -229,6 +235,7 @@ func loadGraph(force bool) (Graph, error) {
 		DefaultImpactDepth: 3, MaxImpactDepth: 32,
 		DefaultTraceDepth: 10, MaxTraceDepth: 30,
 		MaxRows: 1_000, MaxNodes: 1_000, MaxEdges: 5_000,
+		MaxRequestBytes: 64 << 10, MaxResponseBytes: 256 << 10,
 		QueryLimits: GraphQueryLimits{
 			PerCategory: 100, DefaultImpactDepth: 3, MaxDepth: 32,
 			DefaultTraceDepth: 10, MaxTraceDepth: 30, MaxRows: 1_000,
@@ -237,6 +244,10 @@ func loadGraph(force bool) (Graph, error) {
 	}
 	if graph.Mode != "embedded" && graph.Mode != "separate" {
 		return Graph{}, invalid("GREPNEST_GRAPH_MODE must be embedded or separate")
+	}
+	parsedURL, err := url.Parse(graph.URL)
+	if err != nil || parsedURL.Host == "" || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.User != nil || parsedURL.RawQuery != "" || parsedURL.ForceQuery || parsedURL.Fragment != "" || (parsedURL.EscapedPath() != "" && parsedURL.EscapedPath() != "/") {
+		return Graph{}, invalid("GREPNEST_GRAPH_URL must be an HTTP(S) URL without credentials, query, fragment, or path")
 	}
 	if err := validListenAddress(graph.ListenAddress); err != nil {
 		return Graph{}, invalid("GREPNEST_GRAPH_LISTEN_ADDRESS must be a host:port address")
@@ -251,6 +262,12 @@ func loadGraph(force bool) (Graph, error) {
 		}
 	}
 	if err := intValue("GREPNEST_GRAPH_READ_CONNECTIONS", &graph.ReadConnections); err != nil {
+		return Graph{}, err
+	}
+	if err := int64Value("GREPNEST_GRAPH_MAX_REQUEST_BYTES", &graph.MaxRequestBytes); err != nil {
+		return Graph{}, err
+	}
+	if err := int64Value("GREPNEST_GRAPH_MAX_RESPONSE_BYTES", &graph.MaxResponseBytes); err != nil {
 		return Graph{}, err
 	}
 	for name, target := range map[string]*int{
@@ -271,6 +288,9 @@ func loadGraph(force bool) (Graph, error) {
 	}
 	if graph.QueryTimeout > 5*time.Second || graph.InterruptGrace > 2*time.Second {
 		return Graph{}, invalid("graph timeouts exceed safety caps")
+	}
+	if graph.MaxRequestBytes > 64<<10 || graph.MaxResponseBytes > 256<<10 {
+		return Graph{}, invalid("graph public limits exceed safety caps")
 	}
 	if graph.MaxImpactDepth > 32 || graph.MaxTraceDepth > 30 || graph.MaxRows > 1_000 ||
 		graph.MaxNodes > 1_000 || graph.MaxEdges > 5_000 ||
