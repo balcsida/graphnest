@@ -59,7 +59,7 @@ scanner-test:
 	CGO_ENABLED=1 go test -race ./internal/graphscan/... ./internal/graphscanner ./cmd/grepnest-scanner
 
 ladybug-test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-	$(LADYBUG_GO) test $(LADYBUG_TAGS) ./internal/ladybug ./internal/graphquery
+	$(LADYBUG_GO) test $(LADYBUG_TAGS) ./internal/ladybug ./internal/graphquery ./internal/graphruntime
 
 $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY):
 	mkdir -p $(LADYBUG_LIB_DIR)

@@ -49,15 +49,12 @@ func New(ctx context.Context, config Config, source ladybug.SnapshotSource, logg
 	if err := os.MkdirAll(filepath.Dir(config.DatabasePath), 0o700); err != nil {
 		return nil, err
 	}
-	database, err := ladybug.Open(ladybug.Options{
+	options := ladybug.Options{
 		Path: config.DatabasePath, ReadConnections: config.ReadConnections,
 		QueryTimeout: config.QueryTimeout, InterruptGrace: config.InterruptGrace,
-	})
-	if err != nil {
-		return nil, err
 	}
-	if err := database.EnsureSchema(ctx); err != nil {
-		_ = database.Close()
+	database, err := openCompatibleDatabase(ctx, source, options)
+	if err != nil {
 		return nil, err
 	}
 	if logger == nil {
@@ -126,6 +123,39 @@ func New(ctx context.Context, config Config, source ladybug.SnapshotSource, logg
 		}
 	}
 	return runtime, nil
+}
+
+func openCompatibleDatabase(ctx context.Context, source ladybug.SnapshotSource, options ladybug.Options) (*ladybug.Database, error) {
+	_, statErr := os.Lstat(options.Path)
+	fresh := errors.Is(statErr, os.ErrNotExist)
+	if statErr != nil && !fresh {
+		return nil, statErr
+	}
+	database, openErr := ladybug.Open(options)
+	if fresh && openErr == nil {
+		if schemaErr := database.EnsureSchema(ctx); schemaErr == nil {
+			if markerErr := database.WriteCompatibility(ctx); markerErr == nil {
+				return database, nil
+			} else {
+				openErr = markerErr
+			}
+		} else {
+			openErr = schemaErr
+		}
+		_ = database.Close()
+		return nil, openErr
+	}
+	if openErr == nil {
+		compatible, err := database.Compatible(ctx)
+		if err == nil && compatible {
+			return database, nil
+		}
+		_ = database.Close()
+	}
+	if err := ladybug.Rebuild(ctx, source, options); err != nil {
+		return nil, err
+	}
+	return ladybug.Open(options)
 }
 
 func (runtime *Runtime) Handler() http.Handler { return runtime.handler }
