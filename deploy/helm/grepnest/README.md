@@ -6,8 +6,8 @@ digests. A released OCI chart is a copied chart with its version and both
 release image digests filled in.
 
 The chart requires an operator-managed PostgreSQL database and never installs
-PostgreSQL or creates Secrets. Supply both image repositories and immutable
-`sha256:` digests in `images.application` and `images.node`; rendered images
+PostgreSQL or creates Secrets. Supply image repositories and immutable
+`sha256:` digests in `images.application`, `images.node`, and `images.scanner`; rendered images
 always use `repository@digest`. `images.pullSecrets` is an optional list of
 existing image-pull Secret names. Tags are metadata only and cannot replace a
 digest.
@@ -19,14 +19,14 @@ corresponding values. The key names below are the defaults.
 
 | Values | Required keys | Purpose |
 | --- | --- | --- |
-| `secrets.runtime.name` | `database-url`, `user-token`, `admin-token` | PostgreSQL DSN and distinct user/admin bearer tokens |
+| `secrets.runtime.name` | `database-url`, `user-token`, `admin-token`, `graph-secret` | PostgreSQL DSN, user/admin tokens, and the internal graph bearer token |
 | `secrets.githubApp.name` | `private-key.pem`, `webhook-secret` | GitHub App private key and webhook secret |
 | `secrets.customCA.name` | `ca.crt` | Optional GitHub CA bundle; set the key with `secrets.customCA.key` |
 | `images.pullSecrets[]` | Kubernetes pull-secret contract | Optional private-registry credentials |
 | `ingress.tls[].secretName` | Ingress-controller TLS contract | Optional existing TLS Secret for the listed hosts |
 
-Override the runtime key names with `databaseURLKey`, `userTokenKey`, and
-`adminTokenKey`, and the GitHub App key names with `privateKeyKey` and
+Override the runtime key names with `databaseURLKey`, `userTokenKey`,
+`adminTokenKey`, and `graphSecretKey`, and the GitHub App key names with `privateKeyKey` and
 `webhookSecretKey`. The chart never accepts plaintext credentials in values.
 Referenced object names must be Kubernetes DNS subdomains. Secret data keys
 may contain letters, digits, `-`, `_`, and `.`.
@@ -91,12 +91,21 @@ is the internal Service port.
 `node.indexer.maxRepositoryBytes` defaults to 5 GiB and rejects oversized
 GHES repositories before the indexer mints credentials or fetches Git data.
 
+`graph.mode` defaults to `embedded`. Embedded mode runs the sole writable graph
+runtime in the indexer and stores `/data/graph` on the node PVC. `separate`
+renders one graph Deployment, ClusterIP Service, ServiceAccount, and RWO PVC.
+Both modes give the server the same internal graph Service URL; no graph
+Ingress or public Service is rendered.
+
+Set `scanner.enabled` to run independently scalable scanner pods.
+`scanner.replicas` controls their count. Each scanner uses ephemeral checkout
+storage and the scanner image.
+
 `monitoring.serviceMonitor.enabled` requires the
 `monitoring.coreos.com/v1/ServiceMonitor` CRD. Rendering fails clearly if that
-CRD is unavailable. It scrapes the server and the indexer's internal metrics
-Service on `node.indexer.metricsPort`. Configure the monitoring namespace
-selector in the ingress policy when Prometheus runs outside the release
-namespace.
+CRD is unavailable. It scrapes the server, indexer, graph runtime, and enabled
+scanners through internal Services. Configure the monitoring namespace selector
+in the ingress policy when Prometheus runs outside the release namespace.
 
 Ingress isolation is enabled by default. External egress CIDR isolation is
 optional because portable NetworkPolicy cannot select DNS names. Before
@@ -120,6 +129,8 @@ Default resource starting points are:
 | Server | 250m CPU, 256Mi memory | 1 CPU, 1Gi memory |
 | Zoekt | 2 CPU, 8Gi memory | 8 CPU, 24Gi memory |
 | Indexer | 1 CPU, 2Gi memory | 4 CPU, 8Gi memory |
+| Graph | 500m CPU, 1Gi memory | 2 CPU, 4Gi memory |
+| Scanner | 500m CPU, 512Mi memory | 2 CPU, 2Gi memory |
 
 Actual capacity must be based on measured source corpus size, index size,
 indexing duration, and query concurrency rather than repository count alone.
