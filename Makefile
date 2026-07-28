@@ -76,7 +76,7 @@ server:
 	go run ./cmd/grepnest-server
 
 zoekt-version:
-	@printf '%s\\n' '$(ZOEKT_VERSION)'
+	@printf '%s\n' '$(ZOEKT_VERSION)'
 
 image:
 	docker buildx build --load --platform $(IMAGE_PLATFORM) --target application \
