@@ -9,6 +9,7 @@ import (
 
 	"github.com/grepnest/grepnest/internal/graphartifact"
 	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/jackc/pgx/v5"
 )
 
 func TestGraphManifestsPreferCurrentArtifactAndFallBackToSCIP(t *testing.T) {
@@ -73,6 +74,46 @@ func TestGraphSnapshotIDsReserveTheSCIPManifestRange(t *testing.T) {
 		values ($1, $2, $3, '', 'test', '1')`, scipManifestOffset+1, repositoryID, testSHA('a')); err == nil {
 		t.Fatal("SCIP upload exceeded its derivable ID range")
 	}
+}
+
+func TestGraphManifestsUsesOneFallbackSnapshot(t *testing.T) {
+	store, repositoryID := readyGraphStore(t, testSHA('a'))
+	oldSymbol, newSymbol := "scip go Old#", "scip go New#"
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("old.go", oldSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := store.pool.BeginTx(t.Context(), pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(t.Context())
+	if _, err := tx.Exec(t.Context(), "select 1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("new.go", newSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	manifests, err := store.graphManifests(t.Context(), tx)
+	if err != nil || len(manifests) != 1 || manifests[0].Source != "scip" {
+		t.Fatalf("manifests=%#v err=%v", manifests, err)
+	}
+	var uploadID int64
+	if err := tx.QueryRow(t.Context(), "select id from scip_uploads where repository_id=$1", repositoryID).Scan(&uploadID); err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := store.scipArtifact(t.Context(), tx, repositoryID, uploadID, testSHA('a'))
+	if err != nil || !containsSymbol(artifact, oldSymbol) || bytes.Equal(manifests[0].ContentHash, nil) || !bytes.Equal(manifests[0].ContentHash, artifact.ContentHash) {
+		t.Fatalf("manifest=%#v artifact=%#v err=%v", manifests[0], artifact, err)
+	}
+}
+
+func containsSymbol(artifact graphartifact.Artifact, symbol string) bool {
+	for _, node := range artifact.Nodes {
+		if node.SCIPSymbol == symbol {
+			return true
+		}
+	}
+	return false
 }
 
 func containsSCIPSymbol(artifact graphartifact.Artifact) bool {
