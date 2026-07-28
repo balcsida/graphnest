@@ -88,8 +88,8 @@ func graphImpactSchema() map[string]any {
 	properties["relations"] = relationSchema()
 	properties["min_confidence"] = map[string]any{"type": "number", "minimum": 0, "maximum": 1, "description": "minimum relationship confidence"}
 	properties["include_tests"] = map[string]any{"type": "boolean", "description": "include test symbols"}
-	properties["max_depth"] = positiveIntegerSchema("maximum traversal depth")
-	properties["limit"] = positiveIntegerSchema("maximum results")
+	properties["max_depth"] = cappedIntegerSchema("maximum traversal depth; default: 3; values above 32 are capped", 3)
+	properties["limit"] = cappedIntegerSchema("maximum results; default: 100; values above 100 are capped", 100)
 	properties["offset"] = map[string]any{"type": "integer", "minimum": 0, "description": "results to skip"}
 	properties["summary_only"] = map[string]any{"type": "boolean", "description": "omit relationship details"}
 	return map[string]any{"type": "object", "additionalProperties": false, "required": []string{"target_uid", "direction"}, "properties": properties}
@@ -99,7 +99,7 @@ func graphTraceSchema() map[string]any {
 	properties := graphBaseProperties()
 	properties["source_uid"] = map[string]any{"type": "string", "minLength": 1, "description": "source symbol UID"}
 	properties["target_uid"] = map[string]any{"type": "string", "minLength": 1, "description": "target symbol UID"}
-	properties["max_depth"] = positiveIntegerSchema("maximum traversal depth")
+	properties["max_depth"] = cappedIntegerSchema("maximum traversal depth; default: 10; values above 30 are capped", 10)
 	return map[string]any{"type": "object", "additionalProperties": false, "required": []string{"source_uid", "target_uid"}, "properties": properties}
 }
 
@@ -107,11 +107,15 @@ func graphCypherSchema() map[string]any {
 	properties := graphBaseProperties()
 	properties["statement"] = map[string]any{"type": "string", "minLength": 1, "description": "read-only Cypher statement"}
 	properties["parameters"] = map[string]any{"type": "object", "additionalProperties": true, "description": "JSON query parameters"}
-	properties["max_rows"] = positiveIntegerSchema("maximum rows")
-	properties["max_bytes"] = positiveIntegerSchema("maximum response bytes")
+	properties["max_rows"] = cappedIntegerSchema("maximum rows; default: 100; values above 100 are capped", 100)
+	properties["max_bytes"] = cappedIntegerSchema("maximum response bytes; default: 262144; values above 262144 are capped", 256<<10)
 	return map[string]any{"type": "object", "additionalProperties": false, "required": []string{"statement"}, "properties": properties}
 }
 
 func relationSchema() map[string]any {
 	return map[string]any{"type": "array", "items": map[string]any{"type": "string", "enum": []string{"calls", "references", "extends", "implements"}}, "uniqueItems": true, "description": "relationship kinds"}
+}
+
+func cappedIntegerSchema(description string, defaultValue int) map[string]any {
+	return map[string]any{"type": "integer", "minimum": 1, "default": defaultValue, "description": description}
 }
