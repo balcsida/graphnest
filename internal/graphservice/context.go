@@ -9,14 +9,18 @@ import (
 )
 
 func (s *Service) Context(ctx context.Context, principal authn.Principal, request api.GraphContextRequest) (api.GraphContextResponse, error) {
-	if (request.UID == "" && request.Name == "") || request.PerCategoryLimit < 0 || request.PerCategoryOffset < 0 || !validRelations(request.Relations) {
+	if (request.UID == "" && request.Name == "") || (request.UID != "" && request.Name != "") || request.PerCategoryLimit < 0 || request.PerCategoryOffset < 0 || !validRelations(request.Relations) {
 		return api.GraphContextResponse{}, ErrInvalidRequest
 	}
 	selected, scope, snapshots, err := s.scope(ctx, principal, request.Repo, request.Branch)
 	if err != nil {
 		return api.GraphContextResponse{}, err
 	}
-	response, err := s.Backend.Context(ctx, graphprotocol.ContextRequest{Scope: scope, UID: request.UID, Name: request.Name, FilePath: request.FilePath, Kind: request.Kind, Relations: request.Relations, PerCategoryLimit: request.PerCategoryLimit, PerCategoryOffset: request.PerCategoryOffset})
+	limit := request.PerCategoryLimit
+	if limit <= 0 || limit > s.limits().PerCategory {
+		limit = s.limits().PerCategory
+	}
+	response, err := s.Backend.Context(ctx, graphprotocol.ContextRequest{Scope: scope, UID: request.UID, Name: request.Name, FilePath: request.FilePath, Kind: request.Kind, Relations: request.Relations, PerCategoryLimit: limit, PerCategoryOffset: request.PerCategoryOffset})
 	if err != nil {
 		return api.GraphContextResponse{}, err
 	}

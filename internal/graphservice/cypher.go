@@ -28,7 +28,16 @@ func (s *Service) Cypher(ctx context.Context, principal authn.Principal, request
 		}
 		parameters[name] = value
 	}
-	response, err := s.Backend.Cypher(ctx, graphprotocol.CypherRequest{Scope: scope, Admin: true, Statement: request.Statement, Parameters: parameters, MaxRows: request.MaxRows, MaxBytes: request.MaxBytes})
+	limits := s.limits()
+	maxRows := request.MaxRows
+	if maxRows <= 0 || maxRows > limits.MaxRows {
+		maxRows = limits.MaxRows
+	}
+	maxBytes := request.MaxBytes
+	if maxBytes <= 0 || maxBytes > limits.MaxResponseBytes {
+		maxBytes = limits.MaxResponseBytes
+	}
+	response, err := s.Backend.Cypher(ctx, graphprotocol.CypherRequest{Scope: scope, Admin: true, Statement: request.Statement, Parameters: parameters, MaxRows: maxRows, MaxBytes: maxBytes})
 	if err != nil {
 		return api.GraphCypherResponse{}, err
 	}

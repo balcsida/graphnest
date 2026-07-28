@@ -19,6 +19,7 @@ type Limits struct {
 	PerCategory, DefaultImpactDepth, MaxDepth int
 	DefaultTraceDepth, MaxTraceDepth, MaxRows int
 	MaxNodes, MaxEdges, MaxFanout             int
+	MaxResponseBytes                          int
 }
 
 type ContentReader interface {
@@ -93,6 +94,36 @@ func validRelations(relations []string) bool {
 		seen[relation] = struct{}{}
 	}
 	return true
+}
+
+func (s *Service) limits() Limits {
+	limits := s.Limits
+	if limits.PerCategory <= 0 || limits.PerCategory > 100 {
+		limits.PerCategory = 100
+	}
+	if limits.MaxDepth <= 0 || limits.MaxDepth > 32 {
+		limits.MaxDepth = 32
+	}
+	if limits.DefaultImpactDepth <= 0 {
+		limits.DefaultImpactDepth = 3
+	} else if limits.DefaultImpactDepth > limits.MaxDepth {
+		limits.DefaultImpactDepth = limits.MaxDepth
+	}
+	if limits.MaxTraceDepth <= 0 || limits.MaxTraceDepth > 30 {
+		limits.MaxTraceDepth = 30
+	}
+	if limits.DefaultTraceDepth <= 0 {
+		limits.DefaultTraceDepth = 10
+	} else if limits.DefaultTraceDepth > limits.MaxTraceDepth {
+		limits.DefaultTraceDepth = limits.MaxTraceDepth
+	}
+	if limits.MaxRows <= 0 || limits.MaxRows > 100 {
+		limits.MaxRows = 100
+	}
+	if limits.MaxResponseBytes <= 0 || limits.MaxResponseBytes > 256<<10 {
+		limits.MaxResponseBytes = 256 << 10
+	}
+	return limits
 }
 
 func symbol(value graphprotocol.Symbol) api.GraphSymbol {

@@ -23,31 +23,39 @@ func (s *fakeRepositoryStore) GraphRepositories(context.Context, authn.Principal
 }
 
 type fakeBackend struct {
-	context func() graphprotocol.ContextResponse
-	impact  func() graphprotocol.ImpactResponse
-	trace   func() graphprotocol.TraceResponse
-	cypher  func() graphprotocol.CypherResponse
-	after   func()
-	calls   int
+	context        func() graphprotocol.ContextResponse
+	impact         func() graphprotocol.ImpactResponse
+	trace          func() graphprotocol.TraceResponse
+	cypher         func() graphprotocol.CypherResponse
+	after          func()
+	calls          int
+	contextRequest graphprotocol.ContextRequest
+	impactRequest  graphprotocol.ImpactRequest
+	traceRequest   graphprotocol.TraceRequest
+	cypherRequest  graphprotocol.CypherRequest
 }
 
-func (b *fakeBackend) Context(context.Context, graphprotocol.ContextRequest) (graphprotocol.ContextResponse, error) {
+func (b *fakeBackend) Context(_ context.Context, request graphprotocol.ContextRequest) (graphprotocol.ContextResponse, error) {
+	b.contextRequest = request
 	b.calls++
 	if b.after != nil {
 		b.after()
 	}
 	return b.context(), nil
 }
-func (b *fakeBackend) Impact(context.Context, graphprotocol.ImpactRequest) (graphprotocol.ImpactResponse, error) {
+func (b *fakeBackend) Impact(_ context.Context, request graphprotocol.ImpactRequest) (graphprotocol.ImpactResponse, error) {
 	b.calls++
+	b.impactRequest = request
 	return b.impact(), nil
 }
-func (b *fakeBackend) Trace(context.Context, graphprotocol.TraceRequest) (graphprotocol.TraceResponse, error) {
+func (b *fakeBackend) Trace(_ context.Context, request graphprotocol.TraceRequest) (graphprotocol.TraceResponse, error) {
 	b.calls++
+	b.traceRequest = request
 	return b.trace(), nil
 }
-func (b *fakeBackend) Cypher(context.Context, graphprotocol.CypherRequest) (graphprotocol.CypherResponse, error) {
+func (b *fakeBackend) Cypher(_ context.Context, request graphprotocol.CypherRequest) (graphprotocol.CypherResponse, error) {
 	b.calls++
+	b.cypherRequest = request
 	return b.cypher(), nil
 }
 
@@ -88,5 +96,24 @@ func TestContextRejectsUnauthorizedBeforeBackend(t *testing.T) {
 	_, err := (&Service{Store: &fakeRepositoryStore{}, Backend: backend}).Context(t.Context(), principalFor(101), api.GraphContextRequest{Repo: api.GraphRepositorySelector{ID: 101}, GraphSymbolSelector: api.GraphSymbolSelector{UID: "x"}})
 	if !errors.Is(err, ErrRepositoryNotFound) || backend.calls != 0 {
 		t.Fatalf("err=%v calls=%d", err, backend.calls)
+	}
+}
+
+func TestContextRejectsAliasConflictBeforeBackend(t *testing.T) {
+	backend := &fakeBackend{context: emptyContext}
+	_, err := (&Service{Store: &fakeRepositoryStore{repositories: []repository.Repository{readyRepository("a")}}, Backend: backend}).Context(t.Context(), principalFor(101), api.GraphContextRequest{Repo: api.GraphRepositorySelector{ID: 101}, GraphSymbolSelector: api.GraphSymbolSelector{UID: "id", Name: "name"}})
+	if !errors.Is(err, ErrInvalidRequest) || backend.calls != 0 {
+		t.Fatalf("err=%v calls=%d", err, backend.calls)
+	}
+}
+
+func TestContextCapsPaginationAndRejectsBackendCommitMismatch(t *testing.T) {
+	backend := &fakeBackend{context: func() graphprotocol.ContextResponse {
+		return graphprotocol.ContextResponse{Commits: map[string]string{"a": strings.Repeat("b", 40)}}
+	}}
+	service := &Service{Store: &fakeRepositoryStore{repositories: []repository.Repository{readyRepository("a")}}, Backend: backend, Limits: Limits{PerCategory: 2}}
+	_, err := service.Context(t.Context(), principalFor(101), api.GraphContextRequest{Repo: api.GraphRepositorySelector{ID: 101}, GraphSymbolSelector: api.GraphSymbolSelector{UID: "x"}, PerCategoryLimit: 99, PerCategoryOffset: 7})
+	if !errors.Is(err, ErrGraphNotReady) || backend.contextRequest.PerCategoryLimit != 2 || backend.contextRequest.PerCategoryOffset != 7 {
+		t.Fatalf("err=%v request=%#v", err, backend.contextRequest)
 	}
 }

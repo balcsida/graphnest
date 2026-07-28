@@ -16,7 +16,18 @@ func (s *Service) Impact(ctx context.Context, principal authn.Principal, request
 	if err != nil {
 		return api.GraphImpactResponse{}, err
 	}
-	response, err := s.Backend.Impact(ctx, graphprotocol.ImpactRequest{Scope: scope, TargetUID: request.TargetUID, Direction: request.Direction, Relations: request.Relations, MinConfidence: request.MinConfidence, IncludeTests: request.IncludeTests, MaxDepth: request.MaxDepth, Limit: request.Limit, Offset: request.Offset, SummaryOnly: request.SummaryOnly})
+	limits := s.limits()
+	depth := request.MaxDepth
+	if depth <= 0 {
+		depth = limits.DefaultImpactDepth
+	} else if depth > limits.MaxDepth {
+		depth = limits.MaxDepth
+	}
+	limit := request.Limit
+	if limit <= 0 || limit > limits.MaxRows {
+		limit = limits.MaxRows
+	}
+	response, err := s.Backend.Impact(ctx, graphprotocol.ImpactRequest{Scope: scope, TargetUID: request.TargetUID, Direction: request.Direction, Relations: request.Relations, MinConfidence: request.MinConfidence, IncludeTests: request.IncludeTests, MaxDepth: depth, Limit: limit, Offset: request.Offset, SummaryOnly: request.SummaryOnly})
 	if err != nil {
 		return api.GraphImpactResponse{}, err
 	}
