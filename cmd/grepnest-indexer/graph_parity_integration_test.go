@@ -70,12 +70,12 @@ func TestEmbeddedAndStandaloneCommandParity(t *testing.T) {
 		}
 	})
 
-	scope := fmt.Sprintf(`{"repositories":[{"id":101,"name":"acme/repo","commit":%q}]}`, artifact.Commit)
+	scope := fmt.Sprintf(`{"repositories":[{"id":%d,"name":"acme/repo","commit":%q}]}`, artifact.RepositoryID, artifact.Commit)
 	requests := map[string]string{
 		"/internal/v1/graph/context": `{"scope":` + scope + `,"uid":"A"}`,
-		"/internal/v1/graph/impact":  `{"scope":` + scope + `,"target_uid":"B"}`,
+		"/internal/v1/graph/impact":  `{"scope":` + scope + `,"target_uid":"B","direction":"downstream"}`,
 		"/internal/v1/graph/trace":   `{"scope":` + scope + `,"source_uid":"A","target_uid":"B"}`,
-		"/internal/v1/graph/cypher":  `{"admin":true,"statement":"RETURN 1 AS value"}`,
+		"/internal/v1/graph/cypher":  `{"scope":` + scope + `,"admin":true,"statement":"RETURN 1 AS value"}`,
 	}
 	for _, path := range []string{
 		"/internal/v1/graph/context", "/internal/v1/graph/impact",

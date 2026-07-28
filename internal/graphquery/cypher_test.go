@@ -18,22 +18,33 @@ func TestCypherRequiresAdminAndRejectsWrites(t *testing.T) {
 		t.Fatalf("Cypher() error = %v", err)
 	}
 	request.Admin = true
+	request.Scope = scope(testCommit)
 	if _, err := service.Cypher(t.Context(), request); err == nil {
 		t.Fatal("write unexpectedly succeeded")
+	}
+}
+
+func TestCypherRejectsMissingScopeBeforeExecution(t *testing.T) {
+	service := seededQueryService(t, callChain("A"))
+	_, err := service.Cypher(t.Context(), graphprotocol.CypherRequest{
+		Admin: true, Statement: `MATCH (s:Symbol) RETURN s.qualified_name`,
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("Cypher() error = %v", err)
 	}
 }
 
 func TestCypherBoundsRowsAndOutput(t *testing.T) {
 	service := seededQueryService(t, callChain("A", "B", "C"))
 	rows, err := service.Cypher(t.Context(), graphprotocol.CypherRequest{
-		Admin: true, Statement: `UNWIND range(1, 5) AS value RETURN value`,
+		Scope: scope(testCommit), Admin: true, Statement: `UNWIND range(1, 5) AS value RETURN value`,
 		MaxRows: 2, MaxBytes: 1 << 20, Parameters: map[string]any{"scalar": int64(1)},
 	})
 	if err != nil || len(rows.Rows) != 2 || !rows.Truncated {
 		t.Fatalf("Cypher()=%#v,%v", rows, err)
 	}
 	bytes, err := service.Cypher(t.Context(), graphprotocol.CypherRequest{
-		Admin: true, Statement: `RETURN $value`, Parameters: map[string]any{"value": strings.Repeat("x", 100)},
+		Scope: scope(testCommit), Admin: true, Statement: `RETURN $value`, Parameters: map[string]any{"value": strings.Repeat("x", 100)},
 		MaxRows: 10, MaxBytes: 64,
 	})
 	if err != nil || !bytes.Truncated {
@@ -45,7 +56,7 @@ func TestCypherUsesConfiguredMaximumRows(t *testing.T) {
 	service := seededQueryService(t, callChain("A"))
 	service.Limits = Limits{MaxRows: 2}
 	got, err := service.Cypher(t.Context(), graphprotocol.CypherRequest{
-		Admin: true, Statement: `UNWIND range(1, 5) AS value RETURN value`, MaxRows: 5,
+		Scope: scope(testCommit), Admin: true, Statement: `UNWIND range(1, 5) AS value RETURN value`, MaxRows: 5,
 	})
 	if err != nil || len(got.Rows) != 2 || !got.Truncated {
 		t.Fatalf("Cypher()=%#v,%v", got, err)
@@ -55,14 +66,14 @@ func TestCypherUsesConfiguredMaximumRows(t *testing.T) {
 func TestCypherRejectsNonscalarParametersAndTimesOut(t *testing.T) {
 	service := seededQueryService(t, callChain("A"))
 	if _, err := service.Cypher(t.Context(), graphprotocol.CypherRequest{
-		Admin: true, Statement: `RETURN $value`, Parameters: map[string]any{"value": []string{"bad"}},
+		Scope: scope(testCommit), Admin: true, Statement: `RETURN $value`, Parameters: map[string]any{"value": []string{"bad"}},
 	}); err == nil {
 		t.Fatal("nonscalar parameter unexpectedly succeeded")
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), time.Millisecond)
 	defer cancel()
 	_, err := service.Cypher(ctx, graphprotocol.CypherRequest{
-		Admin: true, Statement: `UNWIND range(1, 1000000) AS value RETURN sum(value)`,
+		Scope: scope(testCommit), Admin: true, Statement: `UNWIND range(1, 1000000) AS value RETURN sum(value)`,
 	})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Cypher() error = %v, want deadline exceeded", err)
@@ -72,7 +83,7 @@ func TestCypherRejectsNonscalarParametersAndTimesOut(t *testing.T) {
 func TestCypherStripsPhysicalUIDs(t *testing.T) {
 	service := seededQueryService(t, callChain("A"))
 	got, err := service.Cypher(t.Context(), graphprotocol.CypherRequest{
-		Admin: true, Statement: `MATCH (s:Symbol) RETURN s.uid AS value LIMIT 1`,
+		Scope: scope(testCommit), Admin: true, Statement: `MATCH (s:Symbol) RETURN s.uid AS value LIMIT 1`,
 	})
 	if err != nil || len(got.Rows) != 1 || got.Rows[0][0] != "A" {
 		t.Fatalf("Cypher()=%#v,%v", got, err)
@@ -105,6 +116,7 @@ func TestCypherSanitizerPreservesOrdinaryNumericPrefixStrings(t *testing.T) {
 func TestCypherSanitizesOnlyExistingPhysicalScalarUIDs(t *testing.T) {
 	service := seededQueryService(t, callChain("A"))
 	got, err := service.Cypher(t.Context(), graphprotocol.CypherRequest{
+		Scope:      scope(testCommit),
 		Admin:      true,
 		Statement:  `MATCH (s:Symbol) WHERE s.uid = $uid RETURN $ordinary AS ordinary, s.uid AS value, [$ordinary, s.uid] AS nested`,
 		Parameters: map[string]any{"uid": "101:A", "ordinary": "101:forecast"},
