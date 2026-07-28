@@ -144,8 +144,15 @@ func symbol(value graphprotocol.Symbol) api.GraphSymbol {
 	return api.GraphSymbol{UID: value.UID, Name: value.Name, Kind: value.Kind, FilePath: value.FilePath, Language: value.Language, Signature: value.Signature, RepositoryID: value.RepositoryID, Range: position(value.Range), Test: value.Test}
 }
 
-func candidate(value graphprotocol.Symbol) api.GraphCandidate {
-	return api.GraphCandidate{UID: value.UID, Name: value.Name, Kind: value.Kind, FilePath: value.FilePath, Line: int(value.Range.StartLine) + 1}
+func candidate(value graphprotocol.Symbol, snapshots map[int64]Snapshot) (api.GraphCandidate, error) {
+	snapshot, ok := snapshots[value.RepositoryID]
+	if !ok {
+		return api.GraphCandidate{}, ErrGraphNotReady
+	}
+	return api.GraphCandidate{
+		UID: value.UID, Name: value.Name, Kind: value.Kind, FilePath: value.FilePath,
+		RepositoryID: snapshot.GitHubID, Line: int(value.Range.StartLine) + 1,
+	}, nil
 }
 func position(value graphprotocol.Position) api.GraphPosition {
 	return api.GraphPosition{StartLine: int(value.StartLine), StartCharacter: int(value.StartCharacter), EndLine: int(value.EndLine), EndCharacter: int(value.EndCharacter)}

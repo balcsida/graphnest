@@ -155,3 +155,20 @@ func TestContextAnchorsLookupToSelectedRepository(t *testing.T) {
 		t.Fatalf("scope=%#v", backend.contextRequest.Scope)
 	}
 }
+
+func TestContextRejectsCandidateOutsideAuthorizedScope(t *testing.T) {
+	backend := &fakeBackend{context: func() graphprotocol.ContextResponse {
+		return graphprotocol.ContextResponse{
+			Status:     graphprotocol.StatusAmbiguous,
+			Candidates: []graphprotocol.Symbol{{UID: "secret", RepositoryID: 2}},
+			Commits:    map[string]string{"a": strings.Repeat("a", 40)},
+		}
+	}}
+	service := &Service{Store: &fakeRepositoryStore{repositories: []repository.Repository{readyRepository("a")}}, Backend: backend}
+	_, err := service.Context(t.Context(), principalFor(101), api.GraphContextRequest{
+		Repo: api.GraphRepositorySelector{ID: 101}, GraphSymbolSelector: api.GraphSymbolSelector{UID: "x"},
+	})
+	if !errors.Is(err, ErrGraphNotReady) {
+		t.Fatalf("Context() error = %v", err)
+	}
+}

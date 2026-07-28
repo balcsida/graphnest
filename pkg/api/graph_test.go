@@ -57,7 +57,7 @@ func TestGraphContractsMarshalBoundedFields(t *testing.T) {
 }
 
 func TestGraphResponsesExposeDiscriminatorCommitsAndCandidates(t *testing.T) {
-	candidate := GraphCandidate{UID: "symbol:a", Name: "A"}
+	candidate := GraphCandidate{UID: "symbol:a", Name: "A", RepositoryID: 101}
 	for _, test := range []struct {
 		name     string
 		response any
@@ -80,6 +80,20 @@ func TestGraphResponsesExposeDiscriminatorCommitsAndCandidates(t *testing.T) {
 			if test.name != "cypher" && !bytes.Contains(data, []byte(`"candidates":[`)) {
 				t.Fatalf("JSON = %s, missing candidates", data)
 			}
+			if test.name != "cypher" && !bytes.Contains(data, []byte(`"repository_id":101`)) {
+				t.Fatalf("JSON = %s, missing retryable repository identity", data)
+			}
 		})
+	}
+}
+
+func TestGraphCandidateJSONCarriesRetryableRepositoryIdentity(t *testing.T) {
+	data, err := json.Marshal(GraphCandidate{
+		UID: "symbol:a", Name: "A", Kind: "function", FilePath: "a.go",
+		RepositoryID: 101, Line: 7, Score: 0.75,
+	})
+	const want = `{"uid":"symbol:a","name":"A","kind":"function","file_path":"a.go","repository_id":101,"line":7,"score":0.75}`
+	if err != nil || string(data) != want {
+		t.Fatalf("JSON = %s, %v", data, err)
 	}
 }

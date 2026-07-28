@@ -678,12 +678,13 @@ components:
     GraphCandidate:
       type: object
       additionalProperties: false
-      required: [uid, name, kind, file_path, line, score]
+      required: [uid, name, kind, file_path, repository_id, line, score]
       properties:
         uid: {type: string}
         name: {type: string}
         kind: {type: string}
         file_path: {type: string}
+        repository_id: {type: integer, format: int64, minimum: 1, description: GitHub repository ID accepted by repo}
         line: {type: integer}
         score: {type: number}
     GraphReference:

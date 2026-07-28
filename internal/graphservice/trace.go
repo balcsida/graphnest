@@ -15,7 +15,7 @@ func (s *Service) Trace(ctx context.Context, principal authn.Principal, request 
 	if request.SourceUID == "" || request.TargetUID == "" || request.MaxDepth < 0 {
 		return api.GraphTraceResponse{}, ErrInvalidRequest
 	}
-	selected, scope, _, err := s.scope(ctx, principal, request.Repo, request.Branch)
+	selected, scope, snapshots, err := s.scope(ctx, principal, request.Repo, request.Branch)
 	if err != nil {
 		return api.GraphTraceResponse{}, err
 	}
@@ -35,7 +35,11 @@ func (s *Service) Trace(ctx context.Context, principal authn.Principal, request 
 	}
 	result = api.GraphTraceResponse{Status: response.Status, Boundaries: boundaries(response.Boundaries), Commits: response.Commits}
 	for _, value := range response.Candidates {
-		result.Candidates = append(result.Candidates, candidate(value))
+		converted, convertErr := candidate(value, snapshots)
+		if convertErr != nil {
+			return api.GraphTraceResponse{}, convertErr
+		}
+		result.Candidates = append(result.Candidates, converted)
 	}
 	for _, value := range response.Nodes {
 		result.Nodes = append(result.Nodes, symbol(value))

@@ -12,7 +12,7 @@ Use only `list_repositories`, `context`, `impact`, `trace`, and administrator-on
 - Call `list_repositories` with optional `limit`; it has no name filter. Use the returned exact repository name or positive GitHub repository ID as `repo`.
 - Omit `repo` only when exactly one repository is authorized. `branch`, when set, must be the indexed branch.
 - `context` accepts exactly one of `uid` or `name`; narrow a name with `file_path` and `kind`.
-- `found` supplies a result, `ambiguous` supplies `candidates` to retry by UID, and `not_found` means no matching symbol.
+- `found` supplies a result, `ambiguous` supplies `candidates`, and `not_found` means no matching symbol. Retry a candidate with its `repository_id` as `repo` and its `uid`; never choose by UID alone.
 - `trace` additionally returns `no_path`; `cypher` returns `ok`.
 
 ## Graph evidence

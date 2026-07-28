@@ -45,7 +45,11 @@ func (s *Service) Context(ctx context.Context, principal authn.Principal, reques
 		result.Symbol = &value
 	}
 	for _, value := range response.Candidates {
-		result.Candidates = append(result.Candidates, candidate(value))
+		converted, convertErr := candidate(value, snapshots)
+		if convertErr != nil {
+			return api.GraphContextResponse{}, convertErr
+		}
+		result.Candidates = append(result.Candidates, converted)
 	}
 	for relation, values := range response.IncomingEdges {
 		for _, value := range values {

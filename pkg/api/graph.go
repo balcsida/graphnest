@@ -84,12 +84,13 @@ type GraphSymbol struct {
 }
 
 type GraphCandidate struct {
-	UID      string  `json:"uid"`
-	Name     string  `json:"name"`
-	Kind     string  `json:"kind"`
-	FilePath string  `json:"file_path"`
-	Line     int     `json:"line"`
-	Score    float64 `json:"score"`
+	UID          string  `json:"uid"`
+	Name         string  `json:"name"`
+	Kind         string  `json:"kind"`
+	FilePath     string  `json:"file_path"`
+	RepositoryID int64   `json:"repository_id"`
+	Line         int     `json:"line"`
+	Score        float64 `json:"score"`
 }
 
 type GraphReference struct {

@@ -96,6 +96,9 @@ end
 raise OpenAPIError, "graph cypher forbidden response is missing" unless graph_queries.fetch("cypher").dig("responses", "403").is_a?(Hash)
 
 schemas = document.fetch("components").fetch("schemas")
+candidate = schemas.fetch("GraphCandidate")
+raise OpenAPIError, "GraphCandidate must require repository_id" unless candidate.fetch("required").include?("repository_id")
+require_value(candidate.dig("properties", "repository_id", "minimum"), 1, "GraphCandidate.repository_id minimum")
 {
   "GraphContextResponse" => %w[found not_found ambiguous],
   "GraphImpactResponse" => %w[found not_found ambiguous],
