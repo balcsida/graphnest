@@ -26,6 +26,121 @@ func TestCopyStagesBoundedPrivateSecret(t *testing.T) {
 	}
 }
 
+func TestCopyStagesProjectedSecret(t *testing.T) {
+	root, source := projectedSecret(t, "one", []byte("projected-token"))
+	destination := filepath.Join(t.TempDir(), "secret")
+	if err := Copy(source, destination); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(destination)
+	if err != nil || string(data) != "projected-token" {
+		t.Fatalf("root=%s data=%q err=%v", root, data, err)
+	}
+}
+
+func TestCopyKeepsResolvedVersionAcrossDataSwap(t *testing.T) {
+	root, source := projectedSecret(t, "one", []byte("first"))
+	writeProjectedVersion(t, root, "two", []byte("second"))
+	destination := filepath.Join(t.TempDir(), "secret")
+	ops := systemOperations()
+	open := ops.open
+	swapped := false
+	ops.open = func(path string) (stageFile, error) {
+		if !swapped {
+			swapped = true
+			next := filepath.Join(root, "..data-next")
+			mustSymlink(t, "..version-two", next)
+			if err := os.Rename(next, filepath.Join(root, "..data")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return open(path)
+	}
+	if err := copyWith(source, destination, ops); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(destination)
+	if err != nil || string(data) != "first" {
+		t.Fatalf("data=%q err=%v", data, err)
+	}
+}
+
+func TestCopyRejectsProjectedSecretEscapes(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(*testing.T, string, string) string
+	}{
+		{name: "absolute key", setup: func(t *testing.T, root, outside string) string {
+			source := filepath.Join(root, "secret")
+			mustSymlink(t, outside, source)
+			return source
+		}},
+		{name: "relative escape", setup: func(t *testing.T, root, _ string) string {
+			source := filepath.Join(root, "secret")
+			mustSymlink(t, "../outside", source)
+			return source
+		}},
+		{name: "escaping chain", setup: func(t *testing.T, root, _ string) string {
+			mustSymlink(t, "first", filepath.Join(root, "secret"))
+			mustSymlink(t, "../outside", filepath.Join(root, "first"))
+			return filepath.Join(root, "secret")
+		}},
+		{name: "escaping directory component", setup: func(t *testing.T, root, outside string) string {
+			outsideDir := filepath.Dir(outside)
+			if err := os.WriteFile(filepath.Join(outsideDir, "key"), []byte("outside"), 0o440); err != nil {
+				t.Fatal(err)
+			}
+			mustSymlink(t, outsideDir, filepath.Join(root, "nested"))
+			mustSymlink(t, "nested/key", filepath.Join(root, "secret"))
+			return filepath.Join(root, "secret")
+		}},
+		{name: "escaping data link", setup: func(t *testing.T, root, outside string) string {
+			outsideDir := filepath.Dir(outside)
+			if err := os.WriteFile(filepath.Join(outsideDir, "secret"), []byte("outside"), 0o440); err != nil {
+				t.Fatal(err)
+			}
+			mustSymlink(t, outsideDir, filepath.Join(root, "..data"))
+			mustSymlink(t, "..data/secret", filepath.Join(root, "secret"))
+			return filepath.Join(root, "secret")
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			outside := filepath.Join(t.TempDir(), "outside")
+			if err := os.WriteFile(outside, []byte("outside"), 0o440); err != nil {
+				t.Fatal(err)
+			}
+			source := test.setup(t, root, outside)
+			if err := Copy(source, filepath.Join(t.TempDir(), "secret")); !errors.Is(err, ErrInvalidSource) {
+				t.Fatalf("err=%v", err)
+			}
+		})
+	}
+}
+
+func TestCopyRejectsRacedProjectedTarget(t *testing.T) {
+	root, source := projectedSecret(t, "one", []byte("first"))
+	outside := filepath.Join(t.TempDir(), "outside")
+	if err := os.WriteFile(outside, []byte("outside"), 0o440); err != nil {
+		t.Fatal(err)
+	}
+	ops := systemOperations()
+	open := ops.open
+	ops.open = func(path string) (stageFile, error) {
+		old := path + "-old"
+		if err := os.Rename(path, old); err != nil {
+			t.Fatal(err)
+		}
+		mustSymlink(t, outside, path)
+		return open(path)
+	}
+	err := copyWith(source, filepath.Join(t.TempDir(), "secret"), ops)
+	if !errors.Is(err, ErrInvalidSource) {
+		t.Fatalf("root=%s err=%v", root, err)
+	}
+}
+
 func TestCopyRejectsUnsafeInputs(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -36,7 +151,7 @@ func TestCopyRejectsUnsafeInputs(t *testing.T) {
 		{name: "empty", mode: 0o440},
 		{name: "oversized", data: make([]byte, maxSecretBytes+1), mode: 0o440},
 		{name: "writable source", data: []byte("token"), mode: 0o660},
-		{name: "source symlink", data: []byte("token"), mode: 0o440, setup: func(t *testing.T, source, _ string) {
+		{name: "absolute source symlink", data: []byte("token"), mode: 0o440, setup: func(t *testing.T, source, _ string) {
 			target := source + "-target"
 			if err := os.Rename(source, target); err != nil {
 				t.Fatal(err)
@@ -181,4 +296,35 @@ func writeSource(t *testing.T, data []byte, mode os.FileMode) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func projectedSecret(t *testing.T, version string, data []byte) (string, string) {
+	t.Helper()
+	root := t.TempDir()
+	writeProjectedVersion(t, root, version, data)
+	mustSymlink(t, "..version-"+version, filepath.Join(root, "..data"))
+	mustSymlink(t, "..data/secret", filepath.Join(root, "secret"))
+	return root, filepath.Join(root, "secret")
+}
+
+func writeProjectedVersion(t *testing.T, root, version string, data []byte) {
+	t.Helper()
+	directory := filepath.Join(root, "..version-"+version)
+	if err := os.Mkdir(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "secret")
+	if err := os.WriteFile(path, data, 0o440); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o440); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustSymlink(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
 }
