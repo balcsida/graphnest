@@ -68,10 +68,14 @@ resolve_local_references(document, document_path, documents)
 upload = document.dig("paths", "/v1/scip/uploads", "post", "requestBody", "content", "application/vnd.scip+protobuf", "schema")
 graph_upload = document.dig("paths", "/v1/graph/uploads", "post", "requestBody", "content", "application/vnd.grepnest.graph.v1+protobuf", "schema")
 graph_status = document.dig("paths", "/v1/graph/repositories/{id}/status", "get", "responses", "200", "content", "application/json", "schema")
+graph_queries = %w[context impact trace cypher].to_h do |name|
+  [name, document.dig("paths", "/v1/graph/#{name}", "post")]
+end
 locations = document.dig("components", "schemas", "SCIPNavigationResponse", "properties", "locations")
 raise OpenAPIError, "SCIP upload schema is missing" unless upload.is_a?(Hash)
 raise OpenAPIError, "graph upload schema is missing" unless graph_upload.is_a?(Hash)
 raise OpenAPIError, "graph status schema is missing" unless graph_status.is_a?(Hash)
+raise OpenAPIError, "graph query routes are missing" unless graph_queries.values.all? { |query| query.is_a?(Hash) }
 raise OpenAPIError, "SCIP navigation locations schema is missing" unless locations.is_a?(Hash)
 
 require_value(upload["x-default-max-bytes"], 67_108_864, "SCIP upload default byte cap")
@@ -80,5 +84,15 @@ require_value(graph_upload["x-default-max-bytes"], 67_108_864, "graph upload def
 require_value(graph_upload["x-server-max-bytes"], 268_435_456, "graph upload server byte cap")
 require_value(graph_status["$ref"], "#/components/schemas/GraphStatus", "graph status response schema")
 require_value(locations["maxItems"], 100, "SCIP navigation locations cap")
+graph_queries.each do |name, query|
+  schema = query.dig("requestBody", "content", "application/json", "schema")
+  response = query.dig("responses", "200", "content", "application/json", "schema")
+  raise OpenAPIError, "graph #{name} request schema is missing" unless schema.is_a?(Hash)
+  raise OpenAPIError, "graph #{name} response schema is missing" unless response.is_a?(Hash)
+  require_value(schema["$ref"], "#/components/schemas/Graph#{name.capitalize}Request", "graph #{name} request schema")
+  require_value(response["$ref"], "#/components/schemas/Graph#{name.capitalize}Response", "graph #{name} response schema")
+  raise OpenAPIError, "graph #{name} timeout response is missing" unless query.dig("responses", "504").is_a?(Hash)
+end
+raise OpenAPIError, "graph cypher forbidden response is missing" unless graph_queries.fetch("cypher").dig("responses", "403").is_a?(Hash)
 
 puts "OpenAPI validation passed"

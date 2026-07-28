@@ -19,6 +19,7 @@ import (
 	"github.com/grepnest/grepnest/internal/config"
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/graphingest"
+	"github.com/grepnest/grepnest/internal/graphservice"
 	"github.com/grepnest/grepnest/internal/httpapi"
 	"github.com/grepnest/grepnest/internal/mcpserver"
 	"github.com/grepnest/grepnest/internal/observability"
@@ -127,7 +128,7 @@ func newHandler(settings config.Config) (http.Handler, error) {
 		DefaultTimeout: settings.Limits.DefaultTimeout, MaxTimeout: settings.Limits.MaxTimeout,
 		MaxResponseBytes: settings.Limits.MaxResponseBytes,
 	})
-	return newAPIHandler(settings, metrics, authenticator, service, nil, nil, nil, nil, nil, backend), nil
+	return newAPIHandler(settings, metrics, authenticator, service, nil, nil, nil, nil, nil, nil, nil, backend), nil
 }
 
 func newRuntime(ctx context.Context, settings config.Config, logger *slog.Logger) (http.Handler, func(), error) {
@@ -221,7 +222,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 			CAConfigured: settings.GitHub.CAFile != "",
 		},
 	}
-	handler := newAPIHandler(settings, metrics, authenticator, searchService, repositoryService, scipService, graphService, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend})
+	handler := newAPIHandler(settings, metrics, authenticator, searchService, repositoryService, scipService, graphService, nil, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend})
 	return handler, func() {
 		cancel()
 		<-done
@@ -230,7 +231,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	}, nil
 }
 
-func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.Authenticator, service *search.Service, repositories *repository.Service, scip *scipgraph.Service, graph *graphingest.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker) http.Handler {
+func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.Authenticator, service *search.Service, repositories *repository.Service, scip *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker) http.Handler {
 	mux := http.NewServeMux()
 	webui.Register(mux)
 	httpapi.RegisterSystem(mux, checker, metrics.Handler())
@@ -243,6 +244,9 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 	}
 	if graph != nil {
 		httpapi.RegisterGraphIngestion(mux, authenticator, graph, settings.Limits.GraphMaxUploadBytes, settings.Limits.MaxResponseBytes)
+	}
+	if graphQueries != nil {
+		httpapi.RegisterGraphQueries(mux, authenticator, graphQueries, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
 	}
 	if adminService != nil {
 		httpapi.RegisterAdmin(mux, authenticator, adminService, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
