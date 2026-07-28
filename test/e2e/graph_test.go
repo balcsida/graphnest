@@ -89,22 +89,21 @@ func TestGraphLanguageFixturesReachRESTAndMCP(t *testing.T) {
 	database := newMilestoneDatabase(t)
 	parsers := graphFixtureParsers()
 	type fixtureResult struct {
-		githubID int64
-		name     string
-		commit   string
-		source   string
-		target   string
-		artifact graphartifact.Artifact
+		githubID                      int64
+		name, commit, source, target  string
+		relationQuery, relationSource string
+		relationTarget                string
+		artifact                      graphartifact.Artifact
 	}
 	tests := []struct {
-		name, source, target string
+		name, source, target, relationQuery, relationSource, relationTarget string
 	}{
-		{"go", "fixture.Call", "fixture.CrossFile"},
-		{"typescript", "Service.run", "work"},
-		{"javascript", "run", "work"},
-		{"java", "fixture.Main.call", "fixture.Helper.execute"},
-		{"kotlin", "fixture.call", "fixture.Runner"},
-		{"rust", "lib::call", "worker::run"},
+		{"go", "fixture.Call", "fixture.CrossFile", graphSymbolRelationQuery("IMPLEMENTS"), "Service", "Worker"},
+		{"typescript", "Service.run", "work", graphSymbolRelationQuery("EXTENDS"), "Service", "Parent"},
+		{"javascript", "run", "work", graphFileRelationQuery("IMPORTS"), "main.js", "base.js"},
+		{"java", "fixture.Main.call", "fixture.Helper.execute", graphSymbolRelationQuery("IMPLEMENTS"), "fixture.Runner", "fixture.Worker"},
+		{"kotlin", "fixture.call", "fixture.Runner", graphSymbolRelationQuery("IMPLEMENTS"), "fixture.Runner", "fixture.Worker"},
+		{"rust", "lib::call", "worker::run", graphSymbolRelationQuery("IMPLEMENTS"), "worker::Runner", "worker::Worker"},
 	}
 	results := make([]fixtureResult, 0, len(tests))
 	for index, test := range tests {
@@ -128,7 +127,9 @@ func TestGraphLanguageFixturesReachRESTAndMCP(t *testing.T) {
 		}
 		results = append(results, fixtureResult{
 			githubID: githubID, name: "fixtures/" + test.name, commit: commit,
-			source: test.source, target: test.target, artifact: analyzer.artifact,
+			source: test.source, target: test.target, relationQuery: test.relationQuery,
+			relationSource: test.relationSource, relationTarget: test.relationTarget,
+			artifact: analyzer.artifact,
 		})
 	}
 
@@ -169,7 +170,9 @@ func TestGraphLanguageFixturesReachRESTAndMCP(t *testing.T) {
 		repositoryIDs[index] = results[index].githubID
 	}
 	principal := authn.Principal{InstallationID: 10, RepositoryIDs: repositoryIDs}
-	authenticator := authn.NewStatic(map[string]authn.Principal{"user": principal})
+	authenticator := authn.NewStatic(map[string]authn.Principal{
+		"user": principal, "admin": {Administrator: true},
+	})
 	graphService := &graphservice.Service{Store: database.store, Backend: backend}
 	graphIngest := &graphingest.Service{Store: database.store}
 	mux := http.NewServeMux()
@@ -198,7 +201,56 @@ func TestGraphLanguageFixturesReachRESTAndMCP(t *testing.T) {
 		if status["state"] != "ready" || status["source"] != "managed" || status["commit"] != result.commit {
 			t.Fatalf("%s status=%#v", result.name, status)
 		}
+		relationInput := map[string]any{
+			"repo": result.githubID, "statement": result.relationQuery,
+			"parameters": map[string]any{"repository_id": result.artifact.RepositoryID},
+		}
+		relation := graphFixtureAdminRequest(t, server, relationInput, result.name)
+		relationMCP := graphFixtureMCPCall(t, server, "admin", "cypher", relationInput)
+		if !reflect.DeepEqual(relation, relationMCP) {
+			t.Fatalf("%s relationship REST/MCP mismatch:\nREST=%#v\nMCP=%#v", result.name, relation, relationMCP)
+		}
+		if got := graphCypherPair(relation); got != [2]string{result.relationSource, result.relationTarget} {
+			t.Fatalf("%s persisted relationship=%q", result.name, got)
+		}
+		if result.name == "fixtures/typescript" {
+			tsxInput := map[string]any{
+				"repo":       result.githubID,
+				"statement":  `MATCH (s:Symbol) WHERE s.repository_id = $repository_id AND s.path = "component.tsx" RETURN s.qualified_name, s.language`,
+				"parameters": map[string]any{"repository_id": result.artifact.RepositoryID},
+			}
+			tsx := graphFixtureAdminRequest(t, server, tsxInput, result.name)
+			tsxMCP := graphFixtureMCPCall(t, server, "admin", "cypher", tsxInput)
+			if !reflect.DeepEqual(tsx, tsxMCP) {
+				t.Fatalf("TSX REST/MCP mismatch:\nREST=%#v\nMCP=%#v", tsx, tsxMCP)
+			}
+			if got := graphCypherPair(tsx); got != [2]string{"View", "typescript"} {
+				t.Fatalf("persisted TSX symbol=%q", got)
+			}
+		}
 	}
+}
+
+func graphSymbolRelationQuery(relation string) string {
+	return `MATCH (a:Symbol)-[:` + relation + `]->(b:Symbol) WHERE a.repository_id = $repository_id AND b.repository_id = $repository_id RETURN a.qualified_name, b.qualified_name`
+}
+
+func graphFileRelationQuery(relation string) string {
+	return `MATCH (a:File)-[:` + relation + `]->(b:File) WHERE a.repository_id = $repository_id AND b.repository_id = $repository_id RETURN a.path, b.path`
+}
+
+func graphCypherPair(response map[string]any) [2]string {
+	rows, _ := response["rows"].([]any)
+	if len(rows) != 1 {
+		return [2]string{}
+	}
+	values, _ := rows[0].([]any)
+	if len(values) != 2 {
+		return [2]string{}
+	}
+	left, _ := values[0].(string)
+	right, _ := values[1].(string)
+	return [2]string{left, right}
 }
 
 func hasGraphEdge(artifact graphartifact.Artifact, kind graphartifact.EdgeKind) bool {
@@ -373,6 +425,16 @@ func graphFixtureStatus(t *testing.T, server *httptest.Server, repositoryID int6
 
 func graphFixtureRequest(t *testing.T, server *httptest.Server, method, path string, input any, name string) map[string]any {
 	t.Helper()
+	return graphFixtureRequestWithToken(t, server, "user", method, path, input, name)
+}
+
+func graphFixtureAdminRequest(t *testing.T, server *httptest.Server, input any, name string) map[string]any {
+	t.Helper()
+	return graphFixtureRequestWithToken(t, server, "admin", http.MethodPost, "/v1/graph/cypher", input, name)
+}
+
+func graphFixtureRequestWithToken(t *testing.T, server *httptest.Server, token, method, path string, input any, name string) map[string]any {
+	t.Helper()
 	var body io.Reader
 	if input != nil {
 		data, err := json.Marshal(input)
@@ -385,7 +447,7 @@ func graphFixtureRequest(t *testing.T, server *httptest.Server, method, path str
 	if err != nil {
 		t.Fatal(err)
 	}
-	request.Header.Set("Authorization", "Bearer user")
+	request.Header.Set("Authorization", "Bearer "+token)
 	if input != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
@@ -410,8 +472,13 @@ func graphFixtureRequest(t *testing.T, server *httptest.Server, method, path str
 
 func graphFixtureMCP(t *testing.T, server *httptest.Server, input map[string]any) map[string]any {
 	t.Helper()
+	return graphFixtureMCPCall(t, server, "user", "context", input)
+}
+
+func graphFixtureMCPCall(t *testing.T, server *httptest.Server, token, tool string, input map[string]any) map[string]any {
+	t.Helper()
 	client := *server.Client()
-	client.Transport = graphBearerTransport{base: client.Transport}
+	client.Transport = graphBearerTransport{token: token, base: client.Transport}
 	session, err := mcp.NewClient(&mcp.Implementation{Name: "graph-e2e", Version: "1"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{
 		Endpoint: server.URL + "/mcp", HTTPClient: &client, DisableStandaloneSSE: true,
 	}, nil)
@@ -419,7 +486,7 @@ func graphFixtureMCP(t *testing.T, server *httptest.Server, input map[string]any
 		t.Fatal(err)
 	}
 	defer session.Close()
-	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "context", Arguments: input})
+	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: tool, Arguments: input})
 	if err != nil || result.IsError {
 		t.Fatalf("MCP context result=%#v err=%v", result, err)
 	}
@@ -434,14 +501,17 @@ func graphFixtureMCP(t *testing.T, server *httptest.Server, input map[string]any
 	return value
 }
 
-type graphBearerTransport struct{ base http.RoundTripper }
+type graphBearerTransport struct {
+	token string
+	base  http.RoundTripper
+}
 
 func (transport graphBearerTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	if transport.base == nil {
 		return nil, errors.New("HTTP transport is required")
 	}
 	cloned := request.Clone(request.Context())
-	cloned.Header.Set("Authorization", "Bearer user")
+	cloned.Header.Set("Authorization", "Bearer "+transport.token)
 	return transport.base.RoundTrip(cloned)
 }
 
