@@ -121,6 +121,18 @@ func (ready readyScope) selectorSnapshots() []graphprotocol.RepositorySnapshot {
 	return ready.snapshots
 }
 
+func (ready readyScope) anchorCandidates(candidates []graphprotocol.Symbol) []graphprotocol.Symbol {
+	if ready.selectedID == 0 {
+		return candidates
+	}
+	for _, candidate := range candidates {
+		if candidate.RepositoryID == ready.selectedID {
+			return candidates
+		}
+	}
+	return nil
+}
+
 func (service *Service) limits() Limits {
 	limits := service.Limits
 	if limits.PerCategory <= 0 || limits.PerCategory > defaultCategoryLimit {

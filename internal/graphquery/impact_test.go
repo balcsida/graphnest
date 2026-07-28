@@ -11,7 +11,7 @@ import (
 func TestImpactReturnsCandidatesInsteadOfMergingAmbiguousTargets(t *testing.T) {
 	service := seededQueryServiceWithArtifacts(t, callChain("A", "B"), repositoryCallChain(202, "A", "C"))
 	got, err := service.Impact(t.Context(), graphprotocol.ImpactRequest{
-		Scope: graphprotocol.Scope{Repositories: []graphprotocol.RepositorySnapshot{
+		Scope: graphprotocol.Scope{SelectedRepositoryID: 101, Repositories: []graphprotocol.RepositorySnapshot{
 			{ID: 101, Name: "acme/one", Commit: testCommit},
 			{ID: 202, Name: "acme/two", Commit: testCommit},
 		}},
