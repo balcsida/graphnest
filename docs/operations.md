@@ -71,11 +71,24 @@ persisted remotes, Zoekt, logs, and process arguments remain credential-free.
 
 The fixture and durable profiles use separate index storage and must not be run
 at the same time because both publish loopback port 6070. The durable profile
-does not run GrepNest containers or build images; the host commands provide the
-shared index directory. The indexer serves only Prometheus metrics on
+includes containerized indexer and scanner services when combined with a graph
+overlay. Use either `graph-embedded.yml` (one graph owner inside the indexer)
+or `graph-separate.yml` (one standalone graph owner); both keep graph traffic
+internal and mount `GREPNEST_GRAPH_INTERNAL_SECRET_FILE` read-only. The indexer
+serves only Prometheus metrics on
 `/metrics`; its listen address defaults to `:9090` and should remain internal.
 Recover an interrupted worker by restarting it; PostgreSQL reaps expired leases
 and the worker removes abandoned numeric-ID worktrees before claiming more work.
+
+With the durable image and secret environment from the [README](../README.md),
+start embedded graph ownership with:
+
+```sh
+docker compose -f deploy/compose/compose.yml -f deploy/compose/durable.yml \
+  -f deploy/compose/graph-embedded.yml --profile durable up -d --wait
+```
+
+Replace `graph-embedded.yml` with `graph-separate.yml` for standalone ownership.
 
 ## Kubernetes chart boundary
 

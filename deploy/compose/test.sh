@@ -28,6 +28,8 @@ printf '%s' "${base_config:?missing fixture Compose config}" |
 
 render() {
   env \
+    GREPNEST_NODE_IMAGE=registry.example/grepnest/node:test \
+    GREPNEST_SCANNER_IMAGE=registry.example/grepnest/scanner:test \
     GREPNEST_APPLICATION_IMAGE= \
     GREPNEST_GITHUB_CA_FILE= \
     GREPNEST_GITHUB_PRIVATE_KEY_FILE=/tmp/private-key.pem \
@@ -51,6 +53,77 @@ render() {
       config \
       --format json
 }
+
+render_graph() {
+  overlay=$1
+  shift
+  env \
+    GREPNEST_APPLICATION_IMAGE=registry.example/grepnest/application:test \
+    GREPNEST_NODE_IMAGE=registry.example/grepnest/node:test \
+    GREPNEST_SCANNER_IMAGE=registry.example/grepnest/scanner:test \
+    GREPNEST_GRAPH_INTERNAL_SECRET_FILE=/tmp/graph-secret \
+    GREPNEST_GITHUB_CA_FILE= \
+    GREPNEST_GITHUB_PRIVATE_KEY_FILE=/tmp/private-key.pem \
+    GREPNEST_GITHUB_WEBHOOK_SECRET_FILE=/tmp/webhook-secret \
+    GREPNEST_GITHUB_WEB_URL=https://github.example \
+    GREPNEST_GITHUB_API_URL=https://github.example/api/v3 \
+    GREPNEST_GITHUB_UPLOAD_URL=https://github.example/api/uploads \
+    GREPNEST_GITHUB_GIT_URL=https://github.example \
+    GREPNEST_GITHUB_APP_ID=1 \
+    GREPNEST_USER_TOKEN=user-token \
+    GREPNEST_USER_INSTALLATION_ID=2 \
+    GREPNEST_USER_REPOSITORY_IDS=3 \
+    GREPNEST_ADMIN_TOKEN=admin-token \
+    GREPNEST_ADMIN_INSTALLATION_ID=4 \
+    GREPNEST_ADMIN_REPOSITORY_IDS=5 \
+    "$@" \
+    docker compose \
+      -f deploy/compose/compose.yml \
+      -f deploy/compose/durable.yml \
+      -f "$overlay" \
+      --profile durable \
+      config \
+      --format json
+}
+
+assert_graph_mode() {
+  config=$1
+  owner=$2
+
+  printf '%s' "$config" | jq -e --arg owner "$owner" '
+    .services as $services
+    | $services["grepnest-server"] as $server
+    | $services["grepnest-indexer"] as $indexer
+    | $services["grepnest-scanner"] as $scanner
+    | ($services["grepnest-graph"] != null) as $has_graph
+    | ($services["zoekt-durable"].volumes[] | select(.target == "/data/index") | .source) as $zoekt_index
+    | $services[$owner] as $graph_owner
+    | ($services | to_entries | map(select(.value.environment.GREPNEST_GRAPH_DATA_DIR? != null)) | length) == 1
+    and (($services | to_entries | map(select(.value.environment.GREPNEST_GRAPH_DATA_DIR? != null))[0].key) == $owner)
+    and ($server.environment.GREPNEST_GRAPH_URL == "http://grepnest-graph:8081")
+    and ($server.environment.GREPNEST_GRAPH_SECRET_FILE == "/run/secrets/grepnest/graph-secret")
+    and ([ $server.volumes[] | select(.target == "/run/secrets/grepnest/graph-secret") | .read_only ] == [true])
+    and ($graph_owner.image == "registry.example/grepnest/node:test")
+    and ($graph_owner.environment.GREPNEST_GRAPH_SECRET_FILE == "/run/secrets/grepnest/graph-secret")
+    and ([ $graph_owner.volumes[] | select(.target == "/run/secrets/grepnest/graph-secret") | .read_only ] == [true])
+    and ($indexer.image == "registry.example/grepnest/node:test")
+    and ($indexer.entrypoint == ["grepnest-indexer"])
+    and ($scanner.image == "registry.example/grepnest/scanner:test")
+    and ($scanner.entrypoint == ["/bin/sh", "-ec"])
+    and ($scanner.command == ["GREPNEST_WORKER_ID=$$(hostname) exec grepnest-scanner"])
+    and ($scanner.deploy.replicas >= 1)
+    and ([ $services[] | .ports[]? | select(.target == 8081) ] | length == 0)
+    and ([ $services[] | .volumes[]? | select(.target == "/var/lib/grepnest/graph" and (.read_only // false | not)) ] | length == 1)
+    and ([ $services[] | .volumes[]? | select(.source == $zoekt_index and (.read_only // false | not)) ] | length == 1)
+    and (($owner == "grepnest-graph") == $has_graph)
+  ' >/dev/null
+}
+
+embedded=$(render_graph deploy/compose/graph-embedded.yml)
+assert_graph_mode "$embedded" grepnest-indexer
+
+separate=$(render_graph deploy/compose/graph-separate.yml)
+assert_graph_mode "$separate" grepnest-graph
 
 config=$(render \
   GREPNEST_APPLICATION_IMAGE=registry.example/grepnest/application:test \

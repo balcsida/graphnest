@@ -199,20 +199,33 @@ search, repository, file-read, and MCP routes require bearer authentication.
 
 ### Durable Compose
 
-The durable Compose overlay runs the server with PostgreSQL and Zoekt. Set
-`GREPNEST_APPLICATION_IMAGE` to an existing image plus the GitHub and
+The durable Compose overlay runs the server, indexer, scalable scanners,
+PostgreSQL, and Zoekt. Set `GREPNEST_APPLICATION_IMAGE`, `GREPNEST_NODE_IMAGE`,
+and `GREPNEST_SCANNER_IMAGE` to existing images plus the GitHub and
 token/repository-scope variables listed above. The image must provide
-`grepnest-server` and `wget` on `PATH`. The overlay also requires
+`grepnest-server` and `wget` on `PATH`; the node image must provide
+`grepnest-indexer`, `grepnest-graph`, `git`, and `zoekt-git-index`; the scanner
+image must provide `grepnest-scanner` and `git`. The overlay also requires
 `GREPNEST_GITHUB_PRIVATE_KEY_FILE` and `GREPNEST_GITHUB_WEBHOOK_SECRET_FILE`
 to be readable host-file paths; Compose mounts both read-only into the server.
 Set `GREPNEST_GITHUB_CA_FILE` to an optional private-CA host file; Compose mounts
 it read-only.
 
+Choose one graph overlay. Both modes keep the server URL at the internal
+`http://grepnest-graph:8081` and require a read-only
+`GREPNEST_GRAPH_INTERNAL_SECRET_FILE`. Embedded mode runs the graph owner in
+the singleton indexer; separate mode runs one `grepnest-graph` service. Neither
+publishes a graph port. Set `GREPNEST_SCANNER_REPLICAS` to scale scanners
+(default `2`).
+
 ```sh
 GREPNEST_APPLICATION_IMAGE=registry.example/grepnest/application:2026-07-22 \
+GREPNEST_NODE_IMAGE=registry.example/grepnest/node:2026-07-28 \
+GREPNEST_SCANNER_IMAGE=registry.example/grepnest/scanner:2026-07-28 \
 GREPNEST_GITHUB_PRIVATE_KEY_FILE=$PWD/github-app-private-key.pem \
 GREPNEST_GITHUB_WEBHOOK_SECRET_FILE=$PWD/github-webhook-secret \
 GREPNEST_GITHUB_CA_FILE=$PWD/github-ca.pem \
+GREPNEST_GRAPH_INTERNAL_SECRET_FILE=$PWD/graph-internal-secret \
 GREPNEST_GITHUB_WEB_URL=https://github.example \
 GREPNEST_GITHUB_API_URL=https://github.example/api/v3 \
 GREPNEST_GITHUB_UPLOAD_URL=https://github.example/api/uploads \
@@ -227,9 +240,13 @@ GREPNEST_ADMIN_REPOSITORY_IDS=789 \
 docker compose \
   -f deploy/compose/compose.yml \
   -f deploy/compose/durable.yml \
+  -f deploy/compose/graph-embedded.yml \
   --profile durable \
   up -d --wait
 ```
+
+Replace `graph-embedded.yml` with `graph-separate.yml` for standalone graph
+ownership.
 
 Optional limits are positive and cannot exceed their server caps:
 
