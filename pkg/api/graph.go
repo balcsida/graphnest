@@ -147,6 +147,7 @@ type GraphImpactRequest struct {
 
 type GraphImpactResponse struct {
 	Status     string                `json:"status"`
+	Candidates []GraphCandidate      `json:"candidates,omitempty"`
 	ByDepth    map[int][]GraphSymbol `json:"by_depth"`
 	Relations  []GraphReference      `json:"relations,omitempty"`
 	Boundaries []GraphBoundary       `json:"boundaries,omitempty"`
@@ -181,11 +182,12 @@ type GraphCypherRequest struct {
 }
 
 type GraphCypherResponse struct {
+	Status     string              `json:"status"`
 	Columns    []string            `json:"columns"`
 	Rows       [][]json.RawMessage `json:"rows"`
 	Truncated  bool                `json:"truncated"`
 	Boundaries []GraphBoundary     `json:"boundaries,omitempty"`
-	Commits    map[string]string   `json:"commits,omitempty"`
+	Commits    map[string]string   `json:"commits"`
 }
 
 type GraphState string

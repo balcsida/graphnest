@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 )
@@ -52,5 +53,33 @@ func TestGraphContractsMarshalBoundedFields(t *testing.T) {
 	const want = `{"status":"found","symbol":{"uid":"symbol:a","name":"A","kind":"","file_path":"a.go","language":"","repository_id":0,"range":{"start_line":0,"start_character":0,"end_line":0,"end_character":0},"test":false},"incoming":{"calls":[{"source_repository_id":0,"target_repository_id":0,"source_uid":"symbol:b","target_uid":"symbol:a","kind":"","range":{"start_line":0,"start_character":0,"end_line":0,"end_character":0},"confidence":0}]},"commits":{"acme/one":"abc"}}`
 	if string(data) != want {
 		t.Fatalf("JSON = %s", data)
+	}
+}
+
+func TestGraphResponsesExposeDiscriminatorCommitsAndCandidates(t *testing.T) {
+	candidate := GraphCandidate{UID: "symbol:a", Name: "A"}
+	for _, test := range []struct {
+		name     string
+		response any
+	}{
+		{"context", GraphContextResponse{Status: "ambiguous", Candidates: []GraphCandidate{candidate}, Commits: map[string]string{}}},
+		{"impact", GraphImpactResponse{Status: "ambiguous", Candidates: []GraphCandidate{candidate}, Commits: map[string]string{}}},
+		{"trace", GraphTraceResponse{Status: "ambiguous", Candidates: []GraphCandidate{candidate}, Commits: map[string]string{}}},
+		{"cypher", GraphCypherResponse{Status: "ok", Commits: map[string]string{}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			data, err := json.Marshal(test.response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, field := range [][]byte{[]byte(`"status":`), []byte(`"commits":{}`)} {
+				if !bytes.Contains(data, field) {
+					t.Fatalf("JSON = %s, missing %s", data, field)
+				}
+			}
+			if test.name != "cypher" && !bytes.Contains(data, []byte(`"candidates":[`)) {
+				t.Fatalf("JSON = %s, missing candidates", data)
+			}
+		})
 	}
 }
