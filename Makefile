@@ -6,8 +6,9 @@ GREPNEST_TEST_POSTGRES_DSN ?= $(GREPNEST_TEST_DATABASE_URL)
 IMAGE_PLATFORM ?= linux/amd64
 APPLICATION_IMAGE ?= grepnest-application:dev
 NODE_IMAGE ?= grepnest-node:dev
+LADYBUG_LIB_DIR := $(CURDIR)/.cache/ladybug/v0.18.3
 
-.PHONY: fmt lint staticcheck govulncheck test test-race scanner-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test
+.PHONY: fmt lint staticcheck govulncheck test test-race scanner-test ladybug-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
@@ -33,6 +34,9 @@ test-race:
 
 scanner-test:
 	CGO_ENABLED=1 go test -race ./internal/graphscan/... ./internal/graphscanner ./cmd/grepnest-scanner
+
+ladybug-test:
+	CGO_ENABLED=1 LBUG_VERSION=0.18.3 GOCACHE=$(CURDIR)/.cache/go-build DYLD_LIBRARY_PATH=$(LADYBUG_LIB_DIR) CGO_CFLAGS="-I$(LADYBUG_LIB_DIR)" CGO_LDFLAGS="-L$(LADYBUG_LIB_DIR)" go test -tags=system_ladybug ./internal/ladybug
 
 openapi-check:
 	ruby scripts/check_openapi.rb
