@@ -72,7 +72,7 @@ func TestScanEnforcesGraphAndParserLimits(t *testing.T) {
 	}
 }
 
-func TestScanRejectsParserThatReturnsAfterTimeout(t *testing.T) {
+func TestScanMapsParserTimeoutToLimitExceeded(t *testing.T) {
 	root := t.TempDir()
 	writeScanFile(t, filepath.Join(root, "main.go"), "package main")
 	limits := scanLimits()
@@ -81,8 +81,47 @@ func TestScanRejectsParserThatReturnsAfterTimeout(t *testing.T) {
 		<-ctx.Done()
 		return File{}, nil
 	}}, limits)
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("Scan() error = %v, want deadline exceeded", err)
+	if !errors.Is(err, ErrLimitExceeded) || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Scan() error = %v, want only limit exceeded", err)
+	}
+}
+
+func TestScanPreservesParentCancellationIdentity(t *testing.T) {
+	root := t.TempDir()
+	writeScanFile(t, filepath.Join(root, "main.go"), "package main")
+	for _, test := range []struct {
+		name    string
+		context func() (context.Context, context.CancelFunc)
+		want    error
+	}{
+		{
+			name: "canceled",
+			context: func() (context.Context, context.CancelFunc) {
+				ctx, cancel := context.WithCancel(t.Context())
+				cancel()
+				return ctx, cancel
+			},
+			want: context.Canceled,
+		},
+		{
+			name: "deadline",
+			context: func() (context.Context, context.CancelFunc) {
+				return context.WithTimeout(t.Context(), time.Millisecond)
+			},
+			want: context.DeadlineExceeded,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := test.context()
+			defer cancel()
+			_, err := Scan(ctx, scanRequest(root), map[string]Parser{".go": func(ctx context.Context, _ string, _ []byte) (File, error) {
+				<-ctx.Done()
+				return File{}, ctx.Err()
+			}}, scanLimits())
+			if !errors.Is(err, test.want) || errors.Is(err, ErrLimitExceeded) {
+				t.Fatalf("Scan() error = %v, want only %v", err, test.want)
+			}
+		})
 	}
 }
 

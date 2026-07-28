@@ -105,6 +105,12 @@ func Scan(ctx context.Context, request Request, parsers map[string]Parser, limit
 		file, err := parser(parseCtx, rel, data)
 		parseErr := parseCtx.Err()
 		cancel()
+		if parentErr := ctx.Err(); parentErr != nil {
+			return parentErr
+		}
+		if errors.Is(parseErr, context.DeadlineExceeded) {
+			return ErrLimitExceeded
+		}
 		if err != nil {
 			return err
 		}

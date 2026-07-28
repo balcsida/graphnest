@@ -3,6 +3,8 @@ package graphscanner
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -31,6 +33,18 @@ type fakeQueue struct {
 	failedRetry     bool
 	store           *fakeStore
 	externalCurrent bool
+}
+
+type reapingQueue struct {
+	*fakeQueue
+	reaped  int
+	reapErr error
+}
+
+func (queue *reapingQueue) ReapExpiredGraph(context.Context, int) (int64, error) {
+	queue.record("reap")
+	queue.reaped++
+	return 0, queue.reapErr
 }
 
 func (queue *fakeQueue) record(event string) {
@@ -136,6 +150,12 @@ type fakeAnalyzer struct {
 	exact    bool
 }
 
+type analyzerFunc func(context.Context, graphscan.Request) (graphartifact.Artifact, error)
+
+func (analyzer analyzerFunc) Scan(ctx context.Context, request graphscan.Request) (graphartifact.Artifact, error) {
+	return analyzer(ctx, request)
+}
+
 func (analyzer *fakeAnalyzer) Scan(ctx context.Context, request graphscan.Request) (graphartifact.Artifact, error) {
 	analyzer.queue.record("scan")
 	analyzer.request = request
@@ -200,6 +220,25 @@ func TestRunOnePublishesExactCommit(t *testing.T) {
 	}
 	if !git.cleaned {
 		t.Fatal("worktree was not cleaned")
+	}
+}
+
+func TestRunOneReapsExpiredLeasesBeforeClaimAtBoundedInterval(t *testing.T) {
+	worker, queue, _, _, _ := workerFixture()
+	reaper := &reapingQueue{fakeQueue: queue}
+	worker.Queue = reaper
+	queue.claimErr = postgres.ErrNoJob
+
+	for range 2 {
+		if worked, err := worker.RunOne(t.Context()); err != nil || worked {
+			t.Fatalf("RunOne() = %v, %v", worked, err)
+		}
+	}
+	if reaper.reaped != 1 {
+		t.Fatalf("reaps = %d, want 1", reaper.reaped)
+	}
+	if want := []string{"reap", "claim", "claim"}; !slices.Equal(queue.events, want) {
+		t.Fatalf("events = %v, want %v", queue.events, want)
 	}
 }
 
@@ -339,6 +378,36 @@ func TestRunOneClassifiesFailures(t *testing.T) {
 				t.Fatalf("published=%q completed=%d", store.publishedCommit, queue.completed)
 			}
 		})
+	}
+}
+
+func TestRunOneTreatsParserTimeoutAsNonRetryableLimit(t *testing.T) {
+	worker, queue, store, git, _ := workerFixture()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git.root = root
+	worker.Analyzer = analyzerFunc(func(ctx context.Context, request graphscan.Request) (graphartifact.Artifact, error) {
+		return graphscan.Scan(ctx, request, map[string]graphscan.Parser{".go": func(ctx context.Context, _ string, _ []byte) (graphscan.File, error) {
+			<-ctx.Done()
+			return graphscan.File{}, ctx.Err()
+		}}, graphscan.Limits{
+			MaxFileBytes: 100, MaxTotalBytes: 100, MaxFiles: 1,
+			MaxNodes: 10, MaxEdges: 10, ParseTimeout: time.Millisecond,
+		})
+	})
+
+	worked, err := worker.RunOne(t.Context())
+
+	if err != nil || !worked {
+		t.Fatalf("RunOne() = %v, %v", worked, err)
+	}
+	if queue.failedCode != "scan_limit" || queue.failedRetry {
+		t.Fatalf("failure=%q retry=%v", queue.failedCode, queue.failedRetry)
+	}
+	if store.publishedCommit != "" || queue.completed != 0 {
+		t.Fatalf("published=%q completed=%d", store.publishedCommit, queue.completed)
 	}
 }
 

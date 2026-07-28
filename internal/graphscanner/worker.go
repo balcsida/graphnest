@@ -44,7 +44,9 @@ type Worker struct {
 	Git            GitWorkspace
 	Analyzer       Analyzer
 	RenewEvery     time.Duration
+	ReapEvery      time.Duration
 	CleanupTimeout time.Duration
+	lastReap       time.Time
 }
 
 func (worker *Worker) Run(ctx context.Context) error {
@@ -71,6 +73,9 @@ func (worker *Worker) Run(ctx context.Context) error {
 
 func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error) {
 	if err := worker.validate(); err != nil {
+		return false, err
+	}
+	if err := worker.reapExpired(ctx); err != nil {
 		return false, err
 	}
 	job, err := worker.Queue.ClaimGraph(ctx, worker.ID)
@@ -152,6 +157,27 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 		return fail("publish_failed", true)
 	}
 	return true, nil
+}
+
+func (worker *Worker) reapExpired(ctx context.Context) error {
+	reaper, ok := worker.Queue.(interface {
+		ReapExpiredGraph(context.Context, int) (int64, error)
+	})
+	if !ok {
+		return nil
+	}
+	interval := worker.ReapEvery
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	if !worker.lastReap.IsZero() && time.Since(worker.lastReap) < interval {
+		return nil
+	}
+	if _, err := reaper.ReapExpiredGraph(ctx, 1000); err != nil {
+		return err
+	}
+	worker.lastReap = time.Now()
+	return nil
 }
 
 func (worker *Worker) renew(ctx context.Context, job postgres.GraphJob, cancel context.CancelFunc, result chan<- error, done chan<- struct{}) {
