@@ -64,6 +64,8 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      initContainers:
+        {{- include "grepnest.graphSecretInit" (dict "image" .Values.images.node) | nindent 8 }}
       containers:
         - name: graph
           image: {{ include "grepnest.image" .Values.images.node | quote }}
@@ -96,15 +98,16 @@ spec:
             - {name: data, mountPath: {{ .Values.graph.dataPath | quote }}}
             - {name: tmp, mountPath: /tmp}
             - {name: runtime-home, mountPath: /var/run/grepnest}
-            - {name: graph-secret, mountPath: /var/run/secrets/grepnest/graph/secret, subPath: secret, readOnly: true}
+            - {name: graph-secret-runtime, mountPath: /var/run/secrets/grepnest/graph, readOnly: true}
       volumes:
         - {name: data, persistentVolumeClaim: {claimName: {{ include "grepnest.graphName" . }}}}
         - {name: tmp, emptyDir: {}}
         - {name: runtime-home, emptyDir: {}}
-        - name: graph-secret
+        - {name: graph-secret-runtime, emptyDir: {}}
+        - name: graph-secret-source
           secret:
             secretName: {{ .Values.secrets.runtime.name }}
-            defaultMode: 0400
+            defaultMode: 0440
             items:
               - {key: {{ .Values.secrets.runtime.graphSecretKey }}, path: secret}
 ---

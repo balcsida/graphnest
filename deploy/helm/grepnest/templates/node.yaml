@@ -72,6 +72,10 @@ spec:
       topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if eq .Values.graph.mode "embedded" }}
+      initContainers:
+        {{- include "grepnest.graphSecretInit" (dict "image" .Values.images.node) | nindent 8 }}
+      {{- end }}
       containers:
         - name: zoekt-webserver
           image: {{ include "grepnest.image" .Values.images.node | quote }}
@@ -136,7 +140,7 @@ spec:
             - {name: data, mountPath: {{ .Values.node.paths.data | quote }}}
             {{- if eq .Values.graph.mode "embedded" }}
             - {name: data, mountPath: {{ .Values.graph.dataPath | quote }}, subPath: {{ $graphSubPath | quote }}}
-            - {name: graph-secret, mountPath: /var/run/secrets/grepnest/graph/secret, subPath: secret, readOnly: true}
+            - {name: graph-secret-runtime, mountPath: /var/run/secrets/grepnest/graph, readOnly: true}
             {{- end }}
             - {name: indexer-tmp, mountPath: /tmp}
             - {name: indexer-home, mountPath: /var/run/grepnest}
@@ -155,10 +159,11 @@ spec:
             items:
               - {key: {{ .Values.secrets.githubApp.privateKeyKey }}, path: private-key.pem}
         {{- if eq .Values.graph.mode "embedded" }}
-        - name: graph-secret
+        - {name: graph-secret-runtime, emptyDir: {}}
+        - name: graph-secret-source
           secret:
             secretName: {{ .Values.secrets.runtime.name }}
-            defaultMode: 0400
+            defaultMode: 0440
             items:
               - {key: {{ .Values.secrets.runtime.graphSecretKey }}, path: secret}
         {{- end }}

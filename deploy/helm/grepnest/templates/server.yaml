@@ -48,6 +48,8 @@ spec:
       topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      initContainers:
+        {{- include "grepnest.graphSecretInit" (dict "image" .Values.images.application) | nindent 8 }}
       containers:
         - name: server
           image: {{ include "grepnest.image" .Values.images.application | quote }}
@@ -85,7 +87,7 @@ spec:
             - {name: tmp, mountPath: /tmp}
             - {name: runtime-home, mountPath: /var/run/grepnest}
             - {name: github-app, mountPath: /var/run/secrets/grepnest/github, readOnly: true}
-            - {name: graph-secret, mountPath: /var/run/secrets/grepnest/graph/secret, subPath: secret, readOnly: true}
+            - {name: graph-secret-runtime, mountPath: /var/run/secrets/grepnest/graph, readOnly: true}
             {{- if .Values.secrets.customCA.name }}
             - {name: custom-ca, mountPath: /var/run/secrets/grepnest/ca/ca.crt, subPath: ca.crt, readOnly: true}
             {{- end }}
@@ -100,10 +102,11 @@ spec:
             items:
               - {key: {{ .Values.secrets.githubApp.privateKeyKey }}, path: private-key.pem}
               - {key: {{ .Values.secrets.githubApp.webhookSecretKey }}, path: webhook-secret}
-        - name: graph-secret
+        - {name: graph-secret-runtime, emptyDir: {}}
+        - name: graph-secret-source
           secret:
             secretName: {{ .Values.secrets.runtime.name }}
-            defaultMode: 0400
+            defaultMode: 0440
             items:
               - {key: {{ .Values.secrets.runtime.graphSecretKey }}, path: secret}
         {{- if .Values.secrets.customCA.name }}
