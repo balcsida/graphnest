@@ -99,21 +99,58 @@ the indexer, while `separate` starts one `grepnest-graph` owner. Do not run two
 owners against the same graph data directory.
 
 The graph process opens and synchronizes its derived database before serving.
-Server readiness remains a separate Zoekt/PostgreSQL concern. Check a repository's graph state through
-the authenticated `GET /v1/graph/repositories/{id}/status`. `pending` means
-there is no current native graph, `fallback` is an exact-SHA SCIP fallback,
-`degraded` records a native processing failure, and `ready` is current native
-graph data. Queries can still return `409 graph_not_ready` when the indexed
-SHA changes during selection or reauthorization.
+Server readiness remains a separate Zoekt/PostgreSQL concern. Check a
+repository's graph state through the authenticated
+`GET /v1/graph/repositories/{id}/status`. `not_indexed` means the repository
+has no indexed SHA. `pending` has an indexed SHA but no current native graph,
+`fallback` is an exact-SHA SCIP fallback, `degraded` records a failed native
+job, and `ready` is current native graph data. Queries can still return
+`409 graph_not_ready` when the indexed SHA changes during selection or
+reauthorization.
 
-To recover a damaged or incompatible LadybugDB file, stop its sole owner,
-retain PostgreSQL, remove only that derived graph file/volume, then start the
-same owner again. Startup rebuilds from stored snapshots and preserves an
-incompatible live file if rebuild fails. Do not delete PostgreSQL graph
-artifacts merely to clear a derived-store problem. A fresh native artifact can
-also be uploaded by an administrator only for the repository's exact current
-indexed SHA; `.scip` ingestion remains separate and supplies compatibility
-fallback, not native scanning.
+To recover a damaged or incompatible database, stop its sole owner and retain
+PostgreSQL. The runtime explicitly rejects `grepnest.lbug.wal`; remove that
+sidecar with the database file, then restart to rebuild from stored snapshots.
+A failed compatibility rebuild leaves the live database in place.
+
+- In embedded Compose mode, stop `grepnest-indexer` first. Its shared
+  `grepnest-data` volume is mounted as both data and graph storage: remove only
+  `/var/lib/grepnest/graph/grepnest.lbug` and
+  `/var/lib/grepnest/graph/grepnest.lbug.wal` from a maintenance mount, then
+  restart the indexer. Never remove `grepnest-data`: it also holds mirrors and
+  worktrees.
+- In embedded Helm mode, scale down the node StatefulSet, then remove only
+  `<node data PVC>/graph/grepnest.lbug` and `.wal` through an operator
+  maintenance mount before scaling it back up. Do not replace the node PVC.
+- Separate mode owns its graph volume/PVC. Stop or scale down only the graph
+  owner, then either remove `grepnest.lbug` and `.wal` below its configured
+  graph data path or replace that owned graph volume/PVC before restarting the
+  graph owner. Do not use a Compose-wide or release-wide volume deletion.
+
+Do not delete PostgreSQL graph artifacts merely to clear a derived-store
+problem. An administrator can upload a fresh external native artifact only at
+the repository's exact current indexed SHA; `.scip` ingestion remains separate
+and supplies compatibility fallback, not native scanning.
+
+External native artifacts use the server route
+`POST /v1/graph/uploads?repository_id=<GitHub ID>&commit=<40 lowercase hex>`.
+It requires the administrator bearer token, exactly those two query parameters,
+`Content-Type: application/vnd.grepnest.graph.v1+protobuf`, and the artifact as
+the binary body. This is not the graph runtime's internal bearer endpoint: the
+server authorizes the caller and forwards graph data through its internal
+client. For example:
+
+```sh
+curl --fail-with-body -X POST \
+  "http://127.0.0.1:8080/v1/graph/uploads?repository_id=101&commit=$GITHUB_SHA" \
+  -H "Authorization: Bearer $GREPNEST_ADMIN_TOKEN" \
+  -H 'Content-Type: application/vnd.grepnest.graph.v1+protobuf' \
+  --data-binary @graph.v1.pb
+```
+
+The commit must be the repository's current exact indexed SHA. The route is
+administrator-only; exposing the server through ingress is a separate operator
+choice, while the graph runtime remains internal-only.
 
 Graph REST/MCP queries are bounded: context categories and impact result lists
 default and cap at 100, impact depth defaults to 3 and caps at 32, trace depth
