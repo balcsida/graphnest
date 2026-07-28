@@ -26,7 +26,11 @@ printf '%s' "${base_config:?missing fixture Compose config}" |
     and (.services | has("zoekt-index"))
   ' >/dev/null
 
-render() {
+render_files() {
+  overlay=$1
+  shift
+  overlay_args=
+  [ -z "$overlay" ] || overlay_args="-f $overlay"
   env \
     GREPNEST_NODE_IMAGE=registry.example/grepnest/node:test \
     GREPNEST_SCANNER_IMAGE=registry.example/grepnest/scanner:test \
@@ -49,41 +53,23 @@ render() {
     docker compose \
       -f deploy/compose/compose.yml \
       -f deploy/compose/durable.yml \
+      $overlay_args \
       --profile durable \
       config \
       --format json
 }
 
+render() {
+  render_files "" "$@"
+}
+
 render_graph() {
   overlay=$1
   shift
-  env \
+  render_files "$overlay" \
     GREPNEST_APPLICATION_IMAGE=registry.example/grepnest/application:test \
-    GREPNEST_NODE_IMAGE=registry.example/grepnest/node:test \
-    GREPNEST_SCANNER_IMAGE=registry.example/grepnest/scanner:test \
     GREPNEST_GRAPH_INTERNAL_SECRET_FILE=/tmp/graph-secret \
-    GREPNEST_GITHUB_CA_FILE= \
-    GREPNEST_GITHUB_PRIVATE_KEY_FILE=/tmp/private-key.pem \
-    GREPNEST_GITHUB_WEBHOOK_SECRET_FILE=/tmp/webhook-secret \
-    GREPNEST_GITHUB_WEB_URL=https://github.example \
-    GREPNEST_GITHUB_API_URL=https://github.example/api/v3 \
-    GREPNEST_GITHUB_UPLOAD_URL=https://github.example/api/uploads \
-    GREPNEST_GITHUB_GIT_URL=https://github.example \
-    GREPNEST_GITHUB_APP_ID=1 \
-    GREPNEST_USER_TOKEN=user-token \
-    GREPNEST_USER_INSTALLATION_ID=2 \
-    GREPNEST_USER_REPOSITORY_IDS=3 \
-    GREPNEST_ADMIN_TOKEN=admin-token \
-    GREPNEST_ADMIN_INSTALLATION_ID=4 \
-    GREPNEST_ADMIN_REPOSITORY_IDS=5 \
-    "$@" \
-    docker compose \
-      -f deploy/compose/compose.yml \
-      -f deploy/compose/durable.yml \
-      -f "$overlay" \
-      --profile durable \
-      config \
-      --format json
+    "$@"
 }
 
 assert_graph_mode() {
