@@ -64,6 +64,9 @@ func Rebuild(ctx context.Context, source SnapshotSource, options Options) error 
 	}); err != nil {
 		return err
 	}
+	if err := db.WriteCompatibility(ctx); err != nil {
+		return err
+	}
 	for _, manifest := range manifests {
 		artifact, err := source.GraphArtifact(ctx, manifest.RepositoryID, manifest.UploadID)
 		if err != nil {
