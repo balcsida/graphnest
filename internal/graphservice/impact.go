@@ -2,13 +2,16 @@ package graphservice
 
 import (
 	"context"
+	"time"
 
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/graphprotocol"
 	"github.com/grepnest/grepnest/pkg/api"
 )
 
-func (s *Service) Impact(ctx context.Context, principal authn.Principal, request api.GraphImpactRequest) (api.GraphImpactResponse, error) {
+func (s *Service) Impact(ctx context.Context, principal authn.Principal, request api.GraphImpactRequest) (result api.GraphImpactResponse, err error) {
+	started := time.Now()
+	defer s.observe(started, "impact", &err)
 	if request.TargetUID == "" || (request.Direction != "upstream" && request.Direction != "downstream") || request.MinConfidence < 0 || request.MinConfidence > 1 || request.MaxDepth < 0 || request.Limit < 0 || request.Offset < 0 || !validRelations(request.Relations) {
 		return api.GraphImpactResponse{}, ErrInvalidRequest
 	}
@@ -34,7 +37,7 @@ func (s *Service) Impact(ctx context.Context, principal authn.Principal, request
 	if err := s.reauthorize(ctx, principal, selected, response.Commits); err != nil {
 		return api.GraphImpactResponse{}, err
 	}
-	result := api.GraphImpactResponse{Status: response.Status, ByDepth: map[int][]api.GraphSymbol{}, Boundaries: boundaries(response.Boundaries), Commits: response.Commits, Partial: response.Partial}
+	result = api.GraphImpactResponse{Status: response.Status, ByDepth: map[int][]api.GraphSymbol{}, Boundaries: boundaries(response.Boundaries), Commits: response.Commits, Partial: response.Partial}
 	for depth, values := range response.ByDepth {
 		for _, value := range values {
 			result.ByDepth[depth] = append(result.ByDepth[depth], symbol(value))

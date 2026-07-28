@@ -42,7 +42,7 @@ func TestGraphMCPMatchesService(t *testing.T) {
 		t.Fatal(err)
 	}
 	budget := mcpResultSize(t, want)
-	server := NewWithLimits(Services{Search: testService(t, &recordingBackend{}), Graph: graphService}, Limits{MaxOutputBytes: int64(budget)})
+	server := NewWithLimits(Services{Search: testService(t, &recordingBackend{}), Graph: graphService}, Limits{MaxOutputBytes: int64(budget), GraphMaxOutputBytes: int64(budget)})
 	handler := httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{
 		"secret": principal,
 		"admin":  {InstallationID: 10, RepositoryIDs: []int64{101}, Administrator: true},
@@ -139,6 +139,19 @@ func TestGraphMCPMatchesService(t *testing.T) {
 	result, err = adminSession.CallTool(t.Context(), &mcp.CallToolParams{Name: "cypher", Arguments: map[string]any{"repo": 101, "statement": "RETURN 1", "max_rows": 999, "max_bytes": 999 << 10}})
 	if err != nil || result.IsError || backend.cypherCalls != 1 || backend.cypherRequest.MaxRows != 100 || backend.cypherRequest.MaxBytes != 256<<10 {
 		t.Fatalf("admin cypher result=%#v err=%v request=%#v calls=%d", result, err, backend.cypherRequest, backend.cypherCalls)
+	}
+}
+
+func TestGraphOutputBudgetIsSmallerWithoutChangingOtherTools(t *testing.T) {
+	limits := normalizeLimits(Limits{MaxOutputBytes: 100, GraphMaxOutputBytes: 50})
+	if limits.MaxOutputBytes != 100 || limits.GraphMaxOutputBytes != 50 {
+		t.Fatalf("limits=%#v", limits)
+	}
+	if _, _, err := graphResult(strings.Repeat("x", 51), nil, limits.GraphMaxOutputBytes); !errors.Is(err, errOutputBudget) {
+		t.Fatalf("graph output error=%v", err)
+	}
+	if _, _, err := graphResult(strings.Repeat("x", 51), nil, limits.MaxOutputBytes); err != nil {
+		t.Fatalf("existing output budget error=%v", err)
 	}
 }
 

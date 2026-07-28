@@ -28,8 +28,9 @@ const (
 )
 
 type Limits struct {
-	MaxItems       int
-	MaxOutputBytes int64
+	MaxItems            int
+	MaxOutputBytes      int64
+	GraphMaxOutputBytes int64
 }
 
 type Services struct {
@@ -134,7 +135,7 @@ func NewWithLimits(services Services, limits Limits) *mcp.Server {
 			return structuredResult(), response, nil
 		})
 	}
-	registerGraphTools(server, services.Graph, limits)
+	registerGraphTools(server, services.Graph, limits.GraphMaxOutputBytes)
 	repositories := services.Repositories
 	if repositories == nil {
 		return server
@@ -263,6 +264,9 @@ func normalizeLimits(limits Limits) Limits {
 	}
 	if limits.MaxOutputBytes <= 0 || limits.MaxOutputBytes > maxToolOutputBytes {
 		limits.MaxOutputBytes = maxToolOutputBytes
+	}
+	if limits.GraphMaxOutputBytes <= 0 || limits.GraphMaxOutputBytes > limits.MaxOutputBytes {
+		limits.GraphMaxOutputBytes = limits.MaxOutputBytes
 	}
 	return limits
 }

@@ -2,13 +2,16 @@ package graphservice
 
 import (
 	"context"
+	"time"
 
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/graphprotocol"
 	"github.com/grepnest/grepnest/pkg/api"
 )
 
-func (s *Service) Trace(ctx context.Context, principal authn.Principal, request api.GraphTraceRequest) (api.GraphTraceResponse, error) {
+func (s *Service) Trace(ctx context.Context, principal authn.Principal, request api.GraphTraceRequest) (result api.GraphTraceResponse, err error) {
+	started := time.Now()
+	defer s.observe(started, "trace", &err)
 	if request.SourceUID == "" || request.TargetUID == "" || request.MaxDepth < 0 {
 		return api.GraphTraceResponse{}, ErrInvalidRequest
 	}
@@ -30,7 +33,7 @@ func (s *Service) Trace(ctx context.Context, principal authn.Principal, request 
 	if err := s.reauthorize(ctx, principal, selected, response.Commits); err != nil {
 		return api.GraphTraceResponse{}, err
 	}
-	result := api.GraphTraceResponse{Status: response.Status, Boundaries: boundaries(response.Boundaries), Commits: response.Commits}
+	result = api.GraphTraceResponse{Status: response.Status, Boundaries: boundaries(response.Boundaries), Commits: response.Commits}
 	for _, value := range response.Nodes {
 		result.Nodes = append(result.Nodes, symbol(value))
 	}

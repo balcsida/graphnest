@@ -138,7 +138,7 @@ func Load() (Config, error) {
 		if config.AdminRepositoryIDs, err = repositoryIDs("GREPNEST_ADMIN_REPOSITORY_IDS"); err != nil {
 			return Config{}, err
 		}
-		if config.Graph, err = loadGraph(true); err != nil {
+		if config.Graph, err = loadServerGraph(); err != nil {
 			return Config{}, err
 		}
 	} else if config.RepositoriesFile == "" {
@@ -222,6 +222,18 @@ func LoadIndexer() (Indexer, error) {
 
 func LoadGraph() (Graph, error) { return loadGraph(true) }
 
+func loadServerGraph() (Graph, error) {
+	graph, err := loadGraph(true)
+	if err != nil {
+		return Graph{}, err
+	}
+	parsed, err := url.Parse(graph.URL)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || (parsed.EscapedPath() != "" && parsed.EscapedPath() != "/") {
+		return Graph{}, invalid("GREPNEST_GRAPH_URL must be an HTTP(S) URL without credentials, query, fragment, or path")
+	}
+	return graph, nil
+}
+
 func loadGraph(force bool) (Graph, error) {
 	graph := Graph{
 		Mode:          valueOr("GREPNEST_GRAPH_MODE", "embedded"),
@@ -244,10 +256,6 @@ func loadGraph(force bool) (Graph, error) {
 	}
 	if graph.Mode != "embedded" && graph.Mode != "separate" {
 		return Graph{}, invalid("GREPNEST_GRAPH_MODE must be embedded or separate")
-	}
-	parsedURL, err := url.Parse(graph.URL)
-	if err != nil || parsedURL.Host == "" || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.User != nil || parsedURL.RawQuery != "" || parsedURL.ForceQuery || parsedURL.Fragment != "" || (parsedURL.EscapedPath() != "" && parsedURL.EscapedPath() != "/") {
-		return Graph{}, invalid("GREPNEST_GRAPH_URL must be an HTTP(S) URL without credentials, query, fragment, or path")
 	}
 	if err := validListenAddress(graph.ListenAddress); err != nil {
 		return Graph{}, invalid("GREPNEST_GRAPH_LISTEN_ADDRESS must be a host:port address")

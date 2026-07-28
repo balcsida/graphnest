@@ -10,25 +10,25 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func registerGraphTools(server *mcp.Server, service *graphservice.Service, limits Limits) {
+func registerGraphTools(server *mcp.Server, service *graphservice.Service, maxOutputBytes int64) {
 	if service == nil {
 		return
 	}
 	mcp.AddTool(server, &mcp.Tool{Name: "context", Description: "Inspect a symbol's incoming and outgoing code relationships.", InputSchema: graphContextSchema()}, func(ctx context.Context, _ *mcp.CallToolRequest, input api.GraphContextRequest) (*mcp.CallToolResult, any, error) {
 		response, err := service.Context(ctx, httpapi.PrincipalFromContext(ctx), input)
-		return graphResult(response, err, outputBudget(0, limits.MaxOutputBytes))
+		return graphResult(response, err, maxOutputBytes)
 	})
 	mcp.AddTool(server, &mcp.Tool{Name: "impact", Description: "Analyze the upstream or downstream impact of a code symbol.", InputSchema: graphImpactSchema()}, func(ctx context.Context, _ *mcp.CallToolRequest, input api.GraphImpactRequest) (*mcp.CallToolResult, any, error) {
 		response, err := service.Impact(ctx, httpapi.PrincipalFromContext(ctx), input)
-		return graphResult(response, err, outputBudget(0, limits.MaxOutputBytes))
+		return graphResult(response, err, maxOutputBytes)
 	})
 	mcp.AddTool(server, &mcp.Tool{Name: "trace", Description: "Trace code relationships between two symbols.", InputSchema: graphTraceSchema()}, func(ctx context.Context, _ *mcp.CallToolRequest, input api.GraphTraceRequest) (*mcp.CallToolResult, any, error) {
 		response, err := service.Trace(ctx, httpapi.PrincipalFromContext(ctx), input)
-		return graphResult(response, err, outputBudget(0, limits.MaxOutputBytes))
+		return graphResult(response, err, maxOutputBytes)
 	})
 	mcp.AddTool(server, &mcp.Tool{Name: "cypher", Description: "Run an administrator-only read query against the code graph.", InputSchema: graphCypherSchema()}, func(ctx context.Context, _ *mcp.CallToolRequest, input api.GraphCypherRequest) (*mcp.CallToolResult, any, error) {
 		response, err := service.Cypher(ctx, httpapi.PrincipalFromContext(ctx), input)
-		return graphResult(response, err, outputBudget(0, limits.MaxOutputBytes))
+		return graphResult(response, err, maxOutputBytes)
 	})
 }
 
