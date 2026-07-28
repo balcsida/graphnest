@@ -3,11 +3,13 @@ package graphquery
 import (
 	"context"
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	lbug "github.com/LadybugDB/go-ladybug"
+	"github.com/grepnest/grepnest/internal/graphartifact"
 	"github.com/grepnest/grepnest/internal/graphprotocol"
 	"github.com/grepnest/grepnest/internal/ladybug"
 )
@@ -36,48 +38,30 @@ func (service *Service) Cypher(ctx context.Context, request graphprotocol.Cypher
 		response.Boundaries, response.Commits = ready.boundaries, ready.commits
 	}
 	err := service.Database.View(ctx, func(session *ladybug.Session) error {
-		repositoryIDs, err := cypherRepositoryIDs(ctx, session)
-		if err != nil {
-			return err
-		}
 		result, err := session.Execute(ctx, request.Statement, request.Parameters, ladybug.QueryLimits{
 			MaxRows: request.MaxRows, MaxBytes: request.MaxBytes,
 		})
 		if err == nil {
 			response.Columns, response.Rows, response.Truncated = result.Columns, result.Rows, result.Truncated
+			candidates := map[string]struct{}{}
+			for _, row := range response.Rows {
+				for _, value := range row {
+					collectUIDCandidates(value, candidates)
+				}
+			}
+			physicalUIDs, findErr := existingPhysicalUIDs(ctx, session, candidates)
+			if findErr != nil {
+				return findErr
+			}
 			for _, row := range response.Rows {
 				for column := range row {
-					row[column] = sanitizeCypherValue(row[column], response.Columns[column], repositoryIDs)
+					row[column] = sanitizeCypherValue(row[column], physicalUIDs)
 				}
 			}
 		}
 		return err
 	})
 	return response, err
-}
-
-func cypherRepositoryIDs(ctx context.Context, session *ladybug.Session) (map[int64]struct{}, error) {
-	const pageSize = 1_000
-	ids := map[int64]struct{}{}
-	var after int64
-	for {
-		result, err := session.Execute(ctx, `MATCH (r:Repository) WHERE r.id > $after RETURN r.id ORDER BY r.id LIMIT $limit`, map[string]any{
-			"after": after, "limit": int64(pageSize),
-		}, ladybug.QueryLimits{MaxRows: pageSize})
-		if err != nil {
-			return nil, err
-		}
-		for _, row := range result.Rows {
-			after = row[0].(int64)
-			ids[after] = struct{}{}
-		}
-		if result.Truncated && len(result.Rows) == 0 {
-			return nil, errors.New("ladybug repository UID scope made no progress")
-		}
-		if !result.Truncated && len(result.Rows) < pageSize {
-			return ids, nil
-		}
-	}
 }
 
 func scalar(value any) bool {
@@ -91,38 +75,96 @@ func scalar(value any) bool {
 	}
 }
 
-func sanitizeCypherValue(value any, evidence string, repositoryIDs map[int64]struct{}) any {
+func collectUIDCandidates(value any, candidates map[string]struct{}) {
 	switch typed := value.(type) {
 	case lbug.Node:
-		if typed.Label == "File" || typed.Label == "Symbol" {
-			repositoryID, _ := typed.Properties["repository_id"].(int64)
-			if uid, ok := typed.Properties["uid"].(string); ok {
-				typed.Properties["uid"] = stripStorageString(uid, repositoryID, repositoryIDs)
+		for _, property := range typed.Properties {
+			collectUIDCandidates(property, candidates)
+		}
+	case lbug.RecursiveRelationship:
+		for _, node := range typed.Nodes {
+			collectUIDCandidates(node, candidates)
+		}
+	case []lbug.MapItem:
+		for _, item := range typed {
+			collectUIDCandidates(item.Value, candidates)
+		}
+	case []any:
+		for _, item := range typed {
+			collectUIDCandidates(item, candidates)
+		}
+	case map[string]any:
+		for _, item := range typed {
+			collectUIDCandidates(item, candidates)
+		}
+	case string:
+		if storageUIDCandidate(typed) {
+			candidates[typed] = struct{}{}
+		}
+	}
+}
+
+func existingPhysicalUIDs(ctx context.Context, session *ladybug.Session, candidates map[string]struct{}) (map[string]struct{}, error) {
+	values := make([]string, 0, len(candidates))
+	for candidate := range candidates {
+		values = append(values, candidate)
+	}
+	sort.Strings(values)
+	found := map[string]struct{}{}
+	for start := 0; start < len(values); {
+		end, bytes := start, 0
+		for end < len(values) && end-start < 1_000 && bytes+len(values[end]) <= 64<<10 {
+			bytes += len(values[end])
+			end++
+		}
+		for _, query := range []string{
+			`UNWIND $uids AS uid MATCH (n:File) WHERE n.uid = uid RETURN n.uid ORDER BY n.uid LIMIT $limit`,
+			`UNWIND $uids AS uid MATCH (n:Symbol) WHERE n.uid = uid RETURN n.uid ORDER BY n.uid LIMIT $limit`,
+		} {
+			result, err := session.Execute(ctx, query, map[string]any{
+				"uids": values[start:end], "limit": int64(end - start),
+			}, ladybug.QueryLimits{MaxRows: end - start})
+			if err != nil {
+				return nil, err
+			}
+			if result.Truncated {
+				return nil, errors.New("physical UID verification was truncated")
+			}
+			for _, row := range result.Rows {
+				found[row[0].(string)] = struct{}{}
 			}
 		}
-		typed.Properties = sanitizeProperties(typed.Properties, repositoryIDs)
+		start = end
+	}
+	return found, nil
+}
+
+func sanitizeCypherValue(value any, physicalUIDs map[string]struct{}) any {
+	switch typed := value.(type) {
+	case lbug.Node:
+		typed.Properties = sanitizeProperties(typed.Properties, physicalUIDs)
 		return typed
 	case lbug.RecursiveRelationship:
 		for index := range typed.Nodes {
-			typed.Nodes[index] = sanitizeCypherValue(typed.Nodes[index], "", repositoryIDs).(lbug.Node)
+			typed.Nodes[index] = sanitizeCypherValue(typed.Nodes[index], physicalUIDs).(lbug.Node)
 		}
 		return typed
 	case []lbug.MapItem:
 		for index := range typed {
-			key, _ := typed[index].Key.(string)
-			typed[index].Value = sanitizeCypherValue(typed[index].Value, key, repositoryIDs)
+			typed[index].Value = sanitizeCypherValue(typed[index].Value, physicalUIDs)
 		}
 		return typed
 	case []any:
 		for index := range typed {
-			typed[index] = sanitizeCypherValue(typed[index], evidence, repositoryIDs)
+			typed[index] = sanitizeCypherValue(typed[index], physicalUIDs)
 		}
 		return typed
 	case map[string]any:
-		return sanitizeProperties(typed, repositoryIDs)
+		return sanitizeProperties(typed, physicalUIDs)
 	case string:
-		if uidEvidence(evidence) || hasStoragePrefix(typed, repositoryIDs) {
-			return stripStorageString(typed, 0, repositoryIDs)
+		if _, ok := physicalUIDs[typed]; ok {
+			_, uid, _ := strings.Cut(typed, ":")
+			return uid
 		}
 		return value
 	default:
@@ -130,43 +172,18 @@ func sanitizeCypherValue(value any, evidence string, repositoryIDs map[int64]str
 	}
 }
 
-func hasStoragePrefix(value string, repositoryIDs map[int64]struct{}) bool {
-	if len(repositoryIDs) == 0 {
-		return false
-	}
-	prefix, uid, found := strings.Cut(value, ":")
-	id, err := strconv.ParseInt(prefix, 10, 64)
-	if !found || err != nil || uid == "" || strings.TrimSpace(uid) != uid {
-		return false
-	}
-	_, ok := repositoryIDs[id]
-	return ok
-}
-
-func sanitizeProperties(properties map[string]any, repositoryIDs map[int64]struct{}) map[string]any {
+func sanitizeProperties(properties map[string]any, physicalUIDs map[string]struct{}) map[string]any {
 	for key, value := range properties {
-		if key == "uid" {
-			properties[key] = sanitizeCypherValue(value, key, repositoryIDs)
-		}
+		properties[key] = sanitizeCypherValue(value, physicalUIDs)
 	}
 	return properties
 }
 
-func uidEvidence(column string) bool {
-	lower := strings.ToLower(column)
-	return lower == "uid" || strings.Contains(lower, ".uid") || strings.Contains(lower, "uid)")
-}
-
-func stripStorageString(value string, repositoryID int64, repositoryIDs map[int64]struct{}) string {
+func storageUIDCandidate(value string) bool {
+	if len(value) > graphartifact.DefaultMaxIdentifierBytes+20 {
+		return false
+	}
 	prefix, uid, found := strings.Cut(value, ":")
-	id, err := strconv.ParseInt(prefix, 10, 64)
-	if !found || err != nil || uid == "" || strings.TrimSpace(uid) != uid || repositoryID > 0 && id != repositoryID {
-		return value
-	}
-	if len(repositoryIDs) > 0 {
-		if _, ok := repositoryIDs[id]; !ok {
-			return value
-		}
-	}
-	return uid
+	_, err := strconv.ParseInt(prefix, 10, 64)
+	return found && err == nil && uid != ""
 }

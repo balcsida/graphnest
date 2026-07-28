@@ -54,7 +54,7 @@ func (service *Service) Trace(ctx context.Context, request graphprotocol.TraceRe
 		roots[key], symbols[key] = struct{}{}, source
 		parents[key] = nodeKey{}
 		frontier = append(frontier, key)
-		if _, ok := targetKeys[key]; ok {
+		if _, ok := targetKeys[key]; ok && !foundOK {
 			found, foundOK = key, true
 		}
 	}
