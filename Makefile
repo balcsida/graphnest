@@ -78,9 +78,14 @@ native-link-test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
 	$(LADYBUG_GO) build $(LADYBUG_TAGS) $(LADYBUG_RPATH) -o $(NATIVE_BIN_DIR)/grepnest-indexer ./cmd/grepnest-indexer
 	$(LADYBUG_GO) build $(LADYBUG_TAGS) $(LADYBUG_RPATH) -o $(NATIVE_BIN_DIR)/grepnest-graph ./cmd/grepnest-graph
 ifeq ($(LADYBUG_OS),Darwin)
-	@for binary in grepnest-indexer grepnest-graph; do otool -L $(NATIVE_BIN_DIR)/$$binary | rg 'liblbug'; done
+	@set -e; for binary in grepnest-indexer grepnest-graph; do \
+		otool -L $(NATIVE_BIN_DIR)/$$binary | rg 'liblbug'; \
+		otool -l $(NATIVE_BIN_DIR)/$$binary | rg -F 'path $(LADYBUG_LIB_DIR) (offset'; \
+	done
 else
-	@for binary in grepnest-indexer grepnest-graph; do ldd $(NATIVE_BIN_DIR)/$$binary | rg 'liblbug.*=>.*$(LADYBUG_LIB_DIR)'; done
+	@set -e; for binary in grepnest-indexer grepnest-graph; do \
+		ldd $(NATIVE_BIN_DIR)/$$binary | rg 'liblbug.*=>.*$(LADYBUG_LIB_DIR)'; \
+	done
 endif
 
 $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY):
