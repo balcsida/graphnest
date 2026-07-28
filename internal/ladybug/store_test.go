@@ -5,6 +5,7 @@ package ladybug
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/grepnest/grepnest/internal/graphartifact"
@@ -41,6 +42,45 @@ func TestManifestsReturnsMoreThanOneResultPage(t *testing.T) {
 	}
 }
 
+func TestManifestsContinuesAfterByteTruncation(t *testing.T) {
+	db := testDatabase(t, Options{})
+	insertManifestRows(t, db, []map[string]any{
+		{"id": int64(1), "name": "repo", "commit": artifactA().Commit, "upload_id": int64(1), "source": strings.Repeat("x", defaultMaxBytes*2/3)},
+		{"id": int64(2), "name": "repo", "commit": artifactA().Commit, "upload_id": int64(2), "source": strings.Repeat("x", defaultMaxBytes*2/3)},
+	})
+	got, err := db.Manifests(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("manifest count = %d, want 2", len(got))
+	}
+}
+
+func TestManifestsRejectsTruncationWithoutProgress(t *testing.T) {
+	db := testDatabase(t, Options{})
+	insertManifestRows(t, db, []map[string]any{
+		{"id": int64(1), "name": "repo", "commit": artifactA().Commit, "upload_id": int64(1), "source": strings.Repeat("x", defaultMaxBytes)},
+	})
+	if _, err := db.Manifests(t.Context()); err == nil {
+		t.Fatal("Manifests() unexpectedly accepted a page with no readable row")
+	}
+}
+
+func TestStoreBatchesHaveByteAndRowCeilings(t *testing.T) {
+	rows := []map[string]any{
+		{"value": strings.Repeat("x", storeBatchBytes/2)},
+		{"value": strings.Repeat("x", storeBatchBytes/2)},
+	}
+	end, err := batchEnd(rows, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if end != 1 {
+		t.Fatalf("batch end = %d, want 1", end)
+	}
+}
+
 func TestReplaceRepositoryCompletelyReplacesSubgraph(t *testing.T) {
 	db := seededDatabase(t, artifactA())
 	if err := db.ReplaceRepository(t.Context(), manifestB(), artifactB()); err != nil {
@@ -55,6 +95,85 @@ func TestReplaceRepositoryCompletelyReplacesSubgraph(t *testing.T) {
 	if len(got) != 1 || got[101].Commit != manifestB().Commit {
 		t.Fatalf("manifests = %#v", got)
 	}
+}
+
+func TestReplaceRepositoryAcceptsManagedSource(t *testing.T) {
+	db := testDatabase(t, Options{})
+	manifest := manifestA()
+	manifest.Source = "managed"
+	if err := db.ReplaceRepository(t.Context(), manifest, artifactA()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReplaceRepositoryStoresAllLegalRelationshipKinds(t *testing.T) {
+	db := testDatabase(t, Options{})
+	artifact := artifactWithAllEdges()
+	manifest := manifestA()
+	manifest.ContentHash = bytes.Clone(artifact.ContentHash)
+	if err := db.ReplaceRepository(t.Context(), manifest, artifact); err != nil {
+		t.Fatal(err)
+	}
+	var got []int64
+	err := db.View(t.Context(), func(session *Session) error {
+		for _, table := range []string{"IMPORTS", "REFERENCES", "CALLS", "EXTENDS", "IMPLEMENTS"} {
+			result, err := session.Execute(t.Context(), `MATCH ()-[r:`+table+`]->() RETURN count(r)`, nil, QueryLimits{})
+			if err != nil {
+				return err
+			}
+			got = append(got, result.Rows[0][0].(int64))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, count := range got {
+		if count != 1 {
+			t.Fatalf("relationship count %d = %d, want 1", i, count)
+		}
+	}
+}
+
+func TestManifestsRoundTripsContentHash(t *testing.T) {
+	db := seededDatabase(t, artifactA())
+	got, err := db.Manifests(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got[101].ContentHash, manifestA().ContentHash) {
+		t.Fatalf("content hash = %x, want %x", got[101].ContentHash, manifestA().ContentHash)
+	}
+}
+
+func TestManifestIsInvisibleUntilCommitAndRollbackRestoresOld(t *testing.T) {
+	db := seededDatabase(t, artifactA())
+	written, release, finished := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	rollback := errors.New("rollback")
+	go func() {
+		finished <- db.Update(t.Context(), func(session *Session) error {
+			if err := deleteRepository(t.Context(), session, 101); err != nil {
+				return err
+			}
+			manifest := manifestB()
+			if err := executeStore(t.Context(), session, `CREATE (:Repository {id: $id, name: $name, commit: $commit, upload_id: $upload_id, schema_version: $schema_version, source: $source, content_hash: BLOB($content_hash)})`, map[string]any{
+				"id": manifest.RepositoryID, "name": "acme/repo", "commit": manifest.Commit, "upload_id": manifest.UploadID,
+				"schema_version": int32(manifest.SchemaVersion), "source": manifest.Source, "content_hash": blobLiteral(manifest.ContentHash),
+			}); err != nil {
+				return err
+			}
+			close(written)
+			<-release
+			return rollback
+		})
+	}()
+	<-written
+	assertManifestA(t, db)
+	close(release)
+	if err := <-finished; !errors.Is(err, rollback) {
+		t.Fatalf("Update() error = %v, want rollback", err)
+	}
+	assertManifestA(t, db)
 }
 
 func TestReplaceRepositoryIsolatesRepositories(t *testing.T) {
@@ -142,6 +261,7 @@ func TestReplaceRepositoryRejectsMismatchedManifest(t *testing.T) {
 		func(m *graphartifact.Manifest) { m.Commit = artifactA().Commit },
 		func(m *graphartifact.Manifest) { m.SchemaVersion++ },
 		func(m *graphartifact.Manifest) { m.ContentHash[0]++ },
+		func(m *graphartifact.Manifest) { m.Source = "unknown" },
 	} {
 		manifest := manifestB()
 		manifest.ContentHash = bytes.Clone(manifest.ContentHash)
@@ -150,6 +270,17 @@ func TestReplaceRepositoryRejectsMismatchedManifest(t *testing.T) {
 			t.Fatalf("error = %v, want ErrInvalidArtifact", err)
 		}
 		assertManifestA(t, db)
+	}
+}
+
+func insertManifestRows(t *testing.T, db *Database, rows []map[string]any) {
+	t.Helper()
+	if err := db.Update(t.Context(), func(session *Session) error {
+		return executeStore(t.Context(), session, `UNWIND $rows AS row CREATE (:Repository {id: row.id, name: row.name, commit: row.commit, upload_id: row.upload_id, schema_version: $schema_version, source: row.source, content_hash: BLOB($content_hash)})`, map[string]any{
+			"rows": rows, "schema_version": int32(1), "content_hash": blobLiteral(artifactA().ContentHash),
+		})
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -200,6 +331,23 @@ func testArtifact(commit string, hashByte byte, path, symbol string) graphartifa
 			{SourceUID: fileUID, TargetUID: symbolUID, Kind: graphartifact.EdgeContains, Path: path, Confidence: 1},
 		},
 	}
+}
+
+func artifactWithAllEdges() graphartifact.Artifact {
+	artifact := artifactA()
+	artifact.Nodes = append(artifact.Nodes,
+		graphartifact.Node{UID: "file:b.go", Kind: graphartifact.NodeFile, Path: "b.go"},
+		graphartifact.Node{UID: "symbol:pkg.B", Kind: graphartifact.NodeSymbol, Path: "b.go", Language: "go", SymbolKind: "type", QualifiedName: "pkg.B"},
+	)
+	artifact.Edges = append(artifact.Edges,
+		graphartifact.Edge{SourceUID: "repository:101", TargetUID: "file:b.go", Kind: graphartifact.EdgeContains, Path: "b.go", Confidence: 1},
+		graphartifact.Edge{SourceUID: "file:a.go", TargetUID: "file:b.go", Kind: graphartifact.EdgeImports, Path: "b.go", Confidence: 1},
+		graphartifact.Edge{SourceUID: "symbol:pkg.A", TargetUID: "symbol:pkg.B", Kind: graphartifact.EdgeReferences, Confidence: 1},
+		graphartifact.Edge{SourceUID: "symbol:pkg.A", TargetUID: "symbol:pkg.B", Kind: graphartifact.EdgeCalls, Confidence: 1},
+		graphartifact.Edge{SourceUID: "symbol:pkg.A", TargetUID: "symbol:pkg.B", Kind: graphartifact.EdgeExtends, Confidence: 1},
+		graphartifact.Edge{SourceUID: "symbol:pkg.A", TargetUID: "symbol:pkg.B", Kind: graphartifact.EdgeImplements, Confidence: 1},
+	)
+	return artifact
 }
 
 func manifestA() graphartifact.Manifest {
