@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -30,9 +31,10 @@ import (
 func TestGraphMCPMatchesService(t *testing.T) {
 	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}
 	store := &mcpGraphStore{repository: repository.Repository{ID: 1, InstallationID: 10, GitHubID: 101, Name: "acme/one", Branch: "main", IndexedSHA: strings.Repeat("a", 40)}}
+	backend := &mcpGraphBackend{}
 	graphService := &graphservice.Service{
 		Store:   store,
-		Backend: &mcpGraphBackend{},
+		Backend: backend,
 	}
 	request := api.GraphImpactRequest{Repo: api.GraphRepositorySelector{Name: "acme/one"}, Branch: "main", TargetUID: "symbol:a", Direction: "downstream"}
 	want, err := graphService.Impact(t.Context(), principal, request)
@@ -41,7 +43,10 @@ func TestGraphMCPMatchesService(t *testing.T) {
 	}
 	budget := mcpResultSize(t, want)
 	server := NewWithLimits(Services{Search: testService(t, &recordingBackend{}), Graph: graphService}, Limits{MaxOutputBytes: int64(budget)})
-	handler := httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{"secret": principal}), mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
+	handler := httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{
+		"secret": principal,
+		"admin":  {InstallationID: 10, RepositoryIDs: []int64{101}, Administrator: true},
+	}), mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
 	httpServer := httptest.NewServer(handler)
 	defer httpServer.Close()
 	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: httpServer.URL, HTTPClient: bearerClient(httpServer.Client(), "secret"), DisableStandaloneSSE: true}, nil)
@@ -75,6 +80,29 @@ func TestGraphMCPMatchesService(t *testing.T) {
 	if impactProperties["repo"].(map[string]any)["oneOf"] == nil || impactProperties["branch"].(map[string]any)["minLength"] != float64(1) {
 		t.Fatalf("impact schema = %#v", impactSchema)
 	}
+	for field, want := range map[string]string{
+		"max_depth": "default: 3; values above 32 are capped",
+		"limit":     "default: 100; values above 100 are capped",
+	} {
+		property := impactProperties[field].(map[string]any)
+		if property["default"] == nil || !strings.Contains(property["description"].(string), want) {
+			t.Fatalf("impact.%s schema = %#v", field, property)
+		}
+	}
+	traceProperties := repositoryToolSchema(t, tools.Tools, "trace")["properties"].(map[string]any)
+	if property := traceProperties["max_depth"].(map[string]any); property["default"] == nil || !strings.Contains(property["description"].(string), "default: 10; values above 30 are capped") {
+		t.Fatalf("trace.max_depth schema = %#v", property)
+	}
+	cypherProperties := repositoryToolSchema(t, tools.Tools, "cypher")["properties"].(map[string]any)
+	for field, want := range map[string]string{
+		"max_rows":  "default: 100; values above 100 are capped",
+		"max_bytes": "default: 262144; values above 262144 are capped",
+	} {
+		property := cypherProperties[field].(map[string]any)
+		if property["default"] == nil || !strings.Contains(property["description"].(string), want) {
+			t.Fatalf("cypher.%s schema = %#v", field, property)
+		}
+	}
 	contextSchema := repositoryToolSchema(t, tools.Tools, "context")
 	if contextSchema["properties"].(map[string]any)["uid"] == nil || contextSchema["properties"].(map[string]any)["name"] == nil {
 		t.Fatalf("context schema = %#v", contextSchema)
@@ -87,11 +115,26 @@ func TestGraphMCPMatchesService(t *testing.T) {
 	assertMCPResultBudget(t, "impact", result, budget)
 	var got api.GraphImpactResponse
 	decodeStructured(t, result.StructuredContent, &got)
-	if got.Commits["acme/one"] != want.Commits["acme/one"] || got.Status != want.Status {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got=%#v want=%#v", got, want)
 	}
 	if store.principal.InstallationID != principal.InstallationID || !slices.Equal(store.principal.RepositoryIDs, principal.RepositoryIDs) {
 		t.Fatalf("principal=%#v want=%#v", store.principal, principal)
+	}
+
+	result, err = session.CallTool(t.Context(), &mcp.CallToolParams{Name: "cypher", Arguments: map[string]any{"repo": 101, "statement": "RETURN 1"}})
+	if err != nil || !result.IsError || backend.cypherCalls != 0 {
+		t.Fatalf("non-admin cypher result=%#v err=%v calls=%d", result, err, backend.cypherCalls)
+	}
+
+	adminSession, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: httpServer.URL, HTTPClient: bearerClient(httpServer.Client(), "admin"), DisableStandaloneSSE: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adminSession.Close()
+	result, err = adminSession.CallTool(t.Context(), &mcp.CallToolParams{Name: "cypher", Arguments: map[string]any{"repo": 101, "statement": "RETURN 1", "max_rows": 999, "max_bytes": 999 << 10}})
+	if err != nil || result.IsError || backend.cypherCalls != 1 || backend.cypherRequest.MaxRows != 100 || backend.cypherRequest.MaxBytes != 256<<10 {
+		t.Fatalf("admin cypher result=%#v err=%v request=%#v calls=%d", result, err, backend.cypherRequest, backend.cypherCalls)
 	}
 }
 
@@ -108,19 +151,26 @@ func (store *mcpGraphStore) GraphRepositories(_ context.Context, principal authn
 	return []repository.Repository{store.repository}, nil
 }
 
-type mcpGraphBackend struct{}
+type mcpGraphBackend struct {
+	cypherCalls   int
+	cypherRequest graphprotocol.CypherRequest
+}
 
 func (mcpGraphBackend) Context(context.Context, graphprotocol.ContextRequest) (graphprotocol.ContextResponse, error) {
 	return graphprotocol.ContextResponse{}, nil
 }
 func (mcpGraphBackend) Impact(_ context.Context, request graphprotocol.ImpactRequest) (graphprotocol.ImpactResponse, error) {
-	return graphprotocol.ImpactResponse{Status: graphprotocol.StatusFound, ByDepth: map[int][]graphprotocol.Symbol{}, Commits: map[string]string{"acme/one": request.Scope.Repositories[0].Commit}}, nil
+	symbol := graphprotocol.Symbol{UID: "symbol:b", Name: "b", Kind: "function", FilePath: "b.go", Language: "go", RepositoryID: 1}
+	relation := graphprotocol.Relationship{SourceRepositoryID: 1, TargetRepositoryID: 1, SourceUID: "symbol:a", TargetUID: "symbol:b", Kind: "calls", Confidence: 1}
+	return graphprotocol.ImpactResponse{Status: graphprotocol.StatusFound, ByDepth: map[int][]graphprotocol.Symbol{1: {symbol}}, Edges: []graphprotocol.Relationship{relation}, Boundaries: []graphprotocol.Boundary{{Repository: "acme/one", Reason: "depth_limit", Depth: 1}}, Commits: map[string]string{"acme/one": request.Scope.Repositories[0].Commit}, Partial: true}, nil
 }
 func (mcpGraphBackend) Trace(context.Context, graphprotocol.TraceRequest) (graphprotocol.TraceResponse, error) {
 	return graphprotocol.TraceResponse{}, nil
 }
-func (mcpGraphBackend) Cypher(context.Context, graphprotocol.CypherRequest) (graphprotocol.CypherResponse, error) {
-	return graphprotocol.CypherResponse{}, nil
+func (backend *mcpGraphBackend) Cypher(_ context.Context, request graphprotocol.CypherRequest) (graphprotocol.CypherResponse, error) {
+	backend.cypherCalls++
+	backend.cypherRequest = request
+	return graphprotocol.CypherResponse{Columns: []string{"value"}, Rows: [][]any{{1}}, Commits: map[string]string{"acme/one": request.Scope.Repositories[0].Commit}}, nil
 }
 
 func TestRepositoryToolsUseAuthenticatedService(t *testing.T) {
