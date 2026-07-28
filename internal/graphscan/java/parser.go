@@ -43,6 +43,9 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 	imports := map[string]string{}
 	var walk func(*tree_sitter.Node, string, string)
 	walk = func(node *tree_sitter.Node, scope, class string) {
+		if graphscan.BudgetError(ctx) != nil {
+			return
+		}
 		nextScope, nextClass := scope, class
 		switch node.Kind() {
 		case "package_declaration":
@@ -54,7 +57,7 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 				alias = "*"
 			}
 			imports[alias] = target
-			file.Imports = append(file.Imports, graphscan.Import{Path: path, Target: target, Alias: alias, Range: nodeRange(node)})
+			graphscan.Add(ctx, &file.Imports, graphscan.Import{Path: path, Target: target, Alias: alias, Range: nodeRange(node)})
 		case "class_declaration", "interface_declaration":
 			nameNode := node.ChildByFieldName("name")
 			name := text(nameNode, source)
@@ -63,31 +66,37 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 			if node.Kind() == "interface_declaration" {
 				kind = "Interface"
 			}
-			file.Declarations = append(file.Declarations, declaration(path, qualified, name, kind, nameNode))
+			graphscan.Add(ctx, &file.Declarations, declaration(path, qualified, name, kind, nameNode))
 			nextScope, nextClass = qualified, qualified
-			addJavaHeritage(&file, path, qualified, node, source, imports)
+			addJavaHeritage(ctx, &file, path, qualified, node, source, imports)
 		case "method_declaration":
 			nameNode := node.ChildByFieldName("name")
 			name := text(nameNode, source)
 			qualified := qualify(class, name)
-			file.Declarations = append(file.Declarations, declaration(path, qualified, name, "Method", nameNode))
-			nextScope = qualified
+			value := declaration(path, qualified, name, "Method", nameNode)
+			value.Signature = methodSignature(node, source)
+			value.LocalID += value.Signature
+			graphscan.Add(ctx, &file.Declarations, value)
+			nextScope = value.LocalID
 		case "method_invocation":
 			nameNode := node.ChildByFieldName("name")
 			name := text(nameNode, source)
 			object := text(node.ChildByFieldName("object"), source)
 			candidates := memberCandidates(file.Module, class, name, object)
-			file.References = append(file.References, graphscan.Reference{Path: path, FromLocalID: scope, Name: name, Candidates: candidates, Range: nodeRange(nameNode), Call: true})
+			graphscan.Add(ctx, &file.References, graphscan.Reference{Path: path, FromLocalID: scope, Name: name, Candidates: candidates, Range: nodeRange(nameNode), Call: true})
 		}
 		for i := uint(0); i < node.NamedChildCount(); i++ {
 			walk(node.NamedChild(i), nextScope, nextClass)
 		}
 	}
 	walk(tree.RootNode(), "", "")
+	if err := graphscan.BudgetError(ctx); err != nil {
+		return graphscan.File{}, err
+	}
 	return file, nil
 }
 
-func addJavaHeritage(file *graphscan.File, path, child string, node *tree_sitter.Node, source []byte, imports map[string]string) {
+func addJavaHeritage(ctx context.Context, file *graphscan.File, path, child string, node *tree_sitter.Node, source []byte, imports map[string]string) {
 	for _, field := range []struct {
 		name string
 		kind graphartifact.EdgeKind
@@ -101,9 +110,12 @@ func addJavaHeritage(file *graphscan.File, path, child string, node *tree_sitter
 		}
 		var visit func(*tree_sitter.Node)
 		visit = func(value *tree_sitter.Node) {
+			if graphscan.BudgetError(ctx) != nil {
+				return
+			}
 			if value.Kind() == "type_identifier" {
 				name := text(value, source)
-				file.Heritage = append(file.Heritage, graphscan.Heritage{Path: path, ChildLocalID: child, Candidates: nameCandidates(file.Module, imports, name), Kind: field.kind, Range: nodeRange(value)})
+				graphscan.Add(ctx, &file.Heritage, graphscan.Heritage{Path: path, ChildLocalID: child, Candidates: nameCandidates(file.Module, imports, name), Kind: field.kind, Range: nodeRange(value)})
 				return
 			}
 			for i := uint(0); i < value.NamedChildCount(); i++ {
@@ -157,6 +169,26 @@ func firstKind(node *tree_sitter.Node, kind string) *tree_sitter.Node {
 func declaration(path, qualified, name, kind string, node *tree_sitter.Node) graphscan.Declaration {
 	return graphscan.Declaration{Path: path, LocalID: qualified, Name: name, QualifiedName: qualified, Kind: kind, Range: nodeRange(node)}
 }
+
+func methodSignature(node *tree_sitter.Node, source []byte) string {
+	var parameters []string
+	if list := node.ChildByFieldName("parameters"); list != nil {
+		for i := uint(0); i < list.NamedChildCount(); i++ {
+			parameter := list.NamedChild(i)
+			if parameter.Kind() != "formal_parameter" && parameter.Kind() != "spread_parameter" {
+				continue
+			}
+			kind := compact(text(parameter.ChildByFieldName("type"), source))
+			if parameter.Kind() == "spread_parameter" {
+				kind += "..."
+			}
+			parameters = append(parameters, kind)
+		}
+	}
+	return "(" + strings.Join(parameters, ",") + "):" + compact(text(node.ChildByFieldName("type"), source))
+}
+
+func compact(value string) string { return strings.Join(strings.Fields(value), "") }
 
 func qualify(prefix, name string) string {
 	if prefix == "" {

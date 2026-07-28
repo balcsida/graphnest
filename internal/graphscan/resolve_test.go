@@ -125,6 +125,32 @@ func TestResolveBoundsReasonsAndConfidence(t *testing.T) {
 	}
 }
 
+func TestResolveDoesNotBindBareNamesAcrossLanguages(t *testing.T) {
+	artifact, err := Resolve(101, strings.Repeat("a", 40), []File{
+		{Path: "caller.go", Module: "main", Language: Go,
+			Declarations: []Declaration{{LocalID: "main.call", QualifiedName: "main.call", Kind: "Function"}},
+			References:   []Reference{{FromLocalID: "main.call", Candidates: []string{"run"}, Call: true}}},
+		{Path: "service.kt", Module: "example", Language: Kotlin,
+			Declarations: []Declaration{{LocalID: "example.run", Name: "run", QualifiedName: "example.run", Kind: "Function"}}},
+	})
+	if err != nil || countEdges(artifact, graphartifact.EdgeCalls) != 0 {
+		t.Fatalf("Resolve() = %#v, %v", artifact, err)
+	}
+}
+
+func TestResolveDoesNotBindBareNamesAcrossModules(t *testing.T) {
+	artifact, err := Resolve(101, strings.Repeat("a", 40), []File{
+		{Path: "caller.go", Module: "main", Language: Go,
+			Declarations: []Declaration{{LocalID: "main.call", QualifiedName: "main.call", Kind: "Function"}},
+			References:   []Reference{{FromLocalID: "main.call", Candidates: []string{"run"}, Call: true}}},
+		{Path: "service.go", Module: "service", Language: Go,
+			Declarations: []Declaration{{LocalID: "service.run", Name: "run", QualifiedName: "service.run", Kind: "Function"}}},
+	})
+	if err != nil || countEdges(artifact, graphartifact.EdgeCalls) != 0 {
+		t.Fatalf("Resolve() = %#v, %v", artifact, err)
+	}
+}
+
 func hasEdge(artifact graphartifact.Artifact, kind graphartifact.EdgeKind, source, target string) bool {
 	for _, edge := range artifact.Edges {
 		if edge.Kind == kind && nodeName(artifact, edge.SourceUID) == source && nodeName(artifact, edge.TargetUID) == target {

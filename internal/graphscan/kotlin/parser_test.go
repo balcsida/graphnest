@@ -64,6 +64,28 @@ internal interface Annotated`))
 	}
 }
 
+func TestParseKotlinEmitsStableOverloadSignatures(t *testing.T) {
+	got, err := Parse(t.Context(), "Overloaded.kt", []byte(`
+package example
+class Overloaded {
+  fun run(value: Int): Unit {}
+  fun run(value: String, count: Long): String = value
+}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasSignature(got, "example.Overloaded.run", "(Int):Unit") ||
+		!hasSignature(got, "example.Overloaded.run", "(String,Long):String") {
+		t.Fatalf("Parse() = %#v", got)
+	}
+}
+
+func hasSignature(file graphscan.File, qualified, signature string) bool {
+	return slices.ContainsFunc(file.Declarations, func(value graphscan.Declaration) bool {
+		return value.QualifiedName == qualified && value.Signature == signature
+	})
+}
+
 func parseFixture(t *testing.T, name string) graphscan.File {
 	t.Helper()
 	source, err := os.ReadFile(filepath.Join("testdata", name))

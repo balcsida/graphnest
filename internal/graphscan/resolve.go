@@ -4,7 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/grepnest/grepnest/internal/graphartifact"
 )
@@ -15,7 +17,8 @@ const (
 )
 
 type symbol struct {
-	uid, localID, path, qualifiedName, scip string
+	uid, localID, path, module, name, qualifiedName, scip string
+	language                                              Language
 }
 
 func CanonicalUID(language Language, path, kind, qualifiedName, signature string) string {
@@ -36,6 +39,8 @@ func Resolve(repositoryID int64, commit string, files []File) (graphartifact.Art
 	byLocal := map[string][]symbol{}
 	bySCIP := map[string][]symbol{}
 	byQualified := map[string][]symbol{}
+	byFile := map[string][]symbol{}
+	byModule := map[string][]symbol{}
 	filesByTarget := map[string][]string{}
 	seenNodes := map[string]bool{repositoryUID: true}
 	seenEdges := map[string]bool{}
@@ -55,6 +60,7 @@ func Resolve(repositoryID int64, commit string, files []File) (graphartifact.Art
 			addEdge(graphartifact.Edge{SourceUID: repositoryUID, TargetUID: fileUID, Kind: graphartifact.EdgeContains, Confidence: 1})
 		}
 		filesByTarget[file.Path] = append(filesByTarget[file.Path], fileUID)
+		filesByTarget[strings.TrimSuffix(file.Path, filepath.Ext(file.Path))] = append(filesByTarget[strings.TrimSuffix(file.Path, filepath.Ext(file.Path))], fileUID)
 		if file.Module != "" {
 			filesByTarget[file.Module] = append(filesByTarget[file.Module], fileUID)
 		}
@@ -74,12 +80,17 @@ func Resolve(repositoryID int64, commit string, files []File) (graphartifact.Art
 			if uid == "" {
 				return graphartifact.Artifact{}, graphartifact.ErrInvalidArtifact
 			}
-			s := symbol{uid: uid, localID: declaration.LocalID, path: path, qualifiedName: declaration.QualifiedName, scip: declaration.SCIPSymbol}
-			byLocal[s.localID] = append(byLocal[s.localID], s)
+			s := symbol{uid: uid, localID: declaration.LocalID, path: path, module: file.Module, name: declaration.Name, qualifiedName: declaration.QualifiedName, scip: declaration.SCIPSymbol, language: file.Language}
+			byLocal[scoped(file.Language, path, s.localID)] = append(byLocal[scoped(file.Language, path, s.localID)], s)
 			if s.scip != "" {
 				bySCIP[s.scip] = append(bySCIP[s.scip], s)
 			}
-			byQualified[s.qualifiedName] = append(byQualified[s.qualifiedName], s)
+			byQualified[scoped(file.Language, "", s.qualifiedName)] = append(byQualified[scoped(file.Language, "", s.qualifiedName)], s)
+			byFile[path] = append(byFile[path], s)
+			if file.Module != "" {
+				byModule[scoped(file.Language, "", file.Module)] = append(byModule[scoped(file.Language, "", file.Module)], s)
+			}
+			filesByTarget[s.qualifiedName] = append(filesByTarget[s.qualifiedName], fileUID)
 			if seenNodes[uid] {
 				continue
 			}
@@ -92,16 +103,17 @@ func Resolve(repositoryID int64, commit string, files []File) (graphartifact.Art
 	for _, file := range ordered {
 		fileUID := "file:" + file.Path
 		for _, imported := range file.Imports {
-			if target, ok := uniqueUID(filesByTarget[imported.Target]); ok {
+			if target, ok := importedFile(imported.Target, filesByTarget); ok {
 				addEdge(resolvedEdge(fileUID, target, graphartifact.EdgeImports, importPath(imported, file.Path), imported.Range, "import-target", 1))
 			}
 		}
 		for _, reference := range file.References {
-			from, ok := unique(byLocal[reference.FromLocalID])
+			path := referencePath(reference, file.Path)
+			from, ok := unique(byLocal[scoped(file.Language, path, reference.FromLocalID)])
 			if !ok {
 				continue
 			}
-			if target, ok := resolve(reference.Candidates, bySCIP, byQualified, byLocal); ok {
+			if target, ok := resolve(file, reference.Candidates, bySCIP, byQualified, byFile, byModule, filesByTarget); ok {
 				kind := graphartifact.EdgeReferences
 				if reference.Call {
 					kind = graphartifact.EdgeCalls
@@ -110,11 +122,12 @@ func Resolve(repositoryID int64, commit string, files []File) (graphartifact.Art
 			}
 		}
 		for _, heritage := range file.Heritage {
-			from, ok := unique(byLocal[heritage.ChildLocalID])
+			path := heritagePath(heritage, file.Path)
+			from, ok := unique(byLocal[scoped(file.Language, path, heritage.ChildLocalID)])
 			if !ok || (heritage.Kind != graphartifact.EdgeExtends && heritage.Kind != graphartifact.EdgeImplements) {
 				continue
 			}
-			if target, ok := resolve(heritage.Candidates, bySCIP, byQualified, byLocal); ok {
+			if target, ok := resolve(file, heritage.Candidates, bySCIP, byQualified, byFile, byModule, filesByTarget); ok {
 				addEdge(resolvedEdge(from.uid, target.uid, heritage.Kind, heritagePath(heritage, file.Path), heritage.Range, "candidate", .9))
 			}
 		}
@@ -129,18 +142,146 @@ func Resolve(repositoryID int64, commit string, files []File) (graphartifact.Art
 	return artifact, nil
 }
 
-func resolve(candidates []string, bySCIP, byQualified, byLocal map[string][]symbol) (symbol, bool) {
-	for _, index := range []map[string][]symbol{bySCIP, byQualified, byLocal} {
-		for _, candidate := range candidates {
-			if symbol, ok := unique(index[candidate]); ok {
-				return symbol, true
-			}
-			if len(index[candidate]) > 1 {
-				return symbol{}, false
-			}
+func resolve(file File, candidates []string, bySCIP, byQualified map[string][]symbol, byFile, byModule map[string][]symbol, filesByTarget map[string][]string) (symbol, bool) {
+	for _, candidate := range candidates {
+		if match, decided := uniqueMatch(bySCIP[candidate]); decided {
+			return match, match.uid != ""
+		}
+		if match, decided := importedSymbol(file, candidate, byQualified, byFile, filesByTarget); decided {
+			return match, match.uid != ""
+		}
+		local := append([]symbol(nil), byFile[file.Path]...)
+		if file.Module != "" {
+			local = append(local, byModule[scoped(file.Language, "", file.Module)]...)
+		}
+		if match, decided := uniqueMatch(matching(local, candidate)); decided {
+			return match, match.uid != ""
 		}
 	}
 	return symbol{}, false
+}
+
+func importedSymbol(file File, candidate string, byQualified map[string][]symbol, byFile map[string][]symbol, filesByTarget map[string][]string) (symbol, bool) {
+	for _, imported := range file.Imports {
+		separator := "."
+		if file.Language == Rust {
+			separator = "::"
+		}
+		if candidate == imported.Target || strings.HasPrefix(candidate, imported.Target+separator) {
+			if match, decided := uniqueMatch(byQualified[scoped(file.Language, "", candidate)]); decided {
+				return match, decided
+			}
+		}
+		remainder, ok := importedRemainder(candidate, imported.Alias)
+		if !ok {
+			continue
+		}
+		translated := imported.Target
+		if remainder != "" {
+			translated += separator + remainder
+		}
+		if match, decided := uniqueMatch(byQualified[scoped(file.Language, "", translated)]); decided {
+			return match, decided
+		}
+		var matches []symbol
+		for _, fileUID := range importFileUIDs(imported.Target, filesByTarget) {
+			path := strings.TrimPrefix(fileUID, "file:")
+			matches = append(matches, matching(byFile[path], remainder)...)
+		}
+		if match, decided := uniqueMatch(matches); decided {
+			return match, decided
+		}
+	}
+	return symbol{}, false
+}
+
+func importedRemainder(candidate, alias string) (string, bool) {
+	if alias == "*" {
+		return candidate, bare(candidate)
+	}
+	if candidate == alias {
+		return "", true
+	}
+	for _, separator := range []string{".", "::"} {
+		if strings.HasPrefix(candidate, alias+separator) {
+			return strings.TrimPrefix(candidate, alias+separator), true
+		}
+	}
+	return "", false
+}
+
+func matching(symbols []symbol, candidate string) []symbol {
+	var exact []symbol
+	for _, value := range symbols {
+		if value.localID == candidate || value.qualifiedName == candidate {
+			exact = append(exact, value)
+		}
+	}
+	if len(exact) > 0 {
+		return exact
+	}
+	var matches []symbol
+	last := candidate
+	if index := strings.LastIndex(candidate, "::"); index >= 0 {
+		last = candidate[index+2:]
+	} else if index := strings.LastIndexByte(candidate, '.'); index >= 0 {
+		last = candidate[index+1:]
+	}
+	for _, value := range symbols {
+		if value.name == last ||
+			strings.HasSuffix(value.qualifiedName, "."+candidate) || strings.HasSuffix(value.qualifiedName, "::"+candidate) {
+			matches = append(matches, value)
+		}
+	}
+	return matches
+}
+
+func uniqueMatch(symbols []symbol) (symbol, bool) {
+	if len(symbols) == 0 {
+		return symbol{}, false
+	}
+	value, ok := unique(symbols)
+	if !ok {
+		return symbol{}, true
+	}
+	return value, true
+}
+
+func scoped(language Language, path, value string) string {
+	return string(language) + "\x00" + path + "\x00" + value
+}
+
+func bare(value string) bool {
+	return !strings.ContainsAny(value, "./") && !strings.Contains(value, "::")
+}
+
+func importedFile(target string, filesByTarget map[string][]string) (string, bool) {
+	return uniqueUID(importFileUIDs(target, filesByTarget))
+}
+
+func importFileUIDs(target string, filesByTarget map[string][]string) []string {
+	candidates := []string{target, strings.TrimPrefix(target, "./")}
+	normalized := strings.TrimSuffix(strings.TrimPrefix(target, "./"), filepath.Ext(target))
+	candidates = append(candidates, normalized)
+	for _, separator := range []string{"/", "::", "."} {
+		if index := strings.LastIndex(normalized, separator); index >= 0 {
+			candidates = append(candidates, normalized[index+len(separator):])
+		}
+	}
+	var values []string
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		for _, value := range filesByTarget[candidate] {
+			if !seen[value] {
+				seen[value] = true
+				values = append(values, value)
+			}
+		}
+		if len(values) > 0 {
+			break
+		}
+	}
+	return values
 }
 
 func unique(symbols []symbol) (symbol, bool) {

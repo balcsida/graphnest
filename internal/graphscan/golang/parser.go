@@ -45,7 +45,7 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 	methods := map[string]map[string]string{}
 	var walk func(*tree_sitter.Node, string)
 	walk = func(node *tree_sitter.Node, scope string) {
-		if node == nil {
+		if node == nil || graphscan.BudgetError(ctx) != nil {
 			return
 		}
 		nextScope := scope
@@ -59,7 +59,7 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 				parts := strings.Split(target, "/")
 				alias = parts[len(parts)-1]
 			}
-			file.Imports = append(file.Imports, graphscan.Import{Path: path, Target: target, Alias: alias, Range: nodeRange(node)})
+			graphscan.Add(ctx, &file.Imports, graphscan.Import{Path: path, Target: target, Alias: alias, Range: nodeRange(node)})
 		case "type_spec":
 			nameNode := node.ChildByFieldName("name")
 			name := text(nameNode, source)
@@ -71,10 +71,10 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 				interfaces[name] = required
 				embeddedInterfaces[name] = embedded
 				for _, parent := range embedded {
-					file.Heritage = append(file.Heritage, graphscan.Heritage{Path: path, ChildLocalID: name, Candidates: []string{parent}, Kind: graphartifact.EdgeExtends, Range: nodeRange(typeNode)})
+					graphscan.Add(ctx, &file.Heritage, graphscan.Heritage{Path: path, ChildLocalID: name, Candidates: []string{parent}, Kind: graphartifact.EdgeExtends, Range: nodeRange(typeNode)})
 				}
 			}
-			file.Declarations = append(file.Declarations, declaration(path, name, name, kind, nameNode))
+			graphscan.Add(ctx, &file.Declarations, declaration(path, name, name, kind, nameNode))
 		case "function_declaration":
 			nameNode := node.ChildByFieldName("name")
 			name := text(nameNode, source)
@@ -83,7 +83,7 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 				qualified = file.Module + "." + name
 			}
 			nextScope = qualified
-			file.Declarations = append(file.Declarations, declaration(path, qualified, name, "Function", nameNode))
+			graphscan.Add(ctx, &file.Declarations, declaration(path, qualified, name, "Function", nameNode))
 		case "method_declaration":
 			nameNode := node.ChildByFieldName("name")
 			name := text(nameNode, source)
@@ -93,7 +93,7 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 			value := declaration(path, qualified, name, "Method", nameNode)
 			value.Receiver = receiver
 			value.Signature = methodSignature(node, source)
-			file.Declarations = append(file.Declarations, value)
+			graphscan.Add(ctx, &file.Declarations, value)
 			if firstKind(node.ChildByFieldName("receiver"), "pointer_type") == nil {
 				if methods[receiver] == nil {
 					methods[receiver] = map[string]string{}
@@ -104,7 +104,7 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 			function := node.ChildByFieldName("function")
 			name, candidates := callCandidates(function, source)
 			if name != "" {
-				file.References = append(file.References, graphscan.Reference{Path: path, FromLocalID: scope, Name: name, Candidates: candidates, Range: nodeRange(function), Call: true})
+				graphscan.Add(ctx, &file.References, graphscan.Reference{Path: path, FromLocalID: scope, Name: name, Candidates: candidates, Range: nodeRange(function), Call: true})
 			}
 		}
 		for i := uint(0); i < node.NamedChildCount(); i++ {
@@ -116,9 +116,12 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 		for name := range interfaces {
 			required := interfaceMethods(name, interfaces, embeddedInterfaces, map[string]bool{})
 			if containsAll(set, required) {
-				file.Heritage = append(file.Heritage, graphscan.Heritage{Path: path, ChildLocalID: receiver, Candidates: []string{name}, Kind: graphartifact.EdgeImplements})
+				graphscan.Add(ctx, &file.Heritage, graphscan.Heritage{Path: path, ChildLocalID: receiver, Candidates: []string{name}, Kind: graphartifact.EdgeImplements})
 			}
 		}
+	}
+	if err := graphscan.BudgetError(ctx); err != nil {
+		return graphscan.File{}, err
 	}
 	return file, nil
 }
@@ -157,7 +160,7 @@ func callCandidates(node *tree_sitter.Node, source []byte) (string, []string) {
 	if node.Kind() == "selector_expression" {
 		name := text(node.ChildByFieldName("field"), source)
 		receiver := strings.TrimSuffix(text(node.ChildByFieldName("operand"), source), "{}")
-		return name, []string{name, receiver + "." + name}
+		return name, []string{receiver + "." + name, name}
 	}
 	name := text(node, source)
 	return name, []string{name}

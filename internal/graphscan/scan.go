@@ -101,7 +101,11 @@ func Scan(ctx context.Context, request Request, parsers map[string]Parser, limit
 			}
 			return ErrLimitExceeded
 		}
+		if !within(nodes, 1, limits.MaxNodes) || !within(edges, 1, limits.MaxEdges) {
+			return ErrLimitExceeded
+		}
 		parseCtx, cancel := context.WithTimeout(ctx, limits.ParseTimeout)
+		parseCtx = withIRBudget(parseCtx, limits.MaxNodes-nodes-1, limits.MaxEdges-edges-1)
 		file, err := parser(parseCtx, rel, data)
 		parseErr := parseCtx.Err()
 		cancel()

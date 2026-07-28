@@ -61,6 +61,28 @@ interface Child extends Base, Serializable {}`))
 	}
 }
 
+func TestParseJavaEmitsStableOverloadSignatures(t *testing.T) {
+	got, err := Parse(t.Context(), "Overloaded.java", []byte(`
+package example;
+class Overloaded {
+  void run(int value) {}
+  String run(String value, long count) { return value; }
+}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasSignature(got, "example.Overloaded.run", "(int):void") ||
+		!hasSignature(got, "example.Overloaded.run", "(String,long):String") {
+		t.Fatalf("Parse() = %#v", got)
+	}
+}
+
+func hasSignature(file graphscan.File, qualified, signature string) bool {
+	return slices.ContainsFunc(file.Declarations, func(value graphscan.Declaration) bool {
+		return value.QualifiedName == qualified && value.Signature == signature
+	})
+}
+
 func parseFixture(t *testing.T, name string) graphscan.File {
 	t.Helper()
 	source, err := os.ReadFile(filepath.Join("testdata", name))

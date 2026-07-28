@@ -43,6 +43,9 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 	imports := map[string]string{}
 	var walk func(*tree_sitter.Node, string, string)
 	walk = func(node *tree_sitter.Node, scope, class string) {
+		if graphscan.BudgetError(ctx) != nil {
+			return
+		}
 		nextScope, nextClass := scope, class
 		switch node.Kind() {
 		case "package_header":
@@ -50,7 +53,7 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 		case "import":
 			target, alias := kotlinImport(text(node, source))
 			imports[alias] = target
-			file.Imports = append(file.Imports, graphscan.Import{Path: path, Target: target, Alias: alias, Range: nodeRange(node)})
+			graphscan.Add(ctx, &file.Imports, graphscan.Import{Path: path, Target: target, Alias: alias, Range: nodeRange(node)})
 		case "class_declaration":
 			nameNode := node.ChildByFieldName("name")
 			name := text(nameNode, source)
@@ -59,16 +62,16 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 			if hasDirectChild(node, "interface") {
 				kind = "Interface"
 			}
-			file.Declarations = append(file.Declarations, declaration(path, qualified, name, kind, nameNode))
+			graphscan.Add(ctx, &file.Declarations, declaration(path, qualified, name, kind, nameNode))
 			nextScope, nextClass = qualified, qualified
-			addKotlinHeritage(&file, path, qualified, node, source, imports)
+			addKotlinHeritage(ctx, &file, path, qualified, node, source, imports)
 		case "object_declaration":
 			nameNode := node.ChildByFieldName("name")
 			name := text(nameNode, source)
 			qualified := qualify(file.Module, name)
-			file.Declarations = append(file.Declarations, declaration(path, qualified, name, "Object", nameNode))
+			graphscan.Add(ctx, &file.Declarations, declaration(path, qualified, name, "Object", nameNode))
 			nextScope, nextClass = qualified, qualified
-			addKotlinHeritage(&file, path, qualified, node, source, imports)
+			addKotlinHeritage(ctx, &file, path, qualified, node, source, imports)
 		case "function_declaration":
 			nameNode := node.ChildByFieldName("name")
 			name := text(nameNode, source)
@@ -76,8 +79,11 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 			if class != "" {
 				kind, qualified = "Method", qualify(class, name)
 			}
-			file.Declarations = append(file.Declarations, declaration(path, qualified, name, kind, nameNode))
-			nextScope = qualified
+			value := declaration(path, qualified, name, kind, nameNode)
+			value.Signature = functionSignature(node, source)
+			value.LocalID += value.Signature
+			graphscan.Add(ctx, &file.Declarations, value)
+			nextScope = value.LocalID
 		case "call_expression":
 			function := node.NamedChild(0)
 			raw := text(function, source)
@@ -85,13 +91,16 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 			if index := strings.LastIndexByte(name, '.'); index >= 0 {
 				name = name[index+1:]
 			}
-			file.References = append(file.References, graphscan.Reference{Path: path, FromLocalID: scope, Name: name, Candidates: kotlinCallCandidates(file.Module, class, name, raw), Range: nodeRange(function), Call: true})
+			graphscan.Add(ctx, &file.References, graphscan.Reference{Path: path, FromLocalID: scope, Name: name, Candidates: kotlinCallCandidates(file.Module, class, name, raw), Range: nodeRange(function), Call: true})
 		}
 		for i := uint(0); i < node.NamedChildCount(); i++ {
 			walk(node.NamedChild(i), nextScope, nextClass)
 		}
 	}
 	walk(tree.RootNode(), "", "")
+	if err := graphscan.BudgetError(ctx); err != nil {
+		return graphscan.File{}, err
+	}
 	return file, nil
 }
 
@@ -108,7 +117,7 @@ func kotlinImport(value string) (string, string) {
 	return target, lastPart(target)
 }
 
-func addKotlinHeritage(file *graphscan.File, path, child string, node *tree_sitter.Node, source []byte, imports map[string]string) {
+func addKotlinHeritage(ctx context.Context, file *graphscan.File, path, child string, node *tree_sitter.Node, source []byte, imports map[string]string) {
 	specifiers := firstKind(node, "delegation_specifiers")
 	if specifiers == nil {
 		return
@@ -124,7 +133,9 @@ func addKotlinHeritage(file *graphscan.File, path, child string, node *tree_sitt
 		if firstKind(specifier, "constructor_invocation") != nil {
 			kind = graphartifact.EdgeExtends
 		}
-		file.Heritage = append(file.Heritage, graphscan.Heritage{Path: path, ChildLocalID: child, Candidates: nameCandidates(file.Module, imports, name), Kind: kind, Range: nodeRange(nameNode)})
+		if !graphscan.Add(ctx, &file.Heritage, graphscan.Heritage{Path: path, ChildLocalID: child, Candidates: nameCandidates(file.Module, imports, name), Kind: kind, Range: nodeRange(nameNode)}) {
+			return
+		}
 	}
 }
 
@@ -170,6 +181,35 @@ func hasDirectChild(node *tree_sitter.Node, kind string) bool {
 func declaration(path, qualified, name, kind string, node *tree_sitter.Node) graphscan.Declaration {
 	return graphscan.Declaration{Path: path, LocalID: qualified, Name: name, QualifiedName: qualified, Kind: kind, Range: nodeRange(node)}
 }
+
+func functionSignature(node *tree_sitter.Node, source []byte) string {
+	var parameters []string
+	if list := firstKind(node, "function_value_parameters"); list != nil {
+		for i := uint(0); i < list.NamedChildCount(); i++ {
+			parameter := list.NamedChild(i)
+			if parameter.Kind() != "parameter" {
+				continue
+			}
+			if count := parameter.NamedChildCount(); count > 1 {
+				parameters = append(parameters, compact(text(parameter.NamedChild(count-1), source)))
+			}
+		}
+	}
+	result := "Unit"
+	seenParameters := false
+	for i := uint(0); i < node.NamedChildCount(); i++ {
+		child := node.NamedChild(i)
+		if child.Kind() == "function_value_parameters" {
+			seenParameters = true
+		} else if seenParameters && strings.Contains(child.Kind(), "type") {
+			result = compact(text(child, source))
+			break
+		}
+	}
+	return "(" + strings.Join(parameters, ",") + "):" + result
+}
+
+func compact(value string) string { return strings.Join(strings.Fields(value), "") }
 
 func qualify(prefix, name string) string {
 	if prefix == "" {

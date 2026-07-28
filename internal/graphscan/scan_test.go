@@ -72,6 +72,27 @@ func TestScanEnforcesGraphAndParserLimits(t *testing.T) {
 	}
 }
 
+func TestScanStopsParserIRAllocationAtBudget(t *testing.T) {
+	root := t.TempDir()
+	writeScanFile(t, filepath.Join(root, "main.go"), "package main")
+	attempts := 0
+	limits := scanLimits()
+	limits.MaxNodes = 3
+	_, err := Scan(t.Context(), scanRequest(root), map[string]Parser{".go": func(ctx context.Context, path string, _ []byte) (File, error) {
+		file := File{Path: path, Language: Go}
+		for attempts < 100 {
+			attempts++
+			if !Add(ctx, &file.Declarations, Declaration{LocalID: "x", QualifiedName: "x", Kind: "Function"}) {
+				break
+			}
+		}
+		return file, BudgetError(ctx)
+	}}, limits)
+	if !errors.Is(err, ErrLimitExceeded) || attempts != 2 {
+		t.Fatalf("Scan() error = %v, attempts = %d", err, attempts)
+	}
+}
+
 func TestScanMapsParserTimeoutToLimitExceeded(t *testing.T) {
 	root := t.TempDir()
 	writeScanFile(t, filepath.Join(root, "main.go"), "package main")

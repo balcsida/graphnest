@@ -43,18 +43,21 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 	file := graphscan.File{Path: path, Module: strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)), Language: graphscan.Rust}
 	var walk func(*tree_sitter.Node, string, string, string)
 	walk = func(node *tree_sitter.Node, module, scope, owner string) {
+		if graphscan.BudgetError(ctx) != nil {
+			return
+		}
 		nextModule, nextScope, nextOwner := module, scope, owner
 		switch node.Kind() {
 		case "mod_item":
 			nameNode := node.ChildByFieldName("name")
 			name := text(nameNode, source)
 			qualified := qualify(module, name)
-			file.Declarations = append(file.Declarations, declaration(path, qualified, name, "Module", nameNode))
+			graphscan.Add(ctx, &file.Declarations, declaration(path, qualified, name, "Module", nameNode))
 			if node.ChildByFieldName("body") != nil {
 				nextModule = qualified
 			}
 		case "use_declaration":
-			addUses(&file, path, node.ChildByFieldName("argument"), "", source)
+			addUses(ctx, &file, path, node.ChildByFieldName("argument"), "", source)
 		case "trait_item", "struct_item":
 			nameNode := node.ChildByFieldName("name")
 			name := text(nameNode, source)
@@ -63,7 +66,7 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 				kind = "Trait"
 			}
 			qualified := qualify(module, name)
-			file.Declarations = append(file.Declarations, declaration(path, qualified, name, kind, nameNode))
+			graphscan.Add(ctx, &file.Declarations, declaration(path, qualified, name, kind, nameNode))
 			nextScope = qualified
 			if node.Kind() == "trait_item" {
 				nextOwner = name
@@ -74,7 +77,7 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 			if trait := node.ChildByFieldName("trait"); trait != nil {
 				traitName := text(trait, source)
 				child := qualify(module, typeName)
-				file.Heritage = append(file.Heritage, graphscan.Heritage{Path: path, ChildLocalID: child, Candidates: []string{qualify(module, traitName), traitName}, Kind: graphartifact.EdgeImplements, Range: nodeRange(trait)})
+				graphscan.Add(ctx, &file.Heritage, graphscan.Heritage{Path: path, ChildLocalID: child, Candidates: []string{qualify(module, traitName), traitName}, Kind: graphartifact.EdgeImplements, Range: nodeRange(trait)})
 			}
 		case "function_item", "function_signature_item":
 			nameNode := node.ChildByFieldName("name")
@@ -83,7 +86,7 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 			if owner != "" {
 				kind, qualified = "Method", qualify(qualify(module, owner), name)
 			}
-			file.Declarations = append(file.Declarations, declaration(path, qualified, name, kind, nameNode))
+			graphscan.Add(ctx, &file.Declarations, declaration(path, qualified, name, kind, nameNode))
 			nextScope = qualified
 		case "call_expression":
 			function := node.ChildByFieldName("function")
@@ -94,35 +97,38 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 			} else if index := strings.LastIndex(raw, "::"); index >= 0 {
 				name = raw[index+2:]
 			}
-			file.References = append(file.References, graphscan.Reference{Path: path, FromLocalID: scope, Name: name, Candidates: rustCallCandidates(module, owner, name, raw), Range: nodeRange(function), Call: true})
+			graphscan.Add(ctx, &file.References, graphscan.Reference{Path: path, FromLocalID: scope, Name: name, Candidates: rustCallCandidates(module, owner, name, raw), Range: nodeRange(function), Call: true})
 		}
 		for i := uint(0); i < node.NamedChildCount(); i++ {
 			walk(node.NamedChild(i), nextModule, nextScope, nextOwner)
 		}
 	}
 	walk(tree.RootNode(), file.Module, "", "")
+	if err := graphscan.BudgetError(ctx); err != nil {
+		return graphscan.File{}, err
+	}
 	return file, nil
 }
 
-func addUses(file *graphscan.File, path string, node *tree_sitter.Node, prefix string, source []byte) {
-	if node == nil {
+func addUses(ctx context.Context, file *graphscan.File, path string, node *tree_sitter.Node, prefix string, source []byte) {
+	if node == nil || graphscan.BudgetError(ctx) != nil {
 		return
 	}
 	switch node.Kind() {
 	case "scoped_use_list":
-		addUses(file, path, node.ChildByFieldName("list"), joinPath(prefix, text(node.ChildByFieldName("path"), source)), source)
+		addUses(ctx, file, path, node.ChildByFieldName("list"), joinPath(prefix, text(node.ChildByFieldName("path"), source)), source)
 	case "use_list":
 		for i := uint(0); i < node.NamedChildCount(); i++ {
-			addUses(file, path, node.NamedChild(i), prefix, source)
+			addUses(ctx, file, path, node.NamedChild(i), prefix, source)
 		}
 	case "use_as_clause":
 		target := joinPath(prefix, text(node.ChildByFieldName("path"), source))
-		file.Imports = append(file.Imports, graphscan.Import{Path: path, Target: target, Alias: text(node.ChildByFieldName("alias"), source), Range: nodeRange(node)})
+		graphscan.Add(ctx, &file.Imports, graphscan.Import{Path: path, Target: target, Alias: text(node.ChildByFieldName("alias"), source), Range: nodeRange(node)})
 	case "identifier", "scoped_identifier", "self", "super", "crate":
 		target := joinPath(prefix, text(node, source))
-		file.Imports = append(file.Imports, graphscan.Import{Path: path, Target: target, Alias: lastPart(target), Range: nodeRange(node)})
+		graphscan.Add(ctx, &file.Imports, graphscan.Import{Path: path, Target: target, Alias: lastPart(target), Range: nodeRange(node)})
 	case "use_wildcard":
-		file.Imports = append(file.Imports, graphscan.Import{Path: path, Target: strings.TrimSuffix(joinPath(prefix, text(node, source)), "::*"), Alias: "*", Range: nodeRange(node)})
+		graphscan.Add(ctx, &file.Imports, graphscan.Import{Path: path, Target: strings.TrimSuffix(joinPath(prefix, text(node, source)), "::*"), Alias: "*", Range: nodeRange(node)})
 	}
 }
 

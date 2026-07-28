@@ -47,17 +47,17 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 	var exports [][2]string
 	var walk func(*tree_sitter.Node, string, string)
 	walk = func(node *tree_sitter.Node, scope, class string) {
-		if node == nil {
+		if node == nil || graphscan.BudgetError(ctx) != nil {
 			return
 		}
 		nextScope, nextClass := scope, class
 		switch node.Kind() {
 		case "import_statement":
-			addImports(&file, aliases, path, node, source)
+			addImports(ctx, &file, aliases, path, node, source)
 		case "export_statement":
 			value := node.ChildByFieldName("value")
 			if value != nil && (value.Kind() == "function_expression" || value.Kind() == "arrow_function") {
-				file.Declarations = append(file.Declarations, declarationFor(path, "defaultExport", "defaultExport", "Function", value))
+				graphscan.Add(ctx, &file.Declarations, declarationFor(path, "defaultExport", "defaultExport", "Function", value))
 				nextScope = "defaultExport"
 			} else if value != nil && value.Kind() == "class" {
 				nextScope, nextClass = "defaultExport", "defaultExport"
@@ -77,21 +77,21 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 				nameNode = node
 			}
 			nextScope = name
-			file.Declarations = append(file.Declarations, declarationFor(path, name, name, "Function", nameNode))
+			graphscan.Add(ctx, &file.Declarations, declarationFor(path, name, name, "Function", nameNode))
 		case "variable_declarator":
 			value := node.ChildByFieldName("value")
 			if value != nil && (value.Kind() == "arrow_function" || value.Kind() == "function_expression") {
 				nameNode := node.ChildByFieldName("name")
 				name := text(nameNode, source)
 				nextScope = name
-				file.Declarations = append(file.Declarations, declarationFor(path, name, name, "Function", nameNode))
+				graphscan.Add(ctx, &file.Declarations, declarationFor(path, name, name, "Function", nameNode))
 			}
 		case "class_declaration":
 			nameNode := node.ChildByFieldName("name")
 			name := text(nameNode, source)
 			nextScope, nextClass = name, name
-			file.Declarations = append(file.Declarations, declarationFor(path, name, name, "Class", nameNode))
-			addHeritage(&file, path, name, node, source)
+			graphscan.Add(ctx, &file.Declarations, declarationFor(path, name, name, "Class", nameNode))
+			addHeritage(ctx, &file, path, name, node, source)
 		case "class":
 			nameNode := node.ChildByFieldName("name")
 			name := text(nameNode, source)
@@ -101,20 +101,20 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 			}
 			if name != "" {
 				nextScope, nextClass = name, name
-				file.Declarations = append(file.Declarations, declarationFor(path, name, name, "Class", nameNode))
-				addHeritage(&file, path, name, node, source)
+				graphscan.Add(ctx, &file.Declarations, declarationFor(path, name, name, "Class", nameNode))
+				addHeritage(ctx, &file, path, name, node, source)
 			}
 		case "method_definition", "method_signature":
 			nameNode := node.ChildByFieldName("name")
 			name := text(nameNode, source)
 			qualified := class + "." + name
 			nextScope = qualified
-			file.Declarations = append(file.Declarations, declarationFor(path, qualified, name, "Method", nameNode))
+			graphscan.Add(ctx, &file.Declarations, declarationFor(path, qualified, name, "Method", nameNode))
 		case "call_expression":
 			function := node.ChildByFieldName("function")
 			name, candidates := callCandidates(function, source, aliases, class)
 			if name != "" {
-				file.References = append(file.References, graphscan.Reference{Path: path, FromLocalID: scope, Name: name, Candidates: candidates, Range: nodeRange(function), Call: true})
+				graphscan.Add(ctx, &file.References, graphscan.Reference{Path: path, FromLocalID: scope, Name: name, Candidates: candidates, Range: nodeRange(function), Call: true})
 			}
 		}
 		for i := uint(0); i < node.NamedChildCount(); i++ {
@@ -128,10 +128,13 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 				declaration.LocalID = exported[1]
 				declaration.Name = exported[1]
 				declaration.QualifiedName = exported[1]
-				file.Declarations = append(file.Declarations, declaration)
+				graphscan.Add(ctx, &file.Declarations, declaration)
 				break
 			}
 		}
+	}
+	if err := graphscan.BudgetError(ctx); err != nil {
+		return graphscan.File{}, err
 	}
 	return file, nil
 }
@@ -147,11 +150,14 @@ func languageFor(extension string) (*tree_sitter.Language, graphscan.Language) {
 	}
 }
 
-func addImports(file *graphscan.File, aliases map[string]string, path string, node *tree_sitter.Node, source []byte) {
+func addImports(ctx context.Context, file *graphscan.File, aliases map[string]string, path string, node *tree_sitter.Node, source []byte) {
 	target := strings.Trim(text(node.ChildByFieldName("source"), source), "\"'")
 	added := false
 	var visit func(*tree_sitter.Node)
 	visit = func(child *tree_sitter.Node) {
+		if graphscan.BudgetError(ctx) != nil {
+			return
+		}
 		switch child.Kind() {
 		case "import_specifier":
 			name := text(child.ChildByFieldName("name"), source)
@@ -160,12 +166,12 @@ func addImports(file *graphscan.File, aliases map[string]string, path string, no
 				alias = name
 			}
 			aliases[alias] = name
-			file.Imports = append(file.Imports, graphscan.Import{Path: path, Target: target, Alias: alias, Range: nodeRange(child)})
+			graphscan.Add(ctx, &file.Imports, graphscan.Import{Path: path, Target: target, Alias: alias, Range: nodeRange(child)})
 			added = true
 			return
 		case "namespace_import":
 			alias := text(child.NamedChild(0), source)
-			file.Imports = append(file.Imports, graphscan.Import{Path: path, Target: target, Alias: alias, Range: nodeRange(child)})
+			graphscan.Add(ctx, &file.Imports, graphscan.Import{Path: path, Target: target, Alias: alias, Range: nodeRange(child)})
 			added = true
 			return
 		case "import_clause":
@@ -173,7 +179,7 @@ func addImports(file *graphscan.File, aliases map[string]string, path string, no
 				value := child.NamedChild(i)
 				if value.Kind() == "identifier" {
 					alias := text(value, source)
-					file.Imports = append(file.Imports, graphscan.Import{Path: path, Target: target, Alias: alias, Range: nodeRange(value)})
+					graphscan.Add(ctx, &file.Imports, graphscan.Import{Path: path, Target: target, Alias: alias, Range: nodeRange(value)})
 					added = true
 				}
 			}
@@ -184,13 +190,16 @@ func addImports(file *graphscan.File, aliases map[string]string, path string, no
 	}
 	visit(node)
 	if !added {
-		file.Imports = append(file.Imports, graphscan.Import{Path: path, Target: target, Range: nodeRange(node)})
+		graphscan.Add(ctx, &file.Imports, graphscan.Import{Path: path, Target: target, Range: nodeRange(node)})
 	}
 }
 
-func addHeritage(file *graphscan.File, path, child string, node *tree_sitter.Node, source []byte) {
+func addHeritage(ctx context.Context, file *graphscan.File, path, child string, node *tree_sitter.Node, source []byte) {
 	var visit func(*tree_sitter.Node)
 	visit = func(value *tree_sitter.Node) {
+		if graphscan.BudgetError(ctx) != nil {
+			return
+		}
 		kind := graphartifact.EdgeKind(0)
 		switch value.Kind() {
 		case "class_heritage", "extends_clause":
@@ -202,7 +211,7 @@ func addHeritage(file *graphscan.File, path, child string, node *tree_sitter.Nod
 			for i := uint(0); i < value.NamedChildCount(); i++ {
 				candidate := value.NamedChild(i)
 				if candidate.Kind() == "identifier" || candidate.Kind() == "type_identifier" {
-					file.Heritage = append(file.Heritage, graphscan.Heritage{Path: path, ChildLocalID: child, Candidates: []string{text(candidate, source)}, Kind: kind, Range: nodeRange(candidate)})
+					graphscan.Add(ctx, &file.Heritage, graphscan.Heritage{Path: path, ChildLocalID: child, Candidates: []string{text(candidate, source)}, Kind: kind, Range: nodeRange(candidate)})
 				}
 			}
 			if value.Kind() != "class_heritage" {

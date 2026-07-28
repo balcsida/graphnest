@@ -22,7 +22,7 @@ func TestParseGoEmitsPackageImportsAndDeclarations(t *testing.T) {
 
 func TestParseGoEmitsCallsAndInterfaceEvidence(t *testing.T) {
 	got := parseFixture(t, "service.go")
-	if !hasCall(got, "Run", "Run", "Runner.Run") ||
+	if !hasCall(got, "Run", "Runner.Run", "Run") ||
 		!hasHeritage(got, "Runner", graphartifact.EdgeImplements, "Worker") ||
 		!hasHeritage(got, "Worker", graphartifact.EdgeExtends, "Base") ||
 		hasHeritage(got, "Partial", graphartifact.EdgeImplements, "Worker") {
@@ -53,6 +53,16 @@ func TestParseGoRejectsImplicitInterfaceSignatureMismatch(t *testing.T) {
 func TestParseGoExcludesPointerMethodsFromValueMethodSet(t *testing.T) {
 	got := parseFixture(t, "interface-pointer.go")
 	if hasHeritage(got, "PointerOnly", graphartifact.EdgeImplements, "Closer") {
+		t.Fatalf("Parse() = %#v", got)
+	}
+}
+
+func TestParseGoOrdersPackageQualifiedCallCandidate(t *testing.T) {
+	got, err := Parse(t.Context(), "main.go", []byte("package main\nimport \"example.com/lib\"\nfunc main() { lib.Run() }\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasCall(got, "Run", "lib.Run", "Run") {
 		t.Fatalf("Parse() = %#v", got)
 	}
 }
