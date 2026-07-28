@@ -29,6 +29,7 @@ import (
 	"github.com/grepnest/grepnest/internal/httpapi"
 	"github.com/grepnest/grepnest/internal/mcpserver"
 	"github.com/grepnest/grepnest/internal/postgres"
+	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -107,6 +108,19 @@ func exerciseGraphSurface(t *testing.T, h *postgresHarness, backend graphprotoco
 		t.Fatalf("unauthorized graph row leaked: %s", hiddenJSON)
 	}
 
+	authorized, err := h.store.GraphRepositories(t.Context(), user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restrictedService := &graphservice.Service{
+		Store: restrictedGraphStore{repositories: authorized}, Backend: backend, Limits: graphContractLimits(),
+	}
+	restrictedMux := http.NewServeMux()
+	httpapi.RegisterGraphQueries(restrictedMux, authenticator, restrictedService, 64<<10, 256<<10)
+	restrictedServer := httptest.NewServer(restrictedMux)
+	graphREST(t, restrictedServer, "admin", "cypher", requests["cypher"], http.StatusServiceUnavailable)
+	restrictedServer.Close()
+
 	stale := &staleGraphBackend{QueryEngine: backend, mutate: func() { setGraphCommit(t, h, repositoryID, graphContractNext) }}
 	staleService := &graphservice.Service{Store: h.store, Backend: stale, Limits: graphContractLimits()}
 	staleMux := http.NewServeMux()
@@ -116,6 +130,14 @@ func exerciseGraphSurface(t *testing.T, h *postgresHarness, backend graphprotoco
 	staleServer.Close()
 	setGraphCommit(t, h, repositoryID, graphContractSHA)
 	return got
+}
+
+type restrictedGraphStore struct {
+	repositories []repository.Repository
+}
+
+func (store restrictedGraphStore) GraphRepositories(context.Context, authn.Principal) ([]repository.Repository, error) {
+	return append([]repository.Repository(nil), store.repositories...), nil
 }
 
 func assertContractResults(t *testing.T, got map[string]any, repositoryID int64) {
