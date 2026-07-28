@@ -610,7 +610,7 @@ components:
         kind: {type: string}
         branch: {type: string, description: Only the current indexed default branch is supported.}
         relations: {type: array, items: {type: string, enum: [calls, references, extends, implements]}}
-        per_category_limit: {type: integer, minimum: 0, maximum: 100}
+        per_category_limit: {type: integer, minimum: 0, default: 100, description: Values greater than 100 are capped to 100.}
         per_category_offset: {type: integer, minimum: 0}
         include_content: {type: boolean}
       oneOf: [{required: [uid]}, {required: [name]}]
@@ -626,8 +626,8 @@ components:
         relations: {type: array, items: {type: string, enum: [calls, references, extends, implements]}}
         min_confidence: {type: number, minimum: 0, maximum: 1}
         include_tests: {type: boolean}
-        max_depth: {type: integer, minimum: 0, maximum: 32}
-        limit: {type: integer, minimum: 0, maximum: 100}
+        max_depth: {type: integer, minimum: 0, default: 3, description: Values greater than 32 are capped to 32.}
+        limit: {type: integer, minimum: 0, default: 100, description: Values greater than 100 are capped to 100.}
         offset: {type: integer, minimum: 0}
         summary_only: {type: boolean}
     GraphTraceRequest:
@@ -639,7 +639,7 @@ components:
         branch: {type: string, description: Only the current indexed default branch is supported.}
         source_uid: {type: string, minLength: 1}
         target_uid: {type: string, minLength: 1}
-        max_depth: {type: integer, minimum: 0, maximum: 30}
+        max_depth: {type: integer, minimum: 0, default: 10, description: Values greater than 30 are capped to 30.}
     GraphCypherRequest:
       type: object
       additionalProperties: false
@@ -649,8 +649,8 @@ components:
         branch: {type: string, description: Only the current indexed default branch is supported.}
         statement: {type: string, minLength: 1}
         parameters: {type: object, additionalProperties: {}}
-        max_rows: {type: integer, minimum: 0, maximum: 100}
-        max_bytes: {type: integer, format: int64, minimum: 0, maximum: 262144}
+        max_rows: {type: integer, minimum: 0, default: 100, description: Values greater than 100 are capped to 100.}
+        max_bytes: {type: integer, format: int64, minimum: 0, default: 262144, description: Values greater than 262144 are capped to 262144.}
     GraphPosition:
       type: object
       additionalProperties: false
@@ -710,38 +710,112 @@ components:
         reason: {type: string}
         depth: {type: integer}
     GraphContextResponse:
+      oneOf:
+        - {$ref: '#/components/schemas/GraphContextFoundResponse'}
+        - {$ref: '#/components/schemas/GraphContextNotFoundResponse'}
+        - {$ref: '#/components/schemas/GraphContextAmbiguousResponse'}
+      discriminator: {propertyName: status}
+    GraphContextFoundResponse:
+      type: object
+      additionalProperties: false
+      required: [status, symbol, commits]
+      properties:
+        status: {type: string, const: found}
+        symbol: {$ref: '#/components/schemas/GraphSymbol'}
+        incoming: {type: object, additionalProperties: {type: array, items: {$ref: '#/components/schemas/GraphReference'}}}
+        outgoing: {type: object, additionalProperties: {type: array, items: {$ref: '#/components/schemas/GraphReference'}}}
+        boundaries: {type: array, items: {$ref: '#/components/schemas/GraphBoundary'}}
+        commits: {type: object, additionalProperties: {type: string, pattern: '^[0-9a-f]{40}$'}}
+    GraphContextNotFoundResponse:
       type: object
       additionalProperties: false
       required: [status, commits]
       properties:
-        status: {type: string, enum: [found, not_found, ambiguous]}
-        symbol: {$ref: '#/components/schemas/GraphSymbol'}
-        candidates: {type: array, items: {$ref: '#/components/schemas/GraphCandidate'}}
+        status: {type: string, const: not_found}
+        incoming: {type: object, additionalProperties: {type: array, items: {$ref: '#/components/schemas/GraphReference'}}}
+        outgoing: {type: object, additionalProperties: {type: array, items: {$ref: '#/components/schemas/GraphReference'}}}
+        boundaries: {type: array, items: {$ref: '#/components/schemas/GraphBoundary'}}
+        commits: {type: object, additionalProperties: {type: string, pattern: '^[0-9a-f]{40}$'}}
+    GraphContextAmbiguousResponse:
+      type: object
+      additionalProperties: false
+      required: [status, candidates, commits]
+      properties:
+        status: {type: string, const: ambiguous}
+        candidates: {type: array, minItems: 1, items: {$ref: '#/components/schemas/GraphCandidate'}}
         incoming: {type: object, additionalProperties: {type: array, items: {$ref: '#/components/schemas/GraphReference'}}}
         outgoing: {type: object, additionalProperties: {type: array, items: {$ref: '#/components/schemas/GraphReference'}}}
         boundaries: {type: array, items: {$ref: '#/components/schemas/GraphBoundary'}}
         commits: {type: object, additionalProperties: {type: string, pattern: '^[0-9a-f]{40}$'}}
     GraphImpactResponse:
+      oneOf:
+        - {$ref: '#/components/schemas/GraphImpactFoundResponse'}
+        - {$ref: '#/components/schemas/GraphImpactNotFoundResponse'}
+        - {$ref: '#/components/schemas/GraphImpactAmbiguousResponse'}
+      discriminator: {propertyName: status}
+    GraphImpactFoundResponse:
       type: object
       additionalProperties: false
       required: [status, by_depth, commits, partial]
       properties:
-        status: {type: string, enum: [found, not_found, ambiguous]}
-        candidates: {type: array, items: {$ref: '#/components/schemas/GraphCandidate'}}
+        status: {type: string, const: found}
         by_depth: {type: object, additionalProperties: {type: array, items: {$ref: '#/components/schemas/GraphSymbol'}}}
         relations: {type: array, items: {$ref: '#/components/schemas/GraphReference'}}
         boundaries: {type: array, items: {$ref: '#/components/schemas/GraphBoundary'}}
         commits: {type: object, additionalProperties: {type: string, pattern: '^[0-9a-f]{40}$'}}
         partial: {type: boolean}
+    GraphImpactNotFoundResponse:
+      type: object
+      additionalProperties: false
+      required: [status, by_depth, commits, partial]
+      properties:
+        status: {type: string, const: not_found}
+        by_depth: {type: object, additionalProperties: {type: array, items: {$ref: '#/components/schemas/GraphSymbol'}}}
+        boundaries: {type: array, items: {$ref: '#/components/schemas/GraphBoundary'}}
+        commits: {type: object, additionalProperties: {type: string, pattern: '^[0-9a-f]{40}$'}}
+        partial: {type: boolean}
+    GraphImpactAmbiguousResponse:
+      type: object
+      additionalProperties: false
+      required: [status, candidates, by_depth, commits, partial]
+      properties:
+        status: {type: string, const: ambiguous}
+        candidates: {type: array, minItems: 1, items: {$ref: '#/components/schemas/GraphCandidate'}}
+        by_depth: {type: object, additionalProperties: {type: array, items: {$ref: '#/components/schemas/GraphSymbol'}}}
+        boundaries: {type: array, items: {$ref: '#/components/schemas/GraphBoundary'}}
+        commits: {type: object, additionalProperties: {type: string, pattern: '^[0-9a-f]{40}$'}}
+        partial: {type: boolean}
     GraphTraceResponse:
+      oneOf:
+        - {$ref: '#/components/schemas/GraphTraceFoundResponse'}
+        - {$ref: '#/components/schemas/GraphTraceNoPathResponse'}
+        - {$ref: '#/components/schemas/GraphTraceAmbiguousResponse'}
+      discriminator: {propertyName: status}
+    GraphTraceFoundResponse:
+      type: object
+      additionalProperties: false
+      required: [status, nodes, commits]
+      properties:
+        status: {type: string, const: found}
+        nodes: {type: array, minItems: 1, items: {$ref: '#/components/schemas/GraphSymbol'}}
+        relations: {type: array, items: {$ref: '#/components/schemas/GraphReference'}}
+        boundaries: {type: array, items: {$ref: '#/components/schemas/GraphBoundary'}}
+        commits: {type: object, additionalProperties: {type: string, pattern: '^[0-9a-f]{40}$'}}
+    GraphTraceNoPathResponse:
       type: object
       additionalProperties: false
       required: [status, commits]
       properties:
-        status: {type: string, enum: [found, no_path, ambiguous]}
-        candidates: {type: array, items: {$ref: '#/components/schemas/GraphCandidate'}}
-        nodes: {type: array, items: {$ref: '#/components/schemas/GraphSymbol'}}
-        relations: {type: array, items: {$ref: '#/components/schemas/GraphReference'}}
+        status: {type: string, const: no_path}
+        boundaries: {type: array, items: {$ref: '#/components/schemas/GraphBoundary'}}
+        commits: {type: object, additionalProperties: {type: string, pattern: '^[0-9a-f]{40}$'}}
+    GraphTraceAmbiguousResponse:
+      type: object
+      additionalProperties: false
+      required: [status, candidates, commits]
+      properties:
+        status: {type: string, const: ambiguous}
+        candidates: {type: array, minItems: 1, items: {$ref: '#/components/schemas/GraphCandidate'}}
         boundaries: {type: array, items: {$ref: '#/components/schemas/GraphBoundary'}}
         commits: {type: object, additionalProperties: {type: string, pattern: '^[0-9a-f]{40}$'}}
     GraphCypherResponse:

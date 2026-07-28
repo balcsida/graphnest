@@ -95,4 +95,51 @@ graph_queries.each do |name, query|
 end
 raise OpenAPIError, "graph cypher forbidden response is missing" unless graph_queries.fetch("cypher").dig("responses", "403").is_a?(Hash)
 
+schemas = document.fetch("components").fetch("schemas")
+{
+  "GraphContextResponse" => %w[found not_found ambiguous],
+  "GraphImpactResponse" => %w[found not_found ambiguous],
+  "GraphTraceResponse" => %w[found no_path ambiguous]
+}.each do |name, statuses|
+  schema = schemas.fetch(name)
+  variants = schema["oneOf"]
+  raise OpenAPIError, "#{name} is not discriminated" unless variants.is_a?(Array) && variants.length == statuses.length
+  require_value(schema.dig("discriminator", "propertyName"), "status", "#{name} discriminator")
+  statuses.each do |status|
+    variant = variants.find { |value| value["$ref"] == "#/components/schemas/#{name.sub("Response", "")}#{status.split("_").map(&:capitalize).join}Response" }
+    raise OpenAPIError, "#{name} #{status} variant is missing" unless variant
+    resolved = schemas.fetch(variant["$ref"].split("/").last)
+    require_value(resolved.dig("properties", "status", "const"), status, "#{name} #{status} status")
+    raise OpenAPIError, "#{name} #{status} variant permits unknown fields" unless resolved["additionalProperties"] == false
+  end
+end
+
+{
+  ["GraphContextResponse", "found"] => "symbol",
+  ["GraphContextResponse", "ambiguous"] => "candidates",
+  ["GraphImpactResponse", "ambiguous"] => "candidates",
+  ["GraphTraceResponse", "found"] => "nodes",
+  ["GraphTraceResponse", "ambiguous"] => "candidates"
+}.each do |(name, status), field|
+  variant_name = "#{name.sub("Response", "")}#{status.split("_").map(&:capitalize).join}Response"
+  variant = schemas.fetch(variant_name)
+  raise OpenAPIError, "#{variant_name} must require #{field}" unless variant.fetch("required").include?(field)
+  items = variant.dig("properties", field)
+  require_value(items["minItems"], 1, "#{variant_name} #{field} minimum") if %w[candidates nodes].include?(field)
+end
+
+{
+  ["GraphImpactRequest", "max_depth"] => [3, 32],
+  ["GraphTraceRequest", "max_depth"] => [10, 30],
+  ["GraphContextRequest", "per_category_limit"] => [100, 100],
+  ["GraphImpactRequest", "limit"] => [100, 100],
+  ["GraphCypherRequest", "max_rows"] => [100, 100],
+  ["GraphCypherRequest", "max_bytes"] => [262_144, 262_144]
+}.each do |(schema_name, property_name), (default, cap)|
+  property = schemas.fetch(schema_name).fetch("properties").fetch(property_name)
+  require_value(property["default"], default, "#{schema_name}.#{property_name} default") unless default.nil?
+  raise OpenAPIError, "#{schema_name}.#{property_name} falsely rejects capped values" if property.key?("maximum")
+  raise OpenAPIError, "#{schema_name}.#{property_name} cap is undocumented" unless property.fetch("description", "").include?(cap.to_s)
+end
+
 puts "OpenAPI validation passed"
