@@ -3,6 +3,7 @@
 package indexer
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -56,7 +58,7 @@ func TestGitNumericPathsStayContained(t *testing.T) {
 }
 
 func TestGitPrepareCommitFetchesOnlyTargetBranch(t *testing.T) {
-	git, repo, job, promptsFile, serverURL := gitPrepareFixture(t)
+	git, repo, job, promptsFile, serverURL, _, _ := gitPrepareFixture(t)
 	mirror, worktree, err := git.PrepareCommit(t.Context(), repo, job.ID, job.TargetSHA, "token-that-must-not-persist")
 	if err != nil {
 		t.Fatal(err)
@@ -107,7 +109,7 @@ func TestGitPrepareCommitFetchesOnlyTargetBranch(t *testing.T) {
 }
 
 func TestGitPreparePreservesSuccessfulExactCheckout(t *testing.T) {
-	git, repo, job, _, _ := gitPrepareFixture(t)
+	git, repo, job, _, _, _, _ := gitPrepareFixture(t)
 	mirror, worktree, err := git.Prepare(t.Context(), repo, job, "token-that-must-not-persist")
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +125,49 @@ func TestGitPreparePreservesSuccessfulExactCheckout(t *testing.T) {
 	}
 }
 
-func gitPrepareFixture(t *testing.T) (Git, repository.Repository, postgres.IndexJob, string, string) {
+func TestGitPrepareFetchesExactSHAAfterBranchRewrite(t *testing.T) {
+	git, repo, job, _, _, source, origin := gitPrepareFixture(t)
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("rewritten\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, source, "add", "README.md")
+	runGit(t, source, "commit", "-m", "rewrite")
+	runGit(t, source, "push", "--force", "origin", "main")
+	runGit(t, "", "--git-dir", origin, "config", "uploadpack.allowAnySHA1InWant", "true")
+
+	_, worktree, err := git.PrepareCommit(t.Context(), repo, job.ID, job.TargetSHA, "token-that-must-not-persist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(runGit(t, worktree, "rev-parse", "HEAD")); got != job.TargetSHA {
+		t.Fatalf("worktree HEAD=%q want=%q", got, job.TargetSHA)
+	}
+}
+
+func TestMirrorLockSerializesUsers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "7.lock")
+	unlock, err := lockMirror(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	var wait sync.WaitGroup
+	wait.Add(1)
+	var secondErr error
+	go func() {
+		defer wait.Done()
+		_, secondErr = lockMirror(ctx, path)
+	}()
+	wait.Wait()
+	if !errors.Is(secondErr, context.DeadlineExceeded) {
+		t.Fatalf("lockMirror() error = %v", secondErr)
+	}
+}
+
+func gitPrepareFixture(t *testing.T) (Git, repository.Repository, postgres.IndexJob, string, string, string, string) {
 	t.Helper()
 	requireGit(t)
 	projectRoot := t.TempDir()
@@ -187,7 +231,7 @@ func gitPrepareFixture(t *testing.T) (Git, repository.Repository, postgres.Index
 	}
 	repo := repository.Repository{ID: 7, ZoektID: 17, Name: "acme/repo", Branch: "main", WebURL: "https://ghe.example/acme/repo"}
 	job := postgres.IndexJob{ID: 11, RepositoryID: 7, TargetSHA: target}
-	return git, repo, job, promptsFile, server.URL
+	return git, repo, job, promptsFile, server.URL, source, origin
 }
 
 func TestGitPruneRemovesOnlyInactiveNumericWorktrees(t *testing.T) {
