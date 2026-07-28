@@ -69,11 +69,13 @@ func copyWith(source, destination string, ops operations) error {
 		return ErrInvalidSource
 	}
 	if _, err = ops.lstat(destination); !errors.Is(err, os.ErrNotExist) {
+		_ = sourceRoot.Close()
 		return ErrInvalidDestination
 	}
 	directory := filepath.Dir(destination)
 	directoryInfo, err := ops.lstat(directory)
 	if err != nil || !directoryInfo.IsDir() || directoryInfo.Mode()&os.ModeSymlink != 0 {
+		_ = sourceRoot.Close()
 		return ErrInvalidDestination
 	}
 
