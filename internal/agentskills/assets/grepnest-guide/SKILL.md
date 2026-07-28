@@ -19,7 +19,7 @@ Use only `list_repositories`, `context`, `impact`, `trace`, and administrator-on
 
 Relationship kinds are `calls`, `references`, `extends`, and `implements`. Confidence is `0..1`; filter with `impact.min_confidence`, and report low-confidence edges rather than presenting them as certain.
 
-Every response includes `commits`, the exact indexed snapshots behind the answer. `boundaries` identify excluded or incomplete graph areas and their reasons; never claim completeness across them. `impact.partial` or `cypher.truncated` also means incomplete output.
+Every graph response includes `commits`, the exact indexed snapshots behind the answer. `list_repositories` does not. `boundaries` identify excluded or incomplete graph areas and their reasons; never claim completeness across them. `impact.partial` or `cypher.truncated` also means incomplete output.
 
 ## Tool limits
 
