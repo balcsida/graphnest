@@ -1,6 +1,7 @@
 package graphquery
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/grepnest/grepnest/internal/graphartifact"
@@ -65,14 +66,39 @@ func TestTraceRejectsNegativeDepth(t *testing.T) {
 	}
 }
 
+func TestTraceChoosesStableLowestRepositoryPath(t *testing.T) {
+	higher := repositoryCallChain(10, "A", "B", "Z")
+	lower := repositoryCallChain(2, "A", "B", "Z")
+	service := seededQueryServiceWithArtifacts(t, higher, lower)
+	request := graphprotocol.TraceRequest{
+		Scope: graphprotocol.Scope{Repositories: []graphprotocol.RepositorySnapshot{
+			{ID: 10, Name: "acme/ten", Commit: testCommit},
+			{ID: 2, Name: "acme/two", Commit: testCommit},
+		}},
+		SourceUID: "A", TargetUID: "Z", MaxDepth: 3,
+	}
+	for range 20 {
+		got, err := service.Trace(t.Context(), request)
+		if err != nil || got.Status != graphprotocol.StatusOK || len(got.Nodes) != 3 {
+			t.Fatalf("Trace()=%#v,%v", got, err)
+		}
+		for _, node := range got.Nodes {
+			if node.RepositoryID != 2 {
+				t.Fatalf("Trace() chose repository %d: %#v", node.RepositoryID, got)
+			}
+		}
+	}
+}
+
 func repositoryCallChain(repositoryID int64, names ...string) graphartifact.Artifact {
 	artifact := callChain(names...)
 	artifact.RepositoryID = repositoryID
-	artifact.Nodes[0].UID = "repository:202"
-	artifact.Nodes[0].QualifiedName = "acme/two"
+	repositoryUID := fmt.Sprintf("repository:%d", repositoryID)
+	artifact.Nodes[0].UID = repositoryUID
+	artifact.Nodes[0].QualifiedName = fmt.Sprintf("acme/repo-%d", repositoryID)
 	for index := range artifact.Edges {
 		if artifact.Edges[index].SourceUID == "repository:101" {
-			artifact.Edges[index].SourceUID = "repository:202"
+			artifact.Edges[index].SourceUID = repositoryUID
 		}
 	}
 	return artifact
