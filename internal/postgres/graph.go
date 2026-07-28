@@ -18,7 +18,23 @@ func scipManifestID(uploadID int64) int64 { return scipManifestOffset + uploadID
 func scipUploadID(manifestID int64) int64 { return manifestID - scipManifestOffset }
 
 func (s *Store) GraphManifests(ctx context.Context) ([]graphartifact.Manifest, error) {
-	rows, err := s.pool.Query(ctx, `select repositories.id, repositories.indexed_sha,
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	manifests, err := s.graphManifests(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return manifests, nil
+}
+
+func (s *Store) graphManifests(ctx context.Context, queryer graphQueryer) ([]graphartifact.Manifest, error) {
+	rows, err := queryer.Query(ctx, `select repositories.id, repositories.indexed_sha,
 		graph_uploads.id, graph_uploads.schema_version, graph_uploads.content_hash, graph_uploads.source, scip_uploads.id
 		from installations join repositories on repositories.installation_id=installations.id
 		left join graph_uploads on graph_uploads.repository_id=repositories.id and graph_uploads.commit=repositories.indexed_sha
@@ -29,27 +45,39 @@ func (s *Store) GraphManifests(ctx context.Context) ([]graphartifact.Manifest, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var manifests []graphartifact.Manifest
+	type candidate struct {
+		repositoryID, graphID, scipID *int64
+		commit, source                *string
+		schemaVersion                 *uint32
+		contentHash                   []byte
+	}
+	var candidates []candidate
 	for rows.Next() {
-		var repositoryID, graphID, scipID *int64
-		var commit, source *string
-		var schemaVersion *uint32
-		var contentHash []byte
-		if err := rows.Scan(&repositoryID, &commit, &graphID, &schemaVersion, &contentHash, &source, &scipID); err != nil {
+		var candidate candidate
+		if err := rows.Scan(&candidate.repositoryID, &candidate.commit, &candidate.graphID, &candidate.schemaVersion, &candidate.contentHash, &candidate.source, &candidate.scipID); err != nil {
+			rows.Close()
 			return nil, err
 		}
-		if graphID != nil {
-			manifests = append(manifests, graphartifact.Manifest{RepositoryID: *repositoryID, UploadID: *graphID, Commit: *commit, Source: *source, SchemaVersion: *schemaVersion, ContentHash: contentHash})
+		candidates = append(candidates, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	manifests := make([]graphartifact.Manifest, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.graphID != nil {
+			manifests = append(manifests, graphartifact.Manifest{RepositoryID: *candidate.repositoryID, UploadID: *candidate.graphID, Commit: *candidate.commit, Source: *candidate.source, SchemaVersion: *candidate.schemaVersion, ContentHash: candidate.contentHash})
 			continue
 		}
-		artifact, err := s.scipArtifact(ctx, s.pool, *repositoryID, *scipID, *commit)
+		artifact, err := s.scipArtifact(ctx, queryer, *candidate.repositoryID, *candidate.scipID, *candidate.commit)
 		if err != nil {
 			return nil, err
 		}
-		manifests = append(manifests, graphartifact.Manifest{RepositoryID: *repositoryID, UploadID: scipManifestID(*scipID), Commit: *commit, Source: "scip", SchemaVersion: artifact.SchemaVersion, ContentHash: artifact.ContentHash})
+		manifests = append(manifests, graphartifact.Manifest{RepositoryID: *candidate.repositoryID, UploadID: scipManifestID(*candidate.scipID), Commit: *candidate.commit, Source: "scip", SchemaVersion: artifact.SchemaVersion, ContentHash: artifact.ContentHash})
 	}
-	return manifests, rows.Err()
+	return manifests, nil
 }
 
 func (s *Store) GraphArtifact(ctx context.Context, repositoryID, uploadID int64) (graphartifact.Artifact, error) {
