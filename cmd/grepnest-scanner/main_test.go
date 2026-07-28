@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/config"
 	"github.com/grepnest/grepnest/internal/graphscan"
 )
 
@@ -26,6 +27,24 @@ func TestParserMapContainsSupportedExtensions(t *testing.T) {
 	}
 	if len(parsers) != 7 {
 		t.Fatalf("parser count = %d", len(parsers))
+	}
+}
+
+func TestScannerGitSharesMirrorsButSeparatesGraphWorktrees(t *testing.T) {
+	git := scannerGit(config.Scanner{
+		DataDir: "/var/lib/grepnest",
+		GitPath: "/usr/bin/git",
+		GitHub:  config.GitHub{GitURL: "https://ghe.example"},
+	}, "/usr/local/bin/grepnest-scanner")
+
+	if git.MirrorsDir != "/var/lib/grepnest/mirrors" {
+		t.Fatalf("mirrors = %q", git.MirrorsDir)
+	}
+	if git.WorktreesDir != "/var/lib/grepnest/graph-worktrees" {
+		t.Fatalf("worktrees = %q", git.WorktreesDir)
+	}
+	if git.MirrorsDir == git.WorktreesDir {
+		t.Fatal("mirror and worktree namespaces overlap")
 	}
 }
 

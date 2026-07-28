@@ -105,11 +105,19 @@ func (metrics *Metrics) ObserveIndexPhase(phase, result string, duration time.Du
 }
 
 func (metrics *Metrics) SetGraphQueueDepth(state string, depth int64) {
-	metrics.graphQueueDepth.WithLabelValues(fixed(state, "queued", "running", "succeeded", "failed", "superseded")).Set(float64(depth))
+	state = fixed(state, "queued", "running", "succeeded", "failed", "superseded")
+	if state == "unknown" {
+		return
+	}
+	metrics.graphQueueDepth.WithLabelValues(state).Set(float64(depth))
 }
 
 func (metrics *Metrics) ObserveGraphPhase(phase, result string, duration time.Duration) {
-	labels := []string{fixed(phase, "token", "checkout", "scan", "publish"), successOrError(result)}
+	phase = fixed(phase, "token", "checkout", "scan", "publish")
+	if phase == "unknown" {
+		return
+	}
+	labels := []string{phase, successOrError(result)}
 	metrics.graphPhases.WithLabelValues(labels...).Inc()
 	metrics.graphDuration.WithLabelValues(labels...).Observe(duration.Seconds())
 }

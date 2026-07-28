@@ -58,12 +58,14 @@ func TestGraphMetricsRecordFixedLabels(t *testing.T) {
 	metrics := New()
 	metrics.SetGraphQueueDepth("running", 2)
 	metrics.ObserveGraphPhase("scan", "success", 1500*time.Millisecond)
+	metrics.ObserveGraphPhase("publish", "private-error", time.Second)
 
 	body := scrape(t, metrics)
 	for _, want := range []string{
 		`grepnest_graph_queue_depth{state="running"} 2`,
 		`grepnest_graph_scan_phase_total{phase="scan",result="success"} 1`,
 		`grepnest_graph_scan_phase_duration_seconds_count{phase="scan",result="success"} 1`,
+		`grepnest_graph_scan_phase_total{phase="publish",result="error"} 1`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("metrics missing %q:\n%s", want, body)
@@ -71,20 +73,19 @@ func TestGraphMetricsRecordFixedLabels(t *testing.T) {
 	}
 }
 
-func TestGraphMetricsBoundUnknownLabels(t *testing.T) {
+func TestGraphMetricsIgnoreInvalidLabels(t *testing.T) {
 	metrics := New()
 	metrics.SetGraphQueueDepth("repository-secret", 7)
 	metrics.ObserveGraphPhase("/private/path", "sha-secret", time.Second)
 
 	body := scrape(t, metrics)
-	for _, secret := range []string{"repository-secret", "/private/path", "sha-secret"} {
-		if strings.Contains(body, secret) {
-			t.Errorf("metrics expose unbounded label %q:\n%s", secret, body)
-		}
-	}
-	for _, want := range []string{`state="unknown"`, `phase="unknown",result="error"`} {
-		if !strings.Contains(body, want) {
-			t.Errorf("metrics missing bounded labels %q:\n%s", want, body)
+	for _, name := range []string{
+		"grepnest_graph_queue_depth",
+		"grepnest_graph_scan_phase_total",
+		"grepnest_graph_scan_phase_duration_seconds",
+	} {
+		if strings.Contains(body, name) {
+			t.Errorf("invalid graph label emitted %q:\n%s", name, body)
 		}
 	}
 }

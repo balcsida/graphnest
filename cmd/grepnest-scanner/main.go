@@ -159,12 +159,7 @@ func newScannerRuntime(ctx context.Context, settings config.Scanner) (scannerRun
 	metrics := observability.New()
 	store := postgres.New(pool)
 	githubClient := githubapp.NewClient(endpoints, httpClient, signer, settings.GitHub.APIVersion, maxBackendBytes, nil, metrics)
-	runner := indexer.Runner{MaxOutput: 64 << 10, KillGrace: 5 * time.Second}
-	git := &indexer.Git{
-		Binary: settings.GitPath, BaseURL: settings.GitHub.GitURL, AskPass: executable,
-		CABundle: settings.GitHub.CAFile, MirrorsDir: filepath.Join(settings.DataDir, "mirrors"),
-		WorktreesDir: filepath.Join(settings.DataDir, "worktrees"), Runner: runner, CommandTimeout: 2 * time.Minute,
-	}
+	git := scannerGit(settings, executable)
 	limits := graphscan.Limits{
 		MaxFileBytes: settings.Limits.MaxFileBytes, MaxTotalBytes: settings.Limits.MaxTotalBytes,
 		MaxFiles: settings.Limits.MaxFiles, MaxNodes: settings.Limits.MaxNodes, MaxEdges: settings.Limits.MaxEdges,
@@ -181,6 +176,16 @@ func newScannerRuntime(ctx context.Context, settings config.Scanner) (scannerRun
 		runWorker: worker.Run, runMetrics: func(ctx context.Context) error { return serveMetrics(ctx, listener, mux) },
 		close: func() { _ = listener.Close(); pool.Close() },
 	}, nil
+}
+
+func scannerGit(settings config.Scanner, executable string) *indexer.Git {
+	return &indexer.Git{
+		Binary: settings.GitPath, BaseURL: settings.GitHub.GitURL, AskPass: executable,
+		CABundle: settings.GitHub.CAFile, MirrorsDir: filepath.Join(settings.DataDir, "mirrors"),
+		WorktreesDir:   filepath.Join(settings.DataDir, "graph-worktrees"),
+		Runner:         indexer.Runner{MaxOutput: 64 << 10, KillGrace: 5 * time.Second},
+		CommandTimeout: 2 * time.Minute,
+	}
 }
 
 func scannerParsers() map[string]graphscan.Parser {
