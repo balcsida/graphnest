@@ -9,8 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -37,8 +35,7 @@ type stageFile interface {
 
 type operations struct {
 	lstat      func(string) (os.FileInfo, error)
-	readlink   func(string) (string, error)
-	open       func(string) (stageFile, error)
+	open       func(*os.Root, string) (stageFile, error)
 	createTemp func(string, string) (stageFile, error)
 	publish    func(string, string) error
 	remove     func(string) error
@@ -47,14 +44,9 @@ type operations struct {
 
 func systemOperations() operations {
 	return operations{
-		lstat:    os.Lstat,
-		readlink: os.Readlink,
-		open: func(path string) (stageFile, error) {
-			descriptor, err := unix.Open(path, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
-			if err != nil {
-				return nil, err
-			}
-			return os.NewFile(uintptr(descriptor), path), nil
+		lstat: os.Lstat,
+		open: func(root *os.Root, name string) (stageFile, error) {
+			return root.Open(name)
 		},
 		createTemp: func(directory, pattern string) (stageFile, error) {
 			return os.CreateTemp(directory, pattern)
@@ -72,7 +64,7 @@ func Copy(source, destination string) error {
 }
 
 func copyWith(source, destination string, ops operations) error {
-	resolvedSource, sourceInfo, err := resolveSource(source, ops)
+	sourceRoot, sourceName, sourceInfo, err := resolveSource(source, ops)
 	if err != nil {
 		return ErrInvalidSource
 	}
@@ -85,15 +77,21 @@ func copyWith(source, destination string, ops operations) error {
 		return ErrInvalidDestination
 	}
 
-	sourceFile, err := ops.open(resolvedSource)
+	sourceFile, err := ops.open(sourceRoot, sourceName)
 	if err != nil {
+		_ = sourceRoot.Close()
 		return ErrInvalidSource
 	}
 	openedInfo, statErr := sourceFile.Stat()
+	rootCloseErr := sourceRoot.Close()
+	if statErr != nil || rootCloseErr != nil || !safeSource(openedInfo) ||
+		!os.SameFile(sourceInfo, openedInfo) {
+		_ = sourceFile.Close()
+		return ErrInvalidSource
+	}
 	data, readErr := io.ReadAll(io.LimitReader(sourceFile, maxSecretBytes+1))
 	closeErr := sourceFile.Close()
-	if statErr != nil || !safeSource(openedInfo) || !os.SameFile(sourceInfo, openedInfo) ||
-		readErr != nil || closeErr != nil || len(data) == 0 || len(data) > maxSecretBytes {
+	if readErr != nil || closeErr != nil || len(data) == 0 || len(data) > maxSecretBytes {
 		return ErrInvalidSource
 	}
 
@@ -147,15 +145,24 @@ func copyWith(source, destination string, ops operations) error {
 	return nil
 }
 
-func resolveSource(source string, ops operations) (string, os.FileInfo, error) {
+func resolveSource(source string, ops operations) (*os.Root, string, os.FileInfo, error) {
 	absolute, err := filepath.Abs(source)
 	if err != nil {
-		return "", nil, ErrInvalidSource
+		return nil, "", nil, ErrInvalidSource
 	}
 	root := filepath.Dir(filepath.Clean(absolute))
 	rootInfo, err := ops.lstat(root)
 	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
-		return "", nil, ErrInvalidSource
+		return nil, "", nil, ErrInvalidSource
+	}
+	rootDirectory, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, "", nil, ErrInvalidSource
+	}
+	defer rootDirectory.Close()
+	openedRootInfo, err := rootDirectory.Stat(".")
+	if err != nil || !os.SameFile(rootInfo, openedRootInfo) {
+		return nil, "", nil, ErrInvalidSource
 	}
 	relative := filepath.Base(absolute)
 	for links := 0; links <= maxSymlinks; links++ {
@@ -164,43 +171,53 @@ func resolveSource(source string, ops operations) (string, os.FileInfo, error) {
 		followed := false
 		for index, part := range parts {
 			if part == "" || part == "." || part == ".." {
-				return "", nil, ErrInvalidSource
+				return nil, "", nil, ErrInvalidSource
 			}
-			candidate := filepath.Join(root, prefix, part)
-			info, err := ops.lstat(candidate)
+			candidate := filepath.Join(prefix, part)
+			info, err := rootDirectory.Lstat(candidate)
 			if err != nil {
-				return "", nil, ErrInvalidSource
+				return nil, "", nil, ErrInvalidSource
 			}
 			if info.Mode()&os.ModeSymlink != 0 {
-				target, err := ops.readlink(candidate)
+				target, err := rootDirectory.Readlink(candidate)
 				if err != nil || target == "" || filepath.IsAbs(target) {
-					return "", nil, ErrInvalidSource
+					return nil, "", nil, ErrInvalidSource
 				}
 				remaining := filepath.Join(parts[index+1:]...)
 				relative = filepath.Clean(filepath.Join(prefix, target, remaining))
 				if !insideRoot(relative) {
-					return "", nil, ErrInvalidSource
+					return nil, "", nil, ErrInvalidSource
 				}
 				followed = true
 				break
 			}
 			if index < len(parts)-1 {
 				if !info.IsDir() {
-					return "", nil, ErrInvalidSource
+					return nil, "", nil, ErrInvalidSource
 				}
 				prefix = filepath.Join(prefix, part)
 				continue
 			}
 			if !safeSource(info) {
-				return "", nil, ErrInvalidSource
+				return nil, "", nil, ErrInvalidSource
 			}
-			return candidate, info, nil
+			sourceRoot, err := rootDirectory.OpenRoot(filepath.Dir(candidate))
+			if err != nil {
+				return nil, "", nil, ErrInvalidSource
+			}
+			sourceName := filepath.Base(candidate)
+			frozenInfo, err := sourceRoot.Lstat(sourceName)
+			if err != nil || !safeSource(frozenInfo) || !os.SameFile(info, frozenInfo) {
+				_ = sourceRoot.Close()
+				return nil, "", nil, ErrInvalidSource
+			}
+			return sourceRoot, sourceName, frozenInfo, nil
 		}
 		if !followed {
-			return "", nil, ErrInvalidSource
+			return nil, "", nil, ErrInvalidSource
 		}
 	}
-	return "", nil, ErrInvalidSource
+	return nil, "", nil, ErrInvalidSource
 }
 
 func insideRoot(relative string) bool {
@@ -209,5 +226,6 @@ func insideRoot(relative string) bool {
 }
 
 func safeSource(info os.FileInfo) bool {
-	return info != nil && info.Mode().IsRegular() && info.Mode().Perm()&0o022 == 0
+	return info != nil && info.Mode().IsRegular() && info.Mode().Perm()&0o022 == 0 &&
+		info.Size() > 0 && info.Size() <= maxSecretBytes
 }

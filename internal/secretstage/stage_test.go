@@ -45,7 +45,11 @@ func TestCopyKeepsResolvedVersionAcrossDataSwap(t *testing.T) {
 	ops := systemOperations()
 	open := ops.open
 	swapped := false
-	ops.open = func(path string) (stageFile, error) {
+	ops.open = func(sourceRoot *os.Root, name string) (stageFile, error) {
+		file, err := open(sourceRoot, name)
+		if err != nil {
+			return nil, err
+		}
 		if !swapped {
 			swapped = true
 			next := filepath.Join(root, "..data-next")
@@ -54,7 +58,7 @@ func TestCopyKeepsResolvedVersionAcrossDataSwap(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		return open(path)
+		return file, nil
 	}
 	if err := copyWith(source, destination, ops); err != nil {
 		t.Fatal(err)
@@ -127,17 +131,125 @@ func TestCopyRejectsRacedProjectedTarget(t *testing.T) {
 	}
 	ops := systemOperations()
 	open := ops.open
-	ops.open = func(path string) (stageFile, error) {
+	ops.open = func(sourceRoot *os.Root, name string) (stageFile, error) {
+		path := filepath.Join(root, "..version-one", "secret")
 		old := path + "-old"
 		if err := os.Rename(path, old); err != nil {
 			t.Fatal(err)
 		}
 		mustSymlink(t, outside, path)
-		return open(path)
+		return open(sourceRoot, name)
 	}
 	err := copyWith(source, filepath.Join(t.TempDir(), "secret"), ops)
 	if !errors.Is(err, ErrInvalidSource) {
 		t.Fatalf("root=%s err=%v", root, err)
+	}
+}
+
+func TestCopyKeepsOpenedIntermediateDirectoryAcrossReplacement(t *testing.T) {
+	root := t.TempDir()
+	version := filepath.Join(root, "..version-one")
+	nested := filepath.Join(version, "nested")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "secret"), []byte("first"), 0o440); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(root, "secret")
+	mustSymlink(t, "..version-one/nested/secret", source)
+
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret"), []byte("outside"), 0o440); err != nil {
+		t.Fatal(err)
+	}
+	ops := systemOperations()
+	open := ops.open
+	ops.open = func(sourceRoot *os.Root, name string) (stageFile, error) {
+		if err := os.Rename(nested, nested+"-old"); err != nil {
+			t.Fatal(err)
+		}
+		mustSymlink(t, outside, nested)
+		return open(sourceRoot, name)
+	}
+	destination := filepath.Join(t.TempDir(), "secret")
+	if err := copyWith(source, destination, ops); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(destination)
+	if err != nil || string(data) != "first" {
+		t.Fatalf("data=%q err=%v", data, err)
+	}
+}
+
+func TestCopyValidatesOpenedDescriptorBeforeRead(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, string)
+	}{
+		{name: "empty", mutate: func(t *testing.T, path string) {
+			if err := os.Chmod(path, 0o640); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Truncate(path, 0); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(path, 0o440); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "oversized", mutate: func(t *testing.T, path string) {
+			if err := os.Chmod(path, 0o640); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Truncate(path, maxSecretBytes+1); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(path, 0o440); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "writable", mutate: func(t *testing.T, path string) {
+			if err := os.Chmod(path, 0o660); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "replaced", mutate: func(t *testing.T, path string) {
+			if err := os.Rename(path, path+"-old"); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("replacement"), 0o440); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "directory", mutate: func(t *testing.T, path string) {
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(path, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			source := writeSource(t, []byte("token"), 0o440)
+			ops := systemOperations()
+			open := ops.open
+			read := false
+			ops.open = func(sourceRoot *os.Root, name string) (stageFile, error) {
+				test.mutate(t, source)
+				file, err := open(sourceRoot, name)
+				if err != nil {
+					return nil, err
+				}
+				return &trackingReadFile{stageFile: file, read: &read}, nil
+			}
+			err := copyWith(source, filepath.Join(t.TempDir(), "secret"), ops)
+			if !errors.Is(err, ErrInvalidSource) || read {
+				t.Fatalf("err=%v read=%v", err, read)
+			}
+		})
 	}
 }
 
@@ -209,6 +321,16 @@ func TestCopyCleansPartialFilesAndSanitizesErrors(t *testing.T) {
 	}
 }
 
+type trackingReadFile struct {
+	stageFile
+	read *bool
+}
+
+func (file *trackingReadFile) Read(data []byte) (int, error) {
+	*file.read = true
+	return file.stageFile.Read(data)
+}
+
 type failingFile struct {
 	*os.File
 	writeErr, syncErr, closeErr error
@@ -242,8 +364,8 @@ func injectFailure(t *testing.T, ops *operations, failure string) {
 	switch failure {
 	case "source close":
 		open := ops.open
-		ops.open = func(path string) (stageFile, error) {
-			file, err := open(path)
+		ops.open = func(root *os.Root, name string) (stageFile, error) {
+			file, err := open(root, name)
 			if err != nil {
 				return nil, err
 			}
