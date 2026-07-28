@@ -55,7 +55,7 @@ scanner-test:
 	CGO_ENABLED=1 go test -race ./internal/graphscan/... ./internal/graphscanner ./cmd/grepnest-scanner
 
 ladybug-test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-	CGO_ENABLED=1 LBUG_VERSION=0.18.3 GOCACHE=$(CURDIR)/.cache/go-build $(LADYBUG_RUNTIME_ENV) CGO_CFLAGS="-I$(LADYBUG_LIB_DIR)" CGO_LDFLAGS="-L$(LADYBUG_LIB_DIR)" go test -tags=system_ladybug ./internal/ladybug
+	CGO_ENABLED=1 LBUG_VERSION=0.18.3 GOCACHE=$(CURDIR)/.cache/go-build $(LADYBUG_RUNTIME_ENV) CGO_CFLAGS="-I$(LADYBUG_LIB_DIR)" CGO_LDFLAGS="-L$(LADYBUG_LIB_DIR)" go test -tags=system_ladybug ./internal/ladybug ./internal/graphquery
 
 $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY):
 	mkdir -p $(LADYBUG_LIB_DIR)

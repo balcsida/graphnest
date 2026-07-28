@@ -20,7 +20,8 @@ func (service *Service) Impact(ctx context.Context, request graphprotocol.Impact
 		return response, nil
 	}
 	if request.TargetUID == "" || request.MinConfidence < 0 || request.MinConfidence > 1 ||
-		(request.Direction != "upstream" && request.Direction != "downstream") || request.Offset < 0 {
+		(request.Direction != "upstream" && request.Direction != "downstream") ||
+		request.MaxDepth < 0 || request.Limit < 0 || request.Offset < 0 {
 		return response, ErrInvalidRequest
 	}
 	relations, err := selectedRelations(request.Relations)
@@ -41,18 +42,30 @@ func (service *Service) Impact(ctx context.Context, request graphprotocol.Impact
 	if pageLimit <= 0 || pageLimit > limits.MaxNodes {
 		pageLimit = limits.MaxNodes
 	}
-	visited := map[string]struct{}{request.TargetUID: {}}
-	frontier := []string{request.TargetUID}
+	targets, err := service.lookupSymbols(ctx, ready, request.TargetUID)
+	if err != nil {
+		return response, err
+	}
+	visited := make(map[nodeKey]struct{}, len(targets))
+	frontier := make([]nodeKey, 0, len(targets))
+	for _, target := range targets {
+		key := nodeKey{repositoryID: target.RepositoryID, uid: target.UID}
+		visited[key] = struct{}{}
+		frontier = append(frontier, key)
+	}
+	if len(frontier) > 0 {
+		response.Status = graphprotocol.StatusFound
+	}
 	err = service.Database.View(ctx, func(session *ladybug.Session) error {
 		for currentDepth := 1; currentDepth <= depth && len(frontier) > 0; currentDepth++ {
-			next, seenDepth := []string{}, map[string]struct{}{}
+			next, seenDepth := []nodeKey{}, map[nodeKey]struct{}{}
 			for _, relation := range relations {
 				query := relationQueries[relation].outgoing
 				if request.Direction == "upstream" {
 					query = relationQueries[relation].incoming
 				}
 				result, queryErr := session.Execute(ctx, query, map[string]any{
-					"scope": ready.parameters, "frontier": qualifyUIDs(ready.snapshots, frontier),
+					"scope": ready.parameters, "frontier": frontierParameters(frontier),
 					"depth": int64(currentDepth), "min_confidence": request.MinConfidence,
 					"offset": int64(0), "limit": int64(limits.MaxFanout + 1),
 				}, ladybug.QueryLimits{MaxRows: limits.MaxFanout + 1})
@@ -66,29 +79,23 @@ func (service *Service) Impact(ctx context.Context, request graphprotocol.Impact
 				}
 				for _, row := range result.Rows {
 					symbol := symbolFromRow(row)
-					if _, ok := visited[symbol.UID]; ok || (!request.IncludeTests && symbol.Test) {
+					key := keyFromRow(row)
+					if _, ok := visited[key]; ok || (!request.IncludeTests && symbol.Test) {
 						continue
 					}
-					if _, ok := seenDepth[symbol.UID]; ok {
+					if _, ok := seenDepth[key]; ok {
 						continue
 					}
-					if len(visited)-1 >= limits.MaxNodes || len(response.Edges) >= limits.MaxEdges {
+					if len(visited)-len(targets) >= limits.MaxNodes || len(response.Edges) >= limits.MaxEdges {
 						response.Partial = true
 						response.Boundaries = appendBoundary(response.Boundaries, "traversal_limit", currentDepth)
 						return nil
 					}
-					seenDepth[symbol.UID] = struct{}{}
-					visited[symbol.UID] = struct{}{}
-					next = append(next, symbol.UID)
+					seenDepth[key] = struct{}{}
+					visited[key] = struct{}{}
+					next = append(next, key)
 					response.ByDepth[currentDepth] = append(response.ByDepth[currentDepth], symbol)
-					edge := graphprotocol.Relationship{Kind: relation, Confidence: 1}
-					parent := stripStorageUID(symbol.RepositoryID, row[11].(string))
-					if request.Direction == "upstream" {
-						edge.SourceUID, edge.TargetUID = symbol.UID, parent
-					} else {
-						edge.SourceUID, edge.TargetUID = parent, symbol.UID
-					}
-					response.Edges = append(response.Edges, edge)
+					response.Edges = append(response.Edges, relationshipFromRow(row, relation, request.Direction))
 				}
 			}
 			frontier = next
@@ -97,9 +104,6 @@ func (service *Service) Impact(ctx context.Context, request graphprotocol.Impact
 	})
 	if err != nil {
 		return response, err
-	}
-	if len(visited) > 1 {
-		response.Status = graphprotocol.StatusFound
 	}
 	for currentDepth, symbols := range response.ByDepth {
 		if request.Offset >= len(symbols) {

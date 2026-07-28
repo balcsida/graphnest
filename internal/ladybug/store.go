@@ -163,8 +163,10 @@ func insertEdges(ctx context.Context, session *Session, repositoryID int64, edge
 	for _, edge := range edges {
 		group := edgeGroup{kind: edge.Kind, sourceKind: kinds[edge.SourceUID]}
 		grouped[group] = append(grouped[group], map[string]any{
-			"source": storageUID(repositoryID, edge.SourceUID),
-			"target": storageUID(repositoryID, edge.TargetUID),
+			"source": storageUID(repositoryID, edge.SourceUID), "target": storageUID(repositoryID, edge.TargetUID),
+			"path": edge.Path, "start_line": edge.Range.StartLine, "start_character": edge.Range.StartCharacter,
+			"end_line": edge.Range.EndLine, "end_character": edge.Range.EndCharacter,
+			"confidence": float64(edge.Confidence), "resolution_reason": edge.ResolutionReason,
 		})
 	}
 	for group, rows := range grouped {
@@ -180,19 +182,19 @@ func edgeQuery(kind graphartifact.EdgeKind, sourceKind graphartifact.NodeKind) s
 	switch kind {
 	case graphartifact.EdgeContains:
 		if sourceKind == graphartifact.NodeRepository {
-			return `UNWIND $rows AS row MATCH (a:Repository {id: $repository_id}), (b:File {uid: row.target}) CREATE (a)-[:CONTAINS]->(b)`
+			return `UNWIND $rows AS row MATCH (a:Repository {id: $repository_id}), (b:File {uid: row.target}) CREATE (a)-[:CONTAINS {path: row.path, start_line: row.start_line, start_character: row.start_character, end_line: row.end_line, end_character: row.end_character, confidence: row.confidence, resolution_reason: row.resolution_reason}]->(b)`
 		}
-		return `UNWIND $rows AS row MATCH (a:File {uid: row.source}), (b:Symbol {uid: row.target}) CREATE (a)-[:CONTAINS]->(b)`
+		return `UNWIND $rows AS row MATCH (a:File {uid: row.source}), (b:Symbol {uid: row.target}) CREATE (a)-[:CONTAINS {path: row.path, start_line: row.start_line, start_character: row.start_character, end_line: row.end_line, end_character: row.end_character, confidence: row.confidence, resolution_reason: row.resolution_reason}]->(b)`
 	case graphartifact.EdgeImports:
-		return `UNWIND $rows AS row MATCH (a:File {uid: row.source}), (b:File {uid: row.target}) CREATE (a)-[:IMPORTS]->(b)`
+		return `UNWIND $rows AS row MATCH (a:File {uid: row.source}), (b:File {uid: row.target}) CREATE (a)-[:IMPORTS {path: row.path, start_line: row.start_line, start_character: row.start_character, end_line: row.end_line, end_character: row.end_character, confidence: row.confidence, resolution_reason: row.resolution_reason}]->(b)`
 	case graphartifact.EdgeReferences:
-		return `UNWIND $rows AS row MATCH (a:Symbol {uid: row.source}), (b:Symbol {uid: row.target}) CREATE (a)-[:REFERENCES]->(b)`
+		return `UNWIND $rows AS row MATCH (a:Symbol {uid: row.source}), (b:Symbol {uid: row.target}) CREATE (a)-[:REFERENCES {path: row.path, start_line: row.start_line, start_character: row.start_character, end_line: row.end_line, end_character: row.end_character, confidence: row.confidence, resolution_reason: row.resolution_reason}]->(b)`
 	case graphartifact.EdgeCalls:
-		return `UNWIND $rows AS row MATCH (a:Symbol {uid: row.source}), (b:Symbol {uid: row.target}) CREATE (a)-[:CALLS]->(b)`
+		return `UNWIND $rows AS row MATCH (a:Symbol {uid: row.source}), (b:Symbol {uid: row.target}) CREATE (a)-[:CALLS {path: row.path, start_line: row.start_line, start_character: row.start_character, end_line: row.end_line, end_character: row.end_character, confidence: row.confidence, resolution_reason: row.resolution_reason}]->(b)`
 	case graphartifact.EdgeExtends:
-		return `UNWIND $rows AS row MATCH (a:Symbol {uid: row.source}), (b:Symbol {uid: row.target}) CREATE (a)-[:EXTENDS]->(b)`
+		return `UNWIND $rows AS row MATCH (a:Symbol {uid: row.source}), (b:Symbol {uid: row.target}) CREATE (a)-[:EXTENDS {path: row.path, start_line: row.start_line, start_character: row.start_character, end_line: row.end_line, end_character: row.end_character, confidence: row.confidence, resolution_reason: row.resolution_reason}]->(b)`
 	default:
-		return `UNWIND $rows AS row MATCH (a:Symbol {uid: row.source}), (b:Symbol {uid: row.target}) CREATE (a)-[:IMPLEMENTS]->(b)`
+		return `UNWIND $rows AS row MATCH (a:Symbol {uid: row.source}), (b:Symbol {uid: row.target}) CREATE (a)-[:IMPLEMENTS {path: row.path, start_line: row.start_line, start_character: row.start_character, end_line: row.end_line, end_character: row.end_character, confidence: row.confidence, resolution_reason: row.resolution_reason}]->(b)`
 	}
 }
 

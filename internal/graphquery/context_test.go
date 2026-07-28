@@ -47,7 +47,25 @@ func TestContextReportsAmbiguityAndCategories(t *testing.T) {
 	}
 }
 
+func TestContextRejectsNegativeBounds(t *testing.T) {
+	service := seededQueryService(t, callChain("A"))
+	for name, request := range map[string]graphprotocol.ContextRequest{
+		"limit":  {Scope: scope(testCommit), UID: "A", PerCategoryLimit: -1},
+		"offset": {Scope: scope(testCommit), UID: "A", PerCategoryOffset: -1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := service.Context(t.Context(), request); err == nil {
+				t.Fatal("negative bound unexpectedly succeeded")
+			}
+		})
+	}
+}
+
 func seededQueryService(t *testing.T, artifact graphartifact.Artifact) *Service {
+	return seededQueryServiceWithArtifacts(t, artifact)
+}
+
+func seededQueryServiceWithArtifacts(t *testing.T, artifacts ...graphartifact.Artifact) *Service {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "graph")
 	handle, err := lbug.OpenDatabase(path, lbug.DefaultSystemConfig())
@@ -71,12 +89,14 @@ func seededQueryService(t *testing.T, artifact graphartifact.Artifact) *Service 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	manifest := graphartifact.Manifest{
-		RepositoryID: 101, UploadID: 1, Commit: artifact.Commit, Source: "managed",
-		SchemaVersion: artifact.SchemaVersion, ContentHash: bytes.Clone(artifact.ContentHash),
-	}
-	if err := db.ReplaceRepository(t.Context(), manifest, artifact); err != nil {
-		t.Fatal(err)
+	for index, artifact := range artifacts {
+		manifest := graphartifact.Manifest{
+			RepositoryID: artifact.RepositoryID, UploadID: int64(index + 1), Commit: artifact.Commit, Source: "managed",
+			SchemaVersion: artifact.SchemaVersion, ContentHash: bytes.Clone(artifact.ContentHash),
+		}
+		if err := db.ReplaceRepository(t.Context(), manifest, artifact); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return &Service{Database: db}
 }

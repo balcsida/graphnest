@@ -42,10 +42,15 @@ type Symbol struct {
 }
 
 type Relationship struct {
-	SourceUID  string  `json:"source_uid"`
-	TargetUID  string  `json:"target_uid"`
-	Kind       string  `json:"kind"`
-	Confidence float64 `json:"confidence"`
+	SourceRepositoryID int64    `json:"source_repository_id"`
+	TargetRepositoryID int64    `json:"target_repository_id"`
+	SourceUID          string   `json:"source_uid"`
+	TargetUID          string   `json:"target_uid"`
+	Kind               string   `json:"kind"`
+	Path               string   `json:"path,omitempty"`
+	Range              Position `json:"range"`
+	Confidence         float64  `json:"confidence"`
+	ResolutionReason   string   `json:"resolution_reason,omitempty"`
 }
 
 type Boundary struct {
@@ -67,13 +72,15 @@ type ContextRequest struct {
 }
 
 type ContextResponse struct {
-	Status     string              `json:"status"`
-	Symbol     *Symbol             `json:"symbol,omitempty"`
-	Candidates []Symbol            `json:"candidates,omitempty"`
-	Incoming   map[string][]Symbol `json:"incoming,omitempty"`
-	Outgoing   map[string][]Symbol `json:"outgoing,omitempty"`
-	Boundaries []Boundary          `json:"boundaries,omitempty"`
-	Commits    map[string]string   `json:"commits"`
+	Status        string                    `json:"status"`
+	Symbol        *Symbol                   `json:"symbol,omitempty"`
+	Candidates    []Symbol                  `json:"candidates,omitempty"`
+	Incoming      map[string][]Symbol       `json:"incoming,omitempty"`
+	Outgoing      map[string][]Symbol       `json:"outgoing,omitempty"`
+	IncomingEdges map[string][]Relationship `json:"incoming_edges,omitempty"`
+	OutgoingEdges map[string][]Relationship `json:"outgoing_edges,omitempty"`
+	Boundaries    []Boundary                `json:"boundaries,omitempty"`
+	Commits       map[string]string         `json:"commits"`
 }
 
 type ImpactRequest struct {

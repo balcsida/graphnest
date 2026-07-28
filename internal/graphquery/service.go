@@ -43,6 +43,11 @@ type readyScope struct {
 	commits    map[string]string
 }
 
+type nodeKey struct {
+	repositoryID int64
+	uid          string
+}
+
 func (service *Service) ready(ctx context.Context, scope graphprotocol.Scope) (readyScope, error) {
 	if service == nil || service.Database == nil || len(scope.Repositories) == 0 {
 		return readyScope{}, ErrInvalidRequest
@@ -125,12 +130,21 @@ func stripStorageUID(repositoryID int64, uid string) string {
 	return strings.TrimPrefix(uid, strconv.FormatInt(repositoryID, 10)+":")
 }
 
-func qualifyUIDs(snapshots []graphprotocol.RepositorySnapshot, uids []string) []string {
-	qualified := make([]string, 0, len(snapshots)*len(uids))
+func frontierParameters(frontier []nodeKey) []map[string]any {
+	parameters := make([]map[string]any, 0, len(frontier))
+	for _, key := range frontier {
+		parameters = append(parameters, map[string]any{
+			"repository_id": key.repositoryID,
+			"uid":           fmt.Sprintf("%d:%s", key.repositoryID, key.uid),
+		})
+	}
+	return parameters
+}
+
+func selectorUIDs(snapshots []graphprotocol.RepositorySnapshot, uid string) []string {
+	qualified := make([]string, 0, len(snapshots))
 	for _, snapshot := range snapshots {
-		for _, uid := range uids {
-			qualified = append(qualified, fmt.Sprintf("%d:%s", snapshot.ID, uid))
-		}
+		qualified = append(qualified, fmt.Sprintf("%d:%s", snapshot.ID, uid))
 	}
 	return qualified
 }
@@ -143,21 +157,46 @@ func isTestPath(path string) bool {
 
 var relationQueries = map[string]struct{ incoming, outgoing string }{
 	"calls": {
-		incoming: `UNWIND $scope AS scope MATCH (r:Repository), (a:Symbol)-[:CALLS]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND a.repository_id = r.id AND b.uid IN $frontier AND $depth > 0 AND $min_confidence <= 1.0 RETURN a.repository_id, a.uid, a.qualified_name, a.path, a.language, a.kind, a.signature, a.start_line, a.start_character, a.end_line, a.end_character, b.uid ORDER BY a.uid SKIP $offset LIMIT $limit`,
-		outgoing: `UNWIND $scope AS scope MATCH (r:Repository), (a:Symbol)-[:CALLS]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND b.repository_id = r.id AND a.uid IN $frontier AND $depth > 0 AND $min_confidence <= 1.0 RETURN b.repository_id, b.uid, b.qualified_name, b.path, b.language, b.kind, b.signature, b.start_line, b.start_character, b.end_line, b.end_character, a.uid ORDER BY b.uid SKIP $offset LIMIT $limit`,
+		incoming: `UNWIND $scope AS scope UNWIND $frontier AS frontier MATCH (r:Repository), (a:Symbol)-[edge:CALLS]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND r.id = frontier.repository_id AND a.repository_id = r.id AND b.repository_id = r.id AND b.uid = frontier.uid AND $depth > 0 AND edge.confidence >= $min_confidence RETURN a.repository_id, a.uid, a.qualified_name, a.path, a.language, a.kind, a.signature, a.start_line, a.start_character, a.end_line, a.end_character, b.uid, edge.confidence, edge.path, edge.start_line, edge.start_character, edge.end_line, edge.end_character, edge.resolution_reason ORDER BY a.uid SKIP $offset LIMIT $limit`,
+		outgoing: `UNWIND $scope AS scope UNWIND $frontier AS frontier MATCH (r:Repository), (a:Symbol)-[edge:CALLS]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND r.id = frontier.repository_id AND a.repository_id = r.id AND b.repository_id = r.id AND a.uid = frontier.uid AND $depth > 0 AND edge.confidence >= $min_confidence RETURN b.repository_id, b.uid, b.qualified_name, b.path, b.language, b.kind, b.signature, b.start_line, b.start_character, b.end_line, b.end_character, a.uid, edge.confidence, edge.path, edge.start_line, edge.start_character, edge.end_line, edge.end_character, edge.resolution_reason ORDER BY b.uid SKIP $offset LIMIT $limit`,
 	},
 	"references": {
-		incoming: `UNWIND $scope AS scope MATCH (r:Repository), (a:Symbol)-[:REFERENCES]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND a.repository_id = r.id AND b.uid IN $frontier AND $depth > 0 AND $min_confidence <= 1.0 RETURN a.repository_id, a.uid, a.qualified_name, a.path, a.language, a.kind, a.signature, a.start_line, a.start_character, a.end_line, a.end_character, b.uid ORDER BY a.uid SKIP $offset LIMIT $limit`,
-		outgoing: `UNWIND $scope AS scope MATCH (r:Repository), (a:Symbol)-[:REFERENCES]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND b.repository_id = r.id AND a.uid IN $frontier AND $depth > 0 AND $min_confidence <= 1.0 RETURN b.repository_id, b.uid, b.qualified_name, b.path, b.language, b.kind, b.signature, b.start_line, b.start_character, b.end_line, b.end_character, a.uid ORDER BY b.uid SKIP $offset LIMIT $limit`,
+		incoming: `UNWIND $scope AS scope UNWIND $frontier AS frontier MATCH (r:Repository), (a:Symbol)-[edge:REFERENCES]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND r.id = frontier.repository_id AND a.repository_id = r.id AND b.repository_id = r.id AND b.uid = frontier.uid AND $depth > 0 AND edge.confidence >= $min_confidence RETURN a.repository_id, a.uid, a.qualified_name, a.path, a.language, a.kind, a.signature, a.start_line, a.start_character, a.end_line, a.end_character, b.uid, edge.confidence, edge.path, edge.start_line, edge.start_character, edge.end_line, edge.end_character, edge.resolution_reason ORDER BY a.uid SKIP $offset LIMIT $limit`,
+		outgoing: `UNWIND $scope AS scope UNWIND $frontier AS frontier MATCH (r:Repository), (a:Symbol)-[edge:REFERENCES]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND r.id = frontier.repository_id AND a.repository_id = r.id AND b.repository_id = r.id AND a.uid = frontier.uid AND $depth > 0 AND edge.confidence >= $min_confidence RETURN b.repository_id, b.uid, b.qualified_name, b.path, b.language, b.kind, b.signature, b.start_line, b.start_character, b.end_line, b.end_character, a.uid, edge.confidence, edge.path, edge.start_line, edge.start_character, edge.end_line, edge.end_character, edge.resolution_reason ORDER BY b.uid SKIP $offset LIMIT $limit`,
 	},
 	"extends": {
-		incoming: `UNWIND $scope AS scope MATCH (r:Repository), (a:Symbol)-[:EXTENDS]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND a.repository_id = r.id AND b.uid IN $frontier AND $depth > 0 AND $min_confidence <= 1.0 RETURN a.repository_id, a.uid, a.qualified_name, a.path, a.language, a.kind, a.signature, a.start_line, a.start_character, a.end_line, a.end_character, b.uid ORDER BY a.uid SKIP $offset LIMIT $limit`,
-		outgoing: `UNWIND $scope AS scope MATCH (r:Repository), (a:Symbol)-[:EXTENDS]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND b.repository_id = r.id AND a.uid IN $frontier AND $depth > 0 AND $min_confidence <= 1.0 RETURN b.repository_id, b.uid, b.qualified_name, b.path, b.language, b.kind, b.signature, b.start_line, b.start_character, b.end_line, b.end_character, a.uid ORDER BY b.uid SKIP $offset LIMIT $limit`,
+		incoming: `UNWIND $scope AS scope UNWIND $frontier AS frontier MATCH (r:Repository), (a:Symbol)-[edge:EXTENDS]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND r.id = frontier.repository_id AND a.repository_id = r.id AND b.repository_id = r.id AND b.uid = frontier.uid AND $depth > 0 AND edge.confidence >= $min_confidence RETURN a.repository_id, a.uid, a.qualified_name, a.path, a.language, a.kind, a.signature, a.start_line, a.start_character, a.end_line, a.end_character, b.uid, edge.confidence, edge.path, edge.start_line, edge.start_character, edge.end_line, edge.end_character, edge.resolution_reason ORDER BY a.uid SKIP $offset LIMIT $limit`,
+		outgoing: `UNWIND $scope AS scope UNWIND $frontier AS frontier MATCH (r:Repository), (a:Symbol)-[edge:EXTENDS]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND r.id = frontier.repository_id AND a.repository_id = r.id AND b.repository_id = r.id AND a.uid = frontier.uid AND $depth > 0 AND edge.confidence >= $min_confidence RETURN b.repository_id, b.uid, b.qualified_name, b.path, b.language, b.kind, b.signature, b.start_line, b.start_character, b.end_line, b.end_character, a.uid, edge.confidence, edge.path, edge.start_line, edge.start_character, edge.end_line, edge.end_character, edge.resolution_reason ORDER BY b.uid SKIP $offset LIMIT $limit`,
 	},
 	"implements": {
-		incoming: `UNWIND $scope AS scope MATCH (r:Repository), (a:Symbol)-[:IMPLEMENTS]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND a.repository_id = r.id AND b.uid IN $frontier AND $depth > 0 AND $min_confidence <= 1.0 RETURN a.repository_id, a.uid, a.qualified_name, a.path, a.language, a.kind, a.signature, a.start_line, a.start_character, a.end_line, a.end_character, b.uid ORDER BY a.uid SKIP $offset LIMIT $limit`,
-		outgoing: `UNWIND $scope AS scope MATCH (r:Repository), (a:Symbol)-[:IMPLEMENTS]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND b.repository_id = r.id AND a.uid IN $frontier AND $depth > 0 AND $min_confidence <= 1.0 RETURN b.repository_id, b.uid, b.qualified_name, b.path, b.language, b.kind, b.signature, b.start_line, b.start_character, b.end_line, b.end_character, a.uid ORDER BY b.uid SKIP $offset LIMIT $limit`,
+		incoming: `UNWIND $scope AS scope UNWIND $frontier AS frontier MATCH (r:Repository), (a:Symbol)-[edge:IMPLEMENTS]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND r.id = frontier.repository_id AND a.repository_id = r.id AND b.repository_id = r.id AND b.uid = frontier.uid AND $depth > 0 AND edge.confidence >= $min_confidence RETURN a.repository_id, a.uid, a.qualified_name, a.path, a.language, a.kind, a.signature, a.start_line, a.start_character, a.end_line, a.end_character, b.uid, edge.confidence, edge.path, edge.start_line, edge.start_character, edge.end_line, edge.end_character, edge.resolution_reason ORDER BY a.uid SKIP $offset LIMIT $limit`,
+		outgoing: `UNWIND $scope AS scope UNWIND $frontier AS frontier MATCH (r:Repository), (a:Symbol)-[edge:IMPLEMENTS]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND r.id = frontier.repository_id AND a.repository_id = r.id AND b.repository_id = r.id AND a.uid = frontier.uid AND $depth > 0 AND edge.confidence >= $min_confidence RETURN b.repository_id, b.uid, b.qualified_name, b.path, b.language, b.kind, b.signature, b.start_line, b.start_character, b.end_line, b.end_character, a.uid, edge.confidence, edge.path, edge.start_line, edge.start_character, edge.end_line, edge.end_character, edge.resolution_reason ORDER BY b.uid SKIP $offset LIMIT $limit`,
 	},
+}
+
+func keyFromRow(row []any) nodeKey {
+	repositoryID := row[0].(int64)
+	return nodeKey{repositoryID: repositoryID, uid: stripStorageUID(repositoryID, row[1].(string))}
+}
+
+func relationshipFromRow(row []any, kind, direction string) graphprotocol.Relationship {
+	neighbor := keyFromRow(row)
+	parent := nodeKey{repositoryID: neighbor.repositoryID, uid: stripStorageUID(neighbor.repositoryID, row[11].(string))}
+	relationship := graphprotocol.Relationship{
+		SourceRepositoryID: parent.repositoryID, TargetRepositoryID: neighbor.repositoryID,
+		SourceUID: parent.uid, TargetUID: neighbor.uid, Kind: kind,
+		Confidence: row[12].(float64), Path: row[13].(string),
+		Range: graphprotocol.Position{
+			StartLine: row[14].(int32), StartCharacter: row[15].(int32),
+			EndLine: row[16].(int32), EndCharacter: row[17].(int32),
+		},
+		ResolutionReason: row[18].(string),
+	}
+	if direction == "upstream" {
+		relationship.SourceRepositoryID, relationship.TargetRepositoryID = neighbor.repositoryID, parent.repositoryID
+		relationship.SourceUID, relationship.TargetUID = neighbor.uid, parent.uid
+	}
+	return relationship
 }
 
 func selectedRelations(requested []string) ([]string, error) {
