@@ -65,7 +65,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       initContainers:
-        {{- include "grepnest.graphSecretInit" (dict "image" .Values.images.node) | nindent 8 }}
+        {{- include "grepnest.graphSecretInit" (dict "image" .Values.images.node "executable" .Values.graph.executable) | nindent 8 }}
       containers:
         - name: graph
           image: {{ include "grepnest.image" .Values.images.node | quote }}

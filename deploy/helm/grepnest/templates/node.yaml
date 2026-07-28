@@ -74,7 +74,7 @@ spec:
       {{- end }}
       {{- if eq .Values.graph.mode "embedded" }}
       initContainers:
-        {{- include "grepnest.graphSecretInit" (dict "image" .Values.images.node) | nindent 8 }}
+        {{- include "grepnest.graphSecretInit" (dict "image" .Values.images.node "executable" .Values.graph.executable) | nindent 8 }}
       {{- end }}
       containers:
         - name: zoekt-webserver
