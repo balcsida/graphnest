@@ -108,7 +108,7 @@ func TestGraphMCPMatchesService(t *testing.T) {
 		t.Fatalf("context schema = %#v", contextSchema)
 	}
 	contextLimit := contextSchema["properties"].(map[string]any)["per_category_limit"].(map[string]any)
-	if contextLimit["default"] == nil || !strings.Contains(contextLimit["description"].(string), "default: 100; values above 100 are capped") {
+	if contextLimit["default"] != float64(100) || !strings.Contains(contextLimit["description"].(string), "default: 100; values above 100 are capped") {
 		t.Fatalf("context.per_category_limit schema = %#v", contextLimit)
 	}
 
