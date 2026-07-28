@@ -14,6 +14,8 @@ import (
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/authz"
 	"github.com/grepnest/grepnest/internal/githubapp"
+	"github.com/grepnest/grepnest/internal/graphprotocol"
+	"github.com/grepnest/grepnest/internal/graphservice"
 	"github.com/grepnest/grepnest/internal/httpapi"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/repository"
@@ -25,6 +27,102 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+func TestGraphMCPMatchesService(t *testing.T) {
+	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}
+	store := &mcpGraphStore{repository: repository.Repository{ID: 1, InstallationID: 10, GitHubID: 101, Name: "acme/one", Branch: "main", IndexedSHA: strings.Repeat("a", 40)}}
+	graphService := &graphservice.Service{
+		Store:   store,
+		Backend: &mcpGraphBackend{},
+	}
+	request := api.GraphImpactRequest{Repo: api.GraphRepositorySelector{Name: "acme/one"}, Branch: "main", TargetUID: "symbol:a", Direction: "downstream"}
+	want, err := graphService.Impact(t.Context(), principal, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	budget := mcpResultSize(t, want)
+	server := NewWithLimits(Services{Search: testService(t, &recordingBackend{}), Graph: graphService}, Limits{MaxOutputBytes: int64(budget)})
+	handler := httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{"secret": principal}), mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: httpServer.URL, HTTPClient: bearerClient(httpServer.Client(), "secret"), DisableStandaloneSSE: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	tools, err := session.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, description := range map[string]string{
+		"context": "Inspect a symbol's incoming and outgoing code relationships.",
+		"impact":  "Analyze the upstream or downstream impact of a code symbol.",
+		"trace":   "Trace code relationships between two symbols.",
+		"cypher":  "Run an administrator-only read query against the code graph.",
+	} {
+		schema := repositoryToolSchema(t, tools.Tools, name)
+		if schema["additionalProperties"] != false {
+			t.Fatalf("%s schema = %#v", name, schema)
+		}
+		for _, tool := range tools.Tools {
+			if tool.Name == name && tool.Description != description {
+				t.Fatalf("%s description = %q", name, tool.Description)
+			}
+		}
+	}
+	impactSchema := repositoryToolSchema(t, tools.Tools, "impact")
+	impactProperties := impactSchema["properties"].(map[string]any)
+	if impactProperties["repo"].(map[string]any)["oneOf"] == nil || impactProperties["branch"].(map[string]any)["minLength"] != float64(1) {
+		t.Fatalf("impact schema = %#v", impactSchema)
+	}
+	contextSchema := repositoryToolSchema(t, tools.Tools, "context")
+	if contextSchema["properties"].(map[string]any)["uid"] == nil || contextSchema["properties"].(map[string]any)["name"] == nil {
+		t.Fatalf("context schema = %#v", contextSchema)
+	}
+
+	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "impact", Arguments: map[string]any{"repo": "acme/one", "branch": "main", "target_uid": "symbol:a", "direction": "downstream"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertMCPResultBudget(t, "impact", result, budget)
+	var got api.GraphImpactResponse
+	decodeStructured(t, result.StructuredContent, &got)
+	if got.Commits["acme/one"] != want.Commits["acme/one"] || got.Status != want.Status {
+		t.Fatalf("got=%#v want=%#v", got, want)
+	}
+	if store.principal.InstallationID != principal.InstallationID || !slices.Equal(store.principal.RepositoryIDs, principal.RepositoryIDs) {
+		t.Fatalf("principal=%#v want=%#v", store.principal, principal)
+	}
+}
+
+type mcpGraphStore struct {
+	repository repository.Repository
+	principal  authn.Principal
+}
+
+func (store *mcpGraphStore) GraphRepositories(_ context.Context, principal authn.Principal) ([]repository.Repository, error) {
+	store.principal = principal
+	if principal.InstallationID != store.repository.InstallationID || !slices.Contains(principal.RepositoryIDs, store.repository.GitHubID) {
+		return nil, nil
+	}
+	return []repository.Repository{store.repository}, nil
+}
+
+type mcpGraphBackend struct{}
+
+func (mcpGraphBackend) Context(context.Context, graphprotocol.ContextRequest) (graphprotocol.ContextResponse, error) {
+	return graphprotocol.ContextResponse{}, nil
+}
+func (mcpGraphBackend) Impact(_ context.Context, request graphprotocol.ImpactRequest) (graphprotocol.ImpactResponse, error) {
+	return graphprotocol.ImpactResponse{Status: graphprotocol.StatusFound, ByDepth: map[int][]graphprotocol.Symbol{}, Commits: map[string]string{"acme/one": request.Scope.Repositories[0].Commit}}, nil
+}
+func (mcpGraphBackend) Trace(context.Context, graphprotocol.TraceRequest) (graphprotocol.TraceResponse, error) {
+	return graphprotocol.TraceResponse{}, nil
+}
+func (mcpGraphBackend) Cypher(context.Context, graphprotocol.CypherRequest) (graphprotocol.CypherResponse, error) {
+	return graphprotocol.CypherResponse{}, nil
+}
+
 func TestRepositoryToolsUseAuthenticatedService(t *testing.T) {
 	repositoryService := mcpRepositoryService()
 	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}
@@ -33,7 +131,7 @@ func TestRepositoryToolsUseAuthenticatedService(t *testing.T) {
 		t.Fatal(err)
 	}
 	listBudget := mcpResultSize(t, repositoryListOutput{Repositories: wantList})
-	server := NewWithLimits(testService(t, &recordingBackend{}), repositoryService, Limits{MaxOutputBytes: int64(listBudget)})
+	server := NewWithLimits(Services{Search: testService(t, &recordingBackend{}), Repositories: repositoryService}, Limits{MaxOutputBytes: int64(listBudget)})
 	handler := httpapi.AuthenticateBearer(
 		authn.NewStatic(map[string]authn.Principal{"secret": {InstallationID: 10, RepositoryIDs: []int64{101}}}),
 		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil),
@@ -174,7 +272,7 @@ func TestNavigateSymbolMatchesSCIPServiceResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	budget := mcpResultSize(t, want)
-	server := NewWithLimits(testService(t, &recordingBackend{}), nil, Limits{MaxOutputBytes: int64(budget)}, scipService)
+	server := NewWithLimits(Services{Search: testService(t, &recordingBackend{}), SCIP: scipService}, Limits{MaxOutputBytes: int64(budget)})
 	handler := httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{"secret": principal}), mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
 	httpServer := httptest.NewServer(handler)
 	defer httpServer.Close()
@@ -234,7 +332,7 @@ func TestNavigateSymbolMatchesSCIPServiceResponse(t *testing.T) {
 	}
 	store.occurrenceErr = nil
 
-	tinyServer := NewWithLimits(testService(t, &recordingBackend{}), nil, Limits{MaxOutputBytes: int64(budget - 1)}, scipService)
+	tinyServer := NewWithLimits(Services{Search: testService(t, &recordingBackend{}), SCIP: scipService}, Limits{MaxOutputBytes: int64(budget - 1)})
 	tinyHTTPServer := httptest.NewServer(httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{"secret": principal}), mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return tinyServer }, nil)))
 	defer tinyHTTPServer.Close()
 	tinySession, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: tinyHTTPServer.URL, HTTPClient: bearerClient(tinyHTTPServer.Client(), "secret"), DisableStandaloneSSE: true}, nil)
@@ -249,7 +347,7 @@ func TestNavigateSymbolMatchesSCIPServiceResponse(t *testing.T) {
 		t.Fatalf("bounded result = %#v, err = %v", result, err)
 	}
 
-	nilServer := NewWithLimits(testService(t, &recordingBackend{}), nil, Limits{}, nil)
+	nilServer := NewWithLimits(Services{Search: testService(t, &recordingBackend{}), SCIP: nil}, Limits{})
 	nilHTTPServer := httptest.NewServer(httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{"secret": principal}), mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return nilServer }, nil)))
 	defer nilHTTPServer.Close()
 	nilSession, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: nilHTTPServer.URL, HTTPClient: bearerClient(nilHTTPServer.Client(), "secret"), DisableStandaloneSSE: true}, nil)

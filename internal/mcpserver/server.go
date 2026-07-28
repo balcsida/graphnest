@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/grepnest/grepnest/internal/graphservice"
 	"github.com/grepnest/grepnest/internal/httpapi"
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/internal/scipgraph"
@@ -29,6 +30,13 @@ const (
 type Limits struct {
 	MaxItems       int
 	MaxOutputBytes int64
+}
+
+type Services struct {
+	Search       *search.Service
+	Repositories *repository.Service
+	SCIP         *scipgraph.Service
+	Graph        *graphservice.Service
 }
 
 type searchInput struct {
@@ -79,20 +87,16 @@ func New(service *search.Service, repositoryServices ...*repository.Service) *mc
 	if len(repositoryServices) > 0 {
 		repositories = repositoryServices[0]
 	}
-	return NewWithLimits(service, repositories, Limits{})
+	return NewWithLimits(Services{Search: service, Repositories: repositories}, Limits{})
 }
 
-func NewWithLimits(service *search.Service, repositories *repository.Service, limits Limits, scipServices ...*scipgraph.Service) *mcp.Server {
+func NewWithLimits(services Services, limits Limits) *mcp.Server {
 	limits = normalizeLimits(limits)
-	var scip *scipgraph.Service
-	if len(scipServices) > 0 {
-		scip = scipServices[0]
-	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "grepnest", Version: "0.1.0"}, nil)
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "search_code", Description: "Search code contents when you know a symbol, string, or code expression.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input searchInput) (*mcp.CallToolResult, output, error) {
-		return runSearch(ctx, service, api.SearchRequest{
+		return runSearch(ctx, services.Search, api.SearchRequest{
 			Query: input.Query, Repositories: input.Repositories, Limit: input.Limit,
 			ContextLines: input.ContextLines, MaxResponseBytes: input.MaxOutputBytes,
 		}, outputBudget(input.MaxOutputBytes, limits.MaxOutputBytes))
@@ -100,12 +104,12 @@ func NewWithLimits(service *search.Service, repositories *repository.Service, li
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "find_files", Description: "Find files by path regular expression when file names or paths are known.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input findInput) (*mcp.CallToolResult, output, error) {
-		return runSearch(ctx, service, api.SearchRequest{
+		return runSearch(ctx, services.Search, api.SearchRequest{
 			Query: "file:" + input.Pattern, Repositories: input.Repositories,
 			Limit: input.Limit, MaxResponseBytes: input.MaxOutputBytes,
 		}, outputBudget(input.MaxOutputBytes, limits.MaxOutputBytes))
 	})
-	if scip != nil {
+	if services.SCIP != nil {
 		mcp.AddTool(server, &mcp.Tool{
 			Name: "navigate_symbol", Description: "Navigate to definitions, references, or implementations for a source symbol.",
 			InputSchema: map[string]any{
@@ -120,7 +124,7 @@ func NewWithLimits(service *search.Service, repositories *repository.Service, li
 				},
 			},
 		}, func(ctx context.Context, _ *mcp.CallToolRequest, input api.SCIPNavigationRequest) (*mcp.CallToolResult, api.SCIPNavigationResponse, error) {
-			response, err := scip.Navigate(ctx, httpapi.PrincipalFromContext(ctx), input)
+			response, err := services.SCIP.Navigate(ctx, httpapi.PrincipalFromContext(ctx), input)
 			if err != nil {
 				return nil, api.SCIPNavigationResponse{}, errors.New(httpapi.SCIPErrorMessage(err))
 			}
@@ -130,6 +134,8 @@ func NewWithLimits(service *search.Service, repositories *repository.Service, li
 			return structuredResult(), response, nil
 		})
 	}
+	registerGraphTools(server, services.Graph, limits)
+	repositories := services.Repositories
 	if repositories == nil {
 		return server
 	}
