@@ -114,3 +114,44 @@ All commits have a good ED25519 signature from
   unchanged, as requested.
 - Linux/x86_64 provisioning is encoded with its pinned archive checksum and
   shared native contract; this final-fix run executed on Darwin/arm64.
+
+## Runtime parity exception wave
+
+RED:
+
+- The original parity test constructed two identical `graphruntime.New`
+  instances, so neither command initialization path participated.
+- The reshaped contract initially failed to compile because no callable
+  standalone command seam existed outside `cmd/grepnest-graph`.
+
+GREEN:
+
+- `graphcommand.RunStandalone` now contains the production standalone
+  PostgreSQL ping, migration, runtime creation, run, and close sequence; the
+  real `grepnest-graph` main calls it.
+- The integration contract runs `newIndexRuntime` plus `indexRuntime.run`, so
+  embedded Ladybug starts only after normal indexer ping, migration, search-node
+  upsert, lease reap, and history prune initialization.
+- The same contract runs the real standalone PostgreSQL initialization against
+  the same isolated authoritative schema and equivalent runtime configuration.
+- Authenticated JSON `context`, `impact`, `trace`, and `cypher` requests compare
+  normalized status, content type, and body across the two live listeners.
+- The adjacent `TestGraphServiceSkipsSeparateMode` contract still proves that
+  separate indexer mode does not start Ladybug.
+- The synthetic runtime-to-runtime parity test was removed.
+
+Verification:
+
+- Focused command parity plus separate-mode bypass — pass, 2 tests
+- `make ladybug-test` — pass
+- Uncached native command/runtime/query race — pass, 59 tests in five packages
+- `make fmt lint test-race build staticcheck` — pass
+- `make postgres-integration` — pass, including `cmd/grepnest-indexer`
+- `go mod tidy -diff` — pass, no diff
+- `go mod verify` — pass, all modules verified
+- `make govulncheck` — pass, no vulnerabilities found
+- `git diff --check` — pass
+
+The exception-wave commit is signed with the required ED25519 key
+`SHA256:WjfLjYSGqwAvhKk36hJZdaFyPAyKJcSxfoien1VavOU`; the final handoff records
+the verified commit SHA.
