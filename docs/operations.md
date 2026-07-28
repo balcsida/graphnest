@@ -108,24 +108,75 @@ job, and `ready` is current native graph data. Queries can still return
 `409 graph_not_ready` when the indexed SHA changes during selection or
 reauthorization.
 
-To recover a damaged or incompatible database, stop its sole owner and retain
-PostgreSQL. The runtime explicitly rejects `grepnest.lbug.wal`; remove that
-sidecar with the database file, then restart to rebuild from stored snapshots.
-A failed compatibility rebuild leaves the live database in place.
+For an incompatible existing database, restart its sole owner first. Automatic
+compatibility rebuild writes a candidate and replaces the live database only
+after it succeeds, so a failed automatic rebuild preserves the existing file.
+Manual recovery is different: after stopping the owner, deleting
+`grepnest.lbug` and its explicitly rejected `grepnest.lbug.wal` forces a fresh
+rebuild from PostgreSQL. If that rebuild fails, no graph database remains and
+graph requests stay unavailable/not ready until a rebuild succeeds.
 
 - In embedded Compose mode, stop `grepnest-indexer` first. Its shared
   `grepnest-data` volume is mounted as both data and graph storage: remove only
   `/var/lib/grepnest/graph/grepnest.lbug` and
   `/var/lib/grepnest/graph/grepnest.lbug.wal` from a maintenance mount, then
-  restart the indexer. Never remove `grepnest-data`: it also holds mirrors and
-  worktrees.
-- In embedded Helm mode, scale down the node StatefulSet, then remove only
-  `<node data PVC>/graph/grepnest.lbug` and `.wal` through an operator
-  maintenance mount before scaling it back up. Do not replace the node PVC.
-- Separate mode owns its graph volume/PVC. Stop or scale down only the graph
-  owner, then either remove `grepnest.lbug` and `.wal` below its configured
-  graph data path or replace that owned graph volume/PVC before restarting the
-  graph owner. Do not use a Compose-wide or release-wide volume deletion.
+  restart the indexer with:
+
+  ```sh
+  docker compose -f deploy/compose/compose.yml -f deploy/compose/durable.yml \
+    -f deploy/compose/graph-embedded.yml --profile durable stop grepnest-indexer
+  # Delete only the two paths above through an approved maintenance mount.
+  docker compose -f deploy/compose/compose.yml -f deploy/compose/durable.yml \
+    -f deploy/compose/graph-embedded.yml --profile durable up -d grepnest-indexer
+  ```
+
+  Never remove `grepnest-data`: it also holds mirrors and worktrees.
+- In embedded Helm mode, identify and stop the rendered node StatefulSet and
+  its exact PVC with:
+
+  ```sh
+  NODE=$(kubectl -n "$NAMESPACE" get statefulset \
+    -l app.kubernetes.io/name=grepnest,app.kubernetes.io/instance="$RELEASE",app.kubernetes.io/component=node \
+    -o jsonpath='{.items[0].metadata.name}')
+  kubectl -n "$NAMESPACE" scale statefulset/"$NODE" --replicas=0
+  NODE_PVC="data-${NODE}-0"
+  kubectl -n "$NAMESPACE" get pvc "$NODE_PVC"
+  ```
+
+  The chart's default mounts make the graph database relative path
+  `graph/grepnest.lbug` (and `.wal`) on `"$NODE_PVC"`; do not replace that
+  shared node PVC. Mounting a PVC for maintenance is storage-class-specific,
+  so this chart supplies no universal deletion command. After deleting only
+  those two paths through the operator's approved maintenance mount, restart
+  with `kubectl -n "$NAMESPACE" scale statefulset/"$NODE" --replicas=1` and
+  wait with `kubectl -n "$NAMESPACE" rollout status statefulset/"$NODE"`.
+- Separate mode owns its graph volume/PVC. For Helm, discover it and stop only
+  its rendered Deployment:
+
+  ```sh
+  GRAPH=$(kubectl -n "$NAMESPACE" get deployment \
+    -l app.kubernetes.io/name=grepnest,app.kubernetes.io/instance="$RELEASE",app.kubernetes.io/component=graph \
+    -o jsonpath='{.items[0].metadata.name}')
+  kubectl -n "$NAMESPACE" scale deployment/"$GRAPH" --replicas=0
+  kubectl -n "$NAMESPACE" get pvc "$GRAPH"
+  ```
+
+  On that owned PVC, the default graph-data mount-relative paths are
+  `grepnest.lbug` and `grepnest.lbug.wal`; replacing this graph-only PVC is
+  also safe when the operator wants a clean rebuild. Scale the Deployment back
+  to one and wait with `kubectl -n "$NAMESPACE" rollout status deployment/"$GRAPH"`.
+  Compose separate mode has the same ownership boundary in `grepnest-graph`;
+  stop/start only `grepnest-graph` with:
+
+  ```sh
+  docker compose -f deploy/compose/compose.yml -f deploy/compose/durable.yml \
+    -f deploy/compose/graph-separate.yml --profile durable stop grepnest-graph
+  # Delete graph-only paths or replace only its owned graph volume.
+  docker compose -f deploy/compose/compose.yml -f deploy/compose/durable.yml \
+    -f deploy/compose/graph-separate.yml --profile durable up -d grepnest-graph
+  ```
+
+  Never use a Compose-wide volume deletion.
 
 Do not delete PostgreSQL graph artifacts merely to clear a derived-store
 problem. An administrator can upload a fresh external native artifact only at
@@ -137,8 +188,9 @@ External native artifacts use the server route
 It requires the administrator bearer token, exactly those two query parameters,
 `Content-Type: application/vnd.grepnest.graph.v1+protobuf`, and the artifact as
 the binary body. This is not the graph runtime's internal bearer endpoint: the
-server authorizes the caller and forwards graph data through its internal
-client. For example:
+server authorizes and stores the artifact in PostgreSQL; the graph runtime
+later synchronizes it. Internal bearer transport is for runtime/query calls.
+For example:
 
 ```sh
 curl --fail-with-body -X POST \
@@ -151,6 +203,13 @@ curl --fail-with-body -X POST \
 The commit must be the repository's current exact indexed SHA. The route is
 administrator-only; exposing the server through ingress is a separate operator
 choice, while the graph runtime remains internal-only.
+
+After a restart or upload, verify the server-visible state with:
+
+```sh
+curl --fail-with-body "$GREPNEST_SERVER_URL/v1/graph/repositories/$REPOSITORY_ID/status" \
+  -H "Authorization: Bearer $GREPNEST_ADMIN_TOKEN"
+```
 
 Graph REST/MCP queries are bounded: context categories and impact result lists
 default and cap at 100, impact depth defaults to 3 and caps at 32, trace depth
