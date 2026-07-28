@@ -7,7 +7,7 @@ IMAGE_PLATFORM ?= linux/amd64
 APPLICATION_IMAGE ?= grepnest-application:dev
 NODE_IMAGE ?= grepnest-node:dev
 
-.PHONY: fmt lint staticcheck govulncheck test test-race integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check
+.PHONY: fmt lint staticcheck govulncheck test test-race integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
@@ -93,6 +93,9 @@ helm-lint:
 
 helm-test:
 	sh deploy/helm/grepnest/tests/render.sh
+
+release-chart-test:
+	ruby scripts/stage_release_chart_test.rb
 
 compose-test:
 	sh deploy/compose/test.sh
