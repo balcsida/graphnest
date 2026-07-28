@@ -6,6 +6,7 @@ import (
 
 	"github.com/grepnest/grepnest/internal/graphartifact"
 	"github.com/grepnest/grepnest/internal/graphprotocol"
+	"github.com/grepnest/grepnest/internal/ladybug"
 )
 
 func TestTraceReturnsOneShortestDirectedPath(t *testing.T) {
@@ -87,6 +88,32 @@ func TestTraceAnchorsDuplicateEndpointsToSelectedRepository(t *testing.T) {
 	}
 }
 
+func TestTraceTraversesOnlyAuthorizedRepositoriesAfterAnchoring(t *testing.T) {
+	service := seededQueryServiceWithArtifacts(t,
+		repositorySymbols(101, "A", "Z"),
+		repositorySymbols(202, "A", "B", "Z"),
+		repositorySymbols(303, "C"),
+	)
+	addCrossRepositoryCall(t, service, 101, "A", 202, "B")
+	addCrossRepositoryCall(t, service, 202, "B", 101, "Z")
+	addCrossRepositoryCall(t, service, 101, "A", 303, "C")
+	addCrossRepositoryCall(t, service, 303, "C", 101, "Z")
+
+	got, err := service.Trace(t.Context(), graphprotocol.TraceRequest{
+		Scope: graphprotocol.Scope{SelectedRepositoryID: 101, Repositories: []graphprotocol.RepositorySnapshot{
+			{ID: 101, Name: "acme/one", Commit: testCommit},
+			{ID: 202, Name: "acme/two", Commit: testCommit},
+		}},
+		SourceUID: "A", TargetUID: "Z", MaxDepth: 2,
+	})
+	if err != nil || got.Status != graphprotocol.StatusOK || len(got.Candidates) != 0 || len(got.Nodes) != 3 ||
+		got.Nodes[0].RepositoryID != 101 || got.Nodes[0].UID != "A" ||
+		got.Nodes[1].RepositoryID != 202 || got.Nodes[1].UID != "B" ||
+		got.Nodes[2].RepositoryID != 101 || got.Nodes[2].UID != "Z" {
+		t.Fatalf("Trace()=%#v,%v", got, err)
+	}
+}
+
 func TestTraceRejectsNegativeDepth(t *testing.T) {
 	service := seededQueryService(t, callChain("A", "B"))
 	if _, err := service.Trace(t.Context(), graphprotocol.TraceRequest{
@@ -132,4 +159,30 @@ func repositoryCallChain(repositoryID int64, names ...string) graphartifact.Arti
 		}
 	}
 	return artifact
+}
+
+func repositorySymbols(repositoryID int64, names ...string) graphartifact.Artifact {
+	artifact := repositoryCallChain(repositoryID, names...)
+	edges := artifact.Edges[:0]
+	for _, edge := range artifact.Edges {
+		if edge.Kind != graphartifact.EdgeCalls {
+			edges = append(edges, edge)
+		}
+	}
+	artifact.Edges = edges
+	return artifact
+}
+
+func addCrossRepositoryCall(t *testing.T, service *Service, sourceRepositoryID int64, sourceUID string, targetRepositoryID int64, targetUID string) {
+	t.Helper()
+	err := service.Database.Update(t.Context(), func(session *ladybug.Session) error {
+		_, err := session.Execute(t.Context(), `MATCH (a:Symbol {uid: $source}), (b:Symbol {uid: $target}) CREATE (a)-[:CALLS {path: "", start_line: 0, start_character: 0, end_line: 0, end_character: 0, confidence: 1.0, resolution_reason: "test"}]->(b)`, map[string]any{
+			"source": fmt.Sprintf("%d:%s", sourceRepositoryID, sourceUID),
+			"target": fmt.Sprintf("%d:%s", targetRepositoryID, targetUID),
+		}, ladybug.QueryLimits{MaxRows: 1})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }

@@ -94,7 +94,7 @@ func (service *Service) Trace(ctx context.Context, request graphprotocol.TraceRe
 				if _, seen := parents[key]; seen {
 					continue
 				}
-				parent := nodeKey{repositoryID: key.repositoryID, uid: stripStorageUID(key.repositoryID, row[11].(string))}
+				parent := keyFromStorageUID(row[11].(string))
 				parents[key], symbols[key] = parent, symbol
 				via[key] = relationshipFromRow(row, "calls", "downstream")
 				next = append(next, key)
