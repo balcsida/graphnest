@@ -113,7 +113,8 @@ assert_graph_mode() {
     and ($scanner.command == ["GREPNEST_WORKER_ID=$$(hostname) exec grepnest-scanner"])
     and ($scanner.deploy.replicas >= 1)
     and ([ $services[] | .ports[]? | select(.target == 8081) ] | length == 0)
-    and ([ $services[] | .volumes[]? | select(.target == "/var/lib/grepnest/graph" and (.read_only // false | not)) ] | length == 1)
+    and ([ $graph_owner.volumes[] | select(.target == "/var/lib/grepnest/graph" and (.read_only // false | not)) ] | length == 1)
+    and ([ $server.volumes[] | select(.target == "/var/lib/grepnest/graph") ] | length == 0)
     and ([ $services[] | .volumes[]? | select(.source == $zoekt_index and (.read_only // false | not)) ] | length == 1)
     and (($owner == "grepnest-graph") == $has_graph)
   ' >/dev/null
