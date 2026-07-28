@@ -4,9 +4,13 @@ package ladybug
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/grepnest/grepnest/internal/graphartifact"
 )
@@ -148,15 +152,25 @@ func TestManifestsRoundTripsContentHash(t *testing.T) {
 
 func TestManifestIsInvisibleUntilCommitAndRollbackRestoresOld(t *testing.T) {
 	db := seededDatabase(t, artifactA())
-	written, release, finished := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	written, release := make(chan struct{}), make(chan struct{})
+	finished, done := make(chan error, 1), make(chan struct{})
+	var releaseOnce sync.Once
+	releaseWriter := func() { releaseOnce.Do(func() { close(release) }) }
+	defer func() {
+		releaseWriter()
+		<-done
+	}()
 	rollback := errors.New("rollback")
 	go func() {
-		finished <- db.Update(t.Context(), func(session *Session) error {
-			if err := deleteRepository(t.Context(), session, 101); err != nil {
+		defer close(done)
+		finished <- db.Update(ctx, func(session *Session) error {
+			if err := deleteRepository(ctx, session, 101); err != nil {
 				return err
 			}
 			manifest := manifestB()
-			if err := executeStore(t.Context(), session, `CREATE (:Repository {id: $id, name: $name, commit: $commit, upload_id: $upload_id, schema_version: $schema_version, source: $source, content_hash: BLOB($content_hash)})`, map[string]any{
+			if err := executeStore(ctx, session, `CREATE (:Repository {id: $id, name: $name, commit: $commit, upload_id: $upload_id, schema_version: $schema_version, source: $source, content_hash: BLOB($content_hash)})`, map[string]any{
 				"id": manifest.RepositoryID, "name": "acme/repo", "commit": manifest.Commit, "upload_id": manifest.UploadID,
 				"schema_version": int32(manifest.SchemaVersion), "source": manifest.Source, "content_hash": blobLiteral(manifest.ContentHash),
 			}); err != nil {
@@ -167,13 +181,35 @@ func TestManifestIsInvisibleUntilCommitAndRollbackRestoresOld(t *testing.T) {
 			return rollback
 		})
 	}()
-	<-written
+	if err := waitForTransactionWrite(ctx, written, finished); err != nil {
+		t.Fatal(err)
+	}
 	assertManifestA(t, db)
-	close(release)
+	releaseWriter()
 	if err := <-finished; !errors.Is(err, rollback) {
 		t.Fatalf("Update() error = %v, want rollback", err)
 	}
 	assertManifestA(t, db)
+}
+
+func TestWaitForTransactionWriteReturnsEarlyFailure(t *testing.T) {
+	want := errors.New("write failed")
+	finished := make(chan error, 1)
+	finished <- want
+	if err := waitForTransactionWrite(t.Context(), make(chan struct{}), finished); !errors.Is(err, want) {
+		t.Fatalf("error = %v, want %v", err, want)
+	}
+}
+
+func waitForTransactionWrite(ctx context.Context, written <-chan struct{}, finished <-chan error) error {
+	select {
+	case <-written:
+		return nil
+	case err := <-finished:
+		return fmt.Errorf("transaction failed before write: %w", err)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func TestReplaceRepositoryIsolatesRepositories(t *testing.T) {
