@@ -31,7 +31,7 @@
 - Built the real E2E indexer/askpass binary with the configured native library
   rpath.
 - Aligned MCP selector XOR and zero-default sentinels with REST/OpenAPI.
-- Applied all valid review minors: static relation allowlist, guide wording,
+- Applied all valid review minors: per-call relation allowlist, guide wording,
   shared Compose rendering, scoped Helm scheduling checks, rejected-source
   closure, and Compose-versus-Helm secret wording.
 
