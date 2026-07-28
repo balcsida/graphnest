@@ -16,7 +16,14 @@ func (s *Service) Trace(ctx context.Context, principal authn.Principal, request 
 	if err != nil {
 		return api.GraphTraceResponse{}, err
 	}
-	response, err := s.Backend.Trace(ctx, graphprotocol.TraceRequest{Scope: scope, SourceUID: request.SourceUID, TargetUID: request.TargetUID, MaxDepth: request.MaxDepth})
+	limits := s.limits()
+	depth := request.MaxDepth
+	if depth <= 0 {
+		depth = limits.DefaultTraceDepth
+	} else if depth > limits.MaxTraceDepth {
+		depth = limits.MaxTraceDepth
+	}
+	response, err := s.Backend.Trace(ctx, graphprotocol.TraceRequest{Scope: scope, SourceUID: request.SourceUID, TargetUID: request.TargetUID, MaxDepth: depth})
 	if err != nil {
 		return api.GraphTraceResponse{}, err
 	}

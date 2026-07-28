@@ -15,3 +15,23 @@ func TestImpactValidatesBeforeBackend(t *testing.T) {
 		t.Fatalf("err=%v calls=%d", err, backend.calls)
 	}
 }
+
+func TestImpactDefaultsCapsAndPreservesFilters(t *testing.T) {
+	backend := &fakeBackend{impact: emptyImpact}
+	service := &Service{Store: &fakeRepositoryStore{repositories: []repository.Repository{readyRepository("a")}}, Backend: backend}
+	_, err := service.Impact(t.Context(), principalFor(101), api.GraphImpactRequest{Repo: api.GraphRepositorySelector{ID: 101}, TargetUID: "x", Direction: "downstream", MinConfidence: .75, IncludeTests: true, MaxDepth: 99, Limit: 999, Offset: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := backend.impactRequest
+	if request.MaxDepth != 32 || request.Limit != 100 || request.Offset != 4 || request.MinConfidence != .75 || !request.IncludeTests {
+		t.Fatalf("request=%#v", request)
+	}
+
+	backend = &fakeBackend{impact: emptyImpact}
+	service.Backend = backend
+	_, err = service.Impact(t.Context(), principalFor(101), api.GraphImpactRequest{Repo: api.GraphRepositorySelector{ID: 101}, TargetUID: "x", Direction: "upstream"})
+	if err != nil || backend.impactRequest.MaxDepth != 3 {
+		t.Fatalf("err=%v request=%#v", err, backend.impactRequest)
+	}
+}
