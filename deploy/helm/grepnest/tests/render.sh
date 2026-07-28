@@ -88,6 +88,15 @@ helm template uid-separate "$chart" -n grepnest -f "$minimal" \
 expect_failure "$tmp/graph-mode.err" helm template bad "$chart" -f "$minimal" \
   --set=graph.mode=invalid
 require "/graph/mode.*embedded.*separate" "$tmp/graph-mode.err"
+helm template scanner-off "$chart" -n grepnest -f "$minimal" \
+  --set=scanner.enabled=false \
+  --set-string=images.scanner.repository= \
+  --set-string=images.scanner.digest= >"$tmp/scanner-off.yaml"
+expect_failure "$tmp/scanner-image.err" helm template bad "$chart" -f "$minimal" \
+  --set=scanner.enabled=true \
+  --set-string=images.scanner.repository= \
+  --set-string=images.scanner.digest=
+require "/images/scanner/(repository|digest)" "$tmp/scanner-image.err"
 long_release=abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzx
 helm template "$long_release" "$chart" -n grepnest -f "$minimal" >"$tmp/long-release.yaml"
 
@@ -267,7 +276,7 @@ require '^kind: Ingress$' "$tmp/optional-ingress.yaml"
 reject 'pilot-grepnest-zoekt|name: .*zoekt|backend:.*zoekt' "$tmp/optional-ingress.yaml"
 reject 'host: "?\*|path: /\*|host: "?default([.]|"|$)' "$tmp/optional-ingress.yaml"
 
-policies='deny-ingress allow-server-ingress allow-zoekt-ingress allow-indexer-metrics-ingress deny-egress allow-internal-egress allow-dns-egress allow-postgresql-egress allow-github-egress'
+policies='deny-ingress allow-server-ingress allow-zoekt-ingress allow-indexer-metrics-ingress deny-egress allow-zoekt-egress allow-graph-egress allow-dns-egress allow-postgresql-egress allow-github-egress'
 for policy in $policies; do
   sed -n "/^  name: pilot-grepnest-$policy\$/,/^---\$/p" \
     "$tmp/optional.yaml" >"$tmp/$policy.yaml"
@@ -302,12 +311,16 @@ require 'protocol: TCP, port: 9090' "$tmp/allow-indexer-metrics-ingress-spec.yam
 
 require 'policyTypes: \[Egress\]' "$tmp/deny-egress-spec.yaml"
 require 'egress: \[\]' "$tmp/deny-egress-spec.yaml"
-require 'values: \[server, node\]' "$tmp/allow-internal-egress-spec.yaml"
-require 'policyTypes: \[Egress\]' "$tmp/allow-internal-egress-spec.yaml"
-require '^        - namespaceSelector:$' "$tmp/allow-internal-egress-spec.yaml"
-require '^          podSelector:$' "$tmp/allow-internal-egress-spec.yaml"
-require 'app.kubernetes.io/component: node' "$tmp/allow-internal-egress-spec.yaml"
-require 'protocol: TCP, port: 6070' "$tmp/allow-internal-egress-spec.yaml"
+require 'values: \[server, node\]' "$tmp/allow-zoekt-egress-spec.yaml"
+require 'policyTypes: \[Egress\]' "$tmp/allow-zoekt-egress-spec.yaml"
+require 'app.kubernetes.io/component: node' "$tmp/allow-zoekt-egress-spec.yaml"
+require 'protocol: TCP, port: 6070' "$tmp/allow-zoekt-egress-spec.yaml"
+reject 'port: 8081' "$tmp/allow-zoekt-egress-spec.yaml"
+require 'app.kubernetes.io/component: server' "$tmp/allow-graph-egress-spec.yaml"
+reject 'matchExpressions:|values:' "$tmp/allow-graph-egress-spec.yaml"
+[ "$(grep -E -c -e 'app.kubernetes.io/component: node' "$tmp/allow-graph-egress-spec.yaml")" -eq 1 ] || exit 1
+require 'policyTypes: \[Egress\]' "$tmp/allow-graph-egress-spec.yaml"
+require 'protocol: TCP, port: 8081' "$tmp/allow-graph-egress-spec.yaml"
 
 require 'policyTypes: \[Egress\]' "$tmp/allow-dns-egress-spec.yaml"
 require '^        - namespaceSelector:$' "$tmp/allow-dns-egress-spec.yaml"
