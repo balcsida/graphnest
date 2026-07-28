@@ -13,7 +13,11 @@ import (
 )
 
 func TestNewValidatesConfiguration(t *testing.T) {
-	for _, value := range []string{"", "ftp://example.com", "http://u:p@example.com", "http://example.com?q=1", "http://example.com?", "http://example.com/#x", "http://example.com/#"} {
+	for _, value := range []string{
+		"", "ftp://example.com", "http://u:p@example.com", "http://example.com?q=1",
+		"http://example.com?", "http://example.com/#x", "http://example.com/#",
+		"http://example.com/api", "http://example.com/%2e", "http://example.com/%2F",
+	} {
 		if _, err := New(value, []byte("secret"), nil, 1024); err == nil {
 			t.Fatalf("New(%q) succeeded", value)
 		}

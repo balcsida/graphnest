@@ -37,7 +37,8 @@ func (err *Error) Error() string {
 func New(baseURL string, secret []byte, httpClient *http.Client, maxResponseBytes int64) (*Client, error) {
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme != "http" && parsed.Scheme != "https" || parsed.Host == "" ||
-		parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || strings.Contains(baseURL, "#") {
+		parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || strings.Contains(baseURL, "#") ||
+		parsed.EscapedPath() != "" && parsed.EscapedPath() != "/" {
 		return nil, errors.New("invalid graph URL")
 	}
 	if len(secret) == 0 {
