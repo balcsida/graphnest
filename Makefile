@@ -44,10 +44,10 @@ staticcheck: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
 	GOBIN=$$(pwd)/.cache/bin go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)
 	$(LADYBUG_ENV) .cache/bin/staticcheck $(LADYBUG_TAGS) ./...
 
-govulncheck:
+govulncheck: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
 	mkdir -p .cache/bin
 	GOBIN=$$(pwd)/.cache/bin go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
-	.cache/bin/govulncheck ./...
+	$(LADYBUG_ENV) .cache/bin/govulncheck $(LADYBUG_TAGS) ./...
 
 test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
 	@if test -n "$$($(LADYBUG_GO) list $(LADYBUG_TAGS) ./... 2>/dev/null)"; then $(LADYBUG_GO) test $(LADYBUG_TAGS) ./...; fi
