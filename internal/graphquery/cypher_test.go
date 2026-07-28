@@ -41,6 +41,17 @@ func TestCypherBoundsRowsAndOutput(t *testing.T) {
 	}
 }
 
+func TestCypherUsesConfiguredMaximumRows(t *testing.T) {
+	service := seededQueryService(t, callChain("A"))
+	service.Limits = Limits{MaxRows: 2}
+	got, err := service.Cypher(t.Context(), graphprotocol.CypherRequest{
+		Admin: true, Statement: `UNWIND range(1, 5) AS value RETURN value`, MaxRows: 5,
+	})
+	if err != nil || len(got.Rows) != 2 || !got.Truncated {
+		t.Fatalf("Cypher()=%#v,%v", got, err)
+	}
+}
+
 func TestCypherRejectsNonscalarParametersAndTimesOut(t *testing.T) {
 	service := seededQueryService(t, callChain("A"))
 	if _, err := service.Cypher(t.Context(), graphprotocol.CypherRequest{

@@ -22,6 +22,7 @@ import (
 	"github.com/grepnest/grepnest/internal/graphquery"
 	"github.com/grepnest/grepnest/internal/graphruntime"
 	"github.com/grepnest/grepnest/internal/indexer"
+	"github.com/grepnest/grepnest/internal/ladybug"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/grepnest/grepnest/internal/zoekt"
@@ -40,6 +41,15 @@ const (
 type indexRuntime struct {
 	ping, migrate, upsertNode, reapExpired, pruneHistory, runWorker, runMetrics, runGraph func(context.Context) error
 	close                                                                                 func()
+}
+
+var startGraphRuntime = func(ctx context.Context, settings graphruntime.Config, source ladybug.SnapshotSource, logger *slog.Logger) error {
+	runtime, err := graphruntime.New(ctx, settings, source, logger)
+	if err != nil {
+		return err
+	}
+	defer runtime.Close()
+	return runtime.Run(ctx)
 }
 
 func main() {
@@ -207,33 +217,6 @@ func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime
 	}
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("GET /metrics", metrics.Handler())
-	var runGraph func(context.Context) error
-	if settings.Graph.Mode == "embedded" {
-		runGraph = func(ctx context.Context) error {
-			graph, err := graphruntime.New(ctx, graphruntime.Config{
-				DatabasePath:    filepath.Join(settings.Graph.DataDir, "grepnest.lbug"),
-				ListenAddress:   settings.Graph.ListenAddress,
-				InternalSecret:  settings.Graph.InternalSecret,
-				ReadConnections: settings.Graph.ReadConnections,
-				SyncInterval:    settings.Graph.SyncInterval,
-				QueryTimeout:    settings.Graph.QueryTimeout,
-				InterruptGrace:  settings.Graph.InterruptGrace,
-				QueryLimits: graphquery.Limits{
-					PerCategory:   settings.Graph.QueryLimits.PerCategory,
-					MaxDepth:      settings.Graph.QueryLimits.MaxDepth,
-					MaxTraceDepth: settings.Graph.QueryLimits.MaxTraceDepth,
-					MaxNodes:      settings.Graph.QueryLimits.MaxNodes,
-					MaxEdges:      settings.Graph.QueryLimits.MaxEdges,
-					MaxFanout:     settings.Graph.QueryLimits.MaxFanout,
-				},
-			}, store, slog.Default())
-			if err != nil {
-				return err
-			}
-			defer graph.Close()
-			return graph.Run(ctx)
-		}
-	}
 	return indexRuntime{
 		ping:         pool.Ping,
 		migrate:      func(ctx context.Context) error { return postgres.Migrate(ctx, pool) },
@@ -242,9 +225,34 @@ func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime
 		pruneHistory: func(ctx context.Context) error { _, _, err := store.Prune(ctx); return err },
 		runWorker:    worker.Run,
 		runMetrics:   func(ctx context.Context) error { return serveMetrics(ctx, listener, metricsMux) },
-		runGraph:     runGraph,
+		runGraph:     graphService(settings.Graph, store, slog.Default()),
 		close:        func() { _ = listener.Close(); pool.Close() },
 	}, nil
+}
+
+func graphService(settings config.Graph, source ladybug.SnapshotSource, logger *slog.Logger) func(context.Context) error {
+	if settings.Mode != "embedded" {
+		return nil
+	}
+	runtimeConfig := graphruntime.Config{
+		DatabasePath:  filepath.Join(settings.DataDir, "grepnest.lbug"),
+		ListenAddress: settings.ListenAddress, InternalSecret: settings.InternalSecret,
+		ReadConnections: settings.ReadConnections, SyncInterval: settings.SyncInterval,
+		QueryTimeout: settings.QueryTimeout, InterruptGrace: settings.InterruptGrace,
+		QueryLimits: graphquery.Limits{
+			PerCategory:        settings.QueryLimits.PerCategory,
+			DefaultImpactDepth: settings.QueryLimits.DefaultImpactDepth,
+			MaxDepth:           settings.QueryLimits.MaxDepth,
+			DefaultTraceDepth:  settings.QueryLimits.DefaultTraceDepth,
+			MaxTraceDepth:      settings.QueryLimits.MaxTraceDepth,
+			MaxRows:            settings.QueryLimits.MaxRows,
+			MaxNodes:           settings.QueryLimits.MaxNodes, MaxEdges: settings.QueryLimits.MaxEdges,
+			MaxFanout: settings.QueryLimits.MaxFanout,
+		},
+	}
+	return func(ctx context.Context) error {
+		return startGraphRuntime(ctx, runtimeConfig, source, logger)
+	}
 }
 
 func serveMetrics(ctx context.Context, listener net.Listener, handler http.Handler) error {

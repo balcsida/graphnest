@@ -47,9 +47,11 @@ func NewHandler(secret []byte, engine graphprotocol.QueryEngine, limits Limits) 
 	limits = normalizedLimits(limits)
 	return &handler{
 		engine: engine, secretHash: sha256.Sum256(secret),
-		configured: bearerTokenPattern.Match(secret) && engine != nil, limits: limits,
+		configured: ValidBearerToken(secret) && engine != nil, limits: limits,
 	}
 }
+
+func ValidBearerToken(token []byte) bool { return bearerTokenPattern.Match(token) }
 
 func normalizedLimits(limits Limits) Limits {
 	if limits.MaxRequestBytes <= 0 {
@@ -107,7 +109,7 @@ func (handler *handler) authorized(values []string) bool {
 			strings.EqualFold(header[:len("Bearer")], "Bearer")
 		if valid {
 			candidate = header[len("Bearer "):]
-			valid = bearerTokenPattern.MatchString(candidate)
+			valid = ValidBearerToken([]byte(candidate))
 		}
 	}
 	candidateHash := sha256.Sum256([]byte(candidate))

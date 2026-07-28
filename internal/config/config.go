@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/grepnest/grepnest/internal/graphtransport"
 )
 
 var ErrInvalid = errors.New("invalid configuration")
@@ -48,7 +51,9 @@ type Graph struct {
 }
 
 type GraphQueryLimits struct {
-	PerCategory, MaxDepth, MaxTraceDepth, MaxNodes, MaxEdges, MaxFanout int
+	PerCategory, DefaultImpactDepth, MaxDepth int
+	DefaultTraceDepth, MaxTraceDepth, MaxRows int
+	MaxNodes, MaxEdges, MaxFanout             int
 }
 
 type GraphScanLimits struct {
@@ -225,7 +230,8 @@ func loadGraph(force bool) (Graph, error) {
 		DefaultTraceDepth: 10, MaxTraceDepth: 30,
 		MaxRows: 1_000, MaxNodes: 1_000, MaxEdges: 5_000,
 		QueryLimits: GraphQueryLimits{
-			PerCategory: 100, MaxDepth: 32, MaxTraceDepth: 30,
+			PerCategory: 100, DefaultImpactDepth: 3, MaxDepth: 32,
+			DefaultTraceDepth: 10, MaxTraceDepth: 30, MaxRows: 1_000,
 			MaxNodes: 1_000, MaxEdges: 5_000, MaxFanout: 100,
 		},
 	}
@@ -272,7 +278,10 @@ func loadGraph(force bool) (Graph, error) {
 		return Graph{}, invalid("graph query limits exceed safety caps")
 	}
 	graph.QueryLimits.MaxDepth = graph.MaxImpactDepth
+	graph.QueryLimits.DefaultImpactDepth = graph.DefaultImpactDepth
+	graph.QueryLimits.DefaultTraceDepth = graph.DefaultTraceDepth
 	graph.QueryLimits.MaxTraceDepth = graph.MaxTraceDepth
+	graph.QueryLimits.MaxRows = graph.MaxRows
 	graph.QueryLimits.MaxNodes = graph.MaxNodes
 	graph.QueryLimits.MaxEdges = graph.MaxEdges
 	if force || graph.Mode == "embedded" {
@@ -306,6 +315,14 @@ func readSecretFile(path string, maxBytes int64) ([]byte, error) {
 	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
 	if err != nil || len(data) == 0 || int64(len(data)) > maxBytes {
 		return nil, invalid("GREPNEST_GRAPH_SECRET_FILE size is invalid")
+	}
+	if bytes.HasSuffix(data, []byte("\r\n")) {
+		data = data[:len(data)-2]
+	} else if bytes.HasSuffix(data, []byte("\n")) {
+		data = data[:len(data)-1]
+	}
+	if !graphtransport.ValidBearerToken(data) {
+		return nil, invalid("GREPNEST_GRAPH_SECRET_FILE must contain an RFC 6750 bearer token")
 	}
 	return data, nil
 }

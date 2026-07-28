@@ -31,7 +31,7 @@ func (service *Service) Impact(ctx context.Context, request graphprotocol.Impact
 	limits := service.limits()
 	depth := request.MaxDepth
 	if depth <= 0 {
-		depth = defaultImpactDepth
+		depth = limits.DefaultImpactDepth
 	}
 	if depth > limits.MaxDepth {
 		depth = limits.MaxDepth

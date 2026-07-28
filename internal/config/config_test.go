@@ -33,6 +33,67 @@ func TestLoadGraphDefaultsAndClamps(t *testing.T) {
 	}
 }
 
+func TestLoadGraphNormalizesAndValidatesBearerSecret(t *testing.T) {
+	for _, test := range []struct {
+		name, secret, want string
+		valid              bool
+	}{
+		{"raw", "abc._~+/-=", "abc._~+/-=", true},
+		{"LF", "secret\n", "secret", true},
+		{"CRLF", "secret\r\n", "secret", true},
+		{"empty", "", "", false},
+		{"only LF", "\n", "", false},
+		{"space", "secret value", "", false},
+		{"control", "secret\x00", "", false},
+		{"two LF", "secret\n\n", "", false},
+		{"embedded LF", "sec\nret", "", false},
+		{"bare CR", "secret\r", "", false},
+		{"bad padding", "secret=a", "", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "secret")
+			if err := os.WriteFile(path, []byte(test.secret), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("GREPNEST_GRAPH_SECRET_FILE", path)
+			t.Setenv("GREPNEST_DATABASE_URL", "postgres://grepnest:secret@db/grepnest")
+			got, err := LoadGraph()
+			if !test.valid {
+				if !errors.Is(err, ErrInvalid) {
+					t.Fatalf("LoadGraph() error = %v", err)
+				}
+				return
+			}
+			if err != nil || string(got.InternalSecret) != test.want {
+				t.Fatalf("secret=%q error=%v", got.InternalSecret, err)
+			}
+		})
+	}
+}
+
+func TestLoadGraphPropagatesQueryOverrides(t *testing.T) {
+	t.Setenv("GREPNEST_GRAPH_SECRET_FILE", writeGraphSecret(t, 0o600))
+	t.Setenv("GREPNEST_DATABASE_URL", "postgres://grepnest:secret@db/grepnest")
+	for name, value := range map[string]string{
+		"GREPNEST_GRAPH_DEFAULT_IMPACT_DEPTH": "2",
+		"GREPNEST_GRAPH_MAX_IMPACT_DEPTH":     "7",
+		"GREPNEST_GRAPH_DEFAULT_TRACE_DEPTH":  "4",
+		"GREPNEST_GRAPH_MAX_TRACE_DEPTH":      "9",
+		"GREPNEST_GRAPH_MAX_ROWS":             "321",
+	} {
+		t.Setenv(name, value)
+	}
+	got, err := LoadGraph()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.QueryLimits.DefaultImpactDepth != 2 || got.QueryLimits.MaxDepth != 7 ||
+		got.QueryLimits.DefaultTraceDepth != 4 || got.QueryLimits.MaxTraceDepth != 9 ||
+		got.QueryLimits.MaxRows != 321 {
+		t.Fatalf("query limits = %#v", got.QueryLimits)
+	}
+}
+
 func TestLoadGraphRejectsUnsafeConfiguration(t *testing.T) {
 	secret := writeGraphSecret(t, 0o600)
 	for _, test := range []struct{ name, env, value string }{
