@@ -54,6 +54,23 @@ func TestContextDoesNotResolveSelectedUIDFromAnotherRepository(t *testing.T) {
 	}
 }
 
+func TestContextAnchorsSelectedNameToRepository(t *testing.T) {
+	service := seededQueryServiceWithArtifacts(t, callChain("A"), repositoryCallChain(202, "A"))
+	got, err := service.Context(t.Context(), graphprotocol.ContextRequest{
+		Scope: graphprotocol.Scope{
+			SelectedRepositoryID: 101,
+			Repositories: []graphprotocol.RepositorySnapshot{
+				{ID: 101, Name: "acme/one", Commit: testCommit},
+				{ID: 202, Name: "acme/two", Commit: testCommit},
+			},
+		},
+		Name: "A",
+	})
+	if err != nil || got.Status != graphprotocol.StatusFound || got.Symbol.RepositoryID != 101 {
+		t.Fatalf("Context()=%#v,%v", got, err)
+	}
+}
+
 func TestContextReportsAmbiguityAndCategories(t *testing.T) {
 	artifact := callChain("A", "B")
 	artifact.Nodes = append(artifact.Nodes,

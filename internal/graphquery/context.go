@@ -39,7 +39,7 @@ func (service *Service) Context(ctx context.Context, request graphprotocol.Conte
 	var candidates []graphprotocol.Symbol
 	err = service.Database.View(ctx, func(session *ladybug.Session) error {
 		result, executeErr := session.Execute(ctx, selectSymbols, map[string]any{
-			"scope": ready.parameters, "use_uid": request.UID != "", "uids": selectorUIDs(ready.selectorSnapshots(), request.UID),
+			"scope": snapshotParameters(ready.selectorSnapshots()), "use_uid": request.UID != "", "uids": selectorUIDs(ready.selectorSnapshots(), request.UID),
 			"name": request.Name, "path": request.FilePath, "kind": request.Kind, "limit": int64(101),
 		}, ladybug.QueryLimits{MaxRows: 101})
 		if executeErr != nil {
