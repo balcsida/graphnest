@@ -23,6 +23,56 @@ func TestImpactAnchorsDuplicateTargetUIDToSelectedRepository(t *testing.T) {
 	}
 }
 
+func TestImpactTraversesOnlyAuthorizedRepositoriesAfterAnchoring(t *testing.T) {
+	service := seededQueryServiceWithArtifacts(t,
+		repositorySymbols(101, "A", "Z"),
+		repositorySymbols(202, "A", "B", "Z"),
+		repositorySymbols(303, "C"),
+	)
+	addCrossRepositoryCall(t, service, 101, "A", 202, "B")
+	addCrossRepositoryCall(t, service, 202, "B", 101, "Z")
+	addCrossRepositoryCall(t, service, 101, "A", 303, "C")
+	addCrossRepositoryCall(t, service, 303, "C", 101, "Z")
+
+	scope := graphprotocol.Scope{SelectedRepositoryID: 101, Repositories: []graphprotocol.RepositorySnapshot{
+		{ID: 101, Name: "acme/one", Commit: testCommit},
+		{ID: 202, Name: "acme/two", Commit: testCommit},
+	}}
+	got, err := service.Impact(t.Context(), graphprotocol.ImpactRequest{
+		Scope:     scope,
+		TargetUID: "A", Direction: "downstream", Relations: []string{"calls"}, MaxDepth: 2,
+	})
+	if err != nil || got.Status != graphprotocol.StatusFound || len(got.Candidates) != 0 ||
+		len(got.ByDepth[1]) != 1 || got.ByDepth[1][0].RepositoryID != 202 || got.ByDepth[1][0].UID != "B" ||
+		len(got.ByDepth[2]) != 1 || got.ByDepth[2][0].RepositoryID != 101 || got.ByDepth[2][0].UID != "Z" {
+		t.Fatalf("Impact(downstream)=%#v,%v", got, err)
+	}
+	for _, symbols := range got.ByDepth {
+		for _, symbol := range symbols {
+			if symbol.RepositoryID == 303 {
+				t.Fatalf("Impact(downstream) leaked unauthorized repository: %#v", got)
+			}
+		}
+	}
+
+	got, err = service.Impact(t.Context(), graphprotocol.ImpactRequest{
+		Scope:     scope,
+		TargetUID: "Z", Direction: "upstream", Relations: []string{"calls"}, MaxDepth: 2,
+	})
+	if err != nil || got.Status != graphprotocol.StatusFound || len(got.Candidates) != 0 ||
+		len(got.ByDepth[1]) != 1 || got.ByDepth[1][0].RepositoryID != 202 || got.ByDepth[1][0].UID != "B" ||
+		len(got.ByDepth[2]) != 1 || got.ByDepth[2][0].RepositoryID != 101 || got.ByDepth[2][0].UID != "A" {
+		t.Fatalf("Impact(upstream)=%#v,%v", got, err)
+	}
+	for _, symbols := range got.ByDepth {
+		for _, symbol := range symbols {
+			if symbol.RepositoryID == 303 {
+				t.Fatalf("Impact(upstream) leaked unauthorized repository: %#v", got)
+			}
+		}
+	}
+}
+
 func TestImpactGroupsByDepth(t *testing.T) {
 	service := seededQueryService(t, callChain("A", "B", "C"))
 	got, err := service.Impact(t.Context(), graphprotocol.ImpactRequest{
