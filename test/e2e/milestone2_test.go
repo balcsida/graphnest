@@ -164,7 +164,15 @@ func TestMilestone2Vertical(t *testing.T) {
 	primaryRepository := authorizedRepository(t, database.store, milestoneRepositoryID)
 
 	indexerExecutable := filepath.Join(root, "grepnest-indexer")
-	run(t, ctx, "go", "build", "-o", indexerExecutable, "../../cmd/grepnest-indexer")
+	libraryPath := os.Getenv("DYLD_LIBRARY_PATH")
+	if libraryPath == "" {
+		libraryPath = os.Getenv("LD_LIBRARY_PATH")
+	}
+	buildIndexer := exec.CommandContext(ctx, "go", "build", "-o", indexerExecutable, "../../cmd/grepnest-indexer")
+	buildIndexer.Env = append(os.Environ(), "CGO_LDFLAGS="+os.Getenv("CGO_LDFLAGS")+" -Wl,-rpath,"+libraryPath)
+	if output, err := buildIndexer.CombinedOutput(); err != nil {
+		t.Fatalf("build indexer askpass: %v\n%s", err, output)
+	}
 	queue := &publicationBarrier{Store: database.store, reached: make(chan struct{}), release: make(chan struct{}), block: true}
 	worker := &indexer.Worker{
 		ID: "e2e-worker", Queue: queue, Store: database.store, Tokens: githubClient,
