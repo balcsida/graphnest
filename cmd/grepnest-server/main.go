@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/admin"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/authz"
 	"github.com/grepnest/grepnest/internal/config"
@@ -125,7 +126,7 @@ func newHandler(settings config.Config) (http.Handler, error) {
 		DefaultTimeout: settings.Limits.DefaultTimeout, MaxTimeout: settings.Limits.MaxTimeout,
 		MaxResponseBytes: settings.Limits.MaxResponseBytes,
 	})
-	return newAPIHandler(settings, metrics, authenticator, service, nil, nil, nil, nil, backend), nil
+	return newAPIHandler(settings, metrics, authenticator, service, nil, nil, nil, nil, nil, backend), nil
 }
 
 func newRuntime(ctx context.Context, settings config.Config, logger *slog.Logger) (http.Handler, func(), error) {
@@ -209,7 +210,16 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	repositoryService := &repository.Service{Store: store, GitHub: githubClient}
 	scipService := &scipgraph.Service{Store: store, GitHub: githubClient, MaxResults: settings.Limits.MaxResults}
 	processor := webhook.NewGitHubProcessor(store, reconcileRequests, metrics)
-	handler := newAPIHandler(settings, metrics, authenticator, searchService, repositoryService, scipService, webhookSecret, processor, durableReadiness{pool: pool, zoekt: backend})
+	adminService := &admin.Service{
+		Store: store, GitHub: githubClient,
+		Config: admin.GitHubConfig{
+			AppID: settings.GitHub.AppID, WebURL: settings.GitHub.WebURL, APIURL: settings.GitHub.APIURL,
+			UploadURL: settings.GitHub.UploadURL, GitURL: settings.GitHub.GitURL, APIVersion: settings.GitHub.APIVersion,
+			PrivateKeyConfigured: settings.GitHub.PrivateKeyFile != "", WebhookSecretConfigured: settings.GitHub.WebhookSecretFile != "",
+			CAConfigured: settings.GitHub.CAFile != "",
+		},
+	}
+	handler := newAPIHandler(settings, metrics, authenticator, searchService, repositoryService, scipService, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend})
 	return handler, func() {
 		cancel()
 		<-done
@@ -218,7 +228,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	}, nil
 }
 
-func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.Authenticator, service *search.Service, repositories *repository.Service, scip *scipgraph.Service, webhookSecret []byte, processor webhook.Processor, checker httpapi.ReadyChecker) http.Handler {
+func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.Authenticator, service *search.Service, repositories *repository.Service, scip *scipgraph.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker) http.Handler {
 	mux := http.NewServeMux()
 	webui.Register(mux)
 	httpapi.RegisterSystem(mux, checker, metrics.Handler())
@@ -228,6 +238,9 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 	}
 	if scip != nil {
 		httpapi.RegisterSCIP(mux, authenticator, scip, settings.Limits.MaxRequestBytes, settings.Limits.SCIPMaxUploadBytes, settings.Limits.MaxResponseBytes)
+	}
+	if adminService != nil {
+		httpapi.RegisterAdmin(mux, authenticator, adminService, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
 	}
 	if processor != nil {
 		httpapi.RegisterGitHubWebhook(mux, webhookSecret, 1<<20, processor)

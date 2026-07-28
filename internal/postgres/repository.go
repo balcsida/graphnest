@@ -4,9 +4,152 @@ import (
 	"context"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/admin"
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/jackc/pgx/v5"
 )
+
+func (s *Store) AdminOverview(ctx context.Context, installationID int64, repositoryIDs []int64) (admin.Overview, error) {
+	r := admin.Overview{Repositories: map[string]int64{}, Jobs: map[string]int64{}, Deliveries: map[string]int64{}}
+	for query, target := range map[string]map[string]int64{
+		`select repositories.status,count(*) from repositories join installations on installations.id=repositories.installation_id
+			where installations.github_id=$1 and repositories.github_id=any($2) group by repositories.status`: r.Repositories,
+		`select jobs.state,count(*) from index_jobs jobs join repositories on repositories.id=jobs.repository_id
+			join installations on installations.id=repositories.installation_id where installations.github_id=$1
+			and repositories.github_id=any($2) group by jobs.state`: r.Jobs,
+		`select deliveries.state,count(*) from webhook_deliveries deliveries join installations on installations.id=deliveries.installation_id
+			left join repositories on repositories.id=deliveries.repository_id and repositories.installation_id=deliveries.installation_id
+			where installations.github_id=$1 and (deliveries.repository_id is null or repositories.github_id=any($2)) group by deliveries.state`: r.Deliveries,
+	} {
+		rows, err := s.pool.Query(ctx, query, installationID, repositoryIDs)
+		if err != nil {
+			return admin.Overview{}, err
+		}
+		for rows.Next() {
+			var state string
+			var count int64
+			if err := rows.Scan(&state, &count); err != nil {
+				rows.Close()
+				return admin.Overview{}, err
+			}
+			target[state] = count
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return admin.Overview{}, err
+		}
+		rows.Close()
+	}
+	err := s.pool.QueryRow(ctx, `select
+		(select count(*) from scip_uploads uploads join repositories on repositories.id=uploads.repository_id
+		 join installations on installations.id=repositories.installation_id where installations.github_id=$1 and repositories.github_id=any($2)),
+		(select count(*) from repository_packages packages join repositories on repositories.id=packages.repository_id
+		 join installations on installations.id=repositories.installation_id where installations.github_id=$1 and repositories.github_id=any($2)),
+		(select count(*) from installations where github_id=$1)`, installationID, repositoryIDs).
+		Scan(&r.SCIPUploads, &r.Dependencies, &r.Installations)
+	return r, err
+}
+
+func (s *Store) AdminRepositories(ctx context.Context, installationID int64, repositoryIDs []int64, limit int) ([]admin.Repository, bool, error) {
+	rows, err := s.pool.Query(ctx, `select repositories.id,repositories.github_id,installations.github_id,
+		repositories.owner||'/'||repositories.name,repositories.default_branch,coalesce(repositories.desired_sha,''),
+		coalesce(repositories.indexed_sha,''),repositories.status,coalesce(repositories.error_code,''),
+		repositories.web_url,repositories.enabled,repositories.private,repositories.archived,repositories.last_indexed_at
+		from repositories join installations on installations.id=repositories.installation_id
+		where installations.github_id=$1 and repositories.github_id=any($2)
+		order by repositories.owner,repositories.name limit $3`, installationID, repositoryIDs, limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	items := make([]admin.Repository, 0, limit+1)
+	for rows.Next() {
+		var x admin.Repository
+		if err := rows.Scan(&x.ID, &x.GitHubID, &x.InstallationID, &x.Name, &x.DefaultBranch, &x.DesiredSHA,
+			&x.IndexedSHA, &x.Status, &x.ErrorCode, &x.WebURL, &x.Enabled, &x.Private, &x.Archived, &x.LastIndexedAt); err != nil {
+			return nil, false, err
+		}
+		items = append(items, x)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	more := len(items) > limit
+	if more {
+		items = items[:limit]
+	}
+	return items, more, nil
+}
+
+func (s *Store) AdminRepository(ctx context.Context, installationID int64, repositoryIDs []int64, githubID int64) (repository.Repository, error) {
+	return s.AuthorizedRepository(ctx, installationID, repositoryIDs, githubID)
+}
+
+func (s *Store) AdminGitHub(ctx context.Context, installationID int64, _ []int64, c admin.GitHubConfig, limit int) (admin.GitHub, error) {
+	r := admin.GitHub{AppID: c.AppID, WebURL: c.WebURL, APIURL: c.APIURL, UploadURL: c.UploadURL, GitURL: c.GitURL, APIVersion: c.APIVersion,
+		PrivateKeyConfigured: c.PrivateKeyConfigured, WebhookSecretConfigured: c.WebhookSecretConfigured, CAConfigured: c.CAConfigured, Installations: []admin.Installation{}}
+	rows, err := s.pool.Query(ctx, `select github_id,account_login,account_type,status,suspended_at
+		from installations where github_id=$1 order by github_id limit $2`, installationID, limit+1)
+	if err != nil {
+		return admin.GitHub{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var x admin.Installation
+		if err := rows.Scan(&x.GitHubID, &x.AccountLogin, &x.AccountType, &x.Status, &x.SuspendedAt); err != nil {
+			return admin.GitHub{}, err
+		}
+		r.Installations = append(r.Installations, x)
+	}
+	if err := rows.Err(); err != nil {
+		return admin.GitHub{}, err
+	}
+	r.Truncated = len(r.Installations) > limit
+	if r.Truncated {
+		r.Installations = r.Installations[:limit]
+	}
+	return r, nil
+}
+
+func (s *Store) ReconcileAdminRepositories(ctx context.Context, installationID int64, repositoryIDs []int64, upstream []githubapp.Repository) error {
+	allowed := make(map[int64]struct{}, len(repositoryIDs))
+	for _, id := range repositoryIDs {
+		allowed[id] = struct{}{}
+	}
+	found := make([]int64, 0, len(upstream))
+	for _, repo := range upstream {
+		if repo.InstallationID != installationID {
+			return pgx.ErrNoRows
+		}
+		if _, ok := allowed[repo.ID]; !ok {
+			return pgx.ErrNoRows
+		}
+		stored, err := s.UpsertRepository(ctx, RepositoryUpdate{
+			GitHubID: repo.ID, InstallationID: installationID, Owner: repo.Owner, Name: repo.Name,
+			CloneURL: repo.CloneURL, WebURL: repo.HTMLURL, DefaultBranch: repo.DefaultBranch,
+			SizeBytes: repo.SizeBytes, Private: repo.Private, Archived: repo.Archived,
+			Enabled: !repo.Disabled && !repo.Archived,
+		})
+		if err != nil {
+			return err
+		}
+		found = append(found, repo.ID)
+		if !repo.Disabled && !repo.Archived {
+			if err := s.EnqueueIndex(ctx, IndexRequest{
+				RepositoryID: stored.ID, TargetSHA: repo.DefaultSHA,
+				TargetRef: "refs/heads/" + repo.DefaultBranch, Reason: "admin_reconcile",
+			}); err != nil {
+				return err
+			}
+		}
+	}
+	_, err := s.pool.Exec(ctx, `update repositories set enabled=false,status='disabled',
+		error_code='repository_unavailable',updated_at=now() where installation_id=
+		(select id from installations where github_id=$1) and github_id=any($2) and not github_id=any($3)`,
+		installationID, repositoryIDs, found)
+	return err
+}
 
 type InstallationUpdate struct {
 	GitHubID                          int64

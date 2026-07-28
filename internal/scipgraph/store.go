@@ -16,9 +16,13 @@ type StoredOccurrence struct {
 	Local                                            bool
 }
 
+type OccurrencePosition struct {
+	UTF8, UTF16, UTF32 int
+}
+
 type Location struct {
 	RepositoryID                                     int64
-	RepositoryName, Commit, Path, Symbol             string
+	RepositoryName, WebURL, Commit, Path, Symbol     string
 	StartLine, StartCharacter, EndLine, EndCharacter int32
 	PositionEncoding                                 int32
 	Roles                                            int32

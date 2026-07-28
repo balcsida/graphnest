@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/admin"
 	"github.com/grepnest/grepnest/internal/githubapp"
 )
 
@@ -230,3 +231,97 @@ func TestAuthorizedRepositoriesExcludeInactiveStates(t *testing.T) {
 }
 
 func timePtr(value time.Time) *time.Time { return &value }
+
+func TestAdminDataIsBoundedAndSanitized(t *testing.T) {
+	store := migratedStore(t)
+	repositoryID := queueRepository(t, store)
+	if err := store.UpsertInstallation(t.Context(), InstallationUpdate{GitHubID: 20, AccountLogin: "other", AccountType: "Organization", Status: "active"}); err != nil {
+		t.Fatal(err)
+	}
+	other, err := store.UpsertRepository(t.Context(), RepositoryUpdate{GitHubID: 202, InstallationID: 20, Owner: "other", Name: "two", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.EnqueueIndex(t.Context(), IndexRequest{RepositoryID: repositoryID, TargetSHA: shaA}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.EnqueueIndex(t.Context(), IndexRequest{RepositoryID: other.ID, TargetSHA: shaB}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertRepository(t.Context(), RepositoryUpdate{GitHubID: 102, InstallationID: 10, Owner: "acme", Name: "unscoped", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into scip_uploads(repository_id, commit, project_root, indexer_name, indexer_version)
+		values($1,$2,'','scip-go','1')`, repositoryID, shaA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into repository_packages(repository_id,source,relation,purl,manager,name,version)
+		values($1,'manual','depends_on','pkg:golang/example.com/dep@v1','golang','example.com/dep','v1')`, repositoryID); err != nil {
+		t.Fatal(err)
+	}
+	repositories, truncated, err := store.AdminRepositories(t.Context(), 10, []int64{101}, 10)
+	if err != nil || len(repositories) != 1 || truncated {
+		t.Fatalf("repositories=%#v truncated=%v err=%v", repositories, truncated, err)
+	}
+	jobs, _, err := store.AdminJobs(t.Context(), 10, []int64{101}, 10)
+	if err != nil || len(jobs) != 1 || jobs[0].RepositoryID != 101 {
+		t.Fatalf("jobs=%#v err=%v", jobs, err)
+	}
+	uploads, _, err := store.AdminSCIPUploads(t.Context(), 10, []int64{101}, 10)
+	if err != nil || len(uploads) != 1 || uploads[0].RepositoryID != 101 {
+		t.Fatalf("uploads=%#v err=%v", uploads, err)
+	}
+	dependencies, _, err := store.AdminSCIPDependencies(t.Context(), 10, []int64{101}, 10)
+	if err != nil || len(dependencies) != 1 || dependencies[0].PURL != "pkg:golang/example.com/dep@v1" {
+		t.Fatalf("dependencies=%#v err=%v", dependencies, err)
+	}
+	overview, err := store.AdminOverview(t.Context(), 10, []int64{101})
+	if err != nil || overview.Repositories["pending"] != 1 || overview.Jobs["queued"] != 1 ||
+		overview.SCIPUploads != 1 || overview.Dependencies != 1 || overview.Installations != 1 ||
+		len(overview.Deliveries) != 0 {
+		t.Fatalf("overview=%#v err=%v", overview, err)
+	}
+	github, err := store.AdminGitHub(t.Context(), 10, []int64{101}, admin.GitHubConfig{
+		AppID: 7, WebURL: "https://github.example", PrivateKeyConfigured: true, WebhookSecretConfigured: true,
+	}, 1)
+	if err != nil || github.AppID != 7 || len(github.Installations) != 1 ||
+		github.Installations[0].GitHubID != 10 || !github.PrivateKeyConfigured || !github.WebhookSecretConfigured {
+		t.Fatalf("github=%#v err=%v", github, err)
+	}
+	if _, err := store.AdminRepository(t.Context(), 10, []int64{101}, 202); err == nil {
+		t.Fatal("cross-scope repository was accessible")
+	}
+	if _, err := store.AdminRepository(t.Context(), 10, []int64{101}, 102); err == nil {
+		t.Fatal("same-installation unscoped repository was accessible")
+	}
+}
+
+func TestAdminReconcileOnlyChangesScopedRepositories(t *testing.T) {
+	store := migratedStore(t)
+	queueRepository(t, store)
+	if err := store.UpsertInstallation(t.Context(), InstallationUpdate{GitHubID: 20, AccountLogin: "other", AccountType: "Organization", Status: "active"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertRepository(t.Context(), RepositoryUpdate{GitHubID: 202, InstallationID: 20, Owner: "other", Name: "two", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertRepository(t.Context(), RepositoryUpdate{GitHubID: 102, InstallationID: 10, Owner: "acme", Name: "unscoped", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReconcileAdminRepositories(t.Context(), 10, []int64{101}, []githubapp.Repository{{
+		ID: 101, InstallationID: 10, Owner: "renamed", Name: "one", CloneURL: "new-clone",
+		HTMLURL: "new-web", DefaultBranch: "trunk", DefaultSHA: shaA,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	var owner, branch string
+	if err := store.pool.QueryRow(t.Context(), "select owner,default_branch from repositories where github_id=101").Scan(&owner, &branch); err != nil || owner != "renamed" || branch != "trunk" {
+		t.Fatalf("scoped repository owner=%q branch=%q err=%v", owner, branch, err)
+	}
+	if err := store.pool.QueryRow(t.Context(), "select owner,default_branch from repositories where github_id=202").Scan(&owner, &branch); err != nil || owner != "other" || branch != "main" {
+		t.Fatalf("cross-scope repository owner=%q branch=%q err=%v", owner, branch, err)
+	}
+	if err := store.pool.QueryRow(t.Context(), "select owner,default_branch from repositories where github_id=102").Scan(&owner, &branch); err != nil || owner != "acme" || branch != "main" {
+		t.Fatalf("same-installation unscoped repository owner=%q branch=%q err=%v", owner, branch, err)
+	}
+}

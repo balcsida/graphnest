@@ -278,7 +278,7 @@ func (store *mcpSCIPStore) AuthorizedRepository(_ context.Context, _ int64, _ []
 	return store.repository, nil
 }
 func (*mcpSCIPStore) ReplaceSCIP(context.Context, int64, string, scipgraph.Upload) error { return nil }
-func (store *mcpSCIPStore) OccurrenceAt(context.Context, int64, string, string, int, int) (scipgraph.StoredOccurrence, error) {
+func (store *mcpSCIPStore) OccurrenceAt(context.Context, int64, string, string, int, scipgraph.OccurrencePosition) (scipgraph.StoredOccurrence, error) {
 	return scipgraph.StoredOccurrence{}, store.occurrenceErr
 }
 func (store *mcpSCIPStore) Locations(context.Context, authn.Principal, scipgraph.StoredOccurrence, string, int) ([]scipgraph.Location, bool, error) {

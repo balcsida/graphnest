@@ -13,7 +13,10 @@ import (
 	"github.com/scip-code/scip/bindings/go/scip"
 )
 
-const defaultMaxResults = 100
+const (
+	defaultMaxResults = 100
+	maxPostgresInt    = 1<<31 - 1
+)
 
 var (
 	ErrForbidden      = errors.New("forbidden")
@@ -24,7 +27,7 @@ var (
 type ServiceStore interface {
 	AuthorizedRepository(context.Context, int64, []int64, int64) (repository.Repository, error)
 	ReplaceSCIP(context.Context, int64, string, Upload) error
-	OccurrenceAt(context.Context, int64, string, string, int, int) (StoredOccurrence, error)
+	OccurrenceAt(context.Context, int64, string, string, int, OccurrencePosition) (StoredOccurrence, error)
 	Locations(context.Context, authn.Principal, StoredOccurrence, string, int) ([]Location, bool, error)
 	ReplacePackages(context.Context, int64, string, []PackageMapping) error
 }
@@ -137,7 +140,10 @@ func (service *Service) Navigate(ctx context.Context, principal authn.Principal,
 	if repository.IndexedSHA == "" {
 		return api.SCIPNavigationResponse{}, ErrNotIndexed
 	}
-	origin, err := service.Store.OccurrenceAt(ctx, repository.ID, repository.IndexedSHA, request.Path, request.Line-1, request.Character)
+	if request.Commit != "" && request.Commit != repository.IndexedSHA {
+		return api.SCIPNavigationResponse{}, ErrNotIndexed
+	}
+	origin, err := service.Store.OccurrenceAt(ctx, repository.ID, repository.IndexedSHA, request.Path, request.Line-1, navigationPosition(request))
 	if errors.Is(err, ErrOccurrenceNotFound) {
 		return api.SCIPNavigationResponse{}, ErrNotIndexed
 	}
@@ -155,7 +161,7 @@ func (service *Service) Navigate(ctx context.Context, principal authn.Principal,
 			continue
 		}
 		response.Locations = append(response.Locations, api.SCIPLocation{
-			RepositoryID: location.RepositoryID, RepositoryName: location.RepositoryName,
+			RepositoryID: location.RepositoryID, RepositoryName: location.RepositoryName, Branch: target.Branch, WebURL: location.WebURL,
 			Commit: location.Commit, Path: location.Path, Symbol: location.Symbol,
 			StartLine: int(location.StartLine) + 1, StartCharacter: int(location.StartCharacter),
 			EndLine: int(location.EndLine) + 1, EndCharacter: int(location.EndCharacter),
@@ -208,7 +214,9 @@ func (service *Service) maxResults() int {
 }
 
 func validNavigationRequest(request api.SCIPNavigationRequest) bool {
-	if request.RepositoryID <= 0 || request.Line < 1 || request.Character < 0 {
+	if request.RepositoryID <= 0 || request.Line < 1 || request.Line > maxPostgresInt ||
+		request.Character < 0 || request.Character > maxPostgresInt ||
+		request.Commit != "" && !validCommit(request.Commit) || !validNavigationPosition(request) {
 		return false
 	}
 	if request.Operation != "definitions" && request.Operation != "references" && request.Operation != "implementations" {
@@ -217,4 +225,33 @@ func validNavigationRequest(request api.SCIPNavigationRequest) bool {
 	clean := path.Clean(request.Path)
 	return request.Path != "" && clean == request.Path && clean != "." && clean != ".." &&
 		!path.IsAbs(request.Path) && !strings.HasPrefix(clean, "../") && !strings.ContainsAny(request.Path, "\\\x00")
+}
+
+func validNavigationPosition(request api.SCIPNavigationRequest) bool {
+	if request.CharacterUTF8 == nil && request.CharacterUTF16 == nil && request.CharacterUTF32 == nil {
+		return true
+	}
+	return request.CharacterUTF8 != nil && request.CharacterUTF16 != nil && request.CharacterUTF32 != nil &&
+		*request.CharacterUTF8 >= 0 && *request.CharacterUTF8 <= maxPostgresInt &&
+		*request.CharacterUTF16 >= 0 && *request.CharacterUTF16 <= maxPostgresInt &&
+		*request.CharacterUTF32 >= 0 && *request.CharacterUTF32 <= maxPostgresInt
+}
+
+func validCommit(value string) bool {
+	if len(value) != 40 {
+		return false
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' && character < 'a' || character > 'f' {
+			return false
+		}
+	}
+	return true
+}
+
+func navigationPosition(request api.SCIPNavigationRequest) OccurrencePosition {
+	if request.CharacterUTF8 == nil {
+		return OccurrencePosition{UTF8: request.Character, UTF16: request.Character, UTF32: request.Character}
+	}
+	return OccurrencePosition{UTF8: *request.CharacterUTF8, UTF16: *request.CharacterUTF16, UTF32: *request.CharacterUTF32}
 }
