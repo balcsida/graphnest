@@ -8,7 +8,7 @@ import (
 	"github.com/grepnest/grepnest/internal/graphprotocol"
 )
 
-func TestImpactReturnsCandidatesInsteadOfMergingAmbiguousTargets(t *testing.T) {
+func TestImpactAnchorsDuplicateTargetUIDToSelectedRepository(t *testing.T) {
 	service := seededQueryServiceWithArtifacts(t, callChain("A", "B"), repositoryCallChain(202, "A", "C"))
 	got, err := service.Impact(t.Context(), graphprotocol.ImpactRequest{
 		Scope: graphprotocol.Scope{SelectedRepositoryID: 101, Repositories: []graphprotocol.RepositorySnapshot{
@@ -17,7 +17,8 @@ func TestImpactReturnsCandidatesInsteadOfMergingAmbiguousTargets(t *testing.T) {
 		}},
 		TargetUID: "A", Direction: "downstream",
 	})
-	if err != nil || got.Status != graphprotocol.StatusAmbiguous || len(got.Candidates) != 2 || len(got.ByDepth) != 0 {
+	if err != nil || got.Status != graphprotocol.StatusFound || len(got.Candidates) != 0 ||
+		len(got.ByDepth[1]) != 1 || got.ByDepth[1][0].UID != "B" || got.ByDepth[1][0].RepositoryID != 101 {
 		t.Fatalf("Impact()=%#v,%v", got, err)
 	}
 }

@@ -121,18 +121,6 @@ func (ready readyScope) selectorSnapshots() []graphprotocol.RepositorySnapshot {
 	return ready.snapshots
 }
 
-func (ready readyScope) anchorCandidates(candidates []graphprotocol.Symbol) []graphprotocol.Symbol {
-	if ready.selectedID == 0 {
-		return candidates
-	}
-	for _, candidate := range candidates {
-		if candidate.RepositoryID == ready.selectedID {
-			return candidates
-		}
-	}
-	return nil
-}
-
 func (service *Service) limits() Limits {
 	limits := service.Limits
 	if limits.PerCategory <= 0 || limits.PerCategory > defaultCategoryLimit {
@@ -214,6 +202,14 @@ func selectorUIDs(snapshots []graphprotocol.RepositorySnapshot, uid string) []st
 		qualified = append(qualified, fmt.Sprintf("%d:%s", snapshot.ID, uid))
 	}
 	return qualified
+}
+
+func snapshotParameters(snapshots []graphprotocol.RepositorySnapshot) []map[string]any {
+	parameters := make([]map[string]any, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		parameters = append(parameters, map[string]any{"id": snapshot.ID, "commit": snapshot.Commit})
+	}
+	return parameters
 }
 
 func isTestPath(path string) bool {

@@ -68,17 +68,22 @@ func TestTraceDoesNotStitchSameUIDAcrossRepositories(t *testing.T) {
 	}
 }
 
-func TestTraceReturnsCandidatesInsteadOfChoosingAmbiguousSource(t *testing.T) {
+func TestTraceAnchorsDuplicateEndpointsToSelectedRepository(t *testing.T) {
 	service := seededQueryServiceWithArtifacts(t, callChain("A", "B"), repositoryCallChain(202, "A", "B"))
 	got, err := service.Trace(t.Context(), graphprotocol.TraceRequest{
-		Scope: graphprotocol.Scope{Repositories: []graphprotocol.RepositorySnapshot{
+		Scope: graphprotocol.Scope{SelectedRepositoryID: 101, Repositories: []graphprotocol.RepositorySnapshot{
 			{ID: 101, Name: "acme/one", Commit: testCommit},
 			{ID: 202, Name: "acme/two", Commit: testCommit},
 		}},
 		SourceUID: "A", TargetUID: "B",
 	})
-	if err != nil || got.Status != graphprotocol.StatusAmbiguous || len(got.Candidates) != 2 || len(got.Nodes) != 0 {
+	if err != nil || got.Status != graphprotocol.StatusOK || len(got.Candidates) != 0 || len(got.Nodes) != 2 {
 		t.Fatalf("Trace()=%#v,%v", got, err)
+	}
+	for _, node := range got.Nodes {
+		if node.RepositoryID != 101 {
+			t.Fatalf("Trace() selected repository %d: %#v", node.RepositoryID, got)
+		}
 	}
 }
 
