@@ -34,6 +34,9 @@ func (s *Service) Trace(ctx context.Context, principal authn.Principal, request 
 		return api.GraphTraceResponse{}, err
 	}
 	result = api.GraphTraceResponse{Status: response.Status, Boundaries: boundaries(response.Boundaries), Commits: response.Commits}
+	for _, value := range response.Candidates {
+		result.Candidates = append(result.Candidates, candidate(value))
+	}
 	for _, value := range response.Nodes {
 		result.Nodes = append(result.Nodes, symbol(value))
 	}

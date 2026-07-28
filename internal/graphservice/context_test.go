@@ -136,3 +136,22 @@ func TestContextCapsPaginationAndRejectsBackendCommitMismatch(t *testing.T) {
 		t.Fatalf("err=%v request=%#v", err, backend.contextRequest)
 	}
 }
+
+func TestContextAnchorsLookupToSelectedRepository(t *testing.T) {
+	first := readyRepository("a")
+	second := readyRepository("b")
+	second.ID, second.GitHubID = 2, 202
+	backend := &fakeBackend{context: emptyContext}
+	service := &Service{Store: &fakeRepositoryStore{repositories: []repository.Repository{first, second}}, Backend: backend}
+	principal := principalFor(101)
+	principal.RepositoryIDs = append(principal.RepositoryIDs, 202)
+
+	if _, err := service.Context(t.Context(), principal, api.GraphContextRequest{
+		Repo: api.GraphRepositorySelector{ID: 101}, GraphSymbolSelector: api.GraphSymbolSelector{UID: "same"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if backend.contextRequest.Scope.SelectedRepositoryID != first.ID || len(backend.contextRequest.Scope.Repositories) != 2 {
+		t.Fatalf("scope=%#v", backend.contextRequest.Scope)
+	}
+}

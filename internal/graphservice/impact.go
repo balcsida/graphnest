@@ -38,6 +38,9 @@ func (s *Service) Impact(ctx context.Context, principal authn.Principal, request
 		return api.GraphImpactResponse{}, err
 	}
 	result = api.GraphImpactResponse{Status: response.Status, ByDepth: map[int][]api.GraphSymbol{}, Boundaries: boundaries(response.Boundaries), Commits: response.Commits, Partial: response.Partial}
+	for _, value := range response.Candidates {
+		result.Candidates = append(result.Candidates, candidate(value))
+	}
 	for depth, values := range response.ByDepth {
 		for _, value := range values {
 			result.ByDepth[depth] = append(result.ByDepth[depth], symbol(value))

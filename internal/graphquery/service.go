@@ -13,8 +13,9 @@ import (
 )
 
 var (
-	ErrInvalidRequest = errors.New("invalid graph query")
-	ErrAdminRequired  = errors.New("administrator required")
+	ErrInvalidRequest    = errors.New("invalid graph query")
+	ErrAdminRequired     = errors.New("administrator required")
+	ErrUnauthorizedScope = errors.New("unauthorized graph scope")
 )
 
 const (
@@ -51,6 +52,8 @@ type readyScope struct {
 	parameters []map[string]any
 	boundaries []graphprotocol.Boundary
 	commits    map[string]string
+	selected   []graphprotocol.RepositorySnapshot
+	selectedID int64
 }
 
 type nodeKey struct {
@@ -68,6 +71,7 @@ func (service *Service) ready(ctx context.Context, scope graphprotocol.Scope) (r
 	}
 	ready := readyScope{commits: map[string]string{}}
 	seen := map[int64]struct{}{}
+	selectedExists := scope.SelectedRepositoryID == 0
 	for _, snapshot := range scope.Repositories {
 		if snapshot.ID <= 0 || snapshot.Commit == "" {
 			return readyScope{}, ErrInvalidRequest
@@ -76,6 +80,10 @@ func (service *Service) ready(ctx context.Context, scope graphprotocol.Scope) (r
 			return readyScope{}, ErrInvalidRequest
 		}
 		seen[snapshot.ID] = struct{}{}
+		if scope.SelectedRepositoryID == snapshot.ID {
+			selectedExists = true
+			ready.selectedID = snapshot.ID
+		}
 		manifest, ok := manifests[snapshot.ID]
 		if !ok || manifest.Commit != snapshot.Commit {
 			reason := "graph_not_ready"
@@ -90,6 +98,12 @@ func (service *Service) ready(ctx context.Context, scope graphprotocol.Scope) (r
 		ready.snapshots = append(ready.snapshots, snapshot)
 		ready.parameters = append(ready.parameters, map[string]any{"id": snapshot.ID, "commit": snapshot.Commit})
 		ready.commits[snapshot.Name] = snapshot.Commit
+		if scope.SelectedRepositoryID == snapshot.ID {
+			ready.selected = append(ready.selected, snapshot)
+		}
+	}
+	if !selectedExists {
+		return readyScope{}, ErrInvalidRequest
 	}
 	sort.Slice(ready.snapshots, func(left, right int) bool {
 		return ready.snapshots[left].ID < ready.snapshots[right].ID
@@ -98,6 +112,13 @@ func (service *Service) ready(ctx context.Context, scope graphprotocol.Scope) (r
 		return ready.parameters[left]["id"].(int64) < ready.parameters[right]["id"].(int64)
 	})
 	return ready, nil
+}
+
+func (ready readyScope) selectorSnapshots() []graphprotocol.RepositorySnapshot {
+	if ready.selectedID != 0 {
+		return ready.selected
+	}
+	return ready.snapshots
 }
 
 func (service *Service) limits() Limits {

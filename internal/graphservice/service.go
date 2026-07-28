@@ -71,7 +71,7 @@ func (s *Service) scope(ctx context.Context, principal authn.Principal, selector
 		ordered = append(ordered, snapshot)
 	}
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].ID < ordered[j].ID })
-	scope := graphprotocol.Scope{Repositories: make([]graphprotocol.RepositorySnapshot, 0, len(ordered))}
+	scope := graphprotocol.Scope{SelectedRepositoryID: selected.ID, Repositories: make([]graphprotocol.RepositorySnapshot, 0, len(ordered))}
 	for _, snapshot := range ordered {
 		scope.Repositories = append(scope.Repositories, graphprotocol.RepositorySnapshot{ID: snapshot.ID, GitHubID: snapshot.GitHubID, Name: snapshot.Name, Branch: snapshot.Branch, Commit: snapshot.Commit})
 	}
@@ -96,9 +96,10 @@ func (s *Service) reauthorize(ctx context.Context, principal authn.Principal, se
 }
 
 func validRelations(relations []string) bool {
+	valid := map[string]struct{}{"calls": {}, "references": {}, "extends": {}, "implements": {}}
 	seen := map[string]struct{}{}
 	for _, relation := range relations {
-		if _, ok := map[string]struct{}{"calls": {}, "references": {}, "extends": {}, "implements": {}}[relation]; !ok {
+		if _, ok := valid[relation]; !ok {
 			return false
 		}
 		if _, duplicate := seen[relation]; duplicate {

@@ -68,6 +68,20 @@ func TestTraceDoesNotStitchSameUIDAcrossRepositories(t *testing.T) {
 	}
 }
 
+func TestTraceReturnsCandidatesInsteadOfChoosingAmbiguousSource(t *testing.T) {
+	service := seededQueryServiceWithArtifacts(t, callChain("A", "B"), repositoryCallChain(202, "A", "B"))
+	got, err := service.Trace(t.Context(), graphprotocol.TraceRequest{
+		Scope: graphprotocol.Scope{Repositories: []graphprotocol.RepositorySnapshot{
+			{ID: 101, Name: "acme/one", Commit: testCommit},
+			{ID: 202, Name: "acme/two", Commit: testCommit},
+		}},
+		SourceUID: "A", TargetUID: "B",
+	})
+	if err != nil || got.Status != graphprotocol.StatusAmbiguous || len(got.Candidates) != 2 || len(got.Nodes) != 0 {
+		t.Fatalf("Trace()=%#v,%v", got, err)
+	}
+}
+
 func TestTraceRejectsNegativeDepth(t *testing.T) {
 	service := seededQueryService(t, callChain("A", "B"))
 	if _, err := service.Trace(t.Context(), graphprotocol.TraceRequest{
@@ -78,11 +92,11 @@ func TestTraceRejectsNegativeDepth(t *testing.T) {
 }
 
 func TestTraceChoosesStableLowestRepositoryPath(t *testing.T) {
-	higher := repositoryCallChain(10, "A", "B", "Z")
+	higher := repositoryCallChain(10, "A", "B", "Y")
 	lower := repositoryCallChain(2, "A", "B", "Z")
 	service := seededQueryServiceWithArtifacts(t, higher, lower)
 	request := graphprotocol.TraceRequest{
-		Scope: graphprotocol.Scope{Repositories: []graphprotocol.RepositorySnapshot{
+		Scope: graphprotocol.Scope{SelectedRepositoryID: 2, Repositories: []graphprotocol.RepositorySnapshot{
 			{ID: 10, Name: "acme/ten", Commit: testCommit},
 			{ID: 2, Name: "acme/two", Commit: testCommit},
 		}},

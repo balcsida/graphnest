@@ -51,3 +51,18 @@ func TestImpactDefaultsCapsAndPreservesFilters(t *testing.T) {
 		t.Fatalf("err=%v request=%#v", err, backend.impactRequest)
 	}
 }
+
+func TestImpactMapsAmbiguousCandidates(t *testing.T) {
+	backend := &fakeBackend{impact: func() graphprotocol.ImpactResponse {
+		return graphprotocol.ImpactResponse{
+			Status: graphprotocol.StatusAmbiguous, ByDepth: map[int][]graphprotocol.Symbol{},
+			Candidates: []graphprotocol.Symbol{{UID: "x", Name: "X", RepositoryID: 1}},
+			Commits:    map[string]string{"a": strings.Repeat("a", 40)},
+		}
+	}}
+	got, err := (&Service{Store: &fakeRepositoryStore{repositories: []repository.Repository{readyRepository("a")}}, Backend: backend}).
+		Impact(t.Context(), principalFor(101), api.GraphImpactRequest{Repo: api.GraphRepositorySelector{ID: 101}, TargetUID: "x", Direction: "downstream"})
+	if err != nil || len(got.Candidates) != 1 || got.Candidates[0].UID != "x" {
+		t.Fatalf("Impact()=%#v,%v", got, err)
+	}
+}

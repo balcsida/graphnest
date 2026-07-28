@@ -42,9 +42,13 @@ func (service *Service) Impact(ctx context.Context, request graphprotocol.Impact
 	if pageLimit <= 0 || pageLimit > limits.MaxNodes {
 		pageLimit = limits.MaxNodes
 	}
-	targets, err := service.lookupSymbols(ctx, ready, request.TargetUID)
+	targets, err := service.lookupSymbols(ctx, ready, request.TargetUID, true)
 	if err != nil {
 		return response, err
+	}
+	if len(targets) > 1 {
+		response.Status, response.Candidates = graphprotocol.StatusAmbiguous, targets
+		return response, nil
 	}
 	visited := make(map[nodeKey]struct{}, len(targets))
 	frontier := make([]nodeKey, 0, len(targets))
