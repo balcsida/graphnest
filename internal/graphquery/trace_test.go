@@ -39,3 +39,41 @@ func TestTraceReportsFanoutBoundary(t *testing.T) {
 		t.Fatalf("Trace()=%#v,%v", got, err)
 	}
 }
+
+func TestTraceDoesNotStitchSameUIDAcrossRepositories(t *testing.T) {
+	first := callChain("A", "B")
+	second := repositoryCallChain(202, "B", "C")
+	service := seededQueryServiceWithArtifacts(t, first, second)
+	got, err := service.Trace(t.Context(), graphprotocol.TraceRequest{
+		Scope: graphprotocol.Scope{Repositories: []graphprotocol.RepositorySnapshot{
+			{ID: 101, Name: "acme/one", Commit: testCommit},
+			{ID: 202, Name: "acme/two", Commit: testCommit},
+		}},
+		SourceUID: "A", TargetUID: "C", MaxDepth: 3,
+	})
+	if err != nil || got.Status != graphprotocol.StatusNoPath || len(got.Nodes) != 0 {
+		t.Fatalf("Trace()=%#v,%v", got, err)
+	}
+}
+
+func TestTraceRejectsNegativeDepth(t *testing.T) {
+	service := seededQueryService(t, callChain("A", "B"))
+	if _, err := service.Trace(t.Context(), graphprotocol.TraceRequest{
+		Scope: scope(testCommit), SourceUID: "A", TargetUID: "B", MaxDepth: -1,
+	}); err == nil {
+		t.Fatal("negative depth unexpectedly succeeded")
+	}
+}
+
+func repositoryCallChain(repositoryID int64, names ...string) graphartifact.Artifact {
+	artifact := callChain(names...)
+	artifact.RepositoryID = repositoryID
+	artifact.Nodes[0].UID = "repository:202"
+	artifact.Nodes[0].QualifiedName = "acme/two"
+	for index := range artifact.Edges {
+		if artifact.Edges[index].SourceUID == "repository:101" {
+			artifact.Edges[index].SourceUID = "repository:202"
+		}
+	}
+	return artifact
+}

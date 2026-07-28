@@ -139,6 +139,39 @@ func TestReplaceRepositoryStoresAllLegalRelationshipKinds(t *testing.T) {
 	}
 }
 
+func TestReplaceRepositoryRoundTripsRelationshipMetadata(t *testing.T) {
+	artifact := artifactWithAllEdges()
+	for index := range artifact.Edges {
+		if artifact.Edges[index].Kind == graphartifact.EdgeCalls {
+			artifact.Edges[index].Confidence = 0.625
+			artifact.Edges[index].Path = "call.go"
+			artifact.Edges[index].Range = graphartifact.Range{StartLine: 3, StartCharacter: 4, EndLine: 5, EndCharacter: 6}
+			artifact.Edges[index].ResolutionReason = "receiver-type"
+		}
+	}
+	manifest := manifestA()
+	manifest.ContentHash = bytes.Clone(artifact.ContentHash)
+	db := testDatabase(t, Options{})
+	if err := db.ReplaceRepository(t.Context(), manifest, artifact); err != nil {
+		t.Fatal(err)
+	}
+	err := db.View(t.Context(), func(session *Session) error {
+		result, err := session.Execute(t.Context(), `MATCH ()-[r:CALLS]->() RETURN r.confidence, r.path, r.start_line, r.start_character, r.end_line, r.end_character, r.resolution_reason`, nil, QueryLimits{})
+		if err != nil {
+			return err
+		}
+		row := result.Rows[0]
+		if row[0] != 0.625 || row[1] != "call.go" || row[2] != int32(3) || row[3] != int32(4) ||
+			row[4] != int32(5) || row[5] != int32(6) || row[6] != "receiver-type" {
+			t.Fatalf("relationship metadata = %#v", row)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestManifestsRoundTripsContentHash(t *testing.T) {
 	db := seededDatabase(t, artifactA())
 	got, err := db.Manifests(t.Context())

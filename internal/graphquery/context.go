@@ -13,7 +13,8 @@ func (service *Service) Context(ctx context.Context, request graphprotocol.Conte
 	ready, err := service.ready(ctx, request.Scope)
 	response := graphprotocol.ContextResponse{
 		Status: graphprotocol.StatusNotFound, Incoming: map[string][]graphprotocol.Symbol{},
-		Outgoing: map[string][]graphprotocol.Symbol{}, Boundaries: ready.boundaries, Commits: ready.commits,
+		Outgoing: map[string][]graphprotocol.Symbol{}, IncomingEdges: map[string][]graphprotocol.Relationship{},
+		OutgoingEdges: map[string][]graphprotocol.Relationship{}, Boundaries: ready.boundaries, Commits: ready.commits,
 	}
 	if err != nil {
 		return response, err
@@ -21,7 +22,7 @@ func (service *Service) Context(ctx context.Context, request graphprotocol.Conte
 	if len(ready.snapshots) == 0 {
 		return response, nil
 	}
-	if request.UID == "" && request.Name == "" {
+	if request.UID == "" && request.Name == "" || request.PerCategoryLimit < 0 || request.PerCategoryOffset < 0 {
 		return response, ErrInvalidRequest
 	}
 	relations, err := selectedRelations(request.Relations)
@@ -32,13 +33,10 @@ func (service *Service) Context(ctx context.Context, request graphprotocol.Conte
 	if categoryLimit <= 0 || categoryLimit > service.limits().PerCategory {
 		categoryLimit = service.limits().PerCategory
 	}
-	if request.PerCategoryOffset < 0 {
-		return response, ErrInvalidRequest
-	}
 	var candidates []graphprotocol.Symbol
 	err = service.Database.View(ctx, func(session *ladybug.Session) error {
 		result, executeErr := session.Execute(ctx, selectSymbols, map[string]any{
-			"scope": ready.parameters, "use_uid": request.UID != "", "uids": qualifyUIDs(ready.snapshots, []string{request.UID}),
+			"scope": ready.parameters, "use_uid": request.UID != "", "uids": selectorUIDs(ready.snapshots, request.UID),
 			"name": request.Name, "path": request.FilePath, "kind": request.Kind, "limit": int64(101),
 		}, ladybug.QueryLimits{MaxRows: 101})
 		if executeErr != nil {
@@ -50,7 +48,7 @@ func (service *Service) Context(ctx context.Context, request graphprotocol.Conte
 		if len(candidates) != 1 {
 			return nil
 		}
-		frontier := qualifyUIDs(ready.snapshots, []string{candidates[0].UID})
+		frontier := frontierParameters([]nodeKey{{repositoryID: candidates[0].RepositoryID, uid: candidates[0].UID}})
 		for _, relation := range relations {
 			for _, direction := range []string{"incoming", "outgoing"} {
 				query := relationQueries[relation].outgoing
@@ -68,9 +66,23 @@ func (service *Service) Context(ctx context.Context, request graphprotocol.Conte
 				symbols := make([]graphprotocol.Symbol, 0, len(result.Rows))
 				for _, row := range result.Rows {
 					symbols = append(symbols, symbolFromRow(row))
+					relationship := relationshipFromRow(row, relation, "downstream")
+					if direction == "incoming" {
+						relationship = relationshipFromRow(row, relation, "upstream")
+					}
+					if direction == "incoming" {
+						response.IncomingEdges[relation] = append(response.IncomingEdges[relation], relationship)
+					} else {
+						response.OutgoingEdges[relation] = append(response.OutgoingEdges[relation], relationship)
+					}
 				}
 				if len(symbols) > categoryLimit {
 					symbols = symbols[:categoryLimit]
+					if direction == "incoming" {
+						response.IncomingEdges[relation] = response.IncomingEdges[relation][:categoryLimit]
+					} else {
+						response.OutgoingEdges[relation] = response.OutgoingEdges[relation][:categoryLimit]
+					}
 					response.Boundaries = appendBoundary(response.Boundaries, "category_limit", 0)
 				}
 				if direction == "incoming" {
