@@ -74,9 +74,17 @@ helm template pilot "$chart" -n grepnest -f "$minimal" -f "$optional" \
   --api-versions monitoring.coreos.com/v1/ServiceMonitor >"$tmp/optional.yaml"
 helm template pilot "$chart" -n grepnest -f "$minimal" \
   --set=graph.mode=embedded >"$tmp/graph-embedded.yaml"
+helm template uid-embedded "$chart" -n grepnest -f "$minimal" \
+  --set=graph.mode=embedded \
+  --set=server.podSecurityContext.runAsUser=1001230000 \
+  --set=node.podSecurityContext.runAsUser=1001230001 >"$tmp/uid-embedded.yaml"
 helm template pilot "$chart" -n grepnest -f "$minimal" -f "$optional" \
   --set=graph.mode=separate \
   --api-versions monitoring.coreos.com/v1/ServiceMonitor >"$tmp/graph-separate.yaml"
+helm template uid-separate "$chart" -n grepnest -f "$minimal" \
+  --set=graph.mode=separate \
+  --set=server.podSecurityContext.runAsUser=1001230002 \
+  --set=graph.podSecurityContext.runAsUser=1001230003 >"$tmp/uid-separate.yaml"
 expect_failure "$tmp/graph-mode.err" helm template bad "$chart" -f "$minimal" \
   --set=graph.mode=invalid
 require "/graph/mode.*embedded.*separate" "$tmp/graph-mode.err"
@@ -325,14 +333,25 @@ reject '^ *namespaceSelector: *\{\}$|^ *podSelector: *\{\}$' "$tmp/optional.yaml
 
 for manifest in "$tmp/graph-embedded.yaml" "$tmp/graph-separate.yaml"; do
   require 'GREPNEST_GRAPH_URL: "http://pilot-grepnest-graph:8081"' "$manifest"
-  require 'mountPath: /var/run/secrets/grepnest/graph/secret, subPath: secret, readOnly: true' "$manifest"
-  require 'defaultMode: 0400' "$manifest"
+  [ "$(grep -E -c -e 'name: graph-secret-runtime, mountPath: /var/run/secrets/grepnest/graph, readOnly: true' "$manifest")" -eq 2 ] || exit 1
+  [ "$(grep -E -c -e '^      initContainers:$' "$manifest")" -eq 2 ] || exit 1
+  [ "$(grep -E -c -e 'name: stage-graph-secret' "$manifest")" -eq 2 ] || exit 1
+  [ "$(grep -E -c -e 'umask 077.*cp .*graph-source/secret .*graph/secret.*chmod 600' "$manifest")" -eq 2 ] || exit 1
+  [ "$(grep -E -c -e 'defaultMode: 0440' "$manifest")" -eq 2 ] || exit 1
+  [ "$(grep -E -c -e 'name: graph-secret-runtime, emptyDir: \{\}' "$manifest")" -eq 2 ] || exit 1
   require '^kind: Service$' "$manifest"
   require '^  name: pilot-grepnest-graph$' "$manifest"
   reject 'type: (NodePort|LoadBalancer)' "$manifest"
   [ "$(grep -E -c -e 'GREPNEST_GRAPH_DATA_DIR' "$manifest")" -eq 1 ] || exit 1
   [ "$(grep -E -c -e 'mountPath: \"?/data/graph\"?' "$manifest")" -eq 1 ] || exit 1
 done
+for manifest in "$tmp/uid-embedded.yaml" "$tmp/uid-separate.yaml"; do
+  [ "$(grep -E -c -e 'name: stage-graph-secret' "$manifest")" -eq 2 ] || exit 1
+done
+require 'runAsUser: 1001230000' "$tmp/uid-embedded.yaml"
+require 'runAsUser: 1001230001' "$tmp/uid-embedded.yaml"
+require 'runAsUser: 1001230002' "$tmp/uid-separate.yaml"
+require 'runAsUser: 1001230003' "$tmp/uid-separate.yaml"
 reject 'backend:.*graph|name: pilot-grepnest-graph' "$tmp/optional-ingress.yaml"
 
 require 'GREPNEST_GRAPH_MODE: "embedded"' "$tmp/graph-embedded.yaml"
