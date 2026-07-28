@@ -32,13 +32,13 @@ LADYBUG_TAGS := -tags=system_ladybug
 LADYBUG_RPATH := -ldflags=-extldflags=-Wl,-rpath,$(LADYBUG_LIB_DIR)
 NATIVE_BIN_DIR := $(CURDIR)/.cache/native
 
-.PHONY: fmt lint staticcheck govulncheck test test-race scanner-test abi-test ladybug-test native-link-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test
+.PHONY: fmt lint staticcheck govulncheck test test-race makefile-test scanner-test abi-test ladybug-test native-link-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
 
 lint: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-	@if test -n "$$($(LADYBUG_GO) list $(LADYBUG_TAGS) ./... 2>/dev/null)"; then $(LADYBUG_GO) vet $(LADYBUG_TAGS) ./...; fi
+	$(LADYBUG_GO) vet $(LADYBUG_TAGS) ./...
 
 staticcheck: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
 	mkdir -p .cache/bin
@@ -51,10 +51,17 @@ govulncheck: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
 	$(LADYBUG_ENV) .cache/bin/govulncheck $(LADYBUG_TAGS) ./...
 
 test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-	@if test -n "$$($(LADYBUG_GO) list $(LADYBUG_TAGS) ./... 2>/dev/null)"; then $(LADYBUG_GO) test $(LADYBUG_TAGS) ./...; fi
+	$(LADYBUG_GO) test $(LADYBUG_TAGS) ./...
 
 test-race: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-	@if test -n "$$($(LADYBUG_GO) list $(LADYBUG_TAGS) ./... 2>/dev/null)"; then $(LADYBUG_GO) test -race $(LADYBUG_TAGS) ./...; fi
+	$(LADYBUG_GO) test -race $(LADYBUG_TAGS) ./...
+
+makefile-test:
+	@for target in lint test test-race build; do \
+		if GOFLAGS=-definitely-invalid $(MAKE) --no-print-directory $$target >/dev/null 2>&1; then \
+			echo "$$target ignored a Go command failure" >&2; exit 1; \
+		fi; \
+	done
 
 scanner-test:
 	CGO_ENABLED=1 go test -race ./internal/graphscan/... ./internal/graphscanner ./cmd/grepnest-scanner
@@ -127,7 +134,7 @@ e2e-test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
 	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' GREPNEST_REQUIRE_POSTGRES=1 ZOEKT_GIT_INDEX=$$(pwd)/.cache/bin/zoekt-git-index ZOEKT_WEBSERVER=$$(pwd)/.cache/bin/zoekt-webserver $(LADYBUG_GO) test -v -tags='e2e system_ladybug' ./test/e2e
 
 build: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-	@if test -n "$$($(LADYBUG_GO) list $(LADYBUG_TAGS) ./cmd/... 2>/dev/null)"; then $(LADYBUG_GO) build $(LADYBUG_TAGS) $(LADYBUG_RPATH) ./cmd/...; fi
+	$(LADYBUG_GO) build $(LADYBUG_TAGS) $(LADYBUG_RPATH) ./cmd/...
 
 server: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
 	$(LADYBUG_GO) run $(LADYBUG_TAGS) ./cmd/grepnest-server
