@@ -78,7 +78,7 @@ func graphContextSchema() map[string]any {
 	properties["per_category_limit"] = cappedIntegerSchema("maximum relationships per category; default: 100; values above 100 are capped", 100)
 	properties["per_category_offset"] = map[string]any{"type": "integer", "minimum": 0, "description": "relationships to skip per category"}
 	properties["include_content"] = map[string]any{"type": "boolean", "description": "include source content for the symbol"}
-	return map[string]any{"type": "object", "additionalProperties": false, "properties": properties, "anyOf": []any{map[string]any{"required": []string{"uid"}}, map[string]any{"required": []string{"name"}}}}
+	return map[string]any{"type": "object", "additionalProperties": false, "properties": properties, "oneOf": []any{map[string]any{"required": []string{"uid"}}, map[string]any{"required": []string{"name"}}}}
 }
 
 func graphImpactSchema() map[string]any {
@@ -117,5 +117,5 @@ func relationSchema() map[string]any {
 }
 
 func cappedIntegerSchema(description string, defaultValue int) map[string]any {
-	return map[string]any{"type": "integer", "minimum": 1, "default": defaultValue, "description": description}
+	return map[string]any{"type": "integer", "minimum": 0, "default": defaultValue, "description": description}
 }
