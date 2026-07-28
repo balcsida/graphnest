@@ -90,6 +90,31 @@ func TestGraphMetricsIgnoreInvalidLabels(t *testing.T) {
 	}
 }
 
+func TestGraphRuntimeMetricsUseFixedLabels(t *testing.T) {
+	metrics := New()
+	metrics.ObserveGraphQuery("context", "success", time.Second)
+	metrics.ObserveGraphQuery("repository-42", "deadbeef", time.Second)
+	metrics.ObserveGraphSync("success", time.Second)
+	metrics.SetGraphReady(true)
+
+	body := scrape(t, metrics)
+	for _, want := range []string{
+		`grepnest_graph_query_total{operation="context",result="success"} 1`,
+		`grepnest_graph_query_total{operation="unknown",result="error"} 1`,
+		`grepnest_graph_sync_total{result="success"} 1`,
+		`grepnest_graph_ready 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics missing %q:\n%s", want, body)
+		}
+	}
+	for _, forbidden := range []string{"repository-42", "deadbeef"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("metrics contain unbounded label %q", forbidden)
+		}
+	}
+}
+
 func TestWrapHTTPRecordsRequests(t *testing.T) {
 	metrics := New()
 	mux := http.NewServeMux()

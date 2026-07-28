@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -31,8 +32,23 @@ type GitHub struct {
 type Indexer struct {
 	DatabaseURL, ZoektURL, MetricsListenAddress         string
 	GitHub                                              GitHub
+	Graph                                               Graph
 	DataDir, IndexDir, GitPath, ZoektGitIndex, WorkerID string
 	MinFreeBytes, MaxRepositoryBytes                    int64
+}
+
+type Graph struct {
+	Mode, ListenAddress, DataDir, SecretFile, DatabaseURL string
+	InternalSecret                                        []byte
+	SyncInterval, QueryTimeout, InterruptGrace            time.Duration
+	ReadConnections, DefaultImpactDepth, MaxImpactDepth   int
+	DefaultTraceDepth, MaxTraceDepth, MaxRows             int
+	MaxNodes, MaxEdges                                    int
+	QueryLimits                                           GraphQueryLimits
+}
+
+type GraphQueryLimits struct {
+	PerCategory, MaxDepth, MaxTraceDepth, MaxNodes, MaxEdges, MaxFanout int
 }
 
 type GraphScanLimits struct {
@@ -188,7 +204,110 @@ func LoadIndexer() (Indexer, error) {
 	if err := validListenAddress(indexer.MetricsListenAddress); err != nil {
 		return Indexer{}, err
 	}
+	if indexer.Graph, err = loadGraph(false); err != nil {
+		return Indexer{}, err
+	}
 	return indexer, nil
+}
+
+func LoadGraph() (Graph, error) { return loadGraph(true) }
+
+func loadGraph(force bool) (Graph, error) {
+	graph := Graph{
+		Mode:          valueOr("GREPNEST_GRAPH_MODE", "embedded"),
+		ListenAddress: valueOr("GREPNEST_GRAPH_LISTEN_ADDRESS", "127.0.0.1:8081"),
+		DataDir:       valueOr("GREPNEST_GRAPH_DATA_DIR", "/var/lib/grepnest/graph"),
+		SecretFile:    os.Getenv("GREPNEST_GRAPH_SECRET_FILE"),
+		DatabaseURL:   os.Getenv("GREPNEST_DATABASE_URL"),
+		SyncInterval:  30 * time.Second, QueryTimeout: 5 * time.Second,
+		InterruptGrace: 2 * time.Second, ReadConnections: 8,
+		DefaultImpactDepth: 3, MaxImpactDepth: 32,
+		DefaultTraceDepth: 10, MaxTraceDepth: 30,
+		MaxRows: 1_000, MaxNodes: 1_000, MaxEdges: 5_000,
+		QueryLimits: GraphQueryLimits{
+			PerCategory: 100, MaxDepth: 32, MaxTraceDepth: 30,
+			MaxNodes: 1_000, MaxEdges: 5_000, MaxFanout: 100,
+		},
+	}
+	if graph.Mode != "embedded" && graph.Mode != "separate" {
+		return Graph{}, invalid("GREPNEST_GRAPH_MODE must be embedded or separate")
+	}
+	if err := validListenAddress(graph.ListenAddress); err != nil {
+		return Graph{}, invalid("GREPNEST_GRAPH_LISTEN_ADDRESS must be a host:port address")
+	}
+	for name, target := range map[string]*time.Duration{
+		"GREPNEST_GRAPH_SYNC_INTERVAL":   &graph.SyncInterval,
+		"GREPNEST_GRAPH_QUERY_TIMEOUT":   &graph.QueryTimeout,
+		"GREPNEST_GRAPH_INTERRUPT_GRACE": &graph.InterruptGrace,
+	} {
+		if err := durationValue(name, target); err != nil {
+			return Graph{}, err
+		}
+	}
+	if err := intValue("GREPNEST_GRAPH_READ_CONNECTIONS", &graph.ReadConnections); err != nil {
+		return Graph{}, err
+	}
+	for name, target := range map[string]*int{
+		"GREPNEST_GRAPH_DEFAULT_IMPACT_DEPTH": &graph.DefaultImpactDepth,
+		"GREPNEST_GRAPH_MAX_IMPACT_DEPTH":     &graph.MaxImpactDepth,
+		"GREPNEST_GRAPH_DEFAULT_TRACE_DEPTH":  &graph.DefaultTraceDepth,
+		"GREPNEST_GRAPH_MAX_TRACE_DEPTH":      &graph.MaxTraceDepth,
+		"GREPNEST_GRAPH_MAX_ROWS":             &graph.MaxRows,
+		"GREPNEST_GRAPH_MAX_NODES":            &graph.MaxNodes,
+		"GREPNEST_GRAPH_MAX_EDGES":            &graph.MaxEdges,
+	} {
+		if err := intValue(name, target); err != nil {
+			return Graph{}, err
+		}
+	}
+	if graph.ReadConnections > 32 {
+		graph.ReadConnections = 32
+	}
+	if graph.QueryTimeout > 5*time.Second || graph.InterruptGrace > 2*time.Second {
+		return Graph{}, invalid("graph timeouts exceed safety caps")
+	}
+	if graph.MaxImpactDepth > 32 || graph.MaxTraceDepth > 30 || graph.MaxRows > 1_000 ||
+		graph.MaxNodes > 1_000 || graph.MaxEdges > 5_000 ||
+		graph.DefaultImpactDepth > graph.MaxImpactDepth || graph.DefaultTraceDepth > graph.MaxTraceDepth {
+		return Graph{}, invalid("graph query limits exceed safety caps")
+	}
+	graph.QueryLimits.MaxDepth = graph.MaxImpactDepth
+	graph.QueryLimits.MaxTraceDepth = graph.MaxTraceDepth
+	graph.QueryLimits.MaxNodes = graph.MaxNodes
+	graph.QueryLimits.MaxEdges = graph.MaxEdges
+	if force || graph.Mode == "embedded" {
+		parsed, err := url.Parse(graph.DatabaseURL)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") {
+			return Graph{}, invalid("GREPNEST_DATABASE_URL must be a PostgreSQL URL")
+		}
+		secret, err := readSecretFile(graph.SecretFile, 4<<10)
+		if err != nil {
+			return Graph{}, err
+		}
+		graph.InternalSecret = append([]byte(nil), secret...)
+	}
+	return graph, nil
+}
+
+func readSecretFile(path string, maxBytes int64) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+		return nil, invalid("GREPNEST_GRAPH_SECRET_FILE must be a secure regular file")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, invalid("GREPNEST_GRAPH_SECRET_FILE cannot be read")
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !opened.Mode().IsRegular() || opened.Mode().Perm()&0o077 != 0 || !os.SameFile(info, opened) {
+		return nil, invalid("GREPNEST_GRAPH_SECRET_FILE must be a secure regular file")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
+	if err != nil || len(data) == 0 || int64(len(data)) > maxBytes {
+		return nil, invalid("GREPNEST_GRAPH_SECRET_FILE size is invalid")
+	}
+	return data, nil
 }
 
 func LoadScanner() (Scanner, error) {

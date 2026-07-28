@@ -19,6 +19,8 @@ import (
 
 	"github.com/grepnest/grepnest/internal/config"
 	"github.com/grepnest/grepnest/internal/githubapp"
+	"github.com/grepnest/grepnest/internal/graphquery"
+	"github.com/grepnest/grepnest/internal/graphruntime"
 	"github.com/grepnest/grepnest/internal/indexer"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/postgres"
@@ -36,8 +38,8 @@ const (
 )
 
 type indexRuntime struct {
-	ping, migrate, upsertNode, reapExpired, pruneHistory, runWorker, runMetrics func(context.Context) error
-	close                                                                       func()
+	ping, migrate, upsertNode, reapExpired, pruneHistory, runWorker, runMetrics, runGraph func(context.Context) error
+	close                                                                                 func()
 }
 
 func main() {
@@ -107,25 +109,39 @@ func (runtime indexRuntime) run(ctx context.Context) error {
 			return err
 		}
 	}
-	if runtime.runMetrics == nil {
-		if err := runtime.runWorker(ctx); err != nil && err != ctx.Err() {
-			return err
-		}
-		return nil
-	}
 	runCtx, cancel := context.WithCancel(ctx)
 	type result struct {
 		name string
 		err  error
 	}
-	results := make(chan result, 2)
-	go func() { results <- result{name: "worker", err: runtime.runWorker(runCtx)} }()
-	go func() { results <- result{name: "metrics", err: runtime.runMetrics(runCtx)} }()
+	services := []struct {
+		name string
+		run  func(context.Context) error
+	}{{"worker", runtime.runWorker}}
+	if runtime.runMetrics != nil {
+		services = append(services, struct {
+			name string
+			run  func(context.Context) error
+		}{"metrics", runtime.runMetrics})
+	}
+	if runtime.runGraph != nil {
+		services = append(services, struct {
+			name string
+			run  func(context.Context) error
+		}{"graph", runtime.runGraph})
+	}
+	results := make(chan result, len(services))
+	for _, service := range services {
+		go func() { results <- result{name: service.name, err: service.run(runCtx)} }()
+	}
 	first := <-results
 	cancel()
-	second := <-results
 	var failures []error
-	for _, result := range []result{first, second} {
+	completed := []result{first}
+	for range len(services) - 1 {
+		completed = append(completed, <-results)
+	}
+	for _, result := range completed {
 		if result.err != nil && result.err != context.Canceled && result.err != ctx.Err() {
 			failures = append(failures, fmt.Errorf("%s: %w", result.name, result.err))
 		}
@@ -191,6 +207,33 @@ func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime
 	}
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("GET /metrics", metrics.Handler())
+	var runGraph func(context.Context) error
+	if settings.Graph.Mode == "embedded" {
+		runGraph = func(ctx context.Context) error {
+			graph, err := graphruntime.New(ctx, graphruntime.Config{
+				DatabasePath:    filepath.Join(settings.Graph.DataDir, "grepnest.lbug"),
+				ListenAddress:   settings.Graph.ListenAddress,
+				InternalSecret:  settings.Graph.InternalSecret,
+				ReadConnections: settings.Graph.ReadConnections,
+				SyncInterval:    settings.Graph.SyncInterval,
+				QueryTimeout:    settings.Graph.QueryTimeout,
+				InterruptGrace:  settings.Graph.InterruptGrace,
+				QueryLimits: graphquery.Limits{
+					PerCategory:   settings.Graph.QueryLimits.PerCategory,
+					MaxDepth:      settings.Graph.QueryLimits.MaxDepth,
+					MaxTraceDepth: settings.Graph.QueryLimits.MaxTraceDepth,
+					MaxNodes:      settings.Graph.QueryLimits.MaxNodes,
+					MaxEdges:      settings.Graph.QueryLimits.MaxEdges,
+					MaxFanout:     settings.Graph.QueryLimits.MaxFanout,
+				},
+			}, store, slog.Default())
+			if err != nil {
+				return err
+			}
+			defer graph.Close()
+			return graph.Run(ctx)
+		}
+	}
 	return indexRuntime{
 		ping:         pool.Ping,
 		migrate:      func(ctx context.Context) error { return postgres.Migrate(ctx, pool) },
@@ -199,6 +242,7 @@ func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime
 		pruneHistory: func(ctx context.Context) error { _, _, err := store.Prune(ctx); return err },
 		runWorker:    worker.Run,
 		runMetrics:   func(ctx context.Context) error { return serveMetrics(ctx, listener, metricsMux) },
+		runGraph:     runGraph,
 		close:        func() { _ = listener.Close(); pool.Close() },
 	}, nil
 }

@@ -110,6 +110,12 @@ func (db *Database) Close() error {
 	return nil
 }
 
+func (db *Database) EnsureSchema(ctx context.Context) error {
+	return db.Update(ctx, func(session *Session) error {
+		return EnsureSchema(ctx, session.connection)
+	})
+}
+
 func (db *Database) Health(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err

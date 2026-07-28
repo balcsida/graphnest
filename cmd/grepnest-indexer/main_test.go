@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/indexer"
@@ -76,6 +77,56 @@ func TestRuntimeInitializesBeforeOneWorkerAndClosesLast(t *testing.T) {
 	want := "ping,migrate,upsert primary,reap,prune history,prune worktrees and run worker,close"
 	if got := strings.Join(events, ","); got != want {
 		t.Fatalf("events=%q want=%q", got, want)
+	}
+}
+
+func TestRuntimeStartsEmbeddedGraphAfterHealthyInitialization(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	var mu sync.Mutex
+	var events []string
+	add := func(event string) func(context.Context) error {
+		return func(ctx context.Context) error {
+			mu.Lock()
+			events = append(events, event)
+			mu.Unlock()
+			if event == "worker" || event == "graph" {
+				<-ctx.Done()
+				return ctx.Err()
+			}
+			return nil
+		}
+	}
+	runtime := indexRuntime{
+		ping: add("ping"), migrate: add("migrate"), upsertNode: add("upsert"),
+		reapExpired: add("reap"), pruneHistory: add("prune"),
+		runWorker: add("worker"), runGraph: add("graph"),
+	}
+	done := make(chan error, 1)
+	go func() { done <- runtime.run(ctx) }()
+	deadline := time.After(time.Second)
+	for {
+		mu.Lock()
+		started := len(events) == 7
+		mu.Unlock()
+		if started {
+			break
+		}
+		select {
+		case <-deadline:
+			cancel()
+			<-done
+			t.Fatal("embedded graph did not start")
+		default:
+		}
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if got := strings.Join(events[:5], ","); got != "ping,migrate,upsert,reap,prune" {
+		t.Fatalf("initialization = %q", got)
 	}
 }
 

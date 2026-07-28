@@ -37,6 +37,13 @@ type Service struct {
 	Limits   Limits
 }
 
+func (service *Service) Health(ctx context.Context) error {
+	if service == nil || service.Database == nil {
+		return errors.New("graph database is unavailable")
+	}
+	return service.Database.Health(ctx)
+}
+
 type readyScope struct {
 	snapshots  []graphprotocol.RepositorySnapshot
 	parameters []map[string]any
