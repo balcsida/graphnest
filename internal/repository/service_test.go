@@ -274,6 +274,15 @@ func TestServiceReadFileRangesAndReauthorizes(t *testing.T) {
 	}
 }
 
+func TestServiceReadFileAtRequiresExpectedSHA(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	service := &Service{Store: &serviceStore{repository: Repository{InstallationID: 10, GitHubID: 101, Name: "acme/one", IndexedSHA: sha}}, GitHub: &contentReader{content: githubapp.Content{Type: "file", Encoding: "base64", Content: base64.StdEncoding.EncodeToString([]byte("one")), SHA: "blob", Size: 3}}}
+	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}
+	if _, err := service.ReadFileAt(t.Context(), principal, api.ReadFileRequest{RepositoryID: 101, Path: "file"}, strings.Repeat("b", 40)); !errors.Is(err, ErrNotIndexed) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 type serviceStore struct {
 	repositories       []Repository
 	repository         Repository
