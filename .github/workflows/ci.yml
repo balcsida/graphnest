@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-24.04
@@ -19,6 +23,7 @@ jobs:
         with:
           go-version: "1.26.5"
       - run: make compose-test openapi-check
+      - run: make native-link-test abi-test ladybug-test
       - run: make fmt lint test-race build staticcheck govulncheck
 
   integration:

@@ -30,8 +30,9 @@ LADYBUG_ENV := CGO_ENABLED=1 LBUG_VERSION=$(LADYBUG_VERSION) GOCACHE=$(CURDIR)/.
 LADYBUG_GO := $(LADYBUG_ENV) go
 LADYBUG_TAGS := -tags=system_ladybug
 LADYBUG_RPATH := -ldflags=-extldflags=-Wl,-rpath,$(LADYBUG_LIB_DIR)
+NATIVE_BIN_DIR := $(CURDIR)/.cache/native
 
-.PHONY: fmt lint staticcheck govulncheck test test-race scanner-test ladybug-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test
+.PHONY: fmt lint staticcheck govulncheck test test-race scanner-test abi-test ladybug-test native-link-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
@@ -58,8 +59,22 @@ test-race: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
 scanner-test:
 	CGO_ENABLED=1 go test -race ./internal/graphscan/... ./internal/graphscanner ./cmd/grepnest-scanner
 
+abi-test:
+	CGO_ENABLED=1 go test ./internal/graphscan -run '^TestGrammarMatrix$$' -count=1
+
 ladybug-test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
 	$(LADYBUG_GO) test $(LADYBUG_TAGS) ./internal/ladybug ./internal/graphcommand ./internal/graphquery ./internal/graphruntime
+
+native-link-test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
+	mkdir -p $(NATIVE_BIN_DIR)
+	$(LADYBUG_GO) build $(LADYBUG_TAGS) $(LADYBUG_RPATH) -o $(NATIVE_BIN_DIR)/grepnest-scanner ./cmd/grepnest-scanner
+	$(LADYBUG_GO) build $(LADYBUG_TAGS) $(LADYBUG_RPATH) -o $(NATIVE_BIN_DIR)/grepnest-indexer ./cmd/grepnest-indexer
+	$(LADYBUG_GO) build $(LADYBUG_TAGS) $(LADYBUG_RPATH) -o $(NATIVE_BIN_DIR)/grepnest-graph ./cmd/grepnest-graph
+ifeq ($(LADYBUG_OS),Darwin)
+	@for binary in grepnest-indexer grepnest-graph; do otool -L $(NATIVE_BIN_DIR)/$$binary | rg 'liblbug'; done
+else
+	@for binary in grepnest-indexer grepnest-graph; do ldd $(NATIVE_BIN_DIR)/$$binary | rg 'liblbug.*=>.*$(LADYBUG_LIB_DIR)'; done
+endif
 
 $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY):
 	mkdir -p $(LADYBUG_LIB_DIR)
@@ -108,8 +123,8 @@ e2e: tools
 	esac; \
 	$(MAKE) e2e-test GREPNEST_TEST_POSTGRES_DSN="postgres://grepnest:grepnest@$$address/grepnest?sslmode=disable"
 
-e2e-test:
-	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' GREPNEST_REQUIRE_POSTGRES=1 ZOEKT_GIT_INDEX=$$(pwd)/.cache/bin/zoekt-git-index ZOEKT_WEBSERVER=$$(pwd)/.cache/bin/zoekt-webserver go test -v -tags=e2e ./test/e2e
+e2e-test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
+	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' GREPNEST_REQUIRE_POSTGRES=1 ZOEKT_GIT_INDEX=$$(pwd)/.cache/bin/zoekt-git-index ZOEKT_WEBSERVER=$$(pwd)/.cache/bin/zoekt-webserver $(LADYBUG_GO) test -v -tags='e2e system_ladybug' ./test/e2e
 
 build: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
 	@if test -n "$$($(LADYBUG_GO) list $(LADYBUG_TAGS) ./cmd/... 2>/dev/null)"; then $(LADYBUG_GO) build $(LADYBUG_TAGS) $(LADYBUG_RPATH) ./cmd/...; fi
