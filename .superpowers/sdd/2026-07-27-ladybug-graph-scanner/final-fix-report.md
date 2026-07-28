@@ -84,3 +84,38 @@ to bind loopback ports.
 No known blocker remains in the requested final-fix scope. Import resolution is
 deliberately heuristic where source files do not expose a full build-system
 module graph; ambiguous candidates remain unresolved instead of being guessed.
+
+## Cancellation-only fix
+
+Scoped re-review found that adapter walks checked `BudgetError(ctx)` but that
+helper ignored context cancellation until the adapter returned to `Scan`.
+
+The regression was added first and run with:
+
+```text
+GOCACHE=/private/tmp/grepnest-final-fix-gocache go test ./internal/graphscan -run '^TestBudgetErrorReturnsContextCancellation$' -count=1 -v
+=== RUN   TestBudgetErrorReturnsContextCancellation
+    budget_test.go:14: BudgetError() = <nil>, want context.Canceled
+--- FAIL: TestBudgetErrorReturnsContextCancellation (0.00s)
+FAIL
+```
+
+`BudgetError` now returns `ctx.Err()` before inspecting the IR budget. This one
+shared check stops all language walkers on cancellation or deadline without
+per-adapter changes. The same focused command then passed:
+
+```text
+=== RUN   TestBudgetErrorReturnsContextCancellation
+--- PASS: TestBudgetErrorReturnsContextCancellation (0.00s)
+PASS
+ok github.com/grepnest/grepnest/internal/graphscan
+```
+
+Fresh full verification passed:
+
+- `make fmt lint test-race build openapi-check scanner-test`
+- `go mod tidy -diff` with no output
+- `git diff --check` with no output
+
+The race suite passed all scanner packages and commands, OpenAPI validation
+reported `OpenAPI validation passed`, and no new concern was found.

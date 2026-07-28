@@ -40,6 +40,9 @@ func Add[T any](ctx context.Context, values *[]T, value T) bool {
 }
 
 func BudgetError(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	budget, _ := ctx.Value(budgetKey{}).(*irBudget)
 	if budget == nil {
 		return nil
