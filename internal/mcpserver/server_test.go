@@ -107,6 +107,10 @@ func TestGraphMCPMatchesService(t *testing.T) {
 	if contextSchema["properties"].(map[string]any)["uid"] == nil || contextSchema["properties"].(map[string]any)["name"] == nil {
 		t.Fatalf("context schema = %#v", contextSchema)
 	}
+	contextLimit := contextSchema["properties"].(map[string]any)["per_category_limit"].(map[string]any)
+	if contextLimit["default"] == nil || !strings.Contains(contextLimit["description"].(string), "default: 100; values above 100 are capped") {
+		t.Fatalf("context.per_category_limit schema = %#v", contextLimit)
+	}
 
 	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "impact", Arguments: map[string]any{"repo": "acme/one", "branch": "main", "target_uid": "symbol:a", "direction": "downstream"}})
 	if err != nil {
