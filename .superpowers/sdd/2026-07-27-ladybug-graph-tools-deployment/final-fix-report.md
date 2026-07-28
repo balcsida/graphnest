@@ -22,8 +22,8 @@
 ## Fixes
 
 - Added a selected repository ID to the existing authorized exact-SHA scope.
-  Root symbol lookup is anchored there while trace targets and traversal retain
-  the authorized cross-repository scope.
+  Root symbol lookup is anchored there. A later scoped review found trace
+  endpoint semantics and traversal scope still required separate correction.
 - Added impact/trace candidates and stopped traversal when lookup is ambiguous.
 - Raw Cypher now rejects any database manifest outside the current authorized
   exact-SHA scope both before and after arbitrary statement execution. No

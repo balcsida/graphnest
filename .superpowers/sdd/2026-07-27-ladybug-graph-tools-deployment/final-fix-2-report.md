@@ -16,6 +16,9 @@
   `GraphCandidate must require repository_id`.
 - A pressure test of the four installed graph skills found every ambiguity
   path instructed retry by UID alone.
+- Scoped round 1 added real cross-repository edges after endpoint anchoring.
+  Impact returned `found` with empty depth results, and trace returned
+  `no_path`, proving the shared traversal predicate was false-closed.
 
 ## Fixes
 
@@ -24,8 +27,9 @@
   before statement execution, with a second manifest authorization check after
   execution.
 - Restricted context, impact, and both trace endpoint lookups to the selected
-  repository. Authorized traversal continues to use the full current scope
-  after the endpoints are resolved.
+  repository. Scoped round 1 changed the shared traversal predicate so the
+  frontier identity stays exact while the next endpoint may belong to any
+  authorized exact-SHA repository.
 - Added only `repository_id` to public candidates. It is the authorized GitHub
   repository ID accepted by `repo`, mapped from the backend internal ID through
   the current authorized snapshot map. Unknown backend repository IDs fail
@@ -51,6 +55,14 @@
 - `go mod tidy -diff`, `go mod verify`, and `git diff --check` passed.
 - The post-change skill pressure test found no remaining UID-only ambiguity
   retry instruction.
+- `go test -race -tags=system_ladybug ./internal/graphquery -count=1`
+  passed with selected-repository endpoint anchoring, authorized
+  cross-repository impact in both directions, cross-repository trace, and
+  non-scope repository exclusion.
+- Scoped round 1 reran `make postgres-integration`, `make e2e`,
+  `make fmt lint test-race build staticcheck govulncheck ladybug-test`,
+  `make openapi-check`, `go mod tidy -diff`, `go mod verify`, and
+  `git diff --check`; all passed and no vulnerabilities were found.
 
 ## Signed commits
 
@@ -58,6 +70,7 @@
 - `da74744` `fix(graph): anchor selected repository`
 - `2830c42` `fix(graph): qualify ambiguity candidates`
 - `9646490` `test(graph): cover stale public query scope`
+- `fd8aebd` `fix(graph): allow authorized cross-repo traversal`
 
 Each commit verifies as a good ED25519 signature for
 `SHA256:WjfLjYSGqwAvhKk36hJZdaFyPAyKJcSxfoien1VavOU`.
