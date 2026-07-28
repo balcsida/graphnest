@@ -405,7 +405,7 @@ const repositoryByIDQuery = `select ` + repositoryColumns + ` from repositories 
 const graphRepositoriesQuery = `select ` + repositoryColumns + ` from repositories join installations on installations.id = repositories.installation_id
 	where installations.status = 'active' and repositories.enabled and not repositories.archived
 	and ($1 or installations.github_id = $2 and repositories.github_id = any($3))
-	order by repositories.owner, repositories.name`
+	order by repositories.owner, repositories.name, repositories.github_id`
 
 type repositoryScanner interface{ Scan(...any) error }
 

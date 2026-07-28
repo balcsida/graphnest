@@ -83,6 +83,17 @@ func TestResolveRepositoryRequiresIndexedSHA(t *testing.T) {
 	}
 }
 
+func TestResolveRepositoryRejectsDuplicateAuthorizedName(t *testing.T) {
+	store := &resolverStore{repositories: []repository.Repository{
+		{ID: 1, GitHubID: 101, Name: "acme/one", Branch: "main", IndexedSHA: "abc"},
+		{ID: 2, GitHubID: 201, Name: "acme/one", Branch: "main", IndexedSHA: "def"},
+	}}
+	_, err := ResolveRepository(t.Context(), store, authn.Principal{Administrator: true}, api.GraphRepositorySelector{Name: "acme/one"}, "")
+	if !errors.Is(err, ErrRepositoryRequired) {
+		t.Fatalf("ResolveRepository() error = %v", err)
+	}
+}
+
 func TestResolveRepositoryRejectsInvalidProgrammaticSelector(t *testing.T) {
 	store := &resolverStore{repositories: []repository.Repository{{ID: 1, GitHubID: 101, Name: "acme/one", Branch: "main", IndexedSHA: "abc"}}}
 	for _, selector := range []api.GraphRepositorySelector{

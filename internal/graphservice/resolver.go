@@ -48,15 +48,19 @@ func ResolveRepository(ctx context.Context, store RepositoryStore, principal aut
 			return Snapshot{}, ErrRepositoryRequired
 		}
 	} else {
+		matches := 0
 		for index := range repositories {
 			candidate := &repositories[index]
 			if selector.ID > 0 && candidate.GitHubID == selector.ID || selector.Name != "" && candidate.Name == selector.Name {
 				selected = candidate
-				break
+				matches++
 			}
 		}
 		if selected == nil {
 			return Snapshot{}, ErrRepositoryNotFound
+		}
+		if matches > 1 {
+			return Snapshot{}, ErrRepositoryRequired
 		}
 	}
 	if branch != "" && branch != selected.Branch {
