@@ -75,7 +75,7 @@ func graphContextSchema() map[string]any {
 	properties["file_path"] = map[string]any{"type": "string", "minLength": 1, "description": "repository-relative source path"}
 	properties["kind"] = map[string]any{"type": "string", "minLength": 1, "description": "symbol kind"}
 	properties["relations"] = relationSchema()
-	properties["per_category_limit"] = positiveIntegerSchema("maximum relationships per category")
+	properties["per_category_limit"] = cappedIntegerSchema("maximum relationships per category; default: 100; values above 100 are capped", 100)
 	properties["per_category_offset"] = map[string]any{"type": "integer", "minimum": 0, "description": "relationships to skip per category"}
 	properties["include_content"] = map[string]any{"type": "boolean", "description": "include source content for the symbol"}
 	return map[string]any{"type": "object", "additionalProperties": false, "properties": properties, "anyOf": []any{map[string]any{"required": []string{"uid"}}, map[string]any{"required": []string{"name"}}}}
