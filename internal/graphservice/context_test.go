@@ -3,8 +3,10 @@ package graphservice
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/graphprotocol"
@@ -104,6 +106,23 @@ func TestContextRejectsAliasConflictBeforeBackend(t *testing.T) {
 	_, err := (&Service{Store: &fakeRepositoryStore{repositories: []repository.Repository{readyRepository("a")}}, Backend: backend}).Context(t.Context(), principalFor(101), api.GraphContextRequest{Repo: api.GraphRepositorySelector{ID: 101}, GraphSymbolSelector: api.GraphSymbolSelector{UID: "id", Name: "name"}})
 	if !errors.Is(err, ErrInvalidRequest) || backend.calls != 0 {
 		t.Fatalf("err=%v calls=%d", err, backend.calls)
+	}
+}
+
+func TestContextObservesFinalPublicOutcome(t *testing.T) {
+	var results []string
+	observe := func(_ string, result string, _ time.Duration) { results = append(results, result) }
+	invalid := &Service{Observe: observe}
+	if _, err := invalid.Context(t.Context(), authn.Principal{}, api.GraphContextRequest{}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatal(err)
+	}
+	store := &fakeRepositoryStore{repositories: []repository.Repository{readyRepository("a")}}
+	service := &Service{Store: store, Backend: &fakeBackend{context: emptyContext, after: func() { store.repositories[0].IndexedSHA = strings.Repeat("b", 40) }}, Observe: observe}
+	if _, err := service.Context(t.Context(), principalFor(101), api.GraphContextRequest{Repo: api.GraphRepositorySelector{ID: 101}, GraphSymbolSelector: api.GraphSymbolSelector{UID: "symbol:a"}}); !errors.Is(err, ErrGraphNotReady) {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(results, []string{"error", "error"}) {
+		t.Fatalf("results=%#v", results)
 	}
 }
 

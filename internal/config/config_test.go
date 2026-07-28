@@ -13,7 +13,6 @@ import (
 func TestLoadGraphDefaultsAndClamps(t *testing.T) {
 	secret := writeGraphSecret(t, 0o600)
 	t.Setenv("GREPNEST_GRAPH_SECRET_FILE", secret)
-	t.Setenv("GREPNEST_GRAPH_URL", "http://127.0.0.1:8081")
 	t.Setenv("GREPNEST_DATABASE_URL", "postgres://grepnest:secret@db/grepnest")
 	t.Setenv("GREPNEST_GRAPH_READ_CONNECTIONS", "99")
 
@@ -22,7 +21,7 @@ func TestLoadGraphDefaultsAndClamps(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.Mode != "embedded" || got.DataDir != "/var/lib/grepnest/graph" ||
-		got.ListenAddress != "127.0.0.1:8081" || got.ReadConnections != 32 ||
+		got.ListenAddress != "127.0.0.1:8081" || got.URL != "" || got.ReadConnections != 32 ||
 		got.SyncInterval != 30*time.Second || got.QueryTimeout != 5*time.Second ||
 		got.InterruptGrace != 2*time.Second || string(got.InternalSecret) != "graph-secret" {
 		t.Fatalf("graph configuration = %#v", got)
@@ -148,6 +147,7 @@ func TestLoadIndexerSeparateModeDoesNotReadGraphSecret(t *testing.T) {
 	setDurableEnvironment(t)
 	t.Setenv("GREPNEST_ZOEKT_URL", "http://127.0.0.1:6070")
 	t.Setenv("GREPNEST_GRAPH_MODE", "separate")
+	t.Setenv("GREPNEST_GRAPH_URL", "")
 	t.Setenv("GREPNEST_GRAPH_SECRET_FILE", filepath.Join(t.TempDir(), "missing"))
 
 	got, err := LoadIndexer()

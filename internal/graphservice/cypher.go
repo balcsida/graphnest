@@ -3,13 +3,16 @@ package graphservice
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/graphprotocol"
 	"github.com/grepnest/grepnest/pkg/api"
 )
 
-func (s *Service) Cypher(ctx context.Context, principal authn.Principal, request api.GraphCypherRequest) (api.GraphCypherResponse, error) {
+func (s *Service) Cypher(ctx context.Context, principal authn.Principal, request api.GraphCypherRequest) (result api.GraphCypherResponse, err error) {
+	started := time.Now()
+	defer s.observe(started, "cypher", &err)
 	if !principal.Administrator {
 		return api.GraphCypherResponse{}, ErrAdminRequired
 	}
@@ -44,7 +47,7 @@ func (s *Service) Cypher(ctx context.Context, principal authn.Principal, request
 	if err := s.reauthorize(ctx, principal, selected, response.Commits); err != nil {
 		return api.GraphCypherResponse{}, err
 	}
-	result := api.GraphCypherResponse{Status: "ok", Columns: response.Columns, Truncated: response.Truncated, Boundaries: boundaries(response.Boundaries), Commits: response.Commits}
+	result = api.GraphCypherResponse{Status: "ok", Columns: response.Columns, Truncated: response.Truncated, Boundaries: boundaries(response.Boundaries), Commits: response.Commits}
 	for _, row := range response.Rows {
 		encoded := make([]json.RawMessage, len(row))
 		for i, value := range row {

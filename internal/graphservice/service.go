@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"time"
 
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/graphprotocol"
@@ -31,6 +32,18 @@ type Service struct {
 	Backend graphprotocol.QueryEngine
 	Files   ContentReader
 	Limits  Limits
+	Observe func(string, string, time.Duration)
+}
+
+func (s *Service) observe(started time.Time, operation string, err *error) {
+	if s.Observe == nil {
+		return
+	}
+	result := "success"
+	if *err != nil {
+		result = "error"
+	}
+	s.Observe(operation, result, time.Since(started))
 }
 
 func (s *Service) scope(ctx context.Context, principal authn.Principal, selector api.GraphRepositorySelector, branch string) (Snapshot, graphprotocol.Scope, map[int64]Snapshot, error) {

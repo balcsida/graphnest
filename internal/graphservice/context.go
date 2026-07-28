@@ -2,13 +2,16 @@ package graphservice
 
 import (
 	"context"
+	"time"
 
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/graphprotocol"
 	"github.com/grepnest/grepnest/pkg/api"
 )
 
-func (s *Service) Context(ctx context.Context, principal authn.Principal, request api.GraphContextRequest) (api.GraphContextResponse, error) {
+func (s *Service) Context(ctx context.Context, principal authn.Principal, request api.GraphContextRequest) (result api.GraphContextResponse, err error) {
+	started := time.Now()
+	defer s.observe(started, "context", &err)
 	if (request.UID == "" && request.Name == "") || (request.UID != "" && request.Name != "") || request.PerCategoryLimit < 0 || request.PerCategoryOffset < 0 || !validRelations(request.Relations) {
 		return api.GraphContextResponse{}, ErrInvalidRequest
 	}
@@ -27,7 +30,7 @@ func (s *Service) Context(ctx context.Context, principal authn.Principal, reques
 	if err := s.reauthorize(ctx, principal, selected, response.Commits); err != nil {
 		return api.GraphContextResponse{}, err
 	}
-	result := api.GraphContextResponse{Status: response.Status, Incoming: map[string][]api.GraphReference{}, Outgoing: map[string][]api.GraphReference{}, Boundaries: boundaries(response.Boundaries), Commits: response.Commits}
+	result = api.GraphContextResponse{Status: response.Status, Incoming: map[string][]api.GraphReference{}, Outgoing: map[string][]api.GraphReference{}, Boundaries: boundaries(response.Boundaries), Commits: response.Commits}
 	if response.Symbol != nil {
 		value := symbol(*response.Symbol)
 		if request.IncludeContent {
