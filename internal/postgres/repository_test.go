@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/admin"
+	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/githubapp"
 )
 
@@ -227,6 +228,37 @@ func TestAuthorizedRepositoriesExcludeInactiveStates(t *testing.T) {
 	}
 	if got, err := store.AuthorizedRepositories(t.Context(), 10, nil, nil); err != nil || len(got) != 0 {
 		t.Fatalf("empty IDs: got=%#v err=%v", got, err)
+	}
+}
+
+func TestGraphRepositoriesEnforcePrincipalEligibility(t *testing.T) {
+	store := migratedStore(t)
+	for _, installation := range []InstallationUpdate{
+		{GitHubID: 10, AccountLogin: "active", AccountType: "Organization", Status: "active"},
+		{GitHubID: 20, AccountLogin: "other", AccountType: "Organization", Status: "active"},
+		{GitHubID: 30, AccountLogin: "suspended", AccountType: "Organization", Status: "suspended"},
+	} {
+		if err := store.UpsertInstallation(t.Context(), installation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, update := range []RepositoryUpdate{
+		{GitHubID: 101, InstallationID: 10, Owner: "Acme", Name: "One", DefaultBranch: "main", Enabled: true},
+		{GitHubID: 102, InstallationID: 10, Owner: "acme", Name: "disabled", DefaultBranch: "main"},
+		{GitHubID: 201, InstallationID: 20, Owner: "other", Name: "two", DefaultBranch: "main", Enabled: true},
+		{GitHubID: 301, InstallationID: 30, Owner: "other", Name: "suspended", DefaultBranch: "main", Enabled: true},
+	} {
+		if _, err := store.UpsertRepository(t.Context(), update); err != nil {
+			t.Fatal(err)
+		}
+	}
+	user, err := store.GraphRepositories(t.Context(), authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101, 201}})
+	if err != nil || len(user) != 1 || user[0].GitHubID != 101 || user[0].Name != "Acme/One" {
+		t.Fatalf("user repositories = %#v, %v", user, err)
+	}
+	admin, err := store.GraphRepositories(t.Context(), authn.Principal{Administrator: true})
+	if err != nil || len(admin) != 2 || admin[0].GitHubID != 101 || admin[1].GitHubID != 201 {
+		t.Fatalf("admin repositories = %#v, %v", admin, err)
 	}
 }
 
