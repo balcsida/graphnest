@@ -40,8 +40,8 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 - name: stage-graph-secret
   image: {{ include "grepnest.image" .image | quote }}
   imagePullPolicy: {{ .image.pullPolicy }}
-  command: ["/bin/sh", "-ec"]
-  args: ["umask 077; cp /var/run/secrets/grepnest/graph-source/secret /var/run/secrets/grepnest/graph/secret; chmod 600 /var/run/secrets/grepnest/graph/secret"]
+  command: [{{ .executable | quote }}]
+  args: ["stage-secret", "/var/run/secrets/grepnest/graph-source/secret", "/var/run/secrets/grepnest/graph/secret"]
   securityContext:
     allowPrivilegeEscalation: false
     capabilities: {drop: [ALL]}

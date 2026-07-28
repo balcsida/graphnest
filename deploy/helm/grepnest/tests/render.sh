@@ -349,8 +349,13 @@ for manifest in "$tmp/graph-embedded.yaml" "$tmp/graph-separate.yaml"; do
   [ "$(grep -E -c -e 'name: graph-secret-runtime, mountPath: /var/run/secrets/grepnest/graph, readOnly: true' "$manifest")" -eq 2 ] || exit 1
   [ "$(grep -E -c -e '^      initContainers:$' "$manifest")" -eq 2 ] || exit 1
   [ "$(grep -E -c -e 'name: stage-graph-secret' "$manifest")" -eq 2 ] || exit 1
-  [ "$(grep -E -c -e 'umask 077.*cp .*graph-source/secret .*graph/secret.*chmod 600' "$manifest")" -eq 2 ] || exit 1
+  [ "$(grep -E -c -e 'command: \["/usr/local/bin/grepnest-graph"\]' "$manifest")" -ge 2 ] || exit 1
+  [ "$(grep -E -c -e 'args: \["stage-secret", "/var/run/secrets/grepnest/graph-source/secret", "/var/run/secrets/grepnest/graph/secret"\]' "$manifest")" -eq 2 ] || exit 1
+  reject 'command: \["/bin/sh"|umask 077|cp .*graph-source|chmod 600' "$manifest"
+  # ADR-0006 requires arbitrary non-root UIDs with root group. With no
+  # conflicting group override, projected root:root 0440 sources are readable.
   [ "$(grep -E -c -e 'defaultMode: 0440' "$manifest")" -eq 2 ] || exit 1
+  reject 'runAsGroup:|fsGroup:' "$manifest"
   [ "$(grep -E -c -e 'name: graph-secret-runtime, emptyDir: \{\}' "$manifest")" -eq 2 ] || exit 1
   require '^kind: Service$' "$manifest"
   require '^  name: pilot-grepnest-graph$' "$manifest"
