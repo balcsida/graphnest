@@ -72,6 +72,14 @@ helm lint "$chart" -f "$minimal"
 helm template pilot "$chart" -n grepnest -f "$minimal" >"$tmp/minimal.yaml"
 helm template pilot "$chart" -n grepnest -f "$minimal" -f "$optional" \
   --api-versions monitoring.coreos.com/v1/ServiceMonitor >"$tmp/optional.yaml"
+helm template pilot "$chart" -n grepnest -f "$minimal" \
+  --set=graph.mode=embedded >"$tmp/graph-embedded.yaml"
+helm template pilot "$chart" -n grepnest -f "$minimal" -f "$optional" \
+  --set=graph.mode=separate \
+  --api-versions monitoring.coreos.com/v1/ServiceMonitor >"$tmp/graph-separate.yaml"
+expect_failure "$tmp/graph-mode.err" helm template bad "$chart" -f "$minimal" \
+  --set=graph.mode=invalid
+require "/graph/mode.*embedded.*separate" "$tmp/graph-mode.err"
 long_release=abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzx
 helm template "$long_release" "$chart" -n grepnest -f "$minimal" >"$tmp/long-release.yaml"
 
@@ -87,16 +95,17 @@ awk '
   END { exit failed }
 ' "$tmp/long-release.yaml"
 for suffix in server node zoekt indexer migrate deny-ingress allow-server-ingress \
-  allow-zoekt-ingress allow-indexer-metrics-ingress; do
+  allow-zoekt-ingress allow-indexer-metrics-ingress graph allow-graph-ingress; do
   [ "$(grep -E -c -e "^  name: .*$suffix\$" "$tmp/long-release.yaml")" -ge 1 ] || exit 1
 done
 [ "$(sed -n 's/^  name: //p' "$tmp/long-release.yaml" | sort -u | \
-  grep -E -c -e '-(server|node|zoekt|indexer|migrate|deny-ingress|allow-server-ingress|allow-zoekt-ingress|allow-indexer-metrics-ingress)$')" \
-  -eq 9 ] || exit 1
+  grep -E -c -e '-(server|node|zoekt|indexer|migrate|deny-ingress|allow-server-ingress|allow-zoekt-ingress|allow-indexer-metrics-ingress|graph|allow-graph-ingress)$')" \
+  -eq 11 ] || exit 1
 
 helm template paths "$chart" -n grepnest -f "$minimal" \
   --set-string=node.paths.data=/srv/grepnest-data \
   --set-string=node.paths.indexes=/srv/grepnest-data/zoekt/index \
+  --set-string=graph.dataPath=/srv/grepnest-data/graph \
   --set=node.zoekt.port=16070 --set=node.service.port=16071 \
   --set=node.indexer.metricsPort=19090 >"$tmp/node-contract.yaml"
 for pattern in \
@@ -124,6 +133,7 @@ require '^            - ":16070"$' "$tmp/node-contract-zoekt.yaml"
 
 expect_failure "$tmp/disconnected-indexes.err" helm template bad "$chart" -f "$minimal" \
   --set-string=node.paths.data=/srv/grepnest-data \
+  --set-string=graph.dataPath=/srv/grepnest-data/graph \
   --set-string=node.paths.indexes=/srv/other/index
 require 'node.paths.indexes must be a child of node.paths.data' "$tmp/disconnected-indexes.err"
 
@@ -198,7 +208,8 @@ for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
     'readOnlyRootFilesystem: true'; do
     [ "$(grep -E -c -e "$pattern" "$manifest")" -eq "$images" ] || exit 1
   done
-  [ "$(grep -E -c -e 'runAsNonRoot: true' "$manifest")" -eq "$((images + 2))" ] || exit 1
+  workloads=$(grep -E -c -e '^kind: (Deployment|StatefulSet)$' "$manifest")
+  [ "$(grep -E -c -e 'runAsNonRoot: true' "$manifest")" -eq "$((images + workloads))" ] || exit 1
   [ "$(grep -E -c -e 'seccompProfile: \{type: RuntimeDefault\}' "$manifest")" -ge "$images" ] || exit 1
   [ "$(grep -E -c -e '^kind: StatefulSet$' "$manifest")" -eq 1 ] || exit 1
   [ "$(grep -E -c -e '^  replicas: 1$' "$manifest")" -eq 1 ] || exit 1
@@ -219,8 +230,10 @@ for pattern in '^kind: Ingress$' '^kind: ServiceMonitor$' \
   'cpu: 250m' 'memory: 256Mi' 'cpu: "8"' 'memory: 24Gi'; do
   require "$pattern" "$tmp/optional.yaml"
 done
-[ "$(grep -E -c -e '^kind: ServiceMonitor$' "$tmp/optional.yaml")" -eq 2 ] || exit 1
+[ "$(grep -E -c -e '^kind: ServiceMonitor$' "$tmp/optional.yaml")" -eq 4 ] || exit 1
 require 'app.kubernetes.io/component: indexer' "$tmp/optional.yaml"
+require 'app.kubernetes.io/component: graph-service' "$tmp/optional.yaml"
+require 'app.kubernetes.io/component: scanner' "$tmp/optional.yaml"
 require 'port: metrics' "$tmp/optional.yaml"
 
 sed -n '/^kind: StatefulSet$/,/^# Source: grepnest\/templates\/migration-job.yaml$/p' \
@@ -296,11 +309,11 @@ require 'k8s-app: kube-dns' "$tmp/allow-dns-egress-spec.yaml"
 require 'protocol: UDP, port: 53' "$tmp/allow-dns-egress-spec.yaml"
 require 'protocol: TCP, port: 53' "$tmp/allow-dns-egress-spec.yaml"
 
-require 'values: \[server, node, migration\]' "$tmp/allow-postgresql-egress-spec.yaml"
+require 'values: \[server, node, migration, graph, scanner\]' "$tmp/allow-postgresql-egress-spec.yaml"
 require 'policyTypes: \[Egress\]' "$tmp/allow-postgresql-egress-spec.yaml"
 require 'cidr: "192\.0\.2\.10/32"' "$tmp/allow-postgresql-egress-spec.yaml"
 require 'protocol: TCP, port: 5432' "$tmp/allow-postgresql-egress-spec.yaml"
-require 'values: \[server, node\]' "$tmp/allow-github-egress-spec.yaml"
+require 'values: \[server, node, scanner\]' "$tmp/allow-github-egress-spec.yaml"
 require 'policyTypes: \[Egress\]' "$tmp/allow-github-egress-spec.yaml"
 require 'cidr: "198\.51\.100\.0/24"' "$tmp/allow-github-egress-spec.yaml"
 require 'cidr: "2001:db8:1234::/48"' "$tmp/allow-github-egress-spec.yaml"
@@ -309,6 +322,48 @@ require 'protocol: TCP, port: 443' "$tmp/allow-github-egress-spec.yaml"
 reject '^ *- \{\}|^ *from: *\[?\]?$|^ *to: *\[?\]?$|^ *- (podSelector|namespaceSelector): *\{\}$' "$tmp/optional.yaml"
 reject 'cidr: "?(0\.0\.0\.0/0|::/0)"?' "$tmp/optional.yaml"
 reject '^ *namespaceSelector: *\{\}$|^ *podSelector: *\{\}$' "$tmp/optional.yaml"
+
+for manifest in "$tmp/graph-embedded.yaml" "$tmp/graph-separate.yaml"; do
+  require 'GREPNEST_GRAPH_URL: "http://pilot-grepnest-graph:8081"' "$manifest"
+  require 'mountPath: /var/run/secrets/grepnest/graph/secret, subPath: secret, readOnly: true' "$manifest"
+  require 'defaultMode: 0400' "$manifest"
+  require '^kind: Service$' "$manifest"
+  require '^  name: pilot-grepnest-graph$' "$manifest"
+  reject 'type: (NodePort|LoadBalancer)' "$manifest"
+  [ "$(grep -E -c -e 'GREPNEST_GRAPH_DATA_DIR' "$manifest")" -eq 1 ] || exit 1
+  [ "$(grep -E -c -e 'mountPath: \"?/data/graph\"?' "$manifest")" -eq 1 ] || exit 1
+done
+reject 'backend:.*graph|name: pilot-grepnest-graph' "$tmp/optional-ingress.yaml"
+
+require 'GREPNEST_GRAPH_MODE: "embedded"' "$tmp/graph-embedded.yaml"
+require 'name: graph, containerPort: 8081' "$tmp/graph-embedded.yaml"
+require 'mountPath: "/data/graph"' "$tmp/graph-embedded.yaml"
+reject '^kind: Deployment$.*pilot-grepnest-graph|app.kubernetes.io/component: graph$' "$tmp/graph-embedded.yaml"
+reject 'app.kubernetes.io/component: scanner$' "$tmp/minimal.yaml"
+
+require 'GREPNEST_GRAPH_MODE: "separate"' "$tmp/graph-separate.yaml"
+require '^# Source: grepnest/templates/graph.yaml$' "$tmp/graph-separate.yaml"
+[ "$(grep -E -c -e '^kind: Deployment$' "$tmp/graph-separate.yaml")" -eq 3 ] || exit 1
+for pattern in '^kind: PersistentVolumeClaim$' 'app.kubernetes.io/component: graph' \
+  'command: \["/usr/local/bin/grepnest-graph"\]' \
+  'httpGet: \{path: /healthz, port: graph\}' \
+  'httpGet: \{path: /readyz, port: graph\}' \
+  'automountServiceAccountToken: false' 'readOnlyRootFilesystem: true' \
+  'runAsNonRoot: true' 'seccompProfile: \{type: RuntimeDefault\}'; do
+  require "$pattern" "$tmp/graph-separate.yaml"
+done
+
+for pattern in 'app.kubernetes.io/component: scanner' '^  replicas: 3$' \
+  'command: \["/usr/local/bin/grepnest-scanner"\]' \
+  'name: worktree, mountPath: /data' 'name: worktree, emptyDir: \{\}' \
+  'name: metrics, containerPort: 9090' 'requests:' 'limits:' \
+  'automountServiceAccountToken: false' 'readOnlyRootFilesystem: true'; do
+  require "$pattern" "$tmp/graph-separate.yaml"
+done
+require 'values: \[server, node\]' "$tmp/graph-separate.yaml"
+require 'values: \[server, node, migration, graph, scanner\]' "$tmp/graph-separate.yaml"
+require 'values: \[server, node, scanner\]' "$tmp/graph-separate.yaml"
+[ "$(grep -E -c -e '^kind: ServiceMonitor$' "$tmp/graph-separate.yaml")" -eq 4 ] || exit 1
 
 expect_failure "$tmp/repository.err" helm template bad "$chart" -f "$minimal" \
   --set-string=images.application.repository=

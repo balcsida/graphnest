@@ -35,6 +35,9 @@ node:
   tolerations: [{key: grepnest.example.invalid/dedicated, operator: Equal, value: node, effect: NoSchedule}]
   topologySpreadConstraints:
     - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: DoNotSchedule, labelSelector: {matchLabels: {app.kubernetes.io/component: node}}}
+scanner:
+  enabled: true
+  replicas: 3
 migration:
   nodeSelector: {grepnest.example.invalid/pool: migration}
   affinity:

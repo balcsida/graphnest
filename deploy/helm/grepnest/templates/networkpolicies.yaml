@@ -94,6 +94,60 @@ spec:
         {{- end }}
       ports:
         - {protocol: TCP, port: {{ .Values.node.indexer.metricsPort }}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "grepnest.resourceName" (list . "allow-graph-ingress") }}
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: {{ ternary "graph" "node" (eq .Values.graph.mode "separate") }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              {{- include "grepnest.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: server
+        {{- with .Values.networkPolicy.serverIngress.monitoringNamespaceSelector }}
+        - namespaceSelector:
+            {{- toYaml . | nindent 12 }}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.graph.port }}}
+{{- if .Values.scanner.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "grepnest.resourceName" (list . "allow-scanner-metrics-ingress") }}
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scanner
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+        {{- with .Values.networkPolicy.serverIngress.monitoringNamespaceSelector }}
+        - namespaceSelector:
+            {{- toYaml . | nindent 12 }}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.scanner.metricsPort }}}
+{{- end }}
 {{- if .Values.networkPolicy.externalEgress.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -135,6 +189,16 @@ spec:
               app.kubernetes.io/component: node
       ports:
         - {protocol: TCP, port: {{ .Values.node.zoekt.port }}}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              {{- include "grepnest.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: {{ ternary "graph" "node" (eq .Values.graph.mode "separate") }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.graph.port }}}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -149,7 +213,7 @@ spec:
     matchExpressions:
       - key: app.kubernetes.io/component
         operator: In
-        values: [server, node, migration]
+        values: [server, node, migration, graph, scanner]
   policyTypes: [Egress]
   egress:
     - to:
@@ -178,7 +242,7 @@ spec:
     matchExpressions:
       - key: app.kubernetes.io/component
         operator: In
-        values: [server, node, migration]
+        values: [server, node, migration, graph, scanner]
   policyTypes: [Egress]
   egress:
     - to:
@@ -201,7 +265,7 @@ spec:
     matchExpressions:
       - key: app.kubernetes.io/component
         operator: In
-        values: [server, node]
+        values: [server, node, scanner]
   policyTypes: [Egress]
   egress:
     - to:
