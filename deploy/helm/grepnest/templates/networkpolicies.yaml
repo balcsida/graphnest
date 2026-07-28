@@ -166,7 +166,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.resourceName" (list . "allow-internal-egress") }}
+  name: {{ include "grepnest.resourceName" (list . "allow-zoekt-egress") }}
   labels:
     {{- include "grepnest.labels" . | nindent 4 }}
 spec:
@@ -189,6 +189,20 @@ spec:
               app.kubernetes.io/component: node
       ports:
         - {protocol: TCP, port: {{ .Values.node.zoekt.port }}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "grepnest.resourceName" (list . "allow-graph-egress") }}
+  labels:
+    {{- include "grepnest.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  policyTypes: [Egress]
+  egress:
     - to:
         - namespaceSelector:
             matchLabels:

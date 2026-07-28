@@ -38,7 +38,7 @@
           "$ref": "#/definitions/image"
         },
         "scanner": {
-          "$ref": "#/definitions/image"
+          "$ref": "#/definitions/optionalImage"
         },
         "pullSecrets": {
           "type": "array",
@@ -649,6 +649,30 @@
     {
       "if": {
         "properties": {
+          "scanner": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "images": {
+            "properties": {
+              "scanner": {
+                "$ref": "#/definitions/image"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "ingress": {
             "properties": {
               "enabled": {
@@ -818,6 +842,44 @@
           ]
         }
       }
+    },
+    "optionalImage": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/image"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repository",
+            "digest",
+            "tag",
+            "pullPolicy"
+          ],
+          "properties": {
+            "repository": {
+              "const": ""
+            },
+            "digest": {
+              "const": ""
+            },
+            "tag": {
+              "type": "string",
+              "not": {
+                "const": "latest"
+              }
+            },
+            "pullPolicy": {
+              "enum": [
+                "Always",
+                "IfNotPresent",
+                "Never"
+              ]
+            }
+          }
+        }
+      ]
     },
     "runtimeSecret": {
       "type": "object",
