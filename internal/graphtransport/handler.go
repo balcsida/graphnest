@@ -23,6 +23,7 @@ const (
 )
 
 var commitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
+var bearerTokenPattern = regexp.MustCompile(`^[A-Za-z0-9._~+/-]+={0,}$`)
 
 type Limits struct {
 	MaxRequestBytes, MaxResponseBytes           int64
@@ -46,7 +47,7 @@ func NewHandler(secret []byte, engine graphprotocol.QueryEngine, limits Limits) 
 	limits = normalizedLimits(limits)
 	return &handler{
 		engine: engine, secretHash: sha256.Sum256(secret),
-		configured: len(secret) > 0 && engine != nil, limits: limits,
+		configured: bearerTokenPattern.Match(secret) && engine != nil, limits: limits,
 	}
 }
 
@@ -74,51 +75,61 @@ func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 	}
 	route, ok := handler.route(request.URL.Path)
 	if !ok {
-		writeError(writer, http.StatusNotFound, "not_found")
+		handler.writeError(writer, http.StatusNotFound, "not_found")
 		return
 	}
 	if !handler.configured {
-		writeError(writer, http.StatusServiceUnavailable, "unavailable")
+		handler.writeError(writer, http.StatusServiceUnavailable, "unavailable")
 		return
 	}
-	if !handler.authorized(request.Header.Get("Authorization")) {
-		writeError(writer, http.StatusUnauthorized, "unauthorized")
+	if !handler.authorized(request.Header.Values("Authorization")) {
+		handler.writeError(writer, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	if request.Method != http.MethodPost {
 		writer.Header().Set("Allow", http.MethodPost)
-		writeError(writer, http.StatusMethodNotAllowed, "invalid_request")
+		handler.writeError(writer, http.StatusMethodNotAllowed, "invalid_request")
 		return
 	}
 	if request.Header.Get("Content-Type") != "application/json" {
-		writeError(writer, http.StatusUnsupportedMediaType, "invalid_request")
+		handler.writeError(writer, http.StatusUnsupportedMediaType, "invalid_request")
 		return
 	}
 	route(writer, request)
 }
 
-func (handler *handler) authorized(header string) bool {
-	const prefix = "Bearer "
-	candidate := []byte("")
-	if strings.HasPrefix(header, prefix) {
-		candidate = []byte(strings.TrimPrefix(header, prefix))
+func (handler *handler) authorized(values []string) bool {
+	candidate := ""
+	valid := len(values) == 1
+	if valid {
+		header := values[0]
+		valid = len(header) > len("Bearer ") && header[len("Bearer")] == ' ' &&
+			strings.EqualFold(header[:len("Bearer")], "Bearer")
+		if valid {
+			candidate = header[len("Bearer "):]
+			valid = bearerTokenPattern.MatchString(candidate)
+		}
 	}
-	candidateHash := sha256.Sum256(candidate)
-	return subtle.ConstantTimeCompare(handler.secretHash[:], candidateHash[:]) == 1
+	candidateHash := sha256.Sum256([]byte(candidate))
+	equal := subtle.ConstantTimeCompare(handler.secretHash[:], candidateHash[:]) == 1
+	return valid && equal
 }
 
 func (handler *handler) health(writer http.ResponseWriter, request *http.Request, ready bool) {
 	if request.Method != http.MethodGet {
 		writer.Header().Set("Allow", http.MethodGet)
-		writeError(writer, http.StatusMethodNotAllowed, "invalid_request")
+		handler.writeError(writer, http.StatusMethodNotAllowed, "invalid_request")
 		return
 	}
 	if ready && (!handler.configured || handler.engineHealth(request.Context()) != nil) {
-		writeError(writer, http.StatusServiceUnavailable, "unavailable")
+		handler.writeError(writer, http.StatusServiceUnavailable, "unavailable")
 		return
 	}
-	writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = writer.Write([]byte("ok\n"))
+	data := []byte("ok\n")
+	if int64(len(data)) <= handler.limits.MaxResponseBytes {
+		writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = writer.Write(data)
+	}
 }
 
 func (handler *handler) engineHealth(ctx context.Context) error {
@@ -236,11 +247,11 @@ type operation func(context.Context, *json.Decoder) (any, error)
 func (handler *handler) execute(writer http.ResponseWriter, request *http.Request, timeout time.Duration, operation operation) {
 	body, err := io.ReadAll(io.LimitReader(request.Body, handler.limits.MaxRequestBytes+1))
 	if err != nil {
-		writeError(writer, http.StatusBadRequest, "invalid_request")
+		handler.writeError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
 	if int64(len(body)) > handler.limits.MaxRequestBytes {
-		writeError(writer, http.StatusRequestEntityTooLarge, "invalid_request")
+		handler.writeError(writer, http.StatusRequestEntityTooLarge, "invalid_request")
 		return
 	}
 	ctx, cancel := context.WithTimeout(request.Context(), timeout)
@@ -248,12 +259,12 @@ func (handler *handler) execute(writer http.ResponseWriter, request *http.Reques
 	value, err := operation(ctx, json.NewDecoder(bytes.NewReader(body)))
 	if err != nil {
 		status, code := classifyError(err)
-		writeError(writer, status, code)
+		handler.writeError(writer, status, code)
 		return
 	}
 	data, err := json.Marshal(value)
 	if err != nil || int64(len(data)+1) > handler.limits.MaxResponseBytes {
-		writeCappedError(writer, http.StatusServiceUnavailable, "response_too_large", handler.limits.MaxResponseBytes)
+		handler.writeError(writer, http.StatusServiceUnavailable, "response_too_large")
 		return
 	}
 	writer.Header().Set("Content-Type", "application/json")
@@ -282,18 +293,13 @@ func isJSONError(err error) bool {
 		errors.Is(err, io.EOF)
 }
 
-func writeError(writer http.ResponseWriter, status int, code string) {
+func (handler *handler) writeError(writer http.ResponseWriter, status int, code string) {
 	data := errorBody(code)
-	writer.Header().Set("Content-Type", "application/json")
+	if int64(len(data)) <= handler.limits.MaxResponseBytes {
+		writer.Header().Set("Content-Type", "application/json")
+	}
 	writer.WriteHeader(status)
-	_, _ = writer.Write(data)
-}
-
-func writeCappedError(writer http.ResponseWriter, status int, code string, maxBytes int64) {
-	data := errorBody(code)
-	writer.Header().Set("Content-Type", "application/json")
-	writer.WriteHeader(status)
-	if int64(len(data)) <= maxBytes {
+	if int64(len(data)) <= handler.limits.MaxResponseBytes {
 		_, _ = writer.Write(data)
 	}
 }
