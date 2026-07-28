@@ -59,7 +59,7 @@ scanner-test:
 	CGO_ENABLED=1 go test -race ./internal/graphscan/... ./internal/graphscanner ./cmd/grepnest-scanner
 
 ladybug-test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-	$(LADYBUG_GO) test $(LADYBUG_TAGS) ./internal/ladybug ./internal/graphquery ./internal/graphruntime
+	$(LADYBUG_GO) test $(LADYBUG_TAGS) ./internal/ladybug ./internal/graphcommand ./internal/graphquery ./internal/graphruntime
 
 $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY):
 	mkdir -p $(LADYBUG_LIB_DIR)
@@ -78,8 +78,8 @@ openapi-check:
 
 integration: postgres-integration
 
-postgres-test:
-	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' go test -count=1 -tags=integration ./internal/postgres ./internal/authz ./internal/webhook ./test/integration
+postgres-test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
+	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' $(LADYBUG_GO) test -count=1 -tags='integration system_ladybug' ./internal/postgres ./internal/authz ./internal/webhook ./test/integration ./cmd/grepnest-indexer
 
 postgres-integration:
 	$(POSTGRES_COMPOSE) -f deploy/compose/compose.yml up -d --wait postgres
