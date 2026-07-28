@@ -72,7 +72,7 @@ func TestClientClonesSecretAndRoundTripsFixedMethods(t *testing.T) {
 	if _, err := client.Trace(t.Context(), graphprotocol.TraceRequest{Scope: scope, SourceUID: "A", TargetUID: "B"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Cypher(t.Context(), graphprotocol.CypherRequest{Admin: true, Statement: "RETURN 1"}); err != nil {
+	if _, err := client.Cypher(t.Context(), graphprotocol.CypherRequest{Scope: scope, Admin: true, Statement: "RETURN 1"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"/internal/v1/graph/context", "/internal/v1/graph/impact", "/internal/v1/graph/trace", "/internal/v1/graph/cypher"} {

@@ -34,17 +34,15 @@ func (service *Service) Cypher(ctx context.Context, request graphprotocol.Cypher
 	if maxRows <= 0 || maxRows > service.limits().MaxRows {
 		maxRows = service.limits().MaxRows
 	}
-	if len(request.Scope.Repositories) > 0 {
-		ready, err := service.ready(ctx, request.Scope)
-		if err != nil {
-			return response, err
-		}
-		response.Boundaries, response.Commits = ready.boundaries, ready.commits
-		if err := service.authorizeCypherScope(ctx, request.Scope); err != nil {
-			return response, err
-		}
+	ready, err := service.ready(ctx, request.Scope)
+	if err != nil {
+		return response, err
 	}
-	err := service.Database.View(ctx, func(session *ladybug.Session) error {
+	response.Boundaries, response.Commits = ready.boundaries, ready.commits
+	if err := service.authorizeCypherScope(ctx, request.Scope); err != nil {
+		return response, err
+	}
+	err = service.Database.View(ctx, func(session *ladybug.Session) error {
 		result, err := session.Execute(ctx, request.Statement, request.Parameters, ladybug.QueryLimits{
 			MaxRows: maxRows, MaxBytes: request.MaxBytes,
 		})
@@ -68,7 +66,7 @@ func (service *Service) Cypher(ctx context.Context, request graphprotocol.Cypher
 		}
 		return err
 	})
-	if err == nil && len(request.Scope.Repositories) > 0 {
+	if err == nil {
 		err = service.authorizeCypherScope(ctx, request.Scope)
 	}
 	return response, err

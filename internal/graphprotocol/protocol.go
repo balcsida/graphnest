@@ -124,7 +124,7 @@ type TraceResponse struct {
 }
 
 type CypherRequest struct {
-	Scope      Scope          `json:"scope,omitempty"`
+	Scope      Scope          `json:"scope"`
 	Admin      bool           `json:"admin"`
 	Statement  string         `json:"statement"`
 	Parameters map[string]any `json:"parameters,omitempty"`

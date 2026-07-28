@@ -195,7 +195,7 @@ func (handler *handler) route(path string) (routeFunc, bool) {
 					if err := decode(decoder, &value); err != nil {
 						return nil, err
 					}
-					if len(value.Scope.Repositories) > 0 && !validScope(value.Scope) {
+					if !validScope(value.Scope) {
 						return nil, errInvalidRequest
 					}
 					return handler.engine.Cypher(ctx, value)

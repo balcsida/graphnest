@@ -252,6 +252,8 @@ func TestHandlerRejectsStrictPayloadsOnEveryQueryRoute(t *testing.T) {
 	}{
 		{"impact unknown", "/internal/v1/graph/impact", `{"scope":` + scope + `,"extra":true}`},
 		{"trace empty scope", "/internal/v1/graph/trace", `{"scope":{"repositories":[]},"source_uid":"A","target_uid":"B"}`},
+		{"cypher missing scope", "/internal/v1/graph/cypher", `{"admin":true,"statement":"RETURN 1"}`},
+		{"cypher empty scope", "/internal/v1/graph/cypher", `{"scope":{"repositories":[]},"admin":true,"statement":"RETURN 1"}`},
 		{"cypher invalid scope", "/internal/v1/graph/cypher", `{"scope":{"repositories":[{"id":1,"commit":"bad"}]},"admin":true,"statement":"RETURN 1"}`},
 		{"cypher trailing", "/internal/v1/graph/cypher", `{"admin":true,"statement":"RETURN 1"} {}`},
 	}
@@ -273,7 +275,7 @@ func TestHandlerMapsMissingCypherAdminWithoutLeakingParameters(t *testing.T) {
 		}
 		return graphprotocol.CypherResponse{}, errors.New("administrator required")
 	}}
-	body := `{"statement":"RETURN $password","parameters":{"password":"native-secret"}}`
+	body := `{"scope":{"repositories":[{"id":1,"commit":"0123456789abcdef0123456789abcdef01234567"}]},"statement":"RETURN $password","parameters":{"password":"native-secret"}}`
 	got := request(NewHandler([]byte("right"), engine, testLimits()), "POST", "/internal/v1/graph/cypher", "right", "application/json", body)
 	if got.Code != http.StatusBadRequest || strings.Contains(got.Body.String(), "password") || strings.Contains(got.Body.String(), "native-secret") {
 		t.Fatalf("status=%d body=%s", got.Code, got.Body.String())
@@ -302,7 +304,7 @@ func TestHandlerTimesOutEveryQueryRouteWithoutLeakingCypher(t *testing.T) {
 	tests := []struct{ path, body string }{
 		{"/internal/v1/graph/impact", `{"scope":` + scope + `,"target_uid":"A"}`},
 		{"/internal/v1/graph/trace", `{"scope":` + scope + `,"source_uid":"A","target_uid":"B"}`},
-		{"/internal/v1/graph/cypher", `{"admin":true,"statement":"RETURN $secret","parameters":{"secret":"value"}}`},
+		{"/internal/v1/graph/cypher", `{"scope":` + scope + `,"admin":true,"statement":"RETURN $secret","parameters":{"secret":"value"}}`},
 	}
 	for _, test := range tests {
 		got := request(NewHandler([]byte("right"), engine, limits), "POST", test.path, "right", "application/json", test.body)
