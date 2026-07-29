@@ -88,7 +88,7 @@ func (s *Store) DeleteExpiredAuth(ctx context.Context, now time.Time) (flows, se
 	} else {
 		flows = result.RowsAffected()
 	}
-	if result, err := tx.Exec(ctx, `delete from auth_sessions where expires_at <= $1 or revoked_at is not null`, now); err != nil {
+	if result, err := tx.Exec(ctx, `delete from auth_sessions where idle_expires_at <= $1 or expires_at <= $1 or revoked_at is not null`, now); err != nil {
 		return 0, 0, err
 	} else {
 		sessions = result.RowsAffected()
