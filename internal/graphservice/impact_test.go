@@ -90,6 +90,7 @@ func TestImpactMapsCrossRepositorySymbolsEdgesAndBoundaries(t *testing.T) {
 		got.Relations[0].SourceRepositoryID != 101 || got.Relations[0].TargetRepositoryID != 202 ||
 		got.Relations[1].SourceRepositoryID != 202 || got.Relations[1].TargetRepositoryID != 101 ||
 		got.Relations[0].SourceUID != "a" || got.Relations[0].TargetUID != "b" ||
+		got.Relations[1].SourceUID != "b" || got.Relations[1].TargetUID != "a" ||
 		got.Boundaries[0].RepositoryID != 202 || got.Boundaries[0].Repository != "b" {
 		t.Fatalf("Impact() = %#v, %v", got, err)
 	}

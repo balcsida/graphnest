@@ -109,7 +109,12 @@ func TestTraceTraversesOnlyAuthorizedRepositoriesAfterAnchoring(t *testing.T) {
 	if err != nil || got.Status != graphprotocol.StatusOK || len(got.Candidates) != 0 || len(got.Nodes) != 3 ||
 		got.Nodes[0].RepositoryID != 101 || got.Nodes[0].UID != "A" ||
 		got.Nodes[1].RepositoryID != 202 || got.Nodes[1].UID != "B" ||
-		got.Nodes[2].RepositoryID != 101 || got.Nodes[2].UID != "Z" {
+		got.Nodes[2].RepositoryID != 101 || got.Nodes[2].UID != "Z" ||
+		len(got.Edges) != 2 ||
+		got.Edges[0].SourceRepositoryID != 101 || got.Edges[0].SourceUID != "A" ||
+		got.Edges[0].TargetRepositoryID != 202 || got.Edges[0].TargetUID != "B" ||
+		got.Edges[1].SourceRepositoryID != 202 || got.Edges[1].SourceUID != "B" ||
+		got.Edges[1].TargetRepositoryID != 101 || got.Edges[1].TargetUID != "Z" {
 		t.Fatalf("Trace()=%#v,%v", got, err)
 	}
 }

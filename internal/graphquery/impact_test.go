@@ -44,7 +44,12 @@ func TestImpactTraversesOnlyAuthorizedRepositoriesAfterAnchoring(t *testing.T) {
 	})
 	if err != nil || got.Status != graphprotocol.StatusFound || len(got.Candidates) != 0 ||
 		len(got.ByDepth[1]) != 1 || got.ByDepth[1][0].RepositoryID != 202 || got.ByDepth[1][0].UID != "B" ||
-		len(got.ByDepth[2]) != 1 || got.ByDepth[2][0].RepositoryID != 101 || got.ByDepth[2][0].UID != "Z" {
+		len(got.ByDepth[2]) != 1 || got.ByDepth[2][0].RepositoryID != 101 || got.ByDepth[2][0].UID != "Z" ||
+		len(got.Edges) != 2 ||
+		got.Edges[0].SourceRepositoryID != 101 || got.Edges[0].SourceUID != "A" ||
+		got.Edges[0].TargetRepositoryID != 202 || got.Edges[0].TargetUID != "B" ||
+		got.Edges[1].SourceRepositoryID != 202 || got.Edges[1].SourceUID != "B" ||
+		got.Edges[1].TargetRepositoryID != 101 || got.Edges[1].TargetUID != "Z" {
 		t.Fatalf("Impact(downstream)=%#v,%v", got, err)
 	}
 	for _, symbols := range got.ByDepth {
@@ -61,7 +66,12 @@ func TestImpactTraversesOnlyAuthorizedRepositoriesAfterAnchoring(t *testing.T) {
 	})
 	if err != nil || got.Status != graphprotocol.StatusFound || len(got.Candidates) != 0 ||
 		len(got.ByDepth[1]) != 1 || got.ByDepth[1][0].RepositoryID != 202 || got.ByDepth[1][0].UID != "B" ||
-		len(got.ByDepth[2]) != 1 || got.ByDepth[2][0].RepositoryID != 101 || got.ByDepth[2][0].UID != "A" {
+		len(got.ByDepth[2]) != 1 || got.ByDepth[2][0].RepositoryID != 101 || got.ByDepth[2][0].UID != "A" ||
+		len(got.Edges) != 2 ||
+		got.Edges[0].SourceRepositoryID != 202 || got.Edges[0].SourceUID != "B" ||
+		got.Edges[0].TargetRepositoryID != 101 || got.Edges[0].TargetUID != "Z" ||
+		got.Edges[1].SourceRepositoryID != 101 || got.Edges[1].SourceUID != "A" ||
+		got.Edges[1].TargetRepositoryID != 202 || got.Edges[1].TargetUID != "B" {
 		t.Fatalf("Impact(upstream)=%#v,%v", got, err)
 	}
 	for _, symbols := range got.ByDepth {
