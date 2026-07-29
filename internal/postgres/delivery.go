@@ -15,7 +15,9 @@ func (s *Store) AdminDeliveries(ctx context.Context, installationID int64, repos
 		join installations on installations.id=deliveries.installation_id
 		left join repositories on repositories.id=deliveries.repository_id
 			and repositories.installation_id=deliveries.installation_id
-		where installations.github_id=$1 and (deliveries.repository_id is null or repositories.github_id=any($2))
+		where ($1=0 and installations.status='active' and (deliveries.repository_id is null
+			or repositories.enabled and not repositories.archived)
+			or installations.github_id=$1 and (deliveries.repository_id is null or repositories.github_id=any($2)))
 		order by deliveries.received_at desc,deliveries.id desc limit $3`, installationID, repositoryIDs, limit+1)
 	if err != nil {
 		return nil, false, err

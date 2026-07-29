@@ -144,6 +144,9 @@ func (adminHTTPStore) AdminRepository(_ context.Context, installationID int64, r
 	}
 	return repository.Repository{ID: 7, InstallationID: 10, GitHubID: 101, Name: "acme/one", Branch: "main", Enabled: true}, nil
 }
+func (adminHTTPStore) AnyAuthorizedRepository(_ context.Context, githubID int64) (repository.Repository, error) {
+	return repository.Repository{ID: 7, InstallationID: 10, GitHubID: githubID, Name: "acme/one", Branch: "main", Enabled: true}, nil
+}
 func (store *adminHTTPStore) EnqueueAdminIndex(_ context.Context, request admin.IndexRequest) error {
 	store.reindexed = request.RepositoryID
 	return nil

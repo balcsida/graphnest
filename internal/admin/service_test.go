@@ -40,6 +40,39 @@ func TestServiceResolvesReindexDefaultBranchSHA(t *testing.T) {
 	}
 }
 
+func TestServiceDurableAdministratorReindexesGloballyAuthorizedRepository(t *testing.T) {
+	store := &fakeStore{repository: repository.Repository{
+		ID: 7, InstallationID: 20, GitHubID: 201, Name: "other/two", Branch: "main", Enabled: true,
+	}}
+	service := &Service{Store: store, GitHub: fakeGitHub{sha: testSHA}}
+	principal := authn.Principal{Method: "oidc", Administrator: true}
+
+	if err := service.Reindex(t.Context(), principal, 201); err != nil {
+		t.Fatal(err)
+	}
+	if store.globalLookups != 1 || store.enqueued.RepositoryID != 7 {
+		t.Fatalf("global lookups=%d request=%#v", store.globalLookups, store.enqueued)
+	}
+}
+
+func TestServiceDurableAdministratorReconcilesAllInstallations(t *testing.T) {
+	called := false
+	service := &Service{
+		Store:  &fakeStore{},
+		GitHub: fakeGitHub{},
+		ReconcileAll: func(context.Context) error {
+			called = true
+			return nil
+		},
+	}
+	if err := service.Reconcile(t.Context(), authn.Principal{Method: "oidc", Administrator: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("global reconciliation was not called")
+	}
+}
+
 func TestServiceScopesReconcileAndRetry(t *testing.T) {
 	store := &fakeStore{}
 	service := &Service{Store: store, GitHub: fakeGitHub{repositories: []githubapp.Repository{
@@ -69,6 +102,7 @@ type fakeStore struct {
 	retryInstallationID int64
 	retryRepositoryIDs  []int64
 	reconciled          []githubapp.Repository
+	globalLookups       int
 }
 
 func (*fakeStore) AdminOverview(context.Context, int64, []int64) (Overview, error) {
@@ -95,6 +129,13 @@ func (*fakeStore) AdminGitHub(context.Context, int64, []int64, GitHubConfig, int
 func (store *fakeStore) AdminRepository(_ context.Context, installationID int64, repositoryIDs []int64, githubID int64) (repository.Repository, error) {
 	if installationID != store.repository.InstallationID || len(repositoryIDs) != 1 ||
 		repositoryIDs[0] != githubID || store.repository.GitHubID != githubID {
+		return repository.Repository{}, errors.New("missing")
+	}
+	return store.repository, nil
+}
+func (store *fakeStore) AnyAuthorizedRepository(_ context.Context, githubID int64) (repository.Repository, error) {
+	store.globalLookups++
+	if store.repository.GitHubID != githubID {
 		return repository.Repository{}, errors.New("missing")
 	}
 	return store.repository, nil

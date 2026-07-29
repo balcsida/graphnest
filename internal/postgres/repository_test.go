@@ -336,6 +336,43 @@ func TestAdminDataIsBoundedAndSanitized(t *testing.T) {
 	}
 }
 
+func TestDurableAdministratorInventoryUsesGlobalEligibleRepositories(t *testing.T) {
+	store := migratedStore(t)
+	for _, installation := range []InstallationUpdate{
+		{GitHubID: 10, AccountLogin: "acme", AccountType: "Organization", Status: "active"},
+		{GitHubID: 20, AccountLogin: "other", AccountType: "Organization", Status: "active"},
+		{GitHubID: 30, AccountLogin: "inactive", AccountType: "Organization", Status: "suspended"},
+	} {
+		if err := store.UpsertInstallation(t.Context(), installation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, item := range []RepositoryUpdate{
+		{GitHubID: 101, InstallationID: 10, Owner: "acme", Name: "one", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true},
+		{GitHubID: 201, InstallationID: 20, Owner: "other", Name: "two", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true},
+		{GitHubID: 202, InstallationID: 20, Owner: "other", Name: "disabled", CloneURL: "clone", WebURL: "web", DefaultBranch: "main"},
+		{GitHubID: 203, InstallationID: 20, Owner: "other", Name: "archived", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true, Archived: true},
+		{GitHubID: 301, InstallationID: 30, Owner: "inactive", Name: "three", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true},
+	} {
+		if _, err := store.UpsertRepository(t.Context(), item); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	repositories, truncated, err := store.AdminRepositories(t.Context(), 0, nil, 10)
+	if err != nil || truncated || len(repositories) != 2 ||
+		repositories[0].GitHubID != 101 || repositories[1].GitHubID != 201 {
+		t.Fatalf("repositories=%#v truncated=%v err=%v", repositories, truncated, err)
+	}
+	if repository, err := store.AdminRepository(t.Context(), 0, nil, 201); err != nil || repository.GitHubID != 201 {
+		t.Fatalf("repository=%#v err=%v", repository, err)
+	}
+	overview, err := store.AdminOverview(t.Context(), 0, nil)
+	if err != nil || overview.Repositories["pending"] != 2 || overview.Installations != 2 {
+		t.Fatalf("overview=%#v err=%v", overview, err)
+	}
+}
+
 func TestAdminReconcileOnlyChangesScopedRepositories(t *testing.T) {
 	store := migratedStore(t)
 	queueRepository(t, store)

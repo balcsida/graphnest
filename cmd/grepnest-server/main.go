@@ -264,7 +264,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	graphQueries := &graphservice.Service{Store: store, Backend: graphClient, Files: repositoryService, Limits: graphQueryLimits(settings.Graph), Observe: metrics.ObserveGraphQuery}
 	processor := webhook.NewGitHubProcessor(store, reconcileRequests, metrics)
 	adminService := &admin.Service{
-		Store: store, GitHub: githubClient,
+		Store: store, GitHub: githubClient, ReconcileAll: reconciler.All,
 		Config: admin.GitHubConfig{
 			AppID: settings.GitHub.AppID, WebURL: settings.GitHub.WebURL, APIURL: settings.GitHub.APIURL,
 			UploadURL: settings.GitHub.UploadURL, GitURL: settings.GitHub.GitURL, APIVersion: settings.GitHub.APIVersion,

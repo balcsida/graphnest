@@ -45,6 +45,22 @@ func TestUploadRequiresScopedAdministratorAndCurrentCommit(t *testing.T) {
 	}
 }
 
+func TestUploadAllowsDurableAdministratorWithoutLegacyScope(t *testing.T) {
+	store := &fakeStore{repositories: map[int64]repository.Repository{201: {
+		ID: 2, InstallationID: 20, GitHubID: 201, IndexedSHA: serviceSHA,
+	}}}
+	data := marshalIndex(t, &scip.Index{Metadata: &scip.Metadata{ToolInfo: &scip.ToolInfo{Name: "test"}}})
+
+	if err := (&Service{Store: store}).Upload(t.Context(), authn.Principal{
+		Method: "oidc", Administrator: true,
+	}, 201, serviceSHA, data); err != nil {
+		t.Fatal(err)
+	}
+	if store.globalAuthorizationCalls != 1 || len(store.authorizationCalls) != 0 || store.replacedRepositoryID != 2 {
+		t.Fatalf("global calls=%d scoped calls=%#v replaced=%d", store.globalAuthorizationCalls, store.authorizationCalls, store.replacedRepositoryID)
+	}
+}
+
 func TestUploadMapsStaleReplacementOnly(t *testing.T) {
 	backendError := errors.New("backend unavailable")
 	data := marshalIndex(t, &scip.Index{Metadata: &scip.Metadata{ToolInfo: &scip.ToolInfo{Name: "test"}}})
@@ -321,6 +337,7 @@ type fakeStore struct {
 	packages                     []PackageMapping
 	replaceErr, occurrenceErr    error
 	authorizationCalls           []authorizationCall
+	globalAuthorizationCalls     int
 	locationsPrincipal           authn.Principal
 	replacePackagesCalls         int
 }
@@ -333,6 +350,15 @@ type authorizationCall struct {
 
 func (store *fakeStore) AuthorizedRepository(_ context.Context, installationID int64, repositoryIDs []int64, repositoryID int64) (repository.Repository, error) {
 	store.authorizationCalls = append(store.authorizationCalls, authorizationCall{installationID, append([]int64(nil), repositoryIDs...), repositoryID})
+	item, ok := store.repositories[repositoryID]
+	if !ok {
+		return repository.Repository{}, errUnauthorizedRepository
+	}
+	return item, nil
+}
+
+func (store *fakeStore) AnyAuthorizedRepository(_ context.Context, repositoryID int64) (repository.Repository, error) {
+	store.globalAuthorizationCalls++
 	item, ok := store.repositories[repositoryID]
 	if !ok {
 		return repository.Repository{}, errUnauthorizedRepository

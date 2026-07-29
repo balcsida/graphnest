@@ -16,7 +16,8 @@ func (s *Store) AdminSCIPUploads(ctx context.Context, installationID int64, repo
 		uploads.commit,uploads.project_root,uploads.indexer_name,uploads.indexer_version,uploads.uploaded_at
 		from scip_uploads uploads join repositories on repositories.id=uploads.repository_id
 		join installations on installations.id=repositories.installation_id
-		where installations.github_id=$1 and repositories.github_id=any($2)
+		where ($1=0 and installations.status='active' and repositories.enabled and not repositories.archived
+			or installations.github_id=$1 and repositories.github_id=any($2))
 		order by uploads.uploaded_at desc,uploads.id desc limit $3`, installationID, repositoryIDs, limit+1)
 	if err != nil {
 		return nil, false, err
@@ -45,7 +46,8 @@ func (s *Store) AdminSCIPDependencies(ctx context.Context, installationID int64,
 		packages.source,packages.relation,packages.purl,packages.manager,packages.name,packages.version
 		from repository_packages packages join repositories on repositories.id=packages.repository_id
 		join installations on installations.id=repositories.installation_id
-		where installations.github_id=$1 and repositories.github_id=any($2)
+		where ($1=0 and installations.status='active' and repositories.enabled and not repositories.archived
+			or installations.github_id=$1 and repositories.github_id=any($2))
 		order by repositories.github_id,packages.source,packages.relation,packages.purl limit $3`, installationID, repositoryIDs, limit+1)
 	if err != nil {
 		return nil, false, err
