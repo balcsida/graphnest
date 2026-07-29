@@ -11,6 +11,7 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/AccountForbidden'}
         '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
         '503': {$ref: '#/components/responses/Unavailable'}
     post:
       security: [{bearerAuth: []}, {sessionCookie: []}]
@@ -23,6 +24,7 @@ paths:
         '413': {$ref: '#/components/responses/InvalidRequest'}
         '415': {$ref: '#/components/responses/InvalidRequest'}
         '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/account/api-tokens/{id}:
     delete:
