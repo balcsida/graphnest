@@ -3,6 +3,7 @@
 package indexer
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -55,7 +57,118 @@ func TestGitNumericPathsStayContained(t *testing.T) {
 	}
 }
 
-func TestGitPrepareFetchesOnlyTargetBranch(t *testing.T) {
+func TestGitPrepareCommitFetchesOnlyTargetBranch(t *testing.T) {
+	git, repo, job, promptsFile, serverURL, _, _ := gitPrepareFixture(t)
+	mirror, worktree, err := git.PrepareCommit(t.Context(), repo, job.ID, job.TargetSHA, "token-that-must-not-persist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(git.WorktreesDir, "7", "11"); worktree != want {
+		t.Fatalf("worktree=%q want=%q", worktree, want)
+	}
+	if got := strings.TrimSpace(runGit(t, "", "--git-dir", mirror, "config", "--get", "remote.origin.url")); got != serverURL+"/acme/repo.git" || strings.Contains(got, "token") {
+		t.Fatalf("remote=%q", got)
+	}
+	if got := strings.Fields(runGit(t, "", "--git-dir", mirror, "config", "--get-all", "remote.origin.fetch")); !slices.Equal(got, []string{"+refs/heads/main:refs/heads/main"}) {
+		t.Fatalf("fetch refspec=%v", got)
+	}
+	for key, want := range map[string]string{"zoekt.repoid": "17", "zoekt.name": "acme/repo", "zoekt.web-url": "https://ghe.example/acme/repo", "zoekt.web-url-type": "github"} {
+		if got := strings.TrimSpace(runGit(t, "", "--git-dir", mirror, "config", "--get", key)); got != want {
+			t.Fatalf("%s=%q want=%q", key, got, want)
+		}
+	}
+	if command := exec.Command(gitBinary(t), "--git-dir", mirror, "show-ref", "--verify", "refs/tags/not-fetched"); command.Run() == nil {
+		t.Fatal("tag was fetched")
+	}
+	if got := strings.TrimSpace(runGit(t, worktree, "rev-parse", "HEAD")); got != job.TargetSHA {
+		t.Fatalf("worktree HEAD=%q want=%q", got, job.TargetSHA)
+	}
+	prompts, err := os.ReadFile(promptsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	promptOrigin, err := credentialOrigin(serverURL + "/acme/repo.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPrompts := "Username for '" + promptOrigin + "': \nPassword for '" + strings.Replace(promptOrigin, "https://", "https://x-access-token@", 1) + "': \n"
+	if string(prompts) != wantPrompts {
+		t.Fatalf("prompts=%q want=%q", prompts, wantPrompts)
+	}
+	if command := exec.Command(gitBinary(t), "-C", worktree, "symbolic-ref", "-q", "HEAD"); command.Run() == nil {
+		t.Fatal("worktree HEAD is attached")
+	}
+
+	missing := job
+	missing.ID++
+	missing.TargetSHA = gitTargetSHA
+	_, _, err = git.Prepare(t.Context(), repo, missing, "token-that-must-not-persist")
+	if !errors.Is(err, ErrTargetMissing) || strings.Contains(fmt.Sprint(err), "secret") {
+		t.Fatalf("missing target err=%v", err)
+	}
+}
+
+func TestGitPreparePreservesSuccessfulExactCheckout(t *testing.T) {
+	git, repo, job, _, _, _, _ := gitPrepareFixture(t)
+	mirror, worktree, err := git.Prepare(t.Context(), repo, job, "token-that-must-not-persist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(git.MirrorsDir, "7.git"); mirror != want {
+		t.Fatalf("mirror=%q want=%q", mirror, want)
+	}
+	if want := filepath.Join(git.WorktreesDir, "7", "11"); worktree != want {
+		t.Fatalf("worktree=%q want=%q", worktree, want)
+	}
+	if got := strings.TrimSpace(runGit(t, worktree, "rev-parse", "HEAD")); got != job.TargetSHA {
+		t.Fatalf("worktree HEAD=%q want=%q", got, job.TargetSHA)
+	}
+}
+
+func TestGitPrepareFetchesExactSHAAfterBranchRewrite(t *testing.T) {
+	git, repo, job, _, _, source, origin := gitPrepareFixture(t)
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("rewritten\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, source, "add", "README.md")
+	runGit(t, source, "commit", "-m", "rewrite")
+	runGit(t, source, "push", "--force", "origin", "main")
+	runGit(t, "", "--git-dir", origin, "config", "uploadpack.allowAnySHA1InWant", "true")
+
+	_, worktree, err := git.PrepareCommit(t.Context(), repo, job.ID, job.TargetSHA, "token-that-must-not-persist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(runGit(t, worktree, "rev-parse", "HEAD")); got != job.TargetSHA {
+		t.Fatalf("worktree HEAD=%q want=%q", got, job.TargetSHA)
+	}
+}
+
+func TestMirrorLockSerializesUsers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "7.lock")
+	unlock, err := lockMirror(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	var wait sync.WaitGroup
+	wait.Add(1)
+	var secondErr error
+	go func() {
+		defer wait.Done()
+		_, secondErr = lockMirror(ctx, path)
+	}()
+	wait.Wait()
+	if !errors.Is(secondErr, context.DeadlineExceeded) {
+		t.Fatalf("lockMirror() error = %v", secondErr)
+	}
+}
+
+func gitPrepareFixture(t *testing.T) (Git, repository.Repository, postgres.IndexJob, string, string, string, string) {
+	t.Helper()
 	requireGit(t)
 	projectRoot := t.TempDir()
 	origin := filepath.Join(projectRoot, "acme", "repo.git")
@@ -91,7 +204,7 @@ func TestGitPrepareFetchesOnlyTargetBranch(t *testing.T) {
 		}
 		gitHTTPBackend(projectRoot).ServeHTTP(writer, request)
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
 	certificate := server.Certificate()
 	caFile := filepath.Join(t.TempDir(), "ca.pem")
 	if err := os.WriteFile(caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate.Raw}), 0o600); err != nil {
@@ -118,50 +231,7 @@ func TestGitPrepareFetchesOnlyTargetBranch(t *testing.T) {
 	}
 	repo := repository.Repository{ID: 7, ZoektID: 17, Name: "acme/repo", Branch: "main", WebURL: "https://ghe.example/acme/repo"}
 	job := postgres.IndexJob{ID: 11, RepositoryID: 7, TargetSHA: target}
-	mirror, worktree, err := git.Prepare(t.Context(), repo, job, "token-that-must-not-persist")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.TrimSpace(runGit(t, "", "--git-dir", mirror, "config", "--get", "remote.origin.url")); got != server.URL+"/acme/repo.git" || strings.Contains(got, "token") {
-		t.Fatalf("remote=%q", got)
-	}
-	if got := strings.Fields(runGit(t, "", "--git-dir", mirror, "config", "--get-all", "remote.origin.fetch")); !slices.Equal(got, []string{"+refs/heads/main:refs/heads/main"}) {
-		t.Fatalf("fetch refspec=%v", got)
-	}
-	for key, want := range map[string]string{"zoekt.repoid": "17", "zoekt.name": "acme/repo", "zoekt.web-url": "https://ghe.example/acme/repo", "zoekt.web-url-type": "github"} {
-		if got := strings.TrimSpace(runGit(t, "", "--git-dir", mirror, "config", "--get", key)); got != want {
-			t.Fatalf("%s=%q want=%q", key, got, want)
-		}
-	}
-	if command := exec.Command(gitBinary(t), "--git-dir", mirror, "show-ref", "--verify", "refs/tags/not-fetched"); command.Run() == nil {
-		t.Fatal("tag was fetched")
-	}
-	if got := strings.TrimSpace(runGit(t, worktree, "rev-parse", "HEAD")); got != target {
-		t.Fatalf("worktree HEAD=%q want=%q", got, target)
-	}
-	prompts, err := os.ReadFile(promptsFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	promptOrigin, err := credentialOrigin(server.URL + "/acme/repo.git")
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantPrompts := "Username for '" + promptOrigin + "': \nPassword for '" + strings.Replace(promptOrigin, "https://", "https://x-access-token@", 1) + "': \n"
-	if string(prompts) != wantPrompts {
-		t.Fatalf("prompts=%q want=%q", prompts, wantPrompts)
-	}
-	if command := exec.Command(gitBinary(t), "-C", worktree, "symbolic-ref", "-q", "HEAD"); command.Run() == nil {
-		t.Fatal("worktree HEAD is attached")
-	}
-
-	missing := job
-	missing.ID++
-	missing.TargetSHA = gitTargetSHA
-	_, _, err = git.Prepare(t.Context(), repo, missing, "token-that-must-not-persist")
-	if !errors.Is(err, ErrTargetMissing) || strings.Contains(fmt.Sprint(err), "secret") {
-		t.Fatalf("missing target err=%v", err)
-	}
+	return git, repo, job, promptsFile, server.URL, source, origin
 }
 
 func TestGitPruneRemovesOnlyInactiveNumericWorktrees(t *testing.T) {

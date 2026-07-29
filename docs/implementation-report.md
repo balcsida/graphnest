@@ -14,6 +14,7 @@
 | 7 | `internal/indexer`, `cmd/grepnest-indexer` | Bounded HTTPS Git fetches use fixed askpass, numeric paths, one leased worker, real Zoekt indexing, and exact `/api/list` publication checks. |
 | 8 | repository REST/MCP services and `test/e2e/milestone2_test.go` | A GHES-compatible TLS fixture proves signed webhook through indexed-SHA search/read/list/status, including stale suppression, rename isolation, disablement, and an empty-tree repository. |
 | 9 | `internal/scipgraph`, SCIP HTTP/MCP adapters, PostgreSQL graph storage, and `test/e2e/scip_test.go` | Pre-generated indexes provide exact-SHA cross-repository navigation while suppressing unauthorized targets; no managed indexer was added. |
+| 10 | managed graph scanner, PostgreSQL graph authority, LadybugDB runtime, REST/MCP graph tools, and deployment modes | Real PostgreSQL/LadybugDB contracts cover embedded and standalone ownership; exact-checkout Go, JavaScript, TypeScript/TSX, Java, Kotlin, and Rust fixtures reach managed scan, status, REST, and MCP. |
 
 ## Decisions
 
@@ -33,6 +34,9 @@
   because the pinned image has no arm64 variant.
 - SCIP generation remains repository CI's responsibility. GrepNest accepts
   bounded protobuf uploads only for the exact currently indexed commit.
+- PostgreSQL remains authoritative for managed and external graph artifacts.
+  LadybugDB v0.18.3 is pinned derived storage with one embedded or standalone
+  writer; public clients use the server's authorization and exact-SHA checks.
 
 ## Verification commands and results
 
@@ -65,14 +69,38 @@ durable Compose configuration validation pass, but the durable server container
 and cluster deployment have not been tested because no application image is
 built.
 
+The graph completion pass additionally ran:
+
+```sh
+make native-link-test abi-test ladybug-test
+make postgres-integration
+make e2e
+make compose-test helm-lint helm-test openapi-check
+go mod tidy -diff
+go mod verify
+git diff --check
+```
+
+On Darwin/arm64, the pinned LadybugDB archive checksum passed, scanner,
+indexer, and graph binaries built with cgo, and `otool -L` resolved
+`@rpath/liblbug.0.dylib` at native version 0.18.3. The seven-variant ABI smoke
+matrix parsed Go, JavaScript, TypeScript, TSX, Java, Kotlin, and Rust. Real
+PostgreSQL/LadybugDB tests verified public REST/MCP parity across embedded and
+standalone runtimes, administrator-only Cypher, authorized scope, current
+commit reporting, result boundaries, and rejection after an indexed-SHA
+change. Linux/x86_64 CI uses the separately pinned archive and checksum and
+requires `ldd` to resolve `liblbug` from the pinned directory; that native
+path is encoded but was not executed on this Darwin host.
+
 ## Risks and next milestone
 
-Local E2E and live Compose dependencies prove Milestones 0-2 only; the durable
+Local E2E and live Compose dependencies prove the implemented local contracts; the durable
 Compose profile has configuration-only validation and does not establish
 production readiness. The implementation uses the GHES 3.17-compatible default
 REST API version `2022-11-28`; the version and CA bundle are configurable.
 Indexing is default-branch-only. Images, secret delivery, cluster deployment,
 backup/restore, capacity validation, and OpenShift testing remain incomplete.
 
-Next: Milestone 3 validates images and the existing Helm chart on Kubernetes or
-OpenShift. No image or OpenShift implementation was added here.
+Image, live-cluster, OpenShift, and storage-class recovery verification remain
+outside this report. Compose and Helm coverage is render/configuration
+validation only; no production image or cluster deployment was claimed.

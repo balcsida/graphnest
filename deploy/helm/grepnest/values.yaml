@@ -3,9 +3,10 @@ fullnameOverride: ""
 images:
   application: {repository: "", digest: "", tag: "", pullPolicy: IfNotPresent}
   node: {repository: "", digest: "", tag: "", pullPolicy: IfNotPresent}
+  scanner: {repository: "", digest: "", tag: "", pullPolicy: IfNotPresent}
   pullSecrets: []
 secrets:
-  runtime: {name: "", databaseURLKey: database-url, userTokenKey: user-token, adminTokenKey: admin-token}
+  runtime: {name: "", databaseURLKey: database-url, userTokenKey: user-token, adminTokenKey: admin-token, graphSecretKey: graph-secret}
   githubApp: {name: "", privateKeyKey: private-key.pem, webhookSecretKey: webhook-secret}
   customCA: {name: "", key: ca.crt}
 server:
@@ -61,6 +62,31 @@ node:
   affinity: {}
   tolerations: []
   topologySpreadConstraints: []
+  podSecurityContext: {}
+  podAnnotations: {}
+graph:
+  mode: embedded
+  executable: /usr/local/bin/grepnest-graph
+  port: 8081
+  dataPath: /data/graph
+  resources: {requests: {cpu: 500m, memory: 1Gi}, limits: {cpu: "2", memory: 4Gi}}
+  storage: {size: 50Gi, accessModes: [ReadWriteOnce], storageClassName: "", annotations: {}}
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  podSecurityContext: {}
+  podAnnotations: {}
+scanner:
+  enabled: false
+  replicas: 2
+  executable: /usr/local/bin/grepnest-scanner
+  dataPath: /data
+  gitExecutable: /usr/bin/git
+  metricsPort: 9090
+  resources: {requests: {cpu: 500m, memory: 512Mi}, limits: {cpu: "2", memory: 2Gi}}
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
   podSecurityContext: {}
   podAnnotations: {}
 migration:

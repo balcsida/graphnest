@@ -1,9 +1,11 @@
 # Architecture
 
 ```text
-GitHub Enterprise -> grepnest-server -> PostgreSQL <- grepnest-indexer
-                          |                          |
-                    REST and MCP               Git -> Zoekt
+GitHub Enterprise -> PostgreSQL <- indexer / scanners
+                       |              |
+REST and MCP -> server -> graph client -> one LadybugDB runtime
+                       |                         |
+                      Zoekt                  derived graph files
 ```
 
 `grepnest-server` is the sole Zoekt search client. It authenticates a single
@@ -37,3 +39,40 @@ network and bind-mounts the host indexer's shard directory into Zoekt. Zoekt is
 published only at `127.0.0.1:6070`; it is not public ingress. OpenShift
 packaging and production ingress remain Milestone 3 work. See `docs/adr` for
 accepted decisions.
+
+## Derived graph analysis
+
+PostgreSQL is authoritative for repository state, indexed default-branch SHA,
+graph artifacts, upload metadata, and graph jobs. LadybugDB is a local,
+derived query store. It may be discarded and rebuilt from PostgreSQL; it is not
+a backup source or an authority for authorization or repository freshness.
+
+The graph runtime has exactly one writable owner. `embedded` (the default)
+runs it in the indexer process and stores the database on the node volume.
+`separate` runs one `grepnest-graph` owner with its own volume. Scanners are
+independent, horizontally scalable workers that write artifacts to PostgreSQL,
+not LadybugDB. In both modes every server replica is an authenticated graph
+client; it never opens a local LadybugDB copy.
+
+The server resolves an authorized repository selector (numeric GitHub ID or
+name) to its current indexed default-branch SHA before a graph query. It
+reauthorizes selected and returned repositories against the exact SHA after
+the graph response, returning `graph_not_ready` if the snapshot changed. A
+requested non-indexed branch returns `branch_not_indexed`. The public surface
+is limited to `context`, `impact`, `trace`, and administrator-only read-only
+Cypher; request/response schemas, response discriminators, and bounds are in
+the [OpenAPI contract](openapi.yaml).
+
+Graph ingestion accepts an external native graph artifact at the exact indexed
+SHA. Pre-generated `.scip` upload remains a distinct code-navigation path: it
+is not native scanning. When a native graph is unavailable, an exact-SHA SCIP
+upload can provide the documented fallback state; it does not turn SCIP into a
+native scan. Runtime synchronization and compatibility rebuild read the stored
+source artifacts from PostgreSQL.
+
+The graph HTTP listener is an internal bearer-protected hop. Compose keeps it
+on the internal network. Helm provides a ClusterIP Service only and renders no
+graph Ingress. The server and graph owner share an internal secret: Helm stages
+projected secrets while Compose mounts the source file read-only. See
+[ADR-0012](adr/0012-derived-ladybug-graph.md) for the storage and topology
+decision.
