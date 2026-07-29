@@ -19,7 +19,7 @@ func TestAdminRoutesRequireAdministrator(t *testing.T) {
 	RegisterAdmin(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{
 		"user":  {Subject: "user"},
 		"admin": {Subject: "admin", Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}},
-	})), &admin.Service{Store: &adminHTTPStore{}, GitHub: adminHTTPGitHub{}}, 2, 4096)
+	})), &admin.Service{Store: &adminHTTPStore{}, GitHub: adminHTTPGitHub{}}, 2, 1024, 4096)
 
 	for _, token := range []string{"", "user"} {
 		request := httptest.NewRequest(http.MethodGet, "/v1/admin/overview", nil)
@@ -40,7 +40,7 @@ func TestAdminRoutesRequireAdministrator(t *testing.T) {
 
 func TestAdminRouteAcceptsAdministratorSession(t *testing.T) {
 	mux := http.NewServeMux()
-	RegisterAdmin(mux, authn.RequestAuthenticator{Session: httpSession{principal: authn.Principal{Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}}}}, &admin.Service{Store: &adminHTTPStore{}, GitHub: adminHTTPGitHub{}}, 2, 4096)
+	RegisterAdmin(mux, authn.RequestAuthenticator{Session: httpSession{principal: authn.Principal{Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}}}}, &admin.Service{Store: &adminHTTPStore{}, GitHub: adminHTTPGitHub{}}, 2, 1024, 4096)
 	request := httptest.NewRequest(http.MethodGet, "/v1/admin/overview", nil)
 	request.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: "session"})
 	response := httptest.NewRecorder()
@@ -56,7 +56,7 @@ func TestAdminRoutesExposeBoundedDataAndActions(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterAdmin(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{
 		"admin": {Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}},
-	})), service, 2, 4096)
+	})), service, 2, 1024, 4096)
 
 	for _, path := range []string{
 		"/v1/admin/overview", "/v1/admin/repositories", "/v1/admin/jobs",
@@ -113,8 +113,16 @@ func TestAdminRoutesExposeBoundedDataAndActions(t *testing.T) {
 }
 
 type adminHTTPStore struct {
-	reindexed int64
-	retried   int64
+	reindexed       int64
+	retried         int64
+	identityErr     error
+	identityActorID int64
+	identityUserID  int64
+	identityGroupID int64
+	administrator   bool
+	suspended       bool
+	repositoryIDs   []int64
+	revokedUserID   int64
 }
 
 func (adminHTTPStore) AdminOverview(context.Context, int64, []int64) (admin.Overview, error) {
