@@ -102,6 +102,89 @@ func TestServiceUsesPatchParserAndValidatesMutation(t *testing.T) {
 	}
 }
 
+func TestServiceRequiresExactRequestSchemaBeforeStore(t *testing.T) {
+	for _, operation := range []struct {
+		name   string
+		schema string
+		run    func(*Service, []string) error
+	}{
+		{"create user", UserSchema, func(s *Service, schemas []string) error {
+			_, err := s.CreateUser(t.Context(), User{Schemas: schemas, ExternalID: "oidc-1", UserName: "ada"})
+			return err
+		}},
+		{"replace user", UserSchema, func(s *Service, schemas []string) error {
+			_, err := s.ReplaceUser(t.Context(), 1, User{Schemas: schemas, ExternalID: "oidc-1", UserName: "ada"})
+			return err
+		}},
+		{"create group", GroupSchema, func(s *Service, schemas []string) error {
+			_, err := s.CreateGroup(t.Context(), Group{Schemas: schemas, DisplayName: "Engineering"})
+			return err
+		}},
+		{"replace group", GroupSchema, func(s *Service, schemas []string) error {
+			_, err := s.ReplaceGroup(t.Context(), 1, Group{Schemas: schemas, DisplayName: "Engineering"})
+			return err
+		}},
+		{"patch user", PatchSchema, func(s *Service, schemas []string) error {
+			_, err := s.PatchUser(t.Context(), 1, PatchRequest{Schemas: schemas, Operations: []PatchOperation{{Op: "replace", Path: "active", Value: []byte(`true`)}}})
+			return err
+		}},
+		{"patch group", PatchSchema, func(s *Service, schemas []string) error {
+			_, err := s.PatchGroup(t.Context(), 1, PatchRequest{Schemas: schemas, Operations: []PatchOperation{{Op: "add", Path: "members", Value: []byte(`[{"value":"1"}]`)}}})
+			return err
+		}},
+	} {
+		for _, schemas := range []struct {
+			name  string
+			value []string
+		}{
+			{"absent", nil},
+			{"wrong", []string{"urn:example:wrong"}},
+			{"extra", []string{operation.schema, "urn:example:extra"}},
+		} {
+			t.Run(operation.name+"/"+schemas.name, func(t *testing.T) {
+				store := &fakeStore{}
+				service := &Service{Store: store, BaseURL: "https://grepnest.example", MaxResults: 100}
+				err := operation.run(service, schemas.value)
+				var scimError Error
+				if !errors.As(err, &scimError) || scimError.Status != 400 || scimError.SCIMType != "invalidValue" || store.calls != 0 {
+					t.Fatalf("err=%v calls=%d", err, store.calls)
+				}
+			})
+		}
+	}
+}
+
+func TestServiceRejectsNoncanonicalPatchMemberBeforeStore(t *testing.T) {
+	for _, operation := range []PatchOperation{
+		{Op: "add", Path: "members", Value: []byte(`[{"value":"01"}]`)},
+		{Op: "remove", Path: `members[value eq "01"]`},
+	} {
+		store := &fakeStore{}
+		service := &Service{Store: store, BaseURL: "https://grepnest.example", MaxResults: 100}
+		_, err := service.PatchGroup(t.Context(), 1, NewPatchRequest([]PatchOperation{operation}))
+		var scimError Error
+		if !errors.As(err, &scimError) || scimError.Status != 400 || scimError.SCIMType != "invalidValue" || store.calls != 0 {
+			t.Fatalf("operation=%#v err=%v calls=%d", operation, err, store.calls)
+		}
+	}
+}
+
+func TestServiceRejectsUnsupportedNameFieldsBeforeStore(t *testing.T) {
+	for _, name := range []Name{
+		{MiddleName: "Byron"},
+		{HonorificPrefix: "Countess"},
+		{HonorificSuffix: "PhD"},
+	} {
+		store := &fakeStore{}
+		service := &Service{Store: store, BaseURL: "https://grepnest.example", MaxResults: 100}
+		_, err := service.CreateUser(t.Context(), User{Schemas: []string{UserSchema}, ExternalID: "oidc-1", UserName: "ada", Name: name})
+		var scimError Error
+		if !errors.As(err, &scimError) || scimError.Status != 400 || scimError.SCIMType != "invalidValue" || store.calls != 0 {
+			t.Fatalf("name=%#v err=%v calls=%d", name, err, store.calls)
+		}
+	}
+}
+
 func TestServiceMapsStoreErrors(t *testing.T) {
 	for _, test := range []struct {
 		name     string

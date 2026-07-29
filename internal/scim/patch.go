@@ -146,7 +146,9 @@ func applyGroupOperation(mutation *GroupMutation, operation PatchOperation) erro
 	if op == "remove" && operation.Path == "" {
 		return parseError("invalidPath")
 	}
-	if id, ok := memberFilter(operation.Path); ok {
+	if id, ok, err := memberFilter(operation.Path); err != nil {
+		return err
+	} else if ok {
 		if op != "remove" {
 			return parseError("invalidPath")
 		}
@@ -212,13 +214,13 @@ func withoutMemberID(ids []int64, remove int64) []int64 {
 	return ids
 }
 
-func memberFilter(path string) (int64, bool) {
+func memberFilter(path string) (int64, bool, error) {
 	prefix, suffix := `members[value eq "`, `"]`
 	if len(path) <= len(prefix)+len(suffix) || !strings.EqualFold(path[:len(prefix)], prefix) || !strings.HasSuffix(path, suffix) {
-		return 0, false
+		return 0, false, nil
 	}
-	id, err := strconv.ParseInt(path[len(prefix):len(path)-len(suffix)], 10, 64)
-	return id, err == nil && id > 0
+	id, err := parseCanonicalID(path[len(prefix) : len(path)-len(suffix)])
+	return id, true, err
 }
 
 func memberIDs(value json.RawMessage) ([]int64, error) {
@@ -230,11 +232,19 @@ func memberIDs(value json.RawMessage) ([]int64, error) {
 	}
 	ids := make([]int64, len(members))
 	for i, member := range members {
-		id, err := strconv.ParseInt(member.Value, 10, 64)
-		if err != nil || id < 1 {
-			return nil, parseError("invalidValue")
+		id, err := parseCanonicalID(member.Value)
+		if err != nil {
+			return nil, err
 		}
 		ids[i] = id
 	}
 	return ids, nil
+}
+
+func parseCanonicalID(value string) (int64, error) {
+	id, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || id < 1 || strconv.FormatInt(id, 10) != value {
+		return 0, parseError("invalidValue")
+	}
+	return id, nil
 }
