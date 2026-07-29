@@ -48,7 +48,11 @@ func (auth *Static) Authenticate(token string) (Principal, error) {
 	if matched != 1 {
 		return Principal{}, ErrUnauthenticated
 	}
+	return clonePrincipal(principal), nil
+}
+
+func clonePrincipal(principal Principal) Principal {
 	principal.RepositoryIDs = append([]int64(nil), principal.RepositoryIDs...)
 	principal.RepositoryNames = append([]string(nil), principal.RepositoryNames...)
-	return principal, nil
+	return principal
 }
