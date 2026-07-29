@@ -14,7 +14,9 @@ import (
 	"github.com/grepnest/grepnest/internal/sso"
 )
 
-const localAuthMaxBodyBytes = 1536
+// 16 KiB covers three maximally JSON-escaped credential fields without
+// allowing an unbounded authentication request.
+const localAuthMaxBodyBytes = 16 << 10
 
 type passwordCredentialSetter interface {
 	CreatePasswordSession(context.Context, int64, authn.PasswordCredential, authn.SessionRecord) error
