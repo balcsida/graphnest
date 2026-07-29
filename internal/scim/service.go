@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/mail"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -105,6 +104,9 @@ func (s *Service) PatchUser(ctx context.Context, id int64, request PatchRequest)
 	}
 	if id < 1 {
 		return User{}, invalidValue("resource ID must be a positive decimal integer")
+	}
+	if !validSchemas(request.Schemas, PatchSchema) {
+		return User{}, invalidValue("schemas must contain exactly the PatchOp schema")
 	}
 	mutation, err := ParseUserPatch(request)
 	if err != nil {
@@ -226,6 +228,9 @@ func (s *Service) PatchGroup(ctx context.Context, id int64, request PatchRequest
 	if id < 1 {
 		return Group{}, invalidValue("resource ID must be a positive decimal integer")
 	}
+	if !validSchemas(request.Schemas, PatchSchema) {
+		return Group{}, invalidValue("schemas must contain exactly the PatchOp schema")
+	}
 	mutation, err := ParseGroupPatch(request)
 	if err != nil {
 		return Group{}, mapServiceError(err)
@@ -331,9 +336,11 @@ func validateEmails(emails []Email) error {
 }
 
 func validateName(name Name) error {
+	if name.MiddleName != "" || name.HonorificPrefix != "" || name.HonorificSuffix != "" {
+		return invalidValue("name contains an unsupported attribute")
+	}
 	for _, value := range []string{
-		name.Formatted, name.FamilyName, name.GivenName, name.MiddleName,
-		name.HonorificPrefix, name.HonorificSuffix,
+		name.Formatted, name.FamilyName, name.GivenName,
 	} {
 		if len(value) > maxDisplayNameLength {
 			return invalidValue("name value is too long")
@@ -343,7 +350,7 @@ func validateName(name Name) error {
 }
 
 func validSchemas(schemas []string, required string) bool {
-	return len(schemas) == 0 || len(schemas) == 1 && schemas[0] == required
+	return len(schemas) == 1 && schemas[0] == required
 }
 
 func validRequired(value string, max int) bool {
@@ -351,8 +358,8 @@ func validRequired(value string, max int) bool {
 }
 
 func canonicalID(value string) bool {
-	id, err := strconv.ParseInt(value, 10, 64)
-	return err == nil && id > 0 && strconv.FormatInt(id, 10) == value
+	_, err := parseCanonicalID(value)
+	return err == nil
 }
 
 func validateRead(id int64, projection Projection, resource ResourceType) error {

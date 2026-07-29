@@ -164,9 +164,6 @@ func userSchemaDocument() SchemaDocument {
 				attr("formatted", "string", false, false, false, "readWrite", "default", "none"),
 				attr("familyName", "string", false, false, false, "readWrite", "default", "none"),
 				attr("givenName", "string", false, false, false, "readWrite", "default", "none"),
-				attr("middleName", "string", false, false, false, "readWrite", "default", "none"),
-				attr("honorificPrefix", "string", false, false, false, "readWrite", "default", "none"),
-				attr("honorificSuffix", "string", false, false, false, "readWrite", "default", "none"),
 			}),
 			complexAttr("emails", true, []SchemaAttribute{
 				attr("value", "string", false, true, false, "readWrite", "default", "none"),
