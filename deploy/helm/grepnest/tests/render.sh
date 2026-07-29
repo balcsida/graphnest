@@ -101,6 +101,8 @@ helm template scim "$chart" -n grepnest -f "$minimal" \
   --set=server.scim.enabled=true \
   --set-string=server.sso.publicURL=https://grepnest.example.invalid \
   --set-string=secrets.scim.name=grepnest-scim >"$tmp/scim.yaml"
+helm template break-glass "$chart" -n grepnest -f "$minimal" \
+  --set=breakGlass.enabled=true >"$tmp/break-glass.yaml"
 long_release=abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzx
 helm template "$long_release" "$chart" -n grepnest -f "$minimal" >"$tmp/long-release.yaml"
 
@@ -358,6 +360,11 @@ require 'GREPNEST_PUBLIC_URL: "https://grepnest.example.invalid"' "$tmp/scim.yam
 require 'GREPNEST_SCIM_TOKEN_FILE: /var/run/secrets/grepnest/scim/token' "$tmp/scim.yaml"
 reject 'GREPNEST_OIDC_' "$tmp/scim.yaml"
 reject 'GREPNEST_(USER|ADMIN)_(TOKEN|INSTALLATION_ID|REPOSITORY_IDS)' "$tmp/minimal.yaml"
+reject 'GREPNEST_BREAK_GLASS_ENABLED|BREAK_GLASS.*(PASSWORD|HASH|SALT)' "$tmp/minimal.yaml"
+require 'GREPNEST_BREAK_GLASS_ENABLED: "true"' "$tmp/break-glass.yaml"
+reject 'BREAK_GLASS.*(PASSWORD|HASH|SALT)|^kind: Secret$' "$tmp/break-glass.yaml"
+expect_failure "$tmp/break-glass-type.err" helm template bad "$chart" -f "$minimal" \
+  --set-string=breakGlass.enabled=true
 
 expect_failure "$tmp/scim-secret.err" helm template bad "$chart" -f "$minimal" \
   --set=server.scim.enabled=true
