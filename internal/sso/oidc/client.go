@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -110,6 +111,12 @@ func (client *Client) Exchange(
 	idToken, err := client.verifier.Verify(ctx, rawIDToken)
 	if err != nil {
 		return authn.Identity{}, fmt.Errorf("verify OIDC ID token: %w", err)
+	}
+	now := time.Now()
+	if idToken.IssuedAt.IsZero() ||
+		idToken.IssuedAt.After(now.Add(5*time.Minute)) ||
+		idToken.IssuedAt.Before(now.Add(-20*time.Minute)) {
+		return authn.Identity{}, errors.New("OIDC ID token issued-at is outside the accepted window")
 	}
 	if expectedNonce == "" || idToken.Nonce == "" || idToken.Nonce != expectedNonce {
 		return authn.Identity{}, errors.New("OIDC ID token nonce mismatch")

@@ -108,6 +108,12 @@ func (fixture *providerFixture) claims(code string) map[string]any {
 		claims["iss"] = "https://wrong.example"
 	case "expired":
 		claims["exp"] = time.Now().Add(-time.Minute).Unix()
+	case "missing-iat":
+		delete(claims, "iat")
+	case "future-iat":
+		claims["iat"] = time.Now().Add(6 * time.Minute).Unix()
+	case "stale-iat":
+		claims["iat"] = time.Now().Add(-21 * time.Minute).Unix()
 	case "missing-subject":
 		delete(claims, "sub")
 	case "bad-name":
@@ -264,7 +270,7 @@ func TestClientExchangeRejectsInvalidIDTokens(t *testing.T) {
 		"wrong-nonce", "missing-nonce", "wrong-audience", "multi-no-azp",
 		"multi-wrong-azp", "wrong-azp", "wrong-issuer", "expired", "unsigned",
 		"hs-signed", "missing-subject", "bad-name", "missing-link", "bad-link", "no-token",
-		"null-name", "null-link",
+		"null-name", "null-link", "missing-iat", "future-iat", "stale-iat",
 	} {
 		t.Run(code, func(t *testing.T) {
 			fixture := newProvider(t)
