@@ -510,22 +510,6 @@ func requiredInt64(name string) (int64, error) {
 	return parsed, nil
 }
 
-func repositoryIDs(name string) ([]int64, error) {
-	values := split(os.Getenv(name))
-	if len(values) == 0 {
-		return nil, invalid(name + " is required")
-	}
-	result := make([]int64, len(values))
-	for index, value := range values {
-		parsed, err := strconv.ParseInt(value, 10, 64)
-		if err != nil || parsed <= 0 {
-			return nil, invalid(name + " must contain positive IDs")
-		}
-		result[index] = parsed
-	}
-	return result, nil
-}
-
 func durationValue(name string, target *time.Duration) error {
 	if value := os.Getenv(name); value != "" {
 		parsed, err := time.ParseDuration(value)

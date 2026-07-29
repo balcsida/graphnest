@@ -14,7 +14,3 @@ secrets:
 server:
   config:
     githubAppID: "12345"
-    userInstallationID: "67890"
-    adminInstallationID: "67890"
-    userRepositoryIDs: "101,102"
-    adminRepositoryIDs: "101,102,103"

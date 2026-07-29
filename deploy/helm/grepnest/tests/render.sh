@@ -345,6 +345,7 @@ require 'protocol: TCP, port: 443' "$tmp/allow-identity-provider-egress-spec.yam
 require 'mountPath: /var/run/secrets/grepnest/oidc/client-secret' "$tmp/optional.yaml"
 require 'secretName: grepnest-oidc' "$tmp/optional.yaml"
 reject 'GREPNEST_OIDC_CLIENT_SECRET: ' "$tmp/optional.yaml"
+reject 'GREPNEST_(USER|ADMIN)_(TOKEN|INSTALLATION_ID|REPOSITORY_IDS)' "$tmp/minimal.yaml"
 
 reject '^ *- \{\}|^ *from: *\[?\]?$|^ *to: *\[?\]?$|^ *- (podSelector|namespaceSelector): *\{\}$' "$tmp/optional.yaml"
 reject 'cidr: "?(0\.0\.0\.0/0|::/0)"?' "$tmp/optional.yaml"

@@ -44,6 +44,24 @@ func TestAdminDocumentContract(t *testing.T) {
 	}
 }
 
+func TestAdminIdentityManagementContract(t *testing.T) {
+	for _, want := range []string{
+		`data-screen="users"`, `data-screen="groups"`, `Users`, `Groups`,
+		`Effective access`, `Direct access`, `Suspend user`, `Revoke credentials`,
+		`/v1/admin/users`, `/v1/admin/groups`, `/access`, `/suspend`, `/restore`, `/revoke-credentials`,
+		`window.confirm`, `credentials:"same-origin"`,
+	} {
+		if !bytes.Contains(adminDocument, []byte(want)) {
+			t.Errorf("admin identity management missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{`/scim/`, `SCIM profile`, `Manage membership`} {
+		if bytes.Contains(adminDocument, []byte(forbidden)) {
+			t.Errorf("admin identity management contains forbidden %q", forbidden)
+		}
+	}
+}
+
 func TestAdminDOMContract(t *testing.T) {
 	command := exec.Command(requireNode(t), "admin_dom_test.mjs")
 	output, err := command.CombinedOutput()

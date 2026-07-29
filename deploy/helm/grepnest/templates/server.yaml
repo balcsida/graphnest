@@ -75,12 +75,6 @@ spec:
             - name: GREPNEST_DATABASE_URL
               valueFrom:
                 secretKeyRef: {name: {{ .Values.secrets.runtime.name }}, key: {{ .Values.secrets.runtime.databaseURLKey }}}
-            - name: GREPNEST_USER_TOKEN
-              valueFrom:
-                secretKeyRef: {name: {{ .Values.secrets.runtime.name }}, key: {{ .Values.secrets.runtime.userTokenKey }}}
-            - name: GREPNEST_ADMIN_TOKEN
-              valueFrom:
-                secretKeyRef: {name: {{ .Values.secrets.runtime.name }}, key: {{ .Values.secrets.runtime.adminTokenKey }}}
           resources:
             {{- toYaml .Values.server.resources | nindent 12 }}
           volumeMounts:
