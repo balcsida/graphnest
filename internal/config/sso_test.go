@@ -1,0 +1,67 @@
+package config
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestLoadOIDC(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		set  func(*testing.T)
+		want bool
+	}{
+		{"valid", func(*testing.T) {}, true},
+		{"HTTP origin", func(t *testing.T) { t.Setenv("GREPNEST_PUBLIC_URL", "http://search.example.test") }, false},
+		{"HTTP issuer", func(t *testing.T) { t.Setenv("GREPNEST_OIDC_ISSUER_URL", "http://id.example.test") }, false},
+		{"missing client ID", func(t *testing.T) { t.Setenv("GREPNEST_OIDC_CLIENT_ID", "") }, false},
+		{"client secret is directory", func(t *testing.T) { t.Setenv("GREPNEST_OIDC_CLIENT_SECRET_FILE", t.TempDir()) }, false},
+		{"missing openid scope", func(t *testing.T) { t.Setenv("GREPNEST_OIDC_SCOPES", "profile,email") }, false},
+		{"offline access scope", func(t *testing.T) { t.Setenv("GREPNEST_OIDC_SCOPES", "openid,offline_access") }, false},
+		{"missing link claim", func(t *testing.T) { t.Setenv("GREPNEST_OIDC_LINK_CLAIM", "") }, false},
+		{"idle below minimum", func(t *testing.T) { t.Setenv("GREPNEST_SSO_SESSION_IDLE", "4m") }, false},
+		{"absolute above maximum", func(t *testing.T) { t.Setenv("GREPNEST_SSO_SESSION_TTL", "25h") }, false},
+		{"login flow above maximum", func(t *testing.T) { t.Setenv("GREPNEST_SSO_LOGIN_FLOW_TTL", "16m") }, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			setValidOIDCEnvironment(t)
+			test.set(t)
+			got, err := Load()
+			if test.want {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !got.SSO.OIDC.Enabled || got.SSO.OIDC.LinkClaim != "oid" || got.SSO.SessionIdle != 30*time.Minute || got.SSO.SessionTTL != 8*time.Hour || got.SSO.LoginFlowTTL != 10*time.Minute {
+					t.Fatalf("SSO = %#v", got.SSO)
+				}
+				return
+			}
+			if !errors.Is(err, ErrInvalid) {
+				t.Fatalf("Load() error = %v", err)
+			}
+		})
+	}
+}
+
+func setValidOIDCEnvironment(t *testing.T) {
+	t.Helper()
+	setValidEnvironment(t)
+	setDurableEnvironment(t)
+	t.Setenv("GREPNEST_PUBLIC_URL", "https://search.example.test")
+	t.Setenv("GREPNEST_OIDC_ISSUER_URL", "https://id.example.test")
+	t.Setenv("GREPNEST_OIDC_CLIENT_ID", "grepnest")
+	t.Setenv("GREPNEST_OIDC_CLIENT_SECRET_FILE", writeSecret(t, "secret"))
+	t.Setenv("GREPNEST_OIDC_LINK_CLAIM", "oid")
+}
+
+func writeSecret(t *testing.T, value string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
