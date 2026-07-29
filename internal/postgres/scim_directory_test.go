@@ -154,6 +154,54 @@ func TestSCIMGroupLifecycleRollsBackInvalidMembersAndPreservesGrants(t *testing.
 	}
 }
 
+func TestSCIMGroupPatchAppliesDeltasAfterReplacement(t *testing.T) {
+	store := migratedStore(t)
+	users := make([]scim.User, 3)
+	for index := range users {
+		var err error
+		users[index], err = store.CreateUser(t.Context(), scim.User{
+			ExternalID: "patch-user-" + strconv.Itoa(index),
+			UserName:   "patch-user-" + strconv.Itoa(index),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	group, err := store.CreateGroup(t.Context(), scim.Group{ExternalID: "patch-group", DisplayName: "Patch Group"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	groupID := scimID(t, group.ID)
+
+	t.Run("replace then add", func(t *testing.T) {
+		mutation, err := scim.ParseGroupPatch(scim.NewPatchRequest([]scim.PatchOperation{
+			{Op: "replace", Path: "members", Value: []byte(`[{"value":"` + users[0].ID + `"}]`)},
+			{Op: "add", Path: "members", Value: []byte(`[{"value":"` + users[1].ID + `"}]`)},
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := store.PatchGroup(t.Context(), groupID, mutation)
+		if err != nil || len(got.Members) != 2 {
+			t.Fatalf("group=%#v err=%v", got, err)
+		}
+	})
+
+	t.Run("replace then remove", func(t *testing.T) {
+		mutation, err := scim.ParseGroupPatch(scim.NewPatchRequest([]scim.PatchOperation{
+			{Op: "replace", Path: "members", Value: []byte(`[{"value":"` + users[1].ID + `"},{"value":"` + users[2].ID + `"}]`)},
+			{Op: "remove", Path: `members[value eq "` + users[2].ID + `"]`},
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := store.PatchGroup(t.Context(), groupID, mutation)
+		if err != nil || len(got.Members) != 1 || got.Members[0].Value != users[1].ID {
+			t.Fatalf("group=%#v err=%v", got, err)
+		}
+	})
+}
+
 func TestSCIMStablePagingAndUniquenessRace(t *testing.T) {
 	store := migratedStore(t)
 	for _, name := range []string{"charlie", "ada", "grace"} {
