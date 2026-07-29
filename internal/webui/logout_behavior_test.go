@@ -33,3 +33,24 @@ func TestAdminStoredTokenStartupRetriesOneCredentiallessLogout(t *testing.T) {
 		t.Fatalf("admin logout behavior: %v\n%s", err, output)
 	}
 }
+
+func TestAdminSessionLogoutLocksOnlyAfterRevocation(t *testing.T) {
+	script, err := elementBody(string(adminDocument), "script")
+	if err != nil {
+		t.Fatal(err)
+	}
+	logout, err := functionBody(script, "logout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, err := functionBody(script, "lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness := `let mode="session",statuses=[503,204],events=[];const fetch=async()=>{events.push("fetch");return {status:statuses.shift()}};const say=(message,bad)=>events.push(["error",message,bad]);const lockAccess=message=>events.push(["lock",message]);` +
+		"async " + logout + "async " + lock +
+		`;await lock();if(events.some(event=>Array.isArray(event)&&event[0]==="lock"))throw Error("failed revocation locked console");const failure=events.find(event=>Array.isArray(event)&&event[0]==="error");if(!failure||!failure[1].includes("Try again")||failure[2]!==true)throw Error("failed revocation hid actionable error");await lock();if(events.at(-1)[0]!=="lock")throw Error("successful revocation did not lock console");`
+	if output, err := exec.Command(requireNode(t), "--input-type=module", "-e", harness).CombinedOutput(); err != nil {
+		t.Fatalf("admin session logout behavior: %v\n%s", err, output)
+	}
+}
