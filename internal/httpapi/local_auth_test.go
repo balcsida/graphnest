@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -96,8 +97,12 @@ func (s *localAuthStore) CreatePasswordSession(_ context.Context, _ int64, _ aut
 }
 
 func newLocalAuthHandler(t *testing.T, forceRotation, allowed bool) (http.Handler, *localAuthStore) {
+	return newLocalAuthHandlerWithPassword(t, "sixteen-byte-secret", forceRotation, allowed)
+}
+
+func newLocalAuthHandlerWithPassword(t *testing.T, password string, forceRotation, allowed bool) (http.Handler, *localAuthStore) {
 	t.Helper()
-	credential, err := authn.HashPassword([]byte("sixteen-byte-secret"), bytes.NewReader(bytes.Repeat([]byte{1}, 48)))
+	credential, err := authn.HashPassword([]byte(password), bytes.NewReader(bytes.Repeat([]byte{1}, 48)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +207,6 @@ func TestLocalAuthRejectsUnsafeEnvelopeBeforeBody(t *testing.T) {
 		{"content type", http.MethodPost, "/auth/local", localAuthOrigin, "same-origin", "application/json; charset=utf-8", `{}`, http.StatusUnsupportedMediaType},
 		{"unknown field", http.MethodPost, "/auth/local", localAuthOrigin, "same-origin", "application/json", `{"user_name":"x","password":"y","extra":true}`, http.StatusBadRequest},
 		{"trailing object", http.MethodPost, "/auth/local", localAuthOrigin, "same-origin", "application/json", `{"user_name":"x","password":"y"}{}`, http.StatusBadRequest},
-		{"oversized", http.MethodPost, "/auth/local", localAuthOrigin, "same-origin", "application/json", `{"user_name":"x","password":"` + strings.Repeat("p", 2000) + `"}`, http.StatusRequestEntityTooLarge},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
@@ -267,6 +271,34 @@ func TestLocalRotateValidatesReplacementLength(t *testing.T) {
 		if response.Code != http.StatusBadRequest || store.set.Hash != nil || len(store.sessions) != 0 {
 			t.Fatalf("length=%d response=%d sessions=%d", len(password), response.Code, len(store.sessions))
 		}
+	}
+}
+
+func TestLocalRotateAcceptsMaximumLengthPasswords(t *testing.T) {
+	password := strings.Repeat("\x01", 1024)
+	handler, store := newLocalAuthHandlerWithPassword(t, password, true, true)
+	body, err := json.Marshal(struct {
+		UserName        string `json:"user_name"`
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}{UserName: "recovery-admin", CurrentPassword: password, NewPassword: password})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := localRequest(handler, "/auth/local/rotate", string(body))
+	if response.Code == http.StatusRequestEntityTooLarge {
+		t.Fatalf("valid maximum-length credentials exceeded body cap")
+	}
+	if response.Code != http.StatusNoContent || len(store.sessions) != 1 {
+		t.Fatalf("response=%d body=%q sessions=%d", response.Code, response.Body.String(), len(store.sessions))
+	}
+}
+
+func TestLocalAuthRejectsBodyCapPlusOne(t *testing.T) {
+	handler, _ := newLocalAuthHandler(t, false, true)
+	response := localRequest(handler, "/auth/local", strings.Repeat(" ", localAuthMaxBodyBytes+1))
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
 	}
 }
 

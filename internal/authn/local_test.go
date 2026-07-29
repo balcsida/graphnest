@@ -125,6 +125,34 @@ func TestLocalVerifyDefersForcedRotationSessionAndThrottleClear(t *testing.T) {
 	}
 }
 
+func TestLocalVerifyClearsSubmittedPasswordOnEveryResult(t *testing.T) {
+	accountKey, _ := localThrottleKeys("recovery-admin", "192.0.2.1")
+	for _, test := range []struct {
+		name     string
+		blocked  map[[32]byte]time.Time
+		storeErr error
+		valid    bool
+	}{
+		{name: "success", valid: true},
+		{name: "invalid"},
+		{name: "throttled", blocked: map[[32]byte]time.Time{accountKey: time.Unix(200, 0)}},
+		{name: "store error", storeErr: errors.New("unavailable")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := &localStoreStub{userID: 42, credential: localCredential(t, false), blocked: test.blocked, consumeErr: test.storeErr}
+			authenticator := localAuthenticator(t, store)
+			authenticator.verify = func([]byte, PasswordCredential) bool { return test.valid }
+			password := bytes.Repeat([]byte{7}, 32)
+			verification, _ := authenticator.Verify(t.Context(), "recovery-admin", password, "192.0.2.1")
+			defer clear(verification.Credential.Salt)
+			defer clear(verification.Credential.Hash)
+			if !bytes.Equal(password, make([]byte, len(password))) {
+				t.Fatalf("password retained: %x", password)
+			}
+		})
+	}
+}
+
 func TestLocalAuthenticateReturnsFixedThrottleDelayForEitherKey(t *testing.T) {
 	accountKey, sourceKey := localThrottleKeys("recovery-admin", "192.0.2.1")
 	var delays []time.Duration

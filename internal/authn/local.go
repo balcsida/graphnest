@@ -74,6 +74,7 @@ func (a LocalAuthenticator) Authenticate(ctx context.Context, userName string, p
 }
 
 func (a LocalAuthenticator) Verify(ctx context.Context, userName string, password []byte, remoteAddr string) (LocalVerification, error) {
+	defer clear(password)
 	now := time.Now()
 	if a.Now != nil {
 		now = a.Now()
@@ -83,11 +84,9 @@ func (a LocalAuthenticator) Verify(ctx context.Context, userName string, passwor
 	accountAllowed, _, accountErr := a.consume(ctx, accountKey, now)
 	sourceAllowed, _, sourceErr := a.consume(ctx, sourceKey, now)
 	if accountErr != nil || sourceErr != nil {
-		clear(password)
 		return LocalVerification{}, ErrUnauthenticated
 	}
 	if !accountAllowed || !sourceAllowed {
-		clear(password)
 		return LocalVerification{}, &LoginThrottleError{RetryAfter: maxLoginRetryAfter}
 	}
 
