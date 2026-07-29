@@ -14,6 +14,7 @@ type tokenStoreStub struct {
 	principal Principal
 	err       error
 	id        int64
+	ctx       context.Context
 }
 
 func (s *tokenStoreStub) CreateAPIToken(_ context.Context, record APITokenRecord) (int64, error) {
@@ -21,11 +22,30 @@ func (s *tokenStoreStub) CreateAPIToken(_ context.Context, record APITokenRecord
 	return s.id, s.err
 }
 
-func (s *tokenStoreStub) APIPrincipal(_ context.Context, hash [32]byte, _ time.Time) (Principal, error) {
+func (s *tokenStoreStub) APIPrincipal(ctx context.Context, hash [32]byte, _ time.Time) (Principal, error) {
+	s.ctx = ctx
 	if hash != s.record.TokenHash {
 		return Principal{}, errors.New("unknown token")
 	}
 	return s.principal, s.err
+}
+
+func TestTokenManagerPassesCallerContextToStore(t *testing.T) {
+	// Break caught: canceled HTTP work continuing as a background token lookup.
+	store := &tokenStoreStub{principal: Principal{Subject: "11"}}
+	manager := TokenManager{Store: store, Rand: strings.NewReader(strings.Repeat("x", 32))}
+	_, token, err := manager.Create(t.Context(), 11, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := manager.Authenticate(ctx, token); err != nil {
+		t.Fatal(err)
+	}
+	if store.ctx != ctx || store.ctx.Err() != context.Canceled {
+		t.Fatalf("store context=%v err=%v", store.ctx, store.ctx.Err())
+	}
 }
 
 func (s *tokenStoreStub) RevokeAPIToken(context.Context, int64, int64) error { return nil }
@@ -61,11 +81,11 @@ func TestTokenManagerAuthenticatesOnlyCanonicalLiveToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, malformed := range []string{"", "token", "gnp_", "gnp_" + strings.Repeat("!", 43), token + "x"} {
-		if _, err := manager.Authenticate(malformed); !errors.Is(err, ErrUnauthenticated) {
+		if _, err := manager.Authenticate(t.Context(), malformed); !errors.Is(err, ErrUnauthenticated) {
 			t.Fatalf("token=%q err=%v", malformed, err)
 		}
 	}
-	principal, err := manager.Authenticate(token)
+	principal, err := manager.Authenticate(t.Context(), token)
 	if err != nil || principal.Subject != "11" {
 		t.Fatalf("principal=%#v err=%v", principal, err)
 	}
@@ -74,7 +94,7 @@ func TestTokenManagerAuthenticatesOnlyCanonicalLiveToken(t *testing.T) {
 		t.Fatalf("store principal mutated=%#v", store.principal)
 	}
 	store.err = errors.New("revoked")
-	if _, err := manager.Authenticate(token); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := manager.Authenticate(t.Context(), token); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("revoked err=%v", err)
 	}
 }

@@ -56,7 +56,7 @@ func (m TokenManager) Create(ctx context.Context, userID int64, repositoryIDs []
 	return id, plaintext, nil
 }
 
-func (m TokenManager) Authenticate(plaintext string) (Principal, error) {
+func (m TokenManager) Authenticate(ctx context.Context, plaintext string) (Principal, error) {
 	if m.Store == nil || !canonicalAPIToken(plaintext) {
 		return Principal{}, ErrUnauthenticated
 	}
@@ -64,7 +64,7 @@ func (m TokenManager) Authenticate(plaintext string) (Principal, error) {
 	if m.Now != nil {
 		now = m.Now()
 	}
-	principal, err := m.Store.APIPrincipal(context.Background(), sha256.Sum256([]byte(plaintext)), now)
+	principal, err := m.Store.APIPrincipal(ctx, sha256.Sum256([]byte(plaintext)), now)
 	if err != nil {
 		return Principal{}, ErrUnauthenticated
 	}

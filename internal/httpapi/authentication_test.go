@@ -13,6 +13,13 @@ import (
 
 type httpSession struct{ principal authn.Principal }
 
+type contextAuthenticator struct{ ctx context.Context }
+
+func (a *contextAuthenticator) Authenticate(ctx context.Context, _ string) (authn.Principal, error) {
+	a.ctx = ctx
+	return authn.Principal{Subject: "user"}, nil
+}
+
 func requestAuthenticator(bearer authn.Authenticator) authn.RequestAuthenticator {
 	return authn.RequestAuthenticator{Bearer: bearer}
 }
@@ -70,6 +77,32 @@ func TestAuthenticateBearerRejectsSessionCookie(t *testing.T) {
 			handler.ServeHTTP(response, request)
 			if response.Code != http.StatusUnauthorized {
 				t.Fatalf("status = %d", response.Code)
+			}
+		})
+	}
+}
+
+func TestBearerMiddlewarePassesCanceledRequestContext(t *testing.T) {
+	// Break caught: REST or MCP bearer authentication detaching from cancellation.
+	for _, test := range []struct {
+		name string
+		wrap func(authn.Authenticator, http.Handler) http.Handler
+	}{
+		{"REST", func(authenticator authn.Authenticator, next http.Handler) http.Handler {
+			return AuthenticateRequest(authn.RequestAuthenticator{Bearer: authenticator}, next)
+		}},
+		{"MCP", AuthenticateBearer},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			authenticator := &contextAuthenticator{}
+			handler := test.wrap(authenticator, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			request := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
+			request.Header.Set("Authorization", "Bearer token")
+			handler.ServeHTTP(httptest.NewRecorder(), request)
+			if authenticator.ctx != ctx || authenticator.ctx.Err() != context.Canceled {
+				t.Fatalf("authenticator context=%v err=%v", authenticator.ctx, authenticator.ctx.Err())
 			}
 		})
 	}
