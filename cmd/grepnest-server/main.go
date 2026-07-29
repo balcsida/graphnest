@@ -27,6 +27,7 @@ import (
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/grepnest/grepnest/internal/scim"
 	"github.com/grepnest/grepnest/internal/scipgraph"
 	"github.com/grepnest/grepnest/internal/search"
 	"github.com/grepnest/grepnest/internal/sso"
@@ -45,6 +46,7 @@ const (
 	maxCABytes               = 1 << 20
 	maxOIDCClientSecretBytes = 64 << 10
 	maxOIDCCABytes           = 1 << 20
+	maxSCIMTokenBytes        = 64 << 10
 	maxGitHubResponseBytes   = 2 << 20
 )
 
@@ -134,7 +136,7 @@ func newHandler(settings config.Config) (http.Handler, error) {
 		DefaultTimeout: settings.Limits.DefaultTimeout, MaxTimeout: settings.Limits.MaxTimeout,
 		MaxResponseBytes: settings.Limits.MaxResponseBytes,
 	})
-	return newAPIHandler(settings, metrics, authn.RequestAuthenticator{Bearer: authenticator, Metrics: metrics}, service, nil, nil, nil, nil, nil, nil, nil, backend, nil, nil), nil
+	return newAPIHandler(settings, metrics, authn.RequestAuthenticator{Bearer: authenticator, Metrics: metrics}, service, nil, nil, nil, nil, nil, nil, nil, backend, nil, nil, nil, nil), nil
 }
 
 type authRuntime struct {
@@ -258,6 +260,13 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 		<-reconcileDone
 		return fail(err)
 	}
+	provisioning, scimService, err := newProvisioningRuntime(settings, store)
+	if err != nil {
+		cancel()
+		<-done
+		<-reconcileDone
+		return fail(err)
+	}
 	searchService := search.NewService(backend, authz.NewPostgres(store), searchLimits(settings))
 	repositoryService := &repository.Service{Store: store, GitHub: githubClient}
 	scipService := &scipgraph.Service{Store: store, GitHub: githubClient, MaxResults: settings.Limits.MaxResults}
@@ -273,7 +282,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 			CAConfigured: settings.GitHub.CAFile != "",
 		},
 	}
-	handler := newAPIHandler(settings, metrics, auth.requestAuth, searchService, repositoryService, scipService, graphService, graphQueries, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend}, auth.providers, auth.sessions)
+	handler := newAPIHandler(settings, metrics, auth.requestAuth, searchService, repositoryService, scipService, graphService, graphQueries, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend}, auth.providers, auth.sessions, provisioning, scimService)
 	return handler, func() {
 		cancel()
 		<-done
@@ -286,7 +295,7 @@ func durableAuthenticator(store authn.APITokenStore) authn.Authenticator {
 	return authn.TokenManager{Store: store}
 }
 
-func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scip *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker, providers []sso.Provider, sessions *authn.SessionManager) http.Handler {
+func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scipGraph *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker, providers []sso.Provider, sessions *authn.SessionManager, provisioning *authn.ProvisioningAuthenticator, scimService *scim.Service) http.Handler {
 	mux := http.NewServeMux()
 	httpapi.RegisterAuth(mux, true, providers, authenticator, sessions, metrics)
 	webui.Register(mux)
@@ -300,8 +309,8 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 	if repositories != nil {
 		httpapi.RegisterRepositories(mux, authenticator, repositories, settings.Limits.MaxRequestBytes, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
 	}
-	if scip != nil {
-		httpapi.RegisterSCIP(mux, authenticator, scip, settings.Limits.MaxRequestBytes, settings.Limits.SCIPMaxUploadBytes, settings.Limits.MaxResponseBytes)
+	if scipGraph != nil {
+		httpapi.RegisterSCIP(mux, authenticator, scipGraph, settings.Limits.MaxRequestBytes, settings.Limits.SCIPMaxUploadBytes, settings.Limits.MaxResponseBytes)
 	}
 	if graph != nil {
 		httpapi.RegisterGraphIngestion(mux, authenticator.Bearer, graph, settings.Limits.GraphMaxUploadBytes, settings.Limits.MaxResponseBytes)
@@ -309,13 +318,16 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 	if graphQueries != nil {
 		httpapi.RegisterGraphQueries(mux, authenticator.Bearer, graphQueries, settings.Graph.MaxRequestBytes, settings.Graph.MaxResponseBytes)
 	}
+	if provisioning != nil && scimService != nil {
+		httpapi.RegisterSCIMV2(mux, *provisioning, scimService)
+	}
 	if adminService != nil {
 		httpapi.RegisterAdmin(mux, authenticator, adminService, settings.Limits.MaxResults, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
 	}
 	if processor != nil {
 		httpapi.RegisterGitHubWebhook(mux, webhookSecret, 1<<20, processor)
 	}
-	mcpServer := mcpserver.NewWithLimits(mcpserver.Services{Search: service, Repositories: repositories, SCIP: scip, Graph: graphQueries}, mcpserver.Limits{
+	mcpServer := mcpserver.NewWithLimits(mcpserver.Services{Search: service, Repositories: repositories, SCIP: scipGraph, Graph: graphQueries}, mcpserver.Limits{
 		MaxItems: settings.Limits.MaxResults, MaxOutputBytes: settings.Limits.MaxResponseBytes, GraphMaxOutputBytes: settings.Graph.MaxResponseBytes,
 	})
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer }, nil)
@@ -333,6 +345,22 @@ func graphQueryLimits(graph config.Graph) graphservice.Limits {
 		MaxNodes: graph.QueryLimits.MaxNodes, MaxEdges: graph.QueryLimits.MaxEdges, MaxFanout: graph.QueryLimits.MaxFanout,
 		MaxResponseBytes: int(graph.MaxResponseBytes),
 	}
+}
+
+func newProvisioningRuntime(settings config.Config, store scim.Store) (*authn.ProvisioningAuthenticator, *scim.Service, error) {
+	if !settings.SCIM.Enabled {
+		return nil, nil, nil
+	}
+	secret, err := readBoundedRegularFile(settings.SCIM.TokenFile, maxSCIMTokenBytes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read SCIM token: %w", err)
+	}
+	authenticator, err := authn.NewProvisioningAuthenticator(secret)
+	if err != nil {
+		return nil, nil, err
+	}
+	origin := settings.SCIM.PublicURL.Scheme + "://" + settings.SCIM.PublicURL.Host
+	return &authenticator, &scim.Service{Store: store, BaseURL: origin, MaxResults: settings.Limits.MaxResults}, nil
 }
 
 func searchLimits(settings config.Config) search.Limits {
