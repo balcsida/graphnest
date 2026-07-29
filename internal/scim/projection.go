@@ -5,7 +5,10 @@ import (
 	"strings"
 )
 
-type Projection struct{ Include, Exclude map[string]bool }
+type Projection struct {
+	Include, Exclude map[string]bool
+	includeOnly      bool
+}
 
 func ParseProjection(values url.Values, resource ResourceType) (Projection, error) {
 	include, err := projectionValues(values, "attributes", resource)
@@ -20,7 +23,8 @@ func ParseProjection(values url.Values, resource ResourceType) (Projection, erro
 		include[attribute] = true
 		delete(exclude, attribute)
 	}
-	return Projection{Include: include, Exclude: exclude}, nil
+	_, includeOnly := values["attributes"]
+	return Projection{Include: include, Exclude: exclude, includeOnly: includeOnly}, nil
 }
 
 func projectionValues(values url.Values, name string, resource ResourceType) (map[string]bool, error) {
