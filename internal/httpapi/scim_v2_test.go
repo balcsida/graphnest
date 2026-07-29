@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/scim"
 )
@@ -205,3 +206,27 @@ func (*scimHTTPStore) PatchGroup(context.Context, int64, scim.GroupMutation) (sc
 	return scim.Group{}, errors.New("unused")
 }
 func (*scimHTTPStore) DeleteGroup(context.Context, int64) error { return errors.New("unused") }
+func (store *scimHTTPStore) CreateUserAudited(ctx context.Context, user scim.User, _ []audit.Event) (scim.User, error) {
+	return store.CreateUser(ctx, user)
+}
+func (store *scimHTTPStore) ReplaceUserAudited(ctx context.Context, id int64, user scim.User, _ []audit.Event) (scim.User, error) {
+	return store.ReplaceUser(ctx, id, user)
+}
+func (store *scimHTTPStore) PatchUserAudited(ctx context.Context, id int64, mutation scim.UserMutation, _ []audit.Event) (scim.User, error) {
+	return store.PatchUser(ctx, id, mutation)
+}
+func (store *scimHTTPStore) DeleteUserAudited(ctx context.Context, id int64, _ []audit.Event) error {
+	return store.DeleteUser(ctx, id)
+}
+func (store *scimHTTPStore) CreateGroupAudited(ctx context.Context, group scim.Group, _ []audit.Event) (scim.Group, error) {
+	return store.CreateGroup(ctx, group)
+}
+func (store *scimHTTPStore) ReplaceGroupAudited(ctx context.Context, id int64, group scim.Group, _ []audit.Event) (scim.Group, error) {
+	return store.ReplaceGroup(ctx, id, group)
+}
+func (store *scimHTTPStore) PatchGroupAudited(ctx context.Context, id int64, mutation scim.GroupMutation, _ []audit.Event) (scim.Group, error) {
+	return store.PatchGroup(ctx, id, mutation)
+}
+func (store *scimHTTPStore) DeleteGroupAudited(ctx context.Context, id int64, _ []audit.Event) error {
+	return store.DeleteGroup(ctx, id)
+}

@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/grepnest/grepnest/internal/audit"
 )
 
 type tokenStoreStub struct {
@@ -20,6 +23,9 @@ type tokenStoreStub struct {
 func (s *tokenStoreStub) CreateAPIToken(_ context.Context, record APITokenRecord) (int64, error) {
 	s.record = record
 	return s.id, s.err
+}
+func (s *tokenStoreStub) CreateAPITokenAudited(ctx context.Context, record APITokenRecord, _ audit.Event) (int64, error) {
+	return s.CreateAPIToken(ctx, record)
 }
 
 func (s *tokenStoreStub) APIPrincipal(ctx context.Context, hash [32]byte, _ time.Time) (Principal, error) {
@@ -49,6 +55,21 @@ func TestTokenManagerPassesCallerContextToStore(t *testing.T) {
 }
 
 func (s *tokenStoreStub) RevokeAPIToken(context.Context, int64, int64) error { return nil }
+func (s *tokenStoreStub) RevokeAPITokenAudited(ctx context.Context, userID, tokenID int64, _ audit.Event) error {
+	return s.RevokeAPIToken(ctx, userID, tokenID)
+}
+
+func TestTokenRejectionIgnoresAuditFailureWithoutRecordingToken(t *testing.T) {
+	recorder := &failingAuditRecorder{}
+	manager := TokenManager{Store: &tokenStoreStub{}, Audit: recorder}
+	presented := "gnp_sentinel-token"
+	if _, err := manager.Authenticate(t.Context(), presented); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("error=%v", err)
+	}
+	if len(recorder.events) != 1 || strings.Contains(fmt.Sprintf("%#v", recorder.events[0]), presented) {
+		t.Fatalf("events=%#v", recorder.events)
+	}
+}
 
 func TestTokenManagerCreatesOpaqueTokenAndStoresOnlyHash(t *testing.T) {
 	// Break caught: storing or returning a predictable/plaintext credential.

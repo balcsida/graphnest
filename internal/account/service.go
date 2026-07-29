@@ -59,7 +59,7 @@ func (s *Service) CreateToken(ctx context.Context, principal authn.Principal, ex
 			return Token{}, "", ErrForbidden
 		}
 	}
-	id, plaintext, err := s.Manager.Create(ctx, userID, repositoryIDs, expires)
+	id, plaintext, err := s.Manager.CreateWithMethod(ctx, userID, principal.Method, repositoryIDs, expires)
 	if err != nil {
 		return Token{}, "", err
 	}
@@ -105,16 +105,11 @@ func (s *Service) RevokeToken(ctx context.Context, principal authn.Principal, id
 	if err != nil || id < 1 || s.Manager.Store == nil {
 		return ErrForbidden
 	}
-	if store, ok := s.Manager.Store.(interface {
-		RevokeAPITokenAudited(context.Context, int64, int64, audit.Event) error
-	}); ok {
-		return store.RevokeAPITokenAudited(ctx, userID, id, audit.Event{
-			ActorType: "user", ActorID: principal.Subject, TargetType: "api_token",
-			TargetID: strconv.FormatInt(id, 10), AuthenticationMethod: principal.Method,
-			Operation: audit.OperationAPITokenRevoked, Outcome: "success",
-		})
-	}
-	return s.Manager.Store.RevokeAPIToken(ctx, userID, id)
+	return s.Manager.Store.RevokeAPITokenAudited(ctx, userID, id, audit.Event{
+		ActorType: "user", ActorID: principal.Subject, TargetType: "api_token",
+		TargetID: strconv.FormatInt(id, 10), AuthenticationMethod: principal.Method,
+		Operation: audit.OperationAPITokenRevoked, Outcome: "success",
+	})
 }
 
 func userID(principal authn.Principal) (int64, error) {

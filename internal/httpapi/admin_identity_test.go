@@ -194,3 +194,15 @@ func (store *adminHTTPStore) RevokeAdminUserCredentials(_ context.Context, userI
 	store.revokedUserID = userID
 	return store.identityErr
 }
+func (store *adminHTTPStore) SuspendAdminUserAudited(ctx context.Context, actorID, userID int64, suspended bool, _ audit.Event) error {
+	return store.SuspendAdminUser(ctx, actorID, userID, suspended)
+}
+func (store *adminHTTPStore) ReplaceAdminUserAccessAudited(ctx context.Context, actorID, userID int64, administrator bool, repositoryIDs []int64, _ audit.Event) error {
+	return store.ReplaceAdminUserAccess(ctx, actorID, userID, administrator, repositoryIDs)
+}
+func (store *adminHTTPStore) ReplaceAdminGroupAccessAudited(ctx context.Context, actorID, groupID int64, administrator bool, repositoryIDs []int64, _ audit.Event) error {
+	return store.ReplaceAdminGroupAccess(ctx, actorID, groupID, administrator, repositoryIDs)
+}
+func (store *adminHTTPStore) RevokeAdminUserCredentialsAudited(ctx context.Context, userID int64, _ audit.Event) error {
+	return store.RevokeAdminUserCredentials(ctx, userID)
+}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/account"
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/repository"
 )
@@ -44,12 +45,18 @@ func TestAccountTokenRouteReturnsUnavailableForAuthorizerOutage(t *testing.T) {
 func (*accountStoreStub) CreateAPIToken(context.Context, authn.APITokenRecord) (int64, error) {
 	return 3, nil
 }
+func (store *accountStoreStub) CreateAPITokenAudited(ctx context.Context, record authn.APITokenRecord, _ audit.Event) (int64, error) {
+	return store.CreateAPIToken(ctx, record)
+}
 func (s *accountStoreStub) ListAPITokens(context.Context, int64) ([]authn.APITokenMetadata, error) {
 	return s.listed, nil
 }
 func (s *accountStoreStub) RevokeAPIToken(_ context.Context, user, id int64) error {
 	s.user, s.id = user, id
 	return nil
+}
+func (store *accountStoreStub) RevokeAPITokenAudited(ctx context.Context, user, id int64, _ audit.Event) error {
+	return store.RevokeAPIToken(ctx, user, id)
 }
 
 func TestAccountTokenRoutesRevealPlaintextOnlyAtCreation(t *testing.T) {

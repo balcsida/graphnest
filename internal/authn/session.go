@@ -18,6 +18,7 @@ type SessionManager struct {
 	TTL     time.Duration
 	Now     func() time.Time
 	Rand    io.Reader
+	Audit   audit.Recorder
 }
 
 type PreparedSession struct {
@@ -30,11 +31,15 @@ func (m SessionManager) Create(ctx context.Context, identity Identity) (string, 
 	if m.Store == nil || m.IdleTTL <= 0 || m.TTL < m.IdleTTL || !validIdentity(identity) {
 		return "", time.Time{}, ErrInvalidIdentity
 	}
-	userID, err := m.Store.BindOIDCUser(ctx, identity.Issuer, identity.Subject, identity.LinkID)
+	prepared, err := m.PrepareForUser(1, identity.Provider, false)
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	return m.CreateForUser(ctx, userID, identity.Provider, false)
+	prepared.Record.UserID = 0
+	if err := m.Store.CreateOIDCSessionAudited(ctx, identity, prepared.Record); err != nil {
+		return "", time.Time{}, err
+	}
+	return prepared.Token, prepared.ExpiresAt, nil
 }
 
 func (m SessionManager) CreateForUser(ctx context.Context, userID int64, provider string, forceRotation bool) (string, time.Time, error) {
@@ -42,18 +47,12 @@ func (m SessionManager) CreateForUser(ctx context.Context, userID int64, provide
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	if store, ok := m.Store.(interface {
-		CreateSessionAudited(context.Context, SessionRecord, audit.Event) error
-	}); ok {
-		event := audit.Event{
-			ActorType: "user", ActorID: strconv.FormatInt(userID, 10),
-			TargetType: "session", AuthenticationMethod: provider,
-			Operation: audit.OperationSessionCreated, Outcome: "success",
-		}
-		if err := store.CreateSessionAudited(ctx, prepared.Record, event); err != nil {
-			return "", time.Time{}, err
-		}
-	} else if err := m.Store.CreateSession(ctx, prepared.Record); err != nil {
+	event := audit.Event{
+		ActorType: "user", ActorID: strconv.FormatInt(userID, 10),
+		TargetType: "session", AuthenticationMethod: provider,
+		Operation: audit.OperationSessionCreated, Outcome: "success",
+	}
+	if err := m.Store.CreateSessionAudited(ctx, prepared.Record, event); err != nil {
 		return "", time.Time{}, err
 	}
 	return prepared.Token, prepared.ExpiresAt, nil
@@ -105,11 +104,23 @@ func (m SessionManager) Authenticate(ctx context.Context, token string) (Princip
 
 func (m SessionManager) Revoke(ctx context.Context, token string) error {
 	if m.Store == nil {
+		m.rejectedLogout(ctx)
 		return ErrUnauthenticated
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil || len(raw) != 32 {
+		m.rejectedLogout(ctx)
 		return ErrUnauthenticated
 	}
-	return m.Store.RevokeSession(ctx, sha256.Sum256(raw))
+	hash := sha256.Sum256(raw)
+	return m.Store.RevokeSessionAudited(ctx, hash)
+}
+
+func (m SessionManager) rejectedLogout(ctx context.Context) {
+	if m.Audit != nil {
+		_ = m.Audit.Record(ctx, audit.Event{
+			ActorType: "anonymous", TargetType: "session",
+			Operation: audit.OperationLogout, Outcome: "invalid",
+		})
+	}
 }

@@ -2,10 +2,13 @@ package postgres
 
 import (
 	"context"
+	"errors"
+	"strconv"
 	"time"
 
 	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/jackc/pgx/v5"
 )
 
 func (s *Store) BindOIDCUser(ctx context.Context, issuer, subject, externalID string) (int64, error) {
@@ -24,6 +27,40 @@ func (s *Store) BindOIDCUser(ctx context.Context, issuer, subject, externalID st
 		return 0, err
 	}
 	return userID, tx.Commit(ctx)
+}
+
+func (s *Store) CreateOIDCSessionAudited(ctx context.Context, identity authn.Identity, session authn.SessionRecord) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var userID int64
+	if err := tx.QueryRow(ctx, `select id from users where external_id=$1
+		and scim_active and suspended_at is null and deleted_at is null for update`,
+		identity.LinkID).Scan(&userID); err != nil {
+		return err
+	}
+	if err := tx.QueryRow(ctx, `insert into user_identities (user_id,issuer,subject)
+		values ($1,$2,$3) on conflict (issuer,subject) do update set user_id=excluded.user_id
+		where user_identities.user_id=excluded.user_id returning user_id`,
+		userID, identity.Issuer, identity.Subject).Scan(&userID); err != nil {
+		return err
+	}
+	session.UserID = userID
+	if err := createSession(ctx, tx, session); err != nil {
+		return err
+	}
+	for _, operation := range []string{audit.OperationOIDCLoginSucceeded, audit.OperationSessionCreated} {
+		if err := appendAudit(ctx, tx, audit.Event{
+			ActorType: "user", ActorID: strconv.FormatInt(userID, 10),
+			TargetType: "session", AuthenticationMethod: "oidc",
+			Operation: operation, Outcome: "success",
+		}); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Store) CreateLoginFlow(ctx context.Context, flow authn.LoginFlow) error {
@@ -101,6 +138,39 @@ func (s *Store) SessionPrincipal(ctx context.Context, tokenHash [32]byte, now, i
 func (s *Store) RevokeSession(ctx context.Context, tokenHash [32]byte) error {
 	_, err := s.pool.Exec(ctx, `update auth_sessions set revoked_at=now() where token_hash=$1 and revoked_at is null`, tokenHash[:])
 	return err
+}
+
+func (s *Store) RevokeSessionAudited(ctx context.Context, tokenHash [32]byte) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var userID int64
+	var method string
+	err = tx.QueryRow(ctx, `update auth_sessions set revoked_at=now()
+		where token_hash=$1 and revoked_at is null returning user_id,provider`, tokenHash[:]).
+		Scan(&userID, &method)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			_ = s.AppendAudit(ctx, audit.Event{
+				ActorType: "anonymous", TargetType: "session",
+				Operation: audit.OperationLogout, Outcome: "invalid",
+			})
+			return nil
+		}
+		return err
+	}
+	for _, operation := range []string{audit.OperationLogout, audit.OperationSessionRevoked} {
+		if err := appendAudit(ctx, tx, audit.Event{
+			ActorType: "user", ActorID: strconv.FormatInt(userID, 10),
+			TargetType: "session", AuthenticationMethod: method,
+			Operation: operation, Outcome: "success",
+		}); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Store) DeleteExpiredAuth(ctx context.Context, now time.Time) (flows, sessions int64, err error) {

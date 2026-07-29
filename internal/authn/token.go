@@ -17,17 +17,24 @@ const apiTokenPrefix = "gnp_"
 
 type APITokenStore interface {
 	CreateAPIToken(context.Context, APITokenRecord) (int64, error)
+	CreateAPITokenAudited(context.Context, APITokenRecord, audit.Event) (int64, error)
 	APIPrincipal(context.Context, [32]byte, time.Time) (Principal, error)
 	RevokeAPIToken(context.Context, int64, int64) error
+	RevokeAPITokenAudited(context.Context, int64, int64, audit.Event) error
 }
 
 type TokenManager struct {
 	Store APITokenStore
 	Now   func() time.Time
 	Rand  io.Reader
+	Audit audit.Recorder
 }
 
 func (m TokenManager) Create(ctx context.Context, userID int64, repositoryIDs []int64, expiresAt *time.Time) (int64, string, error) {
+	return m.CreateWithMethod(ctx, userID, "oidc", repositoryIDs, expiresAt)
+}
+
+func (m TokenManager) CreateWithMethod(ctx context.Context, userID int64, method string, repositoryIDs []int64, expiresAt *time.Time) (int64, string, error) {
 	if m.Store == nil || userID <= 0 {
 		return 0, "", ErrUnauthenticated
 	}
@@ -55,16 +62,10 @@ func (m TokenManager) Create(ctx context.Context, userID int64, repositoryIDs []
 	}
 	var id int64
 	var err error
-	if store, ok := m.Store.(interface {
-		CreateAPITokenAudited(context.Context, APITokenRecord, audit.Event) (int64, error)
-	}); ok {
-		id, err = store.CreateAPITokenAudited(ctx, record, audit.Event{
-			ActorType: "user", ActorID: strconv.FormatInt(userID, 10), TargetType: "api_token",
-			AuthenticationMethod: "oidc", Operation: audit.OperationAPITokenCreated, Outcome: "success",
-		})
-	} else {
-		id, err = m.Store.CreateAPIToken(ctx, record)
-	}
+	id, err = m.Store.CreateAPITokenAudited(ctx, record, audit.Event{
+		ActorType: "user", ActorID: strconv.FormatInt(userID, 10), TargetType: "api_token",
+		AuthenticationMethod: method, Operation: audit.OperationAPITokenCreated, Outcome: "success",
+	})
 	if err != nil {
 		return 0, "", err
 	}
@@ -73,6 +74,7 @@ func (m TokenManager) Create(ctx context.Context, userID int64, repositoryIDs []
 
 func (m TokenManager) Authenticate(ctx context.Context, plaintext string) (Principal, error) {
 	if m.Store == nil || !canonicalAPIToken(plaintext) {
+		m.rejected(ctx)
 		return Principal{}, ErrUnauthenticated
 	}
 	now := time.Now()
@@ -81,9 +83,20 @@ func (m TokenManager) Authenticate(ctx context.Context, plaintext string) (Princ
 	}
 	principal, err := m.Store.APIPrincipal(ctx, sha256.Sum256([]byte(plaintext)), now)
 	if err != nil {
+		m.rejected(ctx)
 		return Principal{}, ErrUnauthenticated
 	}
 	return clonePrincipal(principal), nil
+}
+
+func (m TokenManager) rejected(ctx context.Context) {
+	if m.Audit != nil {
+		_ = m.Audit.Record(ctx, audit.Event{
+			ActorType: "anonymous", TargetType: "api_token",
+			AuthenticationMethod: "api_token", Operation: audit.OperationAPITokenUseRejected,
+			Outcome: "denied",
+		})
+	}
 }
 
 func canonicalAPIToken(token string) bool {

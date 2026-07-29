@@ -11,6 +11,8 @@ import (
 	"net/netip"
 	"strings"
 	"time"
+
+	"github.com/grepnest/grepnest/internal/audit"
 )
 
 const maxLoginRetryAfter = 15 * time.Minute
@@ -46,6 +48,7 @@ type LocalAuthenticator struct {
 	Now      func() time.Time
 	Dummy    PasswordCredential
 	verify   func([]byte, PasswordCredential) bool
+	Audit    audit.Recorder
 }
 
 func NewLocalAuthenticator(store LocalStore, sessions *SessionManager, random io.Reader) (LocalAuthenticator, error) {
@@ -84,9 +87,11 @@ func (a LocalAuthenticator) Verify(ctx context.Context, userName string, passwor
 	accountAllowed, _, accountErr := a.consume(ctx, accountKey, now)
 	sourceAllowed, _, sourceErr := a.consume(ctx, sourceKey, now)
 	if accountErr != nil || sourceErr != nil {
+		a.denied(ctx, "error")
 		return LocalVerification{}, ErrUnauthenticated
 	}
 	if !accountAllowed || !sourceAllowed {
+		a.denied(ctx, "denied")
 		return LocalVerification{}, &LoginThrottleError{RetryAfter: maxLoginRetryAfter}
 	}
 
@@ -107,6 +112,7 @@ func (a LocalAuthenticator) Verify(ctx context.Context, userName string, passwor
 			clear(credential.Salt)
 			clear(credential.Hash)
 		}
+		a.denied(ctx, "denied")
 		return LocalVerification{}, ErrUnauthenticated
 	}
 	salt, hash := bytes.Clone(credential.Salt), bytes.Clone(credential.Hash)
@@ -117,6 +123,16 @@ func (a LocalAuthenticator) Verify(ctx context.Context, userName string, passwor
 		UserID: userID, ForceRotation: credential.ForceRotation, Credential: credential,
 		accountKey: accountKey, sourceKey: sourceKey,
 	}, nil
+}
+
+func (a LocalAuthenticator) denied(ctx context.Context, outcome string) {
+	if a.Audit != nil {
+		_ = a.Audit.Record(ctx, audit.Event{
+			ActorType: "anonymous", TargetType: "authentication",
+			AuthenticationMethod: "local", Operation: audit.OperationLocalLoginDenied,
+			Outcome: outcome,
+		})
+	}
 }
 
 func (a LocalAuthenticator) CompleteLogin(ctx context.Context, verification LocalVerification, prepared PreparedSession) (LocalAuthentication, error) {

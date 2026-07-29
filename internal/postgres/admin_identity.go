@@ -123,11 +123,15 @@ func scanAdminGroup(row rowScanner) (admin.Group, error) {
 }
 
 func (s *Store) SuspendAdminUser(ctx context.Context, actorID, userID int64, suspended bool) error {
-	return s.SuspendAdminUserAudited(ctx, actorID, userID, suspended, adminMutationEvent(actorID, "user", userID, audit.OperationUserSuspended))
+	operation := audit.OperationUserRestored
+	if suspended {
+		operation = audit.OperationUserSuspended
+	}
+	return s.SuspendAdminUserAudited(ctx, actorID, userID, suspended, adminMutationEvent(actorID, "user", userID, operation))
 }
 
 func (s *Store) SuspendAdminUserAudited(ctx context.Context, actorID, userID int64, suspended bool, event audit.Event) error {
-	return s.auditedAdminIdentityMutation(ctx, event, func(tx pgx.Tx) error {
+	return s.auditedAdminIdentityMutation(ctx, []audit.Event{event}, func(tx pgx.Tx) error {
 		if actorID == userID && suspended {
 			return admin.ErrSelfAdministration
 		}
@@ -154,7 +158,9 @@ func (s *Store) ReplaceAdminUserAccess(ctx context.Context, actorID, userID int6
 }
 
 func (s *Store) ReplaceAdminUserAccessAudited(ctx context.Context, actorID, userID int64, administrator bool, repositoryIDs []int64, event audit.Event) error {
-	return s.auditedAdminIdentityMutation(ctx, event, func(tx pgx.Tx) error {
+	grantEvent := event
+	grantEvent.Operation = audit.OperationUserRepositoryChanged
+	return s.auditedAdminIdentityMutation(ctx, []audit.Event{event, grantEvent}, func(tx pgx.Tx) error {
 		if err := requireAdminUser(ctx, tx, userID); err != nil {
 			return err
 		}
@@ -187,7 +193,9 @@ func (s *Store) ReplaceAdminGroupAccess(ctx context.Context, actorID, groupID in
 }
 
 func (s *Store) ReplaceAdminGroupAccessAudited(ctx context.Context, actorID, groupID int64, administrator bool, repositoryIDs []int64, event audit.Event) error {
-	return s.auditedAdminIdentityMutation(ctx, event, func(tx pgx.Tx) error {
+	grantEvent := event
+	grantEvent.Operation = audit.OperationGroupRepositoryChanged
+	return s.auditedAdminIdentityMutation(ctx, []audit.Event{event, grantEvent}, func(tx pgx.Tx) error {
 		if err := requireAdminGroup(ctx, tx, groupID); err != nil {
 			return err
 		}
@@ -220,7 +228,7 @@ func (s *Store) RevokeAdminUserCredentials(ctx context.Context, userID int64) er
 }
 
 func (s *Store) RevokeAdminUserCredentialsAudited(ctx context.Context, userID int64, event audit.Event) error {
-	return s.auditedAdminIdentityMutation(ctx, event, func(tx pgx.Tx) error {
+	return s.auditedAdminIdentityMutation(ctx, []audit.Event{event}, func(tx pgx.Tx) error {
 		if err := requireAdminUser(ctx, tx, userID); err != nil {
 			return err
 		}
@@ -229,22 +237,33 @@ func (s *Store) RevokeAdminUserCredentialsAudited(ctx context.Context, userID in
 }
 
 func adminMutationEvent(actorID int64, targetType string, targetID int64, operation string) audit.Event {
+	actorType, authenticationMethod, actor := "system", "operator", ""
+	if actorID > 0 {
+		actorType, authenticationMethod, actor = "user", "oidc", strconv.FormatInt(actorID, 10)
+	}
 	return audit.Event{
-		ActorType: "user", ActorID: strconv.FormatInt(actorID, 10), TargetType: targetType,
-		TargetID: strconv.FormatInt(targetID, 10), AuthenticationMethod: "oidc",
+		ActorType: actorType, ActorID: actor, TargetType: targetType,
+		TargetID: strconv.FormatInt(targetID, 10), AuthenticationMethod: authenticationMethod,
 		Operation: operation, Outcome: "success",
 	}
 }
 
-func (s *Store) auditedAdminIdentityMutation(ctx context.Context, event audit.Event, change func(pgx.Tx) error) error {
-	if err := event.Validate(); err != nil {
-		return err
+func (s *Store) auditedAdminIdentityMutation(ctx context.Context, events []audit.Event, change func(pgx.Tx) error) error {
+	for _, event := range events {
+		if err := event.Validate(); err != nil {
+			return err
+		}
 	}
 	return s.adminIdentityMutation(ctx, func(tx pgx.Tx) error {
 		if err := change(tx); err != nil {
 			return err
 		}
-		return appendAudit(ctx, tx, event)
+		for _, event := range events {
+			if err := appendAudit(ctx, tx, event); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 

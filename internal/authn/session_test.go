@@ -5,8 +5,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/grepnest/grepnest/internal/audit"
 )
 
 type sessionStoreStub struct {
@@ -36,6 +40,17 @@ func (s *sessionStoreStub) CreateSession(_ context.Context, session SessionRecor
 	s.session = session
 	return s.createErr
 }
+func (s *sessionStoreStub) CreateSessionAudited(ctx context.Context, session SessionRecord, _ audit.Event) error {
+	return s.CreateSession(ctx, session)
+}
+func (s *sessionStoreStub) CreateOIDCSessionAudited(ctx context.Context, identity Identity, session SessionRecord) error {
+	userID, err := s.BindOIDCUser(ctx, identity.Issuer, identity.Subject, identity.LinkID)
+	if err != nil {
+		return err
+	}
+	session.UserID = userID
+	return s.CreateSession(ctx, session)
+}
 func (s *sessionStoreStub) SessionPrincipal(_ context.Context, hash [32]byte, now, idleUntil time.Time) (Principal, error) {
 	s.lookupHash, s.lookupNow, s.lookupIdleUntil = hash, now, idleUntil
 	return s.principal, nil
@@ -43,6 +58,9 @@ func (s *sessionStoreStub) SessionPrincipal(_ context.Context, hash [32]byte, no
 func (s *sessionStoreStub) RevokeSession(_ context.Context, hash [32]byte) error {
 	s.revoked = hash
 	return nil
+}
+func (s *sessionStoreStub) RevokeSessionAudited(ctx context.Context, hash [32]byte) error {
+	return s.RevokeSession(ctx, hash)
 }
 func (s *sessionStoreStub) DeleteExpiredAuth(context.Context, time.Time) (int64, int64, error) {
 	return 0, 0, nil
@@ -65,6 +83,18 @@ func TestSessionManagerCreatesOpaqueTokenForExactLinkID(t *testing.T) {
 	}
 	if store.session.UserID != 42 || store.session.Provider != "oidc" || store.session.TokenHash != sha256.Sum256(raw) || store.session.CreatedAt != now || store.session.LastSeenAt != now || store.session.IdleExpiresAt != now.Add(30*time.Minute) || store.session.ExpiresAt != now.Add(8*time.Hour) {
 		t.Fatalf("session = %#v", store.session)
+	}
+}
+
+func TestInvalidLogoutIgnoresAuditFailureWithoutRecordingCookie(t *testing.T) {
+	recorder := &failingAuditRecorder{}
+	manager := SessionManager{Store: &sessionStoreStub{}, Audit: recorder}
+	cookie := "sentinel-session-cookie"
+	if err := manager.Revoke(t.Context(), cookie); err != ErrUnauthenticated {
+		t.Fatalf("error=%v", err)
+	}
+	if len(recorder.events) != 1 || strings.Contains(fmt.Sprintf("%#v", recorder.events[0]), cookie) {
+		t.Fatalf("events=%#v", recorder.events)
 	}
 }
 

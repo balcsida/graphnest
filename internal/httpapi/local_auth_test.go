@@ -66,12 +66,21 @@ func (s *localAuthStore) CreateSession(_ context.Context, session authn.SessionR
 	s.sessions = append(s.sessions, session)
 	return nil
 }
+func (s *localAuthStore) CreateSessionAudited(ctx context.Context, session authn.SessionRecord, _ audit.Event) error {
+	return s.CreateSession(ctx, session)
+}
+func (s *localAuthStore) CreateOIDCSessionAudited(context.Context, authn.Identity, authn.SessionRecord) error {
+	return errors.New("unexpected OIDC session")
+}
 func (*localAuthStore) SessionPrincipal(context.Context, [32]byte, time.Time, time.Time) (authn.Principal, error) {
 	return authn.Principal{}, errors.New("unexpected session authentication")
 }
 func (s *localAuthStore) RevokeSession(context.Context, [32]byte) error {
 	s.revoked++
 	return nil
+}
+func (s *localAuthStore) RevokeSessionAudited(ctx context.Context, hash [32]byte) error {
+	return s.RevokeSession(ctx, hash)
 }
 func (*localAuthStore) DeleteExpiredAuth(context.Context, time.Time) (int64, int64, error) {
 	return 0, 0, nil

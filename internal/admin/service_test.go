@@ -162,6 +162,18 @@ func (*fakeStore) ReplaceAdminGroupAccess(context.Context, int64, int64, bool, [
 func (*fakeStore) RevokeAdminUserCredentials(context.Context, int64) error {
 	return nil
 }
+func (store *fakeStore) SuspendAdminUserAudited(ctx context.Context, actorID, userID int64, suspended bool, _ audit.Event) error {
+	return store.SuspendAdminUser(ctx, actorID, userID, suspended)
+}
+func (store *fakeStore) ReplaceAdminUserAccessAudited(ctx context.Context, actorID, userID int64, administrator bool, repositoryIDs []int64, _ audit.Event) error {
+	return store.ReplaceAdminUserAccess(ctx, actorID, userID, administrator, repositoryIDs)
+}
+func (store *fakeStore) ReplaceAdminGroupAccessAudited(ctx context.Context, actorID, groupID int64, administrator bool, repositoryIDs []int64, _ audit.Event) error {
+	return store.ReplaceAdminGroupAccess(ctx, actorID, groupID, administrator, repositoryIDs)
+}
+func (store *fakeStore) RevokeAdminUserCredentialsAudited(ctx context.Context, userID int64, _ audit.Event) error {
+	return store.RevokeAdminUserCredentials(ctx, userID)
+}
 func (*fakeStore) AdminRepositories(context.Context, int64, []int64, int) ([]Repository, bool, error) {
 	return nil, false, nil
 }
