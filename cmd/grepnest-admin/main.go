@@ -100,6 +100,7 @@ func (runtime commandRuntime) run(ctx context.Context, args []string, stdin io.R
 	matched := subtle.ConstantTimeCompare(firstHash[:], secondHash[:])
 	clear(firstHash[:])
 	clear(secondHash[:])
+	clear(second)
 	if matched != 1 {
 		fmt.Fprintln(stderr, "Password entries did not match.")
 		return 1
@@ -109,6 +110,8 @@ func (runtime commandRuntime) run(ctx context.Context, args []string, stdin io.R
 		fmt.Fprintln(stderr, "Could not update break-glass password.")
 		return 1
 	}
+	defer clear(credential.Salt)
+	defer clear(credential.Hash)
 	credential.ForceRotation = true
 	event := audit.Event{
 		ActorType: "operator", ActorID: "grepnest-admin", TargetType: "user",

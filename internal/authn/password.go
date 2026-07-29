@@ -26,24 +26,34 @@ type PasswordCredential struct {
 	ForceRotation bool
 }
 
-func HashPassword(password []byte, random io.Reader) (PasswordCredential, error) {
+func HashPassword(password []byte, random io.Reader) (credential PasswordCredential, err error) {
 	defer clear(password)
+	defer func() {
+		if err != nil {
+			clear(credential.Salt)
+			clear(credential.Hash)
+			credential = PasswordCredential{}
+		}
+	}()
 	if len(password) > maxPasswordBytes {
 		return PasswordCredential{}, ErrInvalidPasswordCredential
 	}
 	if random == nil {
 		random = rand.Reader
 	}
-	credential := PasswordCredential{
+	credential = PasswordCredential{
 		Salt:        make([]byte, 16),
 		MemoryKiB:   defaultPasswordMemoryKiB,
 		Iterations:  defaultPasswordIterations,
 		Parallelism: defaultPasswordParallelism,
 	}
-	if _, err := io.ReadFull(random, credential.Salt); err != nil {
-		return PasswordCredential{}, err
+	if _, err = io.ReadFull(random, credential.Salt); err != nil {
+		return credential, err
 	}
 	credential.Hash = argon2.IDKey(password, credential.Salt, credential.Iterations, credential.MemoryKiB, credential.Parallelism, 32)
+	if err = credential.Validate(); err != nil {
+		return credential, err
+	}
 	return credential, nil
 }
 
