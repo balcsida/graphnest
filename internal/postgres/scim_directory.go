@@ -16,7 +16,8 @@ import (
 )
 
 const scimUsersSQL = `select id, external_id, user_name, display_name, scim_active,
-	scim_name, scim_emails, created_at, updated_at from users where deleted_at is null`
+	scim_name, scim_emails, created_at, updated_at from users
+	where deleted_at is null and source='scim'`
 
 func (s *Store) ListUsers(ctx context.Context, filter scim.Filter, page scim.Page) ([]scim.User, int, error) {
 	query, args := scimUsersSQL, []any{}
@@ -105,7 +106,7 @@ func (s *Store) ReplaceUser(ctx context.Context, id int64, user scim.User) (upda
 			return err
 		}
 		var wasActive bool
-		if err := tx.QueryRow(ctx, `select scim_active from users where id=$1 and deleted_at is null for update`, id).Scan(&wasActive); err != nil {
+		if err := tx.QueryRow(ctx, `select scim_active from users where id=$1 and deleted_at is null and source='scim' for update`, id).Scan(&wasActive); err != nil {
 			return err
 		}
 		hadAdministrator, err := activeAdministratorExists(ctx, tx)
@@ -116,7 +117,7 @@ func (s *Store) ReplaceUser(ctx context.Context, id int64, user scim.User) (upda
 			scim_active=$5, scim_name=$6, scim_emails=$7,
 			updated_at=case when (external_id,user_name,display_name,scim_active,scim_name,scim_emails)
 				is distinct from ($2::varchar,$3::varchar,$4::varchar,$5,$6::jsonb,$7::jsonb) then now() else updated_at end
-			where id=$1 and deleted_at is null
+			where id=$1 and deleted_at is null and source='scim'
 			returning id, external_id, user_name, display_name, scim_active, scim_name, scim_emails, created_at, updated_at`,
 			id, user.ExternalID, user.UserName, user.DisplayName, active, name, emails)
 		if updated, err = scanSCIMUser(row); err != nil {
@@ -167,7 +168,7 @@ func (s *Store) PatchUser(ctx context.Context, id int64, mutation scim.UserMutat
 			scim_name=$5, scim_emails=$6,
 			updated_at=case when (user_name,display_name,scim_active,scim_name,scim_emails)
 				is distinct from ($2::varchar,$3::varchar,$4,$5::jsonb,$6::jsonb) then now() else updated_at end
-			where id=$1 and deleted_at is null
+			where id=$1 and deleted_at is null and source='scim'
 			returning id, external_id, user_name, display_name, scim_active, scim_name, scim_emails, created_at, updated_at`,
 			id, current.UserName, current.DisplayName, *current.Active, name, emails)
 		if updated, err = scanSCIMUser(row); err != nil {
@@ -191,7 +192,7 @@ func (s *Store) DeleteUser(ctx context.Context, id int64) (err error) {
 			return err
 		}
 		tag, err := tx.Exec(ctx, `update users set scim_active=false, deleted_at=now(), updated_at=now()
-			where id=$1 and deleted_at is null`, id)
+			where id=$1 and deleted_at is null and source='scim'`, id)
 		if err != nil {
 			return err
 		}
@@ -277,7 +278,7 @@ func scanSCIMGroup(ctx context.Context, queryer scimGroupQuerier, row rowScanner
 		return group, err
 	}
 	rows, err := queryer.Query(ctx, `select users.id, users.user_name from group_memberships
-		join users on users.id=group_memberships.user_id and users.deleted_at is null
+		join users on users.id=group_memberships.user_id and users.deleted_at is null and users.source='scim'
 		where group_id=$1 order by users.id`, id)
 	if err != nil {
 		return group, err
@@ -373,6 +374,7 @@ func (s *Store) PatchGroup(ctx context.Context, id int64, mutation scim.GroupMut
 			if len(mutation.RemoveMembers) > 0 {
 				var count int
 				if err := tx.QueryRow(ctx, `select count(*) from group_memberships
+					join users on users.id=group_memberships.user_id and users.source='scim'
 					where group_id=$1 and user_id=any($2)`, id, mutation.RemoveMembers).Scan(&count); err != nil {
 					return err
 				}
@@ -466,7 +468,7 @@ func validateSCIMMembers(ctx context.Context, tx pgx.Tx, ids []int64) error {
 		return nil
 	}
 	var count int
-	if err := tx.QueryRow(ctx, `select count(*) from users where id=any($1) and deleted_at is null`, ids).Scan(&count); err != nil {
+	if err := tx.QueryRow(ctx, `select count(*) from users where id=any($1) and deleted_at is null and source='scim'`, ids).Scan(&count); err != nil {
 		return err
 	}
 	if count != len(uniqueInt64(ids)) {
