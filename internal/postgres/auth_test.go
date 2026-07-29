@@ -18,6 +18,9 @@ func TestAuthStoreBindsUsersAndResolvesLivePrincipal(t *testing.T) {
 	if _, err := store.BindOIDCUser(t.Context(), "https://id.example.test", "subject-1", "directory-42"); err != nil {
 		t.Fatal(err)
 	}
+	if boundID, err := store.BindOIDCUser(t.Context(), "https://id.example.test", "subject-1", "directory-42"); err != nil || boundID != userID {
+		t.Fatalf("repeated binding userID=%d err=%v", boundID, err)
+	}
 	otherID := insertIdentityUser(t, store, "directory-43", "grace")
 	if _, err := store.BindOIDCUser(t.Context(), "https://id.example.test", "subject-1", "directory-43"); err == nil {
 		t.Fatal("second user bound the same identity")
@@ -67,6 +70,59 @@ func TestAuthStoreBindsUsersAndResolvesLivePrincipal(t *testing.T) {
 	principal, err = store.SessionPrincipal(t.Context(), tokenHash, now.Add(time.Second), now.Add(30*time.Minute))
 	if err != nil || principal.Administrator || len(principal.RepositoryIDs) != 0 {
 		t.Fatalf("changed principal=%#v err=%v", principal, err)
+	}
+}
+
+func TestSessionPrincipalRejectsInvalidState(t *testing.T) {
+	store := migratedStore(t)
+	userID := insertIdentityUser(t, store, "directory-42", "ada")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	newSession := func(token byte) [32]byte {
+		tokenHash := [32]byte{token}
+		if err := store.CreateSession(t.Context(), authn.SessionRecord{TokenHash: tokenHash, UserID: userID, Provider: "oidc", CreatedAt: now, LastSeenAt: now, IdleExpiresAt: now.Add(time.Minute), ExpiresAt: now.Add(time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+		return tokenHash
+	}
+	requireNoPrincipal := func(tokenHash [32]byte, at time.Time) {
+		t.Helper()
+		if _, err := store.SessionPrincipal(t.Context(), tokenHash, at, at.Add(time.Minute)); !errors.Is(err, pgx.ErrNoRows) {
+			t.Fatalf("SessionPrincipal error = %v", err)
+		}
+	}
+
+	t.Run("revoked", func(t *testing.T) {
+		tokenHash := newSession(4)
+		if err := store.RevokeSession(t.Context(), tokenHash); err != nil {
+			t.Fatal(err)
+		}
+		requireNoPrincipal(tokenHash, now)
+	})
+	t.Run("expired", func(t *testing.T) {
+		tokenHash := newSession(5)
+		requireNoPrincipal(tokenHash, now.Add(2*time.Hour))
+	})
+	t.Run("idle expired", func(t *testing.T) {
+		tokenHash := newSession(6)
+		requireNoPrincipal(tokenHash, now.Add(2*time.Minute))
+	})
+	for _, state := range []struct {
+		name, update string
+	}{
+		{"inactive", "scim_active=false"},
+		{"suspended", "suspended_at=now()"},
+		{"deleted", "deleted_at=now()"},
+	} {
+		t.Run(state.name, func(t *testing.T) {
+			tokenHash := newSession(byte(len(state.name) + 10))
+			if _, err := store.pool.Exec(t.Context(), "update users set "+state.update+" where id=$1", userID); err != nil {
+				t.Fatal(err)
+			}
+			requireNoPrincipal(tokenHash, now)
+			if _, err := store.pool.Exec(t.Context(), "update users set scim_active=true, suspended_at=null, deleted_at=null where id=$1", userID); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
