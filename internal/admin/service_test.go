@@ -56,6 +56,20 @@ func TestServiceDurableAdministratorReindexesGloballyAuthorizedRepository(t *tes
 	}
 }
 
+func TestServiceLocalAdministratorReindexesGloballyAuthorizedRepository(t *testing.T) {
+	store := &fakeStore{repository: repository.Repository{
+		ID: 7, InstallationID: 20, GitHubID: 201, Name: "other/two", Branch: "main", Enabled: true,
+	}}
+	service := &Service{Store: store, GitHub: fakeGitHub{sha: testSHA}}
+
+	if err := service.Reindex(t.Context(), authn.Principal{Method: "local", Administrator: true}, 201); err != nil {
+		t.Fatal(err)
+	}
+	if store.globalLookups != 1 || store.enqueued.RepositoryID != 7 {
+		t.Fatalf("global lookups=%d request=%#v", store.globalLookups, store.enqueued)
+	}
+}
+
 func TestServiceAdministratorAPITokenReindexesOnlyCeilingRepository(t *testing.T) {
 	store := &fakeStore{repository: repository.Repository{
 		ID: 7, InstallationID: 20, GitHubID: 201, Name: "other/two", Branch: "main", Enabled: true,
