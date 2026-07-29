@@ -8,6 +8,7 @@ import (
 
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/jackc/pgx/v5"
 )
 
 var (
@@ -44,7 +45,10 @@ func (s *Service) CreateToken(ctx context.Context, principal authn.Principal, ex
 	for _, repositoryID := range repositoryIDs {
 		if s.Authorizer != nil {
 			if _, err := s.Authorizer.AuthorizedRepository(ctx, principal, repositoryID); err != nil {
-				return Token{}, "", ErrForbidden
+				if errors.Is(err, pgx.ErrNoRows) {
+					return Token{}, "", ErrForbidden
+				}
+				return Token{}, "", err
 			}
 		} else if !granted(principal.RepositoryIDs, repositoryIDs) {
 			return Token{}, "", ErrForbidden

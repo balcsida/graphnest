@@ -460,7 +460,7 @@ components:
     GraphConflict: {description: Graph request conflict; error code is ambiguous, branch_not_indexed, or graph_not_ready, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     Unauthenticated: {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     Forbidden: {description: Administrator access required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
-    AccountForbidden: {description: Account token request exceeds current authorization, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+    AccountForbidden: {description: Account token request is not permitted for this durable principal or repository ceiling, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     NotFound: {description: Repository not found or not authorized, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     Conflict: {description: Repository is not indexed, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     InvalidFile: {description: File cannot be returned, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
@@ -494,13 +494,12 @@ components:
     CreatedAPIToken:
       type: object
       additionalProperties: false
-      required: [id, prefix, created_at, token]
+      required: [id, prefix, repository_ids, created_at, expires_at, token]
       properties:
         id: {type: integer, format: int64, minimum: 1}
         prefix: {type: string}
         repository_ids: {type: array, maxItems: 100, items: {type: integer, format: int64, minimum: 1}}
         created_at: {type: string, format: date-time}
-        last_used_at: {type: string, format: date-time}
         expires_at: {type: string, format: date-time}
         token: {type: string}
     AuthConfig:
