@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/grepnest/grepnest/internal/admin"
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/repository"
@@ -137,6 +138,11 @@ type adminHTTPStore struct {
 	suspended       bool
 	repositoryIDs   []int64
 	revokedUserID   int64
+	auditEvents     []audit.Event
+}
+
+func (store *adminHTTPStore) AuditEvents(context.Context, int) ([]audit.Event, bool, error) {
+	return store.auditEvents, true, store.identityErr
 }
 
 func (adminHTTPStore) AdminOverview(context.Context, int64, []int64) (admin.Overview, error) {

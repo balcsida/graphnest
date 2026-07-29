@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/jackc/pgx/v5"
@@ -103,6 +104,15 @@ func (s *Service) RevokeToken(ctx context.Context, principal authn.Principal, id
 	userID, err := userID(principal)
 	if err != nil || id < 1 || s.Manager.Store == nil {
 		return ErrForbidden
+	}
+	if store, ok := s.Manager.Store.(interface {
+		RevokeAPITokenAudited(context.Context, int64, int64, audit.Event) error
+	}); ok {
+		return store.RevokeAPITokenAudited(ctx, userID, id, audit.Event{
+			ActorType: "user", ActorID: principal.Subject, TargetType: "api_token",
+			TargetID: strconv.FormatInt(id, 10), AuthenticationMethod: principal.Method,
+			Operation: audit.OperationAPITokenRevoked, Outcome: "success",
+		})
 	}
 	return s.Manager.Store.RevokeAPIToken(ctx, userID, id)
 }

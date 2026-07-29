@@ -8,8 +8,22 @@ import (
 	"testing"
 
 	"github.com/grepnest/grepnest/internal/admin"
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 )
+
+func TestAdminAuditEventsAreBounded(t *testing.T) {
+	store := &adminHTTPStore{auditEvents: []audit.Event{{
+		ActorType: "user", ActorID: "7", TargetType: "user", TargetID: "8",
+		AuthenticationMethod: "oidc", Operation: audit.OperationUserSuspended, Outcome: "success",
+	}}}
+	response := httptest.NewRecorder()
+	adminIdentityMux(store, 4096).ServeHTTP(response, adminIdentityRequest(http.MethodGet, "/v1/admin/audit-events", ""))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"truncated":true`) ||
+		!strings.Contains(response.Body.String(), `"operation":"user_suspended"`) {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+}
 
 func TestAdminIdentityRoutesExposeBoundedEffectiveAccess(t *testing.T) {
 	store := &adminHTTPStore{}

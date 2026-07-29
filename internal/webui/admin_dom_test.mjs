@@ -82,11 +82,12 @@ for (const id of [
   "user-rows", "user-empty", "group-rows", "group-empty", "user-access", "user-id", "user-admin",
   "user-repositories", "group-access", "group-id", "group-admin", "group-repositories",
   "token-rows", "token-empty", "token-create", "token-expires", "token-repositories", "token-reveal",
+  "audit-rows", "audit-empty",
 ]) {
   const node = document.createElement(id.includes("form") || id.includes("upload") || id.includes("refresh") ? "form" : "div");
   ids.set(id, node);
 }
-for (const name of ["overview", "repositories", "queue", "users", "groups", "tokens", "scip", "webhooks", "github"]) {
+for (const name of ["overview", "repositories", "queue", "users", "groups", "tokens", "audit", "scip", "webhooks", "github"]) {
   const screen = document.createElement("section"); screen.dataset.screen = name;
   const nav = document.createElement("button"); nav.dataset.nav = name;
 }
@@ -108,6 +109,7 @@ const responses = {
     {delivery_id:"delivery-2",event:"push",state:"queued",installation_id:1,error_code:"",received_at:"2026-01-03T00:00:00Z",processed_at:null},
   ],truncated:true},
   "/v1/admin/github": {app_id:1,web_url:"https://example",api_url:"https://example/api",upload_url:"https://example/upload",git_url:"https://example",api_version:"1",private_key_configured:true,webhook_secret_configured:true,ca_configured:false,installations:[],truncated:true},
+  "/v1/admin/audit-events": {events:[],truncated:true},
 };
 const requests = [];
 let mutationDenial = 0;

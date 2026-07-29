@@ -50,6 +50,7 @@ func TestAdminIdentityManagementContract(t *testing.T) {
 		`Effective access`, `Direct access`, `Suspend user`, `Revoke credentials`,
 		`/v1/admin/users`, `/v1/admin/groups`, `/access`, `/suspend`, `/restore`, `/revoke-credentials`,
 		`API tokens`, `Create API token`, `Revoke token`, `/v1/account/api-tokens`,
+		`data-screen="audit"`, `Audit events`, `/v1/admin/audit-events`,
 		`window.confirm`, `credentials:"same-origin"`,
 	} {
 		if !bytes.Contains(adminDocument, []byte(want)) {

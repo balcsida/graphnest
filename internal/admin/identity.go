@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strconv"
 
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 )
 
@@ -73,6 +74,13 @@ func (service *Service) SuspendUser(ctx context.Context, principal authn.Princip
 	if suspended && actorID == id {
 		return ErrSelfAdministration
 	}
+	operation := audit.OperationUserRestored
+	if suspended {
+		operation = audit.OperationUserSuspended
+	}
+	if store, ok := service.Store.(auditedIdentityStore); ok {
+		return store.SuspendAdminUserAudited(ctx, actorID, id, suspended, identityAudit(principal, "user", id, operation))
+	}
 	return service.Store.SuspendAdminUser(ctx, actorID, id, suspended)
 }
 
@@ -81,12 +89,20 @@ func (service *Service) ReplaceUserAccess(ctx context.Context, principal authn.P
 		return err
 	}
 	actorID := principalUserID(principal)
+	if store, ok := service.Store.(auditedIdentityStore); ok {
+		return store.ReplaceAdminUserAccessAudited(ctx, actorID, id, administrator, repositoryIDs,
+			identityAudit(principal, "user", id, audit.OperationUserRoleChanged))
+	}
 	return service.Store.ReplaceAdminUserAccess(ctx, actorID, id, administrator, repositoryIDs)
 }
 
 func (service *Service) ReplaceGroupAccess(ctx context.Context, principal authn.Principal, id int64, administrator bool, repositoryIDs []int64) error {
 	if err := requireIdentityAdmin(principal); err != nil {
 		return err
+	}
+	if store, ok := service.Store.(auditedIdentityStore); ok {
+		return store.ReplaceAdminGroupAccessAudited(ctx, principalUserID(principal), id, administrator, repositoryIDs,
+			identityAudit(principal, "group", id, audit.OperationGroupRoleChanged))
 	}
 	return service.Store.ReplaceAdminGroupAccess(ctx, principalUserID(principal), id, administrator, repositoryIDs)
 }
@@ -95,7 +111,26 @@ func (service *Service) RevokeUserCredentials(ctx context.Context, principal aut
 	if err := requireIdentityAdmin(principal); err != nil {
 		return err
 	}
+	if store, ok := service.Store.(auditedIdentityStore); ok {
+		return store.RevokeAdminUserCredentialsAudited(ctx, id,
+			identityAudit(principal, "user", id, audit.OperationUserCredentialsRevoked))
+	}
 	return service.Store.RevokeAdminUserCredentials(ctx, id)
+}
+
+type auditedIdentityStore interface {
+	SuspendAdminUserAudited(context.Context, int64, int64, bool, audit.Event) error
+	ReplaceAdminUserAccessAudited(context.Context, int64, int64, bool, []int64, audit.Event) error
+	ReplaceAdminGroupAccessAudited(context.Context, int64, int64, bool, []int64, audit.Event) error
+	RevokeAdminUserCredentialsAudited(context.Context, int64, audit.Event) error
+}
+
+func identityAudit(principal authn.Principal, targetType string, targetID int64, operation string) audit.Event {
+	return audit.Event{
+		ActorType: "user", ActorID: principal.Subject, TargetType: targetType,
+		TargetID: strconv.FormatInt(targetID, 10), AuthenticationMethod: principal.Method,
+		Operation: operation, Outcome: "success",
+	}
 }
 
 func principalUserID(principal authn.Principal) int64 {
@@ -104,7 +139,7 @@ func principalUserID(principal authn.Principal) int64 {
 }
 
 func requireIdentityAdmin(principal authn.Principal) error {
-	if err := requireAdmin(principal); err != nil || principal.Method == "api_token" {
+	if err := requireAdmin(principal); err != nil || (principal.Method != "oidc" && principal.Method != "local") {
 		return ErrForbidden
 	}
 	return nil

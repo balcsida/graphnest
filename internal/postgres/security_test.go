@@ -344,7 +344,8 @@ func TestSecurityAuditEventsAreBoundedNewestFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	when := time.Now().UTC()
-	for _, operation := range []string{"first", "second", "third"} {
+	operations := []string{audit.OperationOIDCLoginDenied, audit.OperationLocalLoginDenied, audit.OperationAPITokenUseRejected}
+	for _, operation := range operations {
 		event := testAudit(operation)
 		event.CreatedAt = when
 		if err := store.AppendAudit(t.Context(), event); err != nil {
@@ -352,7 +353,7 @@ func TestSecurityAuditEventsAreBoundedNewestFirst(t *testing.T) {
 		}
 	}
 	events, more, err := store.AuditEvents(t.Context(), 2)
-	if err != nil || !more || len(events) != 2 || events[0].Operation != "third" || events[1].Operation != "second" {
+	if err != nil || !more || len(events) != 2 || events[0].Operation != operations[2] || events[1].Operation != operations[1] {
 		t.Fatalf("events=%#v more=%v err=%v", events, more, err)
 	}
 	if _, _, err := store.AuditEvents(t.Context(), 0); err == nil {

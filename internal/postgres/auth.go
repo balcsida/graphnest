@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 )
 
@@ -38,6 +39,24 @@ func (s *Store) ConsumeLoginFlow(ctx context.Context, stateHash, browserHash [32
 
 func (s *Store) CreateSession(ctx context.Context, session authn.SessionRecord) error {
 	return createSession(ctx, s.pool, session)
+}
+
+func (s *Store) CreateSessionAudited(ctx context.Context, session authn.SessionRecord, event audit.Event) error {
+	if err := event.Validate(); err != nil {
+		return err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := createSession(ctx, tx, session); err != nil {
+		return err
+	}
+	if err := appendAudit(ctx, tx, event); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func createSession(ctx context.Context, executor auditExecutor, session authn.SessionRecord) error {

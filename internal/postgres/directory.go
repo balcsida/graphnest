@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/jackc/pgx/v5"
 )
@@ -98,9 +99,52 @@ func (s *Store) CreateAPIToken(ctx context.Context, token authn.APITokenRecord) 
 	return id, err
 }
 
+func (s *Store) CreateAPITokenAudited(ctx context.Context, token authn.APITokenRecord, event audit.Event) (int64, error) {
+	if err := event.Validate(); err != nil {
+		return 0, err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	var id int64
+	if err := tx.QueryRow(ctx, `insert into api_tokens
+		(token_hash, prefix, user_id, repository_ids, created_at, expires_at)
+		values ($1,$2,$3,$4,$5,$6) returning id`,
+		token.TokenHash[:], token.Prefix, token.UserID, token.RepositoryIDs,
+		token.CreatedAt, token.ExpiresAt).Scan(&id); err != nil {
+		return 0, err
+	}
+	event.TargetID = strconv.FormatInt(id, 10)
+	if err := appendAudit(ctx, tx, event); err != nil {
+		return 0, err
+	}
+	return id, tx.Commit(ctx)
+}
+
 func (s *Store) RevokeAPIToken(ctx context.Context, userID, tokenID int64) error {
 	_, err := s.pool.Exec(ctx, `update api_tokens set revoked_at=now() where id=$1 and user_id=$2 and revoked_at is null`, tokenID, userID)
 	return err
+}
+
+func (s *Store) RevokeAPITokenAudited(ctx context.Context, userID, tokenID int64, event audit.Event) error {
+	if err := event.Validate(); err != nil {
+		return err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `update api_tokens set revoked_at=now()
+		where id=$1 and user_id=$2 and revoked_at is null`, tokenID, userID); err != nil {
+		return err
+	}
+	if err := appendAudit(ctx, tx, event); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Store) ListAPITokens(ctx context.Context, userID int64) ([]authn.APITokenMetadata, error) {

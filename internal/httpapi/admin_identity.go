@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/grepnest/grepnest/internal/admin"
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 )
 
@@ -46,6 +47,13 @@ func registerAdminIdentity(mux *http.ServeMux, authenticator authn.RequestAuthen
 			Groups    []admin.Group `json:"groups"`
 			Truncated bool          `json:"truncated"`
 		}{groups, truncated}, err
+	}))
+	mux.Handle("/v1/admin/audit-events", get(func(request *http.Request) (any, error) {
+		events, truncated, err := service.AuditEvents(request.Context(), PrincipalFromContext(request.Context()))
+		return struct {
+			Events    []audit.Event `json:"events"`
+			Truncated bool          `json:"truncated"`
+		}{events, truncated}, err
 	}))
 	mux.Handle("/v1/admin/users/", adminIdentityResource(authenticator, func(writer http.ResponseWriter, request *http.Request) {
 		principal := PrincipalFromContext(request.Context())

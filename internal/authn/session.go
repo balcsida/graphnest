@@ -6,7 +6,10 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"io"
+	"strconv"
 	"time"
+
+	"github.com/grepnest/grepnest/internal/audit"
 )
 
 type SessionManager struct {
@@ -39,7 +42,18 @@ func (m SessionManager) CreateForUser(ctx context.Context, userID int64, provide
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	if err := m.Store.CreateSession(ctx, prepared.Record); err != nil {
+	if store, ok := m.Store.(interface {
+		CreateSessionAudited(context.Context, SessionRecord, audit.Event) error
+	}); ok {
+		event := audit.Event{
+			ActorType: "user", ActorID: strconv.FormatInt(userID, 10),
+			TargetType: "session", AuthenticationMethod: provider,
+			Operation: audit.OperationSessionCreated, Outcome: "success",
+		}
+		if err := store.CreateSessionAudited(ctx, prepared.Record, event); err != nil {
+			return "", time.Time{}, err
+		}
+	} else if err := m.Store.CreateSession(ctx, prepared.Record); err != nil {
 		return "", time.Time{}, err
 	}
 	return prepared.Token, prepared.ExpiresAt, nil

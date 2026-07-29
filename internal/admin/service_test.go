@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/repository"
@@ -128,6 +129,10 @@ type fakeStore struct {
 	retryRepositoryIDs  []int64
 	reconciled          []githubapp.Repository
 	globalLookups       int
+}
+
+func (*fakeStore) AuditEvents(context.Context, int) ([]audit.Event, bool, error) {
+	return nil, false, nil
 }
 
 func (*fakeStore) AdminOverview(context.Context, int64, []int64) (Overview, error) {

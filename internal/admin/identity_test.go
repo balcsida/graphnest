@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/repository"
@@ -140,6 +141,10 @@ type identityStore struct {
 	suspended     bool
 	repositoryIDs []int64
 	revokedUserID int64
+}
+
+func (*identityStore) AuditEvents(context.Context, int) ([]audit.Event, bool, error) {
+	return nil, false, nil
 }
 
 func (store *identityStore) AdminUsers(_ context.Context, limit int) ([]User, bool, error) {
