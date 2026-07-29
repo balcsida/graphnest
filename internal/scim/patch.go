@@ -150,7 +150,7 @@ func applyGroupOperation(mutation *GroupMutation, operation PatchOperation) erro
 		if op != "remove" {
 			return parseError("invalidPath")
 		}
-		mutation.RemoveMembers = append(mutation.RemoveMembers, id)
+		mutation.RemoveMembers = applyMemberDelta(mutation.RemoveMembers, &mutation.AddMembers, []int64{id})
 		return nil
 	}
 	if path != "members" {
@@ -164,11 +164,52 @@ func applyGroupOperation(mutation *GroupMutation, operation PatchOperation) erro
 		return err
 	}
 	if op == "replace" {
+		members = uniqueMemberIDs(members)
 		mutation.ReplaceMembers = &members
+		mutation.AddMembers = nil
+		mutation.RemoveMembers = nil
 	} else {
-		mutation.AddMembers = append(mutation.AddMembers, members...)
+		mutation.AddMembers = applyMemberDelta(mutation.AddMembers, &mutation.RemoveMembers, members)
 	}
 	return nil
+}
+
+func applyMemberDelta(current []int64, opposite *[]int64, ids []int64) []int64 {
+	for _, id := range ids {
+		*opposite = withoutMemberID(*opposite, id)
+		if !containsMemberID(current, id) {
+			current = append(current, id)
+		}
+	}
+	return current
+}
+
+func uniqueMemberIDs(ids []int64) []int64 {
+	unique := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if !containsMemberID(unique, id) {
+			unique = append(unique, id)
+		}
+	}
+	return unique
+}
+
+func containsMemberID(ids []int64, want int64) bool {
+	for _, id := range ids {
+		if id == want {
+			return true
+		}
+	}
+	return false
+}
+
+func withoutMemberID(ids []int64, remove int64) []int64 {
+	for i, id := range ids {
+		if id == remove {
+			return append(ids[:i], ids[i+1:]...)
+		}
+	}
+	return ids
 }
 
 func memberFilter(path string) (int64, bool) {
