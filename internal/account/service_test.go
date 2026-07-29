@@ -46,6 +46,15 @@ func TestCreateTokenRejectsRepositoryOutsidePrincipalGrant(t *testing.T) {
 	}
 }
 
+func TestCreateTokenRequiresInteractiveSession(t *testing.T) {
+	s := &Service{Manager: authn.TokenManager{Store: &storeStub{}, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+	if _, _, err := s.CreateToken(t.Context(), authn.Principal{
+		Subject: "11", Method: "api_token", RepositoryIDs: []int64{101},
+	}, nil, nil); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("restricted API token minted child token: %v", err)
+	}
+}
+
 func TestCreateTokenRequiresFutureExpiry(t *testing.T) {
 	// Break caught: tokens created already expired or expiring exactly now.
 	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
