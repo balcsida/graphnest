@@ -6,12 +6,21 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/jackc/pgx/v5"
 )
 
 func (s *Store) UserPrincipal(ctx context.Context, userID int64, ceiling []int64) (authn.Principal, error) {
+	return userPrincipal(ctx, s.pool, userID, ceiling)
+}
+
+type principalQuerier interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+func userPrincipal(ctx context.Context, queryer principalQuerier, userID int64, ceiling []int64) (authn.Principal, error) {
 	var administrator bool
 	var repositoryIDs []int64
-	err := s.pool.QueryRow(ctx, `with active_groups as (
+	err := queryer.QueryRow(ctx, `with active_groups as (
         select memberships.group_id from group_memberships memberships
         join groups on groups.id=memberships.group_id and groups.deleted_at is null
         where memberships.user_id=$1
@@ -31,16 +40,32 @@ func (s *Store) UserPrincipal(ctx context.Context, userID int64, ceiling []int64
 }
 
 func (s *Store) APIPrincipal(ctx context.Context, tokenHash [32]byte, now time.Time) (authn.Principal, error) {
-	var userID int64
-	var ceiling []int64
-	if err := s.pool.QueryRow(ctx, `select user_id, repository_ids from api_tokens where token_hash=$1 and revoked_at is null and (expires_at is null or expires_at>$2)`, tokenHash[:], now).Scan(&userID, &ceiling); err != nil {
-		return authn.Principal{}, err
-	}
-	principal, err := s.UserPrincipal(ctx, userID, ceiling)
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return authn.Principal{}, err
 	}
+	defer tx.Rollback(ctx)
+	var userID int64
+	var ceiling []int64
+	if err := tx.QueryRow(ctx, `update api_tokens token set last_used_at=$2
+        from users user_record
+        where token.token_hash=$1 and token.user_id=user_record.id
+          and token.revoked_at is null and (token.expires_at is null or token.expires_at>$2)
+          and user_record.scim_active and user_record.suspended_at is null and user_record.deleted_at is null
+        returning token.user_id, token.repository_ids`, tokenHash[:], now).Scan(&userID, &ceiling); err != nil {
+		return authn.Principal{}, err
+	}
+	principal, err := userPrincipal(ctx, tx, userID, ceiling)
+	if err != nil {
+		return authn.Principal{}, err
+	}
+	if principal.Administrator && ceiling != nil {
+		principal.RepositoryIDs = ceiling
+	}
 	principal.Method = "api_token"
+	if err := tx.Commit(ctx); err != nil {
+		return authn.Principal{}, err
+	}
 	return principal, nil
 }
 

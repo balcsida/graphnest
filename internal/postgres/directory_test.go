@@ -9,14 +9,15 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/jackc/pgx/v5"
 )
 
 func TestDirectoryPrincipalUnionsActiveGrantsAndRoles(t *testing.T) {
 	store := migratedStore(t)
 	userID := insertIdentityUser(t, store, "directory-1", "ada")
-	for index, id := range []int64{101, 102, 103} {
-		seedReadyRepository(t, store, id, testSHA(byte('a'+index)))
+	for _, id := range []int64{101, 102, 103} {
+		seedReadyRepository(t, store, id, testSHA(byte('a'+id-101)))
 	}
 	if _, err := store.pool.Exec(t.Context(), `insert into user_repository_grants (user_id, repository_id) values ($1, 101)`, userID); err != nil {
 		t.Fatal(err)
@@ -70,8 +71,8 @@ func TestDirectoryPrincipalUnionsActiveGrantsAndRoles(t *testing.T) {
 func TestAPIPrincipalIntersectsTokenCeilingAndRejectsInvalidTokens(t *testing.T) {
 	store := migratedStore(t)
 	userID := insertIdentityUser(t, store, "directory-2", "grace")
-	for index, id := range []int64{101, 102, 103} {
-		seedReadyRepository(t, store, id, testSHA(byte('a'+index)))
+	for _, id := range []int64{101, 102, 103} {
+		seedReadyRepository(t, store, id, testSHA(byte('a'+id-101)))
 	}
 	if _, err := store.pool.Exec(t.Context(), `insert into user_repository_grants (user_id, repository_id) values ($1, 101), ($1, 102)`, userID); err != nil {
 		t.Fatal(err)
@@ -90,11 +91,19 @@ func TestAPIPrincipalIntersectsTokenCeilingAndRejectsInvalidTokens(t *testing.T)
 	if err != nil || principal.Method != "api_token" || !reflect.DeepEqual(principal.RepositoryIDs, []int64{102}) {
 		t.Fatalf("principal=%#v err=%v", principal, err)
 	}
+	var lastUsed time.Time
+	if err := store.pool.QueryRow(t.Context(), `select last_used_at from api_tokens where id=$1`, tokenID).Scan(&lastUsed); err != nil || lastUsed.Before(now) {
+		t.Fatalf("last used=%v err=%v", lastUsed, err)
+	}
 	if err := store.RevokeAPIToken(t.Context(), userID, tokenID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.APIPrincipal(t.Context(), [32]byte{1}, now); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("revoked token error=%v", err)
+	}
+	var revokedLastUsed time.Time
+	if err := store.pool.QueryRow(t.Context(), `select last_used_at from api_tokens where id=$1`, tokenID).Scan(&revokedLastUsed); err != nil || !revokedLastUsed.Equal(lastUsed) {
+		t.Fatalf("revoked last used=%v want %v err=%v", revokedLastUsed, lastUsed, err)
 	}
 	past := now.Add(-time.Second)
 	create(2, nil, &past)
@@ -107,5 +116,55 @@ func TestAPIPrincipalIntersectsTokenCeilingAndRejectsInvalidTokens(t *testing.T)
 	}
 	if _, err := store.APIPrincipal(t.Context(), [32]byte{3}, now); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("suspended token error=%v", err)
+	}
+}
+
+func TestAdministratorAPITokenStaysRepositoryScoped(t *testing.T) {
+	store := migratedStore(t)
+	userID := insertIdentityUser(t, store, "directory-3", "lin")
+	for _, id := range []int64{101, 102} {
+		seedReadyRepository(t, store, id, testSHA(byte('a'+id-101)))
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into user_roles (user_id, administrator) values ($1, true)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{TokenHash: [32]byte{9}, Prefix: "gn_test", UserID: userID, RepositoryIDs: []int64{102}, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	principal, err := store.APIPrincipal(t.Context(), [32]byte{9}, now)
+	if err != nil || !principal.Administrator {
+		t.Fatalf("principal=%#v err=%v", principal, err)
+	}
+	service := repository.Service{Store: store}
+	if _, err := service.Status(t.Context(), principal, 101); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("token accessed repo 101: %v", err)
+	}
+	if _, err := service.Status(t.Context(), principal, 102); !errors.Is(err, repository.ErrSearchNodeUnavailable) {
+		t.Fatalf("token repo 102 error=%v", err)
+	}
+}
+
+func TestAPIPrincipalDistinguishesEmptyTokenCeiling(t *testing.T) {
+	store := migratedStore(t)
+	userID := insertIdentityUser(t, store, "directory-4", "kai")
+	seedReadyRepository(t, store, 101, testSHA('a'))
+	if _, err := store.pool.Exec(t.Context(), `insert into user_repository_grants (user_id, repository_id) values ($1, 101)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{TokenHash: [32]byte{4}, Prefix: "gn_test", UserID: userID, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{TokenHash: [32]byte{5}, Prefix: "gn_test", UserID: userID, RepositoryIDs: []int64{}, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	unrestricted, err := store.APIPrincipal(t.Context(), [32]byte{4}, now)
+	if err != nil || !reflect.DeepEqual(unrestricted.RepositoryIDs, []int64{101}) {
+		t.Fatalf("unrestricted=%#v err=%v", unrestricted, err)
+	}
+	empty, err := store.APIPrincipal(t.Context(), [32]byte{5}, now)
+	if err != nil || len(empty.RepositoryIDs) != 0 {
+		t.Fatalf("empty=%#v err=%v", empty, err)
 	}
 }
