@@ -35,9 +35,6 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 	}
 
 	file := graphscan.File{Path: path, Language: graphscan.Go}
-	interfaces := map[string]map[string]string{}
-	embeddedInterfaces := map[string][]string{}
-	methods := map[string]map[string]string{}
 	var walk func(*tree_sitter.Node, string)
 	walk = func(node *tree_sitter.Node, scope string) {
 		if node == nil || graphscan.BudgetError(ctx) != nil {
@@ -63,8 +60,12 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 			if typeNode != nil && typeNode.Kind() == "interface_type" {
 				kind = "Interface"
 				required, embedded := interfaceEvidence(typeNode, source)
-				interfaces[name] = required
-				embeddedInterfaces[name] = embedded
+				for method, signature := range required {
+					graphscan.Add(ctx, &file.Declarations, graphscan.Declaration{
+						Path: path, LocalID: name + "." + method, Name: method, QualifiedName: name + "." + method,
+						Signature: signature, Kind: "Method", TypeName: name, Range: nodeRange(typeNode),
+					})
+				}
 				for _, parent := range embedded {
 					graphscan.Add(ctx, &file.Heritage, graphscan.Heritage{Path: path, ChildLocalID: name, Candidates: []string{parent}, Kind: graphartifact.EdgeExtends, Range: nodeRange(typeNode)})
 				}
@@ -88,13 +89,8 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 			value := declaration(path, qualified, name, "Method", nameNode)
 			value.Receiver = receiver
 			value.Signature = methodSignature(node, source)
+			value.PointerReceiver = firstKind(node.ChildByFieldName("receiver"), "pointer_type") != nil
 			graphscan.Add(ctx, &file.Declarations, value)
-			if firstKind(node.ChildByFieldName("receiver"), "pointer_type") == nil {
-				if methods[receiver] == nil {
-					methods[receiver] = map[string]string{}
-				}
-				methods[receiver][name] = value.Signature
-			}
 		case "call_expression":
 			function := node.ChildByFieldName("function")
 			name, candidates := callCandidates(function, source)
@@ -107,14 +103,6 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 		}
 	}
 	walk(tree.RootNode(), "")
-	for receiver, set := range methods {
-		for name := range interfaces {
-			required := interfaceMethods(name, interfaces, embeddedInterfaces, map[string]bool{})
-			if containsAll(set, required) {
-				graphscan.Add(ctx, &file.Heritage, graphscan.Heritage{Path: path, ChildLocalID: receiver, Candidates: []string{name}, Kind: graphartifact.EdgeImplements})
-			}
-		}
-	}
 	if err := graphscan.BudgetError(ctx); err != nil {
 		return graphscan.File{}, err
 	}
@@ -206,23 +194,6 @@ func parameterTypes(node *tree_sitter.Node, source []byte) string {
 	return "(" + strings.Join(values, ",") + ")"
 }
 
-func interfaceMethods(name string, interfaces map[string]map[string]string, embedded map[string][]string, seen map[string]bool) map[string]string {
-	if seen[name] {
-		return nil
-	}
-	seen[name] = true
-	methods := map[string]string{}
-	for method, signature := range interfaces[name] {
-		methods[method] = signature
-	}
-	for _, parent := range embedded[name] {
-		for method, signature := range interfaceMethods(parent, interfaces, embedded, seen) {
-			methods[method] = signature
-		}
-	}
-	return methods
-}
-
 func resultType(node *tree_sitter.Node, source []byte) string {
 	if node == nil {
 		return ""
@@ -231,18 +202,6 @@ func resultType(node *tree_sitter.Node, source []byte) string {
 		return parameterTypes(node, source)
 	}
 	return text(node, source)
-}
-
-func containsAll(values, required map[string]string) bool {
-	if len(required) == 0 {
-		return false
-	}
-	for name, signature := range required {
-		if values[name] != signature {
-			return false
-		}
-	}
-	return true
 }
 
 func text(node *tree_sitter.Node, source []byte) string {

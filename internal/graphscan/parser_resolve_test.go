@@ -22,6 +22,49 @@ func TestResolveParsedGoImportAcrossFiles(t *testing.T) {
 	}
 }
 
+func TestResolveParsedGoImplicitInterfaceAcrossFiles(t *testing.T) {
+	files := []graphscan.File{
+		parseGo(t, "base.go", "package worker\ntype Base interface { Close() error }\n"),
+		parseGo(t, "runner.go", "package worker\ntype Runner interface { Base; Run() error }\n"),
+		parseGo(t, "job.go", "package worker\ntype Job struct{}\n"),
+		parseGo(t, "methods.go", "package worker\nfunc (Job) Run() error { return nil }\nfunc (Job) Close() error { return nil }\n"),
+	}
+	artifact, err := graphscan.Resolve(101, strings.Repeat("a", 40), files)
+	if err != nil || !hasEdge(artifact, graphartifact.EdgeImplements, "Job", "Runner") ||
+		!hasEdge(artifact, graphartifact.EdgeImplements, "Job", "Base") {
+		t.Fatalf("Resolve() = %#v, %v", artifact, err)
+	}
+}
+
+func TestResolveParsedGoImplicitInterfaceRespectsPackageAndReceiver(t *testing.T) {
+	files := []graphscan.File{
+		parseGo(t, "api/runner.go", "package api\ntype Runner interface { Run() error }\n"),
+		parseGo(t, "worker/job.go", "package worker\ntype Job struct{}\nfunc (Job) Run() error { return nil }\n"),
+		parseGo(t, "api/pointer.go", "package api\ntype Pointer struct{}\nfunc (*Pointer) Run() error { return nil }\n"),
+	}
+	artifact, err := graphscan.Resolve(101, strings.Repeat("a", 40), files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasEdge(artifact, graphartifact.EdgeImplements, "Job", "Runner") ||
+		hasEdge(artifact, graphartifact.EdgeImplements, "Pointer", "Runner") {
+		t.Fatalf("Resolve() inferred an invalid implementation: %#v", artifact)
+	}
+}
+
+func TestResolveParsedGoEmbeddedOnlyInterfaceAcrossFiles(t *testing.T) {
+	files := []graphscan.File{
+		parseGo(t, "base.go", "package worker\ntype Base interface { Close() error }\n"),
+		parseGo(t, "worker.go", "package worker\ntype Worker interface { Base }\n"),
+		parseGo(t, "job.go", "package worker\ntype Job struct{}\n"),
+		parseGo(t, "close.go", "package worker\nfunc (Job) Close() error { return nil }\n"),
+	}
+	artifact, err := graphscan.Resolve(101, strings.Repeat("a", 40), files)
+	if err != nil || !hasEdge(artifact, graphartifact.EdgeImplements, "Job", "Worker") {
+		t.Fatalf("Resolve() = %#v, %v", artifact, err)
+	}
+}
+
 func TestResolveParsedJavaImportAcrossFiles(t *testing.T) {
 	files := []graphscan.File{
 		parseJava(t, "src/lib/Helper.java", "package lib; public class Helper { public static void run() {} }\n"),

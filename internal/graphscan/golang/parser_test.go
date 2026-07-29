@@ -23,9 +23,10 @@ func TestParseGoEmitsPackageImportsAndDeclarations(t *testing.T) {
 func TestParseGoEmitsCallsAndInterfaceEvidence(t *testing.T) {
 	got := parseFixture(t, "service.go")
 	if !hasCall(got, "Run", "Runner.Run", "Run") ||
-		!hasHeritage(got, "Runner", graphartifact.EdgeImplements, "Worker") ||
+		!hasInterfaceMethod(got, "Worker", "Run") ||
+		!hasValueMethod(got, "Runner", "Run") ||
 		!hasHeritage(got, "Worker", graphartifact.EdgeExtends, "Base") ||
-		hasHeritage(got, "Partial", graphartifact.EdgeImplements, "Worker") {
+		hasInterfaceMethod(got, "Partial", "Run") {
 		t.Fatalf("Parse() = %#v", got)
 	}
 }
@@ -83,6 +84,18 @@ func parseFixture(t *testing.T, name string) graphscan.File {
 func hasDeclaration(file graphscan.File, qualified, kind string) bool {
 	return slices.ContainsFunc(file.Declarations, func(value graphscan.Declaration) bool {
 		return value.QualifiedName == qualified && value.Kind == kind
+	})
+}
+
+func hasInterfaceMethod(file graphscan.File, typeName, method string) bool {
+	return slices.ContainsFunc(file.Declarations, func(value graphscan.Declaration) bool {
+		return value.TypeName == typeName && value.Name == method
+	})
+}
+
+func hasValueMethod(file graphscan.File, receiver, method string) bool {
+	return slices.ContainsFunc(file.Declarations, func(value graphscan.Declaration) bool {
+		return value.Receiver == receiver && value.Name == method && !value.PointerReceiver
 	})
 }
 

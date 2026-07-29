@@ -19,6 +19,7 @@ type Range struct{ Start, End Point }
 type Declaration struct {
 	LocalID, Path, Name, QualifiedName, Signature string
 	Kind, ScopeID, Receiver, TypeName, SCIPSymbol string
+	PointerReceiver                               bool
 	Range                                         Range
 }
 
