@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,12 +12,33 @@ import (
 
 	"github.com/grepnest/grepnest/internal/account"
 	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/grepnest/grepnest/internal/repository"
 )
+
+type failingAuthorizer struct{ err error }
+
+func (a failingAuthorizer) AuthorizedRepository(context.Context, authn.Principal, int64) (repository.Repository, error) {
+	return repository.Repository{}, a.err
+}
 
 type accountStoreStub struct {
 	authn.APITokenStore
 	listed   []authn.APITokenMetadata
 	user, id int64
+}
+
+func TestAccountTokenRouteReturnsUnavailableForAuthorizerOutage(t *testing.T) {
+	service := &account.Service{Manager: authn.TokenManager{Store: &accountStoreStub{}, Rand: strings.NewReader(strings.Repeat("x", 32))}, Authorizer: failingAuthorizer{errors.New("database unavailable")}}
+	mux := http.NewServeMux()
+	RegisterAccount(mux, authn.RequestAuthenticator{Bearer: authn.NewStatic(map[string]authn.Principal{"user": {Subject: "11", Method: "oidc", RepositoryIDs: []int64{101}}})}, service, 1024, 4096)
+	request := httptest.NewRequest(http.MethodPost, "/v1/account/api-tokens", strings.NewReader(`{"expires_at":"2026-08-29T00:00:00Z","repository_ids":[101]}`))
+	request.Header.Set("Authorization", "Bearer user")
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d", response.Code)
+	}
 }
 
 func (*accountStoreStub) CreateAPIToken(context.Context, authn.APITokenRecord) (int64, error) {

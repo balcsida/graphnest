@@ -60,7 +60,24 @@ func (s *Store) APIPrincipal(ctx context.Context, tokenHash [32]byte, now time.T
 		return authn.Principal{}, err
 	}
 	if principal.Administrator && ceiling != nil {
-		principal.RepositoryIDs = ceiling
+		rows, err := tx.Query(ctx, `select repositories.github_id from repositories join installations on installations.id=repositories.installation_id where repositories.github_id=any($1) and installations.status='active' and repositories.enabled and not repositories.archived order by repositories.github_id`, ceiling)
+		if err != nil {
+			return authn.Principal{}, err
+		}
+		principal.RepositoryIDs = nil
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return authn.Principal{}, err
+			}
+			principal.RepositoryIDs = append(principal.RepositoryIDs, id)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return authn.Principal{}, err
+		}
+		rows.Close()
 	}
 	principal.Method = "api_token"
 	if err := tx.Commit(ctx); err != nil {
