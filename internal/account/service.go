@@ -16,6 +16,8 @@ var (
 	ErrInvalid   = errors.New("invalid token request")
 )
 
+const MaxTokenLifetime = 90 * 24 * time.Hour
+
 type Token struct {
 	ID            int64      `json:"id"`
 	Prefix        string     `json:"prefix"`
@@ -39,7 +41,9 @@ func (s *Service) CreateToken(ctx context.Context, principal authn.Principal, ex
 	if err != nil {
 		return Token{}, "", ErrForbidden
 	}
-	if expires == nil || !expires.After(s.now()) {
+	now := s.now()
+	if expires != nil && (!expires.After(now) || expires.After(now.Add(MaxTokenLifetime))) ||
+		principal.Administrator && len(repositoryIDs) == 0 {
 		return Token{}, "", ErrInvalid
 	}
 	for _, repositoryID := range repositoryIDs {
@@ -58,8 +62,12 @@ func (s *Service) CreateToken(ctx context.Context, principal authn.Principal, ex
 	if err != nil {
 		return Token{}, "", err
 	}
-	value := *expires
-	return Token{ID: id, Prefix: plaintext[:12], RepositoryIDs: append([]int64(nil), repositoryIDs...), CreatedAt: s.now(), ExpiresAt: &value}, plaintext, nil
+	var expiry *time.Time
+	if expires != nil {
+		value := *expires
+		expiry = &value
+	}
+	return Token{ID: id, Prefix: plaintext[:12], RepositoryIDs: append([]int64(nil), repositoryIDs...), CreatedAt: now, ExpiresAt: expiry}, plaintext, nil
 }
 
 func (s *Service) now() time.Time {

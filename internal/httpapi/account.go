@@ -49,7 +49,7 @@ func RegisterAccount(mux *http.ServeMux, authenticator authn.RequestAuthenticato
 			return
 		}
 		expires, ok := tokenExpiry(input.ExpiresAt)
-		if !ok || !uniquePositiveIDs(input.RepositoryIDs) {
+		if !ok || !validTokenRepositoryIDs(input.RepositoryIDs) {
 			writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
 			return
 		}
@@ -95,7 +95,7 @@ func RegisterAccount(mux *http.ServeMux, authenticator authn.RequestAuthenticato
 
 func tokenExpiry(value *string) (*time.Time, bool) {
 	if value == nil {
-		return nil, false
+		return nil, true
 	}
 	parsed, err := time.Parse(time.RFC3339, *value)
 	if err != nil || parsed.Location() != time.UTC || parsed.Format(time.RFC3339) != *value {
@@ -104,8 +104,8 @@ func tokenExpiry(value *string) (*time.Time, bool) {
 	return &parsed, true
 }
 
-func uniquePositiveIDs(ids []int64) bool {
-	if len(ids) == 0 || len(ids) > maxTokenRepositories {
+func validTokenRepositoryIDs(ids []int64) bool {
+	if len(ids) > maxTokenRepositories {
 		return false
 	}
 	seen := make(map[int64]struct{}, len(ids))

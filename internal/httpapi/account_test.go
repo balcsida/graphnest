@@ -124,3 +124,19 @@ func TestAccountTokenRouteRequiresFutureExpiry(t *testing.T) {
 		}
 	}
 }
+
+func TestAccountTokenRouteAllowsOmittedOptionalControls(t *testing.T) {
+	store := &accountStoreStub{}
+	service := &account.Service{Manager: authn.TokenManager{Store: store, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+	mux := http.NewServeMux()
+	RegisterAccount(mux, authn.RequestAuthenticator{Bearer: authn.NewStatic(map[string]authn.Principal{"user": {Subject: "11", Method: "oidc"}})}, service, 1024, 4096)
+	request := httptest.NewRequest(http.MethodPost, "/v1/account/api-tokens", strings.NewReader(`{}`))
+	request.Header.Set("Authorization", "Bearer user")
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated || strings.Contains(response.Body.String(), "expires_at") ||
+		strings.Contains(response.Body.String(), "repository_ids") {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+}
