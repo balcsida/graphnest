@@ -107,6 +107,74 @@ func TestUpdateRollsBackCallbackFailure(t *testing.T) {
 	}
 }
 
+func TestUpdateRollsBackCanceledCallback(t *testing.T) {
+	db := testDatabase(t, Options{})
+	ctx, cancel := context.WithCancel(t.Context())
+	err := db.Update(ctx, func(session *Session) error {
+		if _, err := session.Execute(t.Context(), `CREATE (:File {uid: "canceled", repository_id: 1, path: "bad"})`, nil, QueryLimits{}); err != nil {
+			return err
+		}
+		cancel()
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Update() error = %v, want context.Canceled", err)
+	}
+	assertUIDCount(t, db, "canceled", 0)
+}
+
+func TestUpdateRollsBackExpiredCallback(t *testing.T) {
+	db := testDatabase(t, Options{})
+	ctx, cancel := context.WithTimeout(t.Context(), time.Millisecond)
+	defer cancel()
+	err := db.Update(ctx, func(session *Session) error {
+		if _, err := session.Execute(t.Context(), `CREATE (:File {uid: "expired", repository_id: 1, path: "bad"})`, nil, QueryLimits{}); err != nil {
+			return err
+		}
+		<-ctx.Done()
+		return nil
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Update() error = %v, want context.DeadlineExceeded", err)
+	}
+	assertUIDCount(t, db, "expired", 0)
+}
+
+func TestViewRollsBackPanicBeforeRecyclingReader(t *testing.T) {
+	db := testDatabase(t, Options{ReadConnections: 1})
+	assertPanic(t, func() {
+		_ = db.View(t.Context(), func(*Session) error {
+			panic("reader panic")
+		})
+	})
+	if err := db.View(t.Context(), func(session *Session) error {
+		_, err := session.Execute(t.Context(), `RETURN 1`, nil, QueryLimits{})
+		return err
+	}); err != nil {
+		t.Fatalf("View() after panic = %v", err)
+	}
+}
+
+func TestUpdateRollsBackPanicBeforeReleasingWriter(t *testing.T) {
+	db := testDatabase(t, Options{})
+	assertPanic(t, func() {
+		_ = db.Update(t.Context(), func(session *Session) error {
+			if _, err := session.Execute(t.Context(), `CREATE (:File {uid: "panicked", repository_id: 1, path: "bad"})`, nil, QueryLimits{}); err != nil {
+				t.Fatal(err)
+			}
+			panic("writer panic")
+		})
+	})
+	if err := db.Update(t.Context(), func(session *Session) error {
+		_, err := session.Execute(t.Context(), `CREATE (:File {uid: "healthy", repository_id: 1, path: "ok"})`, nil, QueryLimits{})
+		return err
+	}); err != nil {
+		t.Fatalf("Update() after panic = %v", err)
+	}
+	assertUIDCount(t, db, "panicked", 0)
+	assertUIDCount(t, db, "healthy", 1)
+}
+
 func TestViewRejectsWrites(t *testing.T) {
 	db := testDatabase(t, Options{})
 	err := db.View(t.Context(), func(session *Session) error {
@@ -204,10 +272,35 @@ func testDatabase(t *testing.T, options Options) *Database {
 			t.Error(err)
 		}
 	})
-	if err := db.Update(t.Context(), func(session *Session) error {
-		return EnsureSchema(t.Context(), session.connection)
-	}); err != nil {
+	if err := db.EnsureSchema(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	return db
+}
+
+func assertPanic(t *testing.T, fn func()) {
+	t.Helper()
+	defer func() {
+		if recover() == nil {
+			t.Fatal("callback panic was swallowed")
+		}
+	}()
+	fn()
+}
+
+func assertUIDCount(t *testing.T, db *Database, uid string, want int64) {
+	t.Helper()
+	err := db.View(t.Context(), func(session *Session) error {
+		result, err := session.Execute(t.Context(), `MATCH (f:File {uid: $uid}) RETURN count(f)`, map[string]any{"uid": uid}, QueryLimits{})
+		if err != nil {
+			return err
+		}
+		if got := result.Rows[0][0]; got != want {
+			t.Fatalf("count = %v, want %d", got, want)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }

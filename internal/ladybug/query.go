@@ -38,40 +38,48 @@ type Session struct {
 	active         bool
 }
 
-type queryOutcome struct {
-	result Result
-	err    error
+func (session *Session) Execute(ctx context.Context, query string, parameters map[string]any, limits QueryLimits) (Result, error) {
+	var result Result
+	err := session.executeNative(ctx, func() error {
+		var err error
+		result, err = executeQuery(session.connection, query, parameters, normalizeLimits(limits))
+		return err
+	})
+	return result, err
 }
 
-func (session *Session) Execute(ctx context.Context, query string, parameters map[string]any, limits QueryLimits) (Result, error) {
+func (session *Session) executeNative(ctx context.Context, operation func() error) error {
+	return session.executeNativeWithTimeout(ctx, session.timeout, operation)
+}
+
+func (session *Session) executeNativeWithTimeout(ctx context.Context, timeout time.Duration, operation func() error) error {
 	session.executeMu.Lock()
 	defer session.executeMu.Unlock()
 	if !session.active {
-		return Result{}, errors.New("ladybug session callback has returned")
+		return errors.New("ladybug session callback has returned")
 	}
 	if !session.reusable.Load() {
-		return Result{}, errUnhealthy
+		return errUnhealthy
 	}
 	if err := ctx.Err(); err != nil {
-		return Result{}, err
+		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, session.timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	timeout := session.timeout.Milliseconds()
-	if timeout == 0 {
-		timeout = 1
+	timeoutMillis := timeout.Milliseconds()
+	if timeoutMillis == 0 {
+		timeoutMillis = 1
 	}
-	session.connection.SetTimeout(uint64(timeout))
-	done := make(chan queryOutcome, 1)
+	session.connection.SetTimeout(uint64(timeoutMillis))
+	done := make(chan error, 1)
 	session.database.queries.Add(1)
 	go func() {
 		defer session.database.queries.Done()
-		result, err := executeQuery(session.connection, query, parameters, normalizeLimits(limits))
-		done <- queryOutcome{result: result, err: err}
+		done <- operation()
 	}()
 	select {
-	case outcome := <-done:
-		return outcome.result, outcome.err
+	case err := <-done:
+		return err
 	case <-ctx.Done():
 		session.connection.Interrupt()
 	}
@@ -79,12 +87,29 @@ func (session *Session) Execute(ctx context.Context, query string, parameters ma
 	defer timer.Stop()
 	select {
 	case <-done:
-		return Result{}, ctx.Err()
+		return ctx.Err()
 	case <-timer.C:
 		session.reusable.Store(false)
 		session.database.unhealthy.Store(true)
-		return Result{}, fmt.Errorf("%w: interrupt grace elapsed", ctx.Err())
+		return fmt.Errorf("%w: interrupt grace elapsed", ctx.Err())
 	}
+}
+
+func executeStatement(ctx context.Context, session *Session, statement string) error {
+	return executeStatementWithTimeout(ctx, session, session.timeout, statement)
+}
+
+func executeStatementWithTimeout(ctx context.Context, session *Session, timeout time.Duration, statement string) error {
+	return session.executeNativeWithTimeout(ctx, timeout, func() error {
+		result, err := session.connection.Query(statement)
+		if result != nil {
+			result.Close()
+		}
+		if err != nil {
+			return fmt.Errorf("%s: %w", statement, err)
+		}
+		return nil
+	})
 }
 
 func (session *Session) invalidate() {
