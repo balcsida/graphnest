@@ -138,7 +138,7 @@ func TestAdminIdentityRejectsTrueFinalDirectAdministratorRemoval(t *testing.T) {
 	}
 }
 
-func TestAdminIdentityReplacesOnlyAccessForEligibleRepositories(t *testing.T) {
+func TestAdminIdentityRoundTripsExistingDisabledRepositoryGrants(t *testing.T) {
 	store := migratedStore(t)
 	actorID := insertIdentityUser(t, store, "directory-1", "ada")
 	userID := insertIdentityUser(t, store, "directory-2", "grace")
@@ -162,16 +162,31 @@ func TestAdminIdentityReplacesOnlyAccessForEligibleRepositories(t *testing.T) {
 	if err := store.ReplaceAdminGroupAccess(t.Context(), actorID, groupID, true, []int64{101}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.pool.Exec(t.Context(), `update repositories set enabled=false where github_id=101`); err != nil {
+		t.Fatal(err)
+	}
 	group, err := store.AdminGroup(t.Context(), groupID)
 	if err != nil || !group.Administrator || !reflect.DeepEqual(group.RepositoryIDs, []int64{101}) {
 		t.Fatalf("group=%#v err=%v", group, err)
 	}
-
-	if err := store.ReplaceAdminUserAccess(t.Context(), actorID, userID, false, []int64{101, 999}); !errors.Is(err, admin.ErrInvalid) {
-		t.Fatalf("ineligible repository error=%v", err)
+	if err := store.ReplaceAdminGroupAccess(t.Context(), actorID, groupID, group.Administrator, group.RepositoryIDs); err != nil {
+		t.Fatalf("round-trip disabled group grant: %v", err)
+	}
+	if err := store.ReplaceAdminUserAccess(t.Context(), actorID, userID, false, []int64{101}); err != nil {
+		t.Fatalf("round-trip disabled direct grant: %v", err)
 	}
 	user, err = store.AdminUser(t.Context(), userID)
-	if err != nil || !user.Administrator || !reflect.DeepEqual(user.RepositoryIDs, []int64{101, 102}) {
+	if err != nil || len(user.RepositoryIDs) != 0 ||
+		!reflect.DeepEqual(user.DirectRepositoryIDs, []int64{101}) {
+		t.Fatalf("user=%#v err=%v", user, err)
+	}
+
+	if err := store.ReplaceAdminUserAccess(t.Context(), actorID, userID, false, []int64{101, 999}); !errors.Is(err, admin.ErrInvalid) {
+		t.Fatalf("missing repository error=%v", err)
+	}
+	user, err = store.AdminUser(t.Context(), userID)
+	if err != nil || !user.Administrator || len(user.RepositoryIDs) != 0 ||
+		!reflect.DeepEqual(user.DirectRepositoryIDs, []int64{101}) {
 		t.Fatalf("failed replacement changed user=%#v err=%v", user, err)
 	}
 	var externalID, userName string

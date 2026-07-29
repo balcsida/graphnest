@@ -108,11 +108,7 @@ const adminGroupsSQL = `select groups.id, groups.external_id, groups.display_nam
 	exists(select 1 from group_roles where group_roles.group_id=groups.id),
 	coalesce(array(
 		select grants.repository_id from group_repository_grants grants
-		join repositories on repositories.github_id=grants.repository_id
-		join installations on installations.id=repositories.installation_id
-		where grants.group_id=groups.id and installations.status='active'
-			and repositories.enabled and not repositories.archived
-		order by grants.repository_id
+		where grants.group_id=groups.id order by grants.repository_id
 	), '{}'),
 	(select count(*) from group_memberships where group_id=groups.id)
 	from groups where groups.deleted_at is null`
@@ -244,10 +240,7 @@ func validateAdminRepositories(ctx context.Context, tx pgx.Tx, repositoryIDs []i
 		return nil
 	}
 	var count int
-	err := tx.QueryRow(ctx, `select count(*) from repositories
-		join installations on installations.id=repositories.installation_id
-		where repositories.github_id=any($1) and installations.status='active'
-			and repositories.enabled and not repositories.archived`, repositoryIDs).Scan(&count)
+	err := tx.QueryRow(ctx, `select count(*) from repositories where github_id=any($1)`, repositoryIDs).Scan(&count)
 	if err != nil {
 		return err
 	}
