@@ -22,8 +22,8 @@ func TestAuthStoreBindsUsersAndResolvesLivePrincipal(t *testing.T) {
 		t.Fatalf("repeated binding userID=%d err=%v", boundID, err)
 	}
 	otherID := insertIdentityUser(t, store, "directory-43", "grace")
-	if _, err := store.BindOIDCUser(t.Context(), "https://id.example.test", "subject-1", "directory-43"); err == nil {
-		t.Fatal("second user bound the same identity")
+	if boundID, err := store.BindOIDCUser(t.Context(), "https://id.example.test", "subject-1", "directory-43"); err != nil || boundID != userID {
+		t.Fatalf("identity rebound userID=%d err=%v", boundID, err)
 	}
 	if otherID == userID {
 		t.Fatal("distinct users share an ID")
@@ -70,6 +70,49 @@ func TestAuthStoreBindsUsersAndResolvesLivePrincipal(t *testing.T) {
 	principal, err = store.SessionPrincipal(t.Context(), tokenHash, now.Add(time.Second), now.Add(30*time.Minute))
 	if err != nil || principal.Administrator || len(principal.RepositoryIDs) != 0 {
 		t.Fatalf("changed principal=%#v err=%v", principal, err)
+	}
+}
+
+func TestOIDCBindingIsImmutableAcrossLinkClaimChanges(t *testing.T) {
+	store := migratedStore(t)
+	firstID := insertIdentityUser(t, store, "directory-first", "first")
+	insertIdentityUser(t, store, "directory-second", "second")
+
+	boundID, err := store.BindOIDCUser(t.Context(), "https://id.example.test", "subject-1", "directory-first")
+	if err != nil || boundID != firstID {
+		t.Fatalf("first binding userID=%d err=%v", boundID, err)
+	}
+	boundID, err = store.BindOIDCUser(t.Context(), "https://id.example.test", "subject-1", "directory-second")
+	if err != nil || boundID != firstID {
+		t.Fatalf("repeated binding userID=%d err=%v", boundID, err)
+	}
+	now := time.Now().UTC()
+	tokenHash := [32]byte{42}
+	if err := store.CreateOIDCSessionAudited(t.Context(), authn.Identity{
+		Issuer: "https://id.example.test", Subject: "subject-1", LinkID: "directory-second",
+	}, authn.SessionRecord{
+		TokenHash: tokenHash, AuditID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Provider: "oidc",
+		CreatedAt: now, LastSeenAt: now, IdleExpiresAt: now.Add(time.Minute), ExpiresAt: now.Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var sessionUserID int64
+	if err := store.pool.QueryRow(t.Context(), `select user_id from auth_sessions where token_hash=$1`, tokenHash[:]).Scan(&sessionUserID); err != nil ||
+		sessionUserID != firstID {
+		t.Fatalf("session userID=%d err=%v", sessionUserID, err)
+	}
+}
+
+func TestOIDCBindingRejectsLocalExternalIDCollision(t *testing.T) {
+	store := migratedStore(t)
+	localID := seedSecurityUser(t, store, "recovery-admin", "local", true)
+
+	if _, err := store.BindOIDCUser(t.Context(), "https://id.example.test", "subject-1", "recovery-admin"); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("local user %d binding error=%v", localID, err)
+	}
+	var identities int
+	if err := store.pool.QueryRow(t.Context(), `select count(*) from user_identities where user_id=$1`, localID).Scan(&identities); err != nil || identities != 0 {
+		t.Fatalf("local identities=%d err=%v", identities, err)
 	}
 }
 
