@@ -19,8 +19,9 @@ var (
 )
 
 const (
-	loginFailureLimit  = 5
-	loginFailureWindow = 15 * time.Minute
+	breakGlassUserLockNamespace int32 = 0x67726570
+	loginFailureLimit                 = 5
+	loginFailureWindow                = 15 * time.Minute
 )
 
 func (s *Store) SetPasswordCredential(ctx context.Context, userID int64, credential authn.PasswordCredential, event audit.Event) error {
@@ -65,6 +66,10 @@ func (s *Store) UpsertBreakGlassAdmin(ctx context.Context, userName string, cred
 		return 0, err
 	}
 	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock($1,hashtext(lower($2)))`,
+		breakGlassUserLockNamespace, userName); err != nil {
+		return 0, err
+	}
 	var userID int64
 	err = tx.QueryRow(ctx, `select id from users where lower(user_name)=lower($1) and deleted_at is null for update`, userName).Scan(&userID)
 	switch {
@@ -149,29 +154,31 @@ func (s *Store) PasswordCredential(ctx context.Context, userName string) (int64,
 	return userID, credential, err
 }
 
-func (s *Store) CheckLoginThrottle(ctx context.Context, key [32]byte, now time.Time) (bool, error) {
-	var blocked bool
-	err := s.pool.QueryRow(ctx, `select coalesce(blocked_until>$2,false)
-		from login_throttles where key_hash=$1`, key[:], now).Scan(&blocked)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
-	}
-	return blocked, err
+func (s *Store) ConsumeLoginAttempt(ctx context.Context, key [32]byte, now time.Time) (bool, time.Time, error) {
+	return consumeLoginAttempt(ctx, s.pool, key, now)
 }
 
-func (s *Store) RecordLoginFailure(ctx context.Context, key [32]byte, now time.Time) error {
-	_, err := s.pool.Exec(ctx, `insert into login_throttles
+type rowQuerier interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+func consumeLoginAttempt(ctx context.Context, query rowQuerier, key [32]byte, now time.Time) (bool, time.Time, error) {
+	var allowed bool
+	var retryAt time.Time
+	err := query.QueryRow(ctx, `insert into login_throttles
 		(key_hash,failures,window_started_at) values ($1,1,$2)
 		on conflict (key_hash) do update set
-		failures=case when login_throttles.window_started_at <= $2-$3::interval then 1 else login_throttles.failures+1 end,
+		failures=case when login_throttles.window_started_at <= $2-$3::interval
+			then 1 else least(login_throttles.failures+1,$4+1) end,
 		window_started_at=case when login_throttles.window_started_at <= $2-$3::interval then $2 else login_throttles.window_started_at end,
 		blocked_until=case
 			when login_throttles.window_started_at <= $2-$3::interval then null
-			when login_throttles.blocked_until>$2 then login_throttles.blocked_until
-			when login_throttles.failures+1 >= $4 then $2+$3::interval
-			else null end`,
-		key[:], now, loginFailureWindow.String(), loginFailureLimit)
-	return err
+			when login_throttles.failures+1 >= $4
+				then coalesce(login_throttles.blocked_until,login_throttles.window_started_at+$3::interval)
+			else login_throttles.blocked_until end
+		returning failures<=$4,coalesce(blocked_until,window_started_at+$3::interval)`,
+		key[:], now, loginFailureWindow.String(), loginFailureLimit).Scan(&allowed, &retryAt)
+	return allowed, retryAt, err
 }
 
 func (s *Store) ClearLoginFailures(ctx context.Context, key [32]byte) error {
