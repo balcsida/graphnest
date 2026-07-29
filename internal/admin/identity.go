@@ -15,15 +15,17 @@ var (
 )
 
 type User struct {
-	ID            int64   `json:"id"`
-	ExternalID    string  `json:"external_id"`
-	UserName      string  `json:"user_name"`
-	DisplayName   string  `json:"display_name"`
-	Source        string  `json:"source"`
-	SCIMActive    bool    `json:"scim_active"`
-	Suspended     bool    `json:"suspended"`
-	Administrator bool    `json:"administrator"`
-	RepositoryIDs []int64 `json:"repository_ids"`
+	ID                  int64   `json:"id"`
+	ExternalID          string  `json:"external_id"`
+	UserName            string  `json:"user_name"`
+	DisplayName         string  `json:"display_name"`
+	Source              string  `json:"source"`
+	SCIMActive          bool    `json:"scim_active"`
+	Suspended           bool    `json:"suspended"`
+	Administrator       bool    `json:"administrator"`
+	RepositoryIDs       []int64 `json:"repository_ids"`
+	DirectAdministrator bool    `json:"direct_administrator"`
+	DirectRepositoryIDs []int64 `json:"direct_repository_ids"`
 }
 
 type Group struct {
@@ -79,9 +81,6 @@ func (service *Service) ReplaceUserAccess(ctx context.Context, principal authn.P
 		return err
 	}
 	actorID := principalUserID(principal)
-	if !administrator && actorID == id {
-		return ErrSelfAdministration
-	}
 	return service.Store.ReplaceAdminUserAccess(ctx, actorID, id, administrator, repositoryIDs)
 }
 

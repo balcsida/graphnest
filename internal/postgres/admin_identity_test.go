@@ -45,7 +45,8 @@ func TestAdminIdentityListsEffectiveUserAndGroupAccess(t *testing.T) {
 	user, err := store.AdminUser(t.Context(), userID)
 	if err != nil || user.ExternalID != "directory-1" || user.UserName != "ada" ||
 		user.Source != "scim" || !user.SCIMActive || user.Suspended ||
-		!user.Administrator || !reflect.DeepEqual(user.RepositoryIDs, []int64{101, 102}) {
+		!user.Administrator || !reflect.DeepEqual(user.RepositoryIDs, []int64{101, 102}) ||
+		user.DirectAdministrator || !reflect.DeepEqual(user.DirectRepositoryIDs, []int64{101, 103}) {
 		t.Fatalf("user=%#v err=%v", user, err)
 	}
 	groups, truncated, err := store.AdminGroups(t.Context(), 1)
@@ -57,6 +58,83 @@ func TestAdminIdentityListsEffectiveUserAndGroupAccess(t *testing.T) {
 	group, err := store.AdminGroup(t.Context(), groupID)
 	if err != nil || !reflect.DeepEqual(group, groups[0]) {
 		t.Fatalf("group=%#v want=%#v err=%v", group, groups[0], err)
+	}
+}
+
+func TestAdminIdentityRoundTripsGroupOnlyAccessWithoutDirectGrants(t *testing.T) {
+	store := migratedStore(t)
+	userID := insertIdentityUser(t, store, "directory-1", "ada")
+	seedReadyRepository(t, store, 101, testSHA('a'))
+	groupID := insertIdentityGroup(t, store, "engineering", "Engineering")
+	if _, err := store.pool.Exec(t.Context(), `insert into group_memberships (group_id, user_id) values ($1, $2)`, groupID, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into group_roles (group_id, administrator) values ($1, true)`, groupID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into group_repository_grants (group_id, repository_id) values ($1, 101)`, groupID); err != nil {
+		t.Fatal(err)
+	}
+
+	user, err := store.AdminUser(t.Context(), userID)
+	if err != nil || !user.Administrator || !reflect.DeepEqual(user.RepositoryIDs, []int64{101}) ||
+		user.DirectAdministrator || len(user.DirectRepositoryIDs) != 0 {
+		t.Fatalf("group-only user=%#v err=%v", user, err)
+	}
+	if err := store.ReplaceAdminUserAccess(t.Context(), userID, userID, user.DirectAdministrator, user.DirectRepositoryIDs); err != nil {
+		t.Fatal(err)
+	}
+	var roles, grants int
+	if err := store.pool.QueryRow(t.Context(), `select count(*) from user_roles where user_id=$1`, userID).Scan(&roles); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.pool.QueryRow(t.Context(), `select count(*) from user_repository_grants where user_id=$1`, userID).Scan(&grants); err != nil {
+		t.Fatal(err)
+	}
+	if roles != 0 || grants != 0 {
+		t.Fatalf("round trip created direct roles=%d grants=%d", roles, grants)
+	}
+	if _, err := store.pool.Exec(t.Context(), `delete from group_memberships where group_id=$1 and user_id=$2`, groupID, userID); err != nil {
+		t.Fatal(err)
+	}
+	user, err = store.AdminUser(t.Context(), userID)
+	if err != nil || user.Administrator || len(user.RepositoryIDs) != 0 ||
+		user.DirectAdministrator || len(user.DirectRepositoryIDs) != 0 {
+		t.Fatalf("user after membership removal=%#v err=%v", user, err)
+	}
+}
+
+func TestAdminIdentityGroupAdministratorEditsOwnDirectExceptions(t *testing.T) {
+	store := migratedStore(t)
+	userID := insertIdentityUser(t, store, "directory-1", "ada")
+	seedReadyRepository(t, store, 101, testSHA('a'))
+	groupID := insertIdentityGroup(t, store, "engineering", "Engineering")
+	if _, err := store.pool.Exec(t.Context(), `insert into group_memberships (group_id, user_id) values ($1, $2)`, groupID, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into group_roles (group_id, administrator) values ($1, true)`, groupID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.ReplaceAdminUserAccess(t.Context(), userID, userID, false, []int64{101}); err != nil {
+		t.Fatal(err)
+	}
+	user, err := store.AdminUser(t.Context(), userID)
+	if err != nil || !user.Administrator || user.DirectAdministrator ||
+		!reflect.DeepEqual(user.RepositoryIDs, []int64{101}) ||
+		!reflect.DeepEqual(user.DirectRepositoryIDs, []int64{101}) {
+		t.Fatalf("user=%#v err=%v", user, err)
+	}
+}
+
+func TestAdminIdentityRejectsTrueFinalDirectAdministratorRemoval(t *testing.T) {
+	store := migratedStore(t)
+	userID := insertIdentityUser(t, store, "directory-1", "ada")
+	if _, err := store.pool.Exec(t.Context(), `insert into user_roles (user_id, administrator) values ($1, true)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReplaceAdminUserAccess(t.Context(), userID, userID, false, nil); !errors.Is(err, admin.ErrFinalAdministrator) {
+		t.Fatalf("final administrator removal error=%v", err)
 	}
 }
 

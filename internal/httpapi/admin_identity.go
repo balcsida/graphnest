@@ -12,6 +12,11 @@ import (
 
 const maxAccessRepositories = 100
 
+type directAccessRequest struct {
+	Administrator *bool    `json:"direct_administrator"`
+	RepositoryIDs *[]int64 `json:"direct_repository_ids"`
+}
+
 type accessRequest struct {
 	Administrator *bool    `json:"administrator"`
 	RepositoryIDs *[]int64 `json:"repository_ids"`
@@ -60,7 +65,7 @@ func registerAdminIdentity(mux *http.ServeMux, authenticator authn.RequestAuthen
 			if !adminIdentityMethod(writer, request, http.MethodPut) {
 				return
 			}
-			input, ok := decodeAccessRequest(writer, request, maxRequestBytes)
+			input, ok := decodeDirectAccessRequest(writer, request, maxRequestBytes)
 			if !ok {
 				return
 			}
@@ -156,20 +161,8 @@ func adminIdentityAction(writer http.ResponseWriter, request *http.Request, maxR
 }
 
 func decodeAccessRequest(writer http.ResponseWriter, request *http.Request, maxRequestBytes int64) (accessRequest, bool) {
-	if request.Header.Get("Content-Type") != "application/json" {
-		writeError(writer, http.StatusUnsupportedMediaType, "invalid_request", "request is invalid", false)
-		return accessRequest{}, false
-	}
-	request.Body = http.MaxBytesReader(writer, request.Body, maxRequestBytes)
-	decoder := json.NewDecoder(request.Body)
-	decoder.DisallowUnknownFields()
 	var input accessRequest
-	if err := decoder.Decode(&input); err != nil {
-		writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
-		return accessRequest{}, false
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
+	if !decodeAdminIdentityJSON(writer, request, maxRequestBytes, &input) {
 		return accessRequest{}, false
 	}
 	if input.Administrator == nil || input.RepositoryIDs == nil || !validAccessRepositoryIDs(*input.RepositoryIDs) {
@@ -177,6 +170,37 @@ func decodeAccessRequest(writer http.ResponseWriter, request *http.Request, maxR
 		return accessRequest{}, false
 	}
 	return input, true
+}
+
+func decodeDirectAccessRequest(writer http.ResponseWriter, request *http.Request, maxRequestBytes int64) (directAccessRequest, bool) {
+	var input directAccessRequest
+	if !decodeAdminIdentityJSON(writer, request, maxRequestBytes, &input) {
+		return directAccessRequest{}, false
+	}
+	if input.Administrator == nil || input.RepositoryIDs == nil || !validAccessRepositoryIDs(*input.RepositoryIDs) {
+		writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
+		return directAccessRequest{}, false
+	}
+	return input, true
+}
+
+func decodeAdminIdentityJSON(writer http.ResponseWriter, request *http.Request, maxRequestBytes int64, input any) bool {
+	if request.Header.Get("Content-Type") != "application/json" {
+		writeError(writer, http.StatusUnsupportedMediaType, "invalid_request", "request is invalid", false)
+		return false
+	}
+	request.Body = http.MaxBytesReader(writer, request.Body, maxRequestBytes)
+	decoder := json.NewDecoder(request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(input); err != nil {
+		writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
+		return false
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
+		return false
+	}
+	return true
 }
 
 func validAccessRepositoryIDs(ids []int64) bool {

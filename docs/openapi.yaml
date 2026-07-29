@@ -50,7 +50,7 @@ paths:
     get:
       security: [{bearerAuth: []}, {sessionCookie: []}]
       responses:
-        '200': {description: Bounded users with effective roles and repository grants, content: {application/json: {schema: {$ref: '#/components/schemas/AdminUserList'}}}}
+        '200': {description: Bounded users with effective access and explicit direct assignments, content: {application/json: {schema: {$ref: '#/components/schemas/AdminUserList'}}}}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '405': {$ref: '#/components/responses/InvalidRequest'}
@@ -61,7 +61,7 @@ paths:
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters: [{name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}]
       responses:
-        '200': {description: User with effective roles and repository grants, content: {application/json: {schema: {$ref: '#/components/schemas/AdminUser'}}}}
+        '200': {description: User with effective access and explicit direct assignments, content: {application/json: {schema: {$ref: '#/components/schemas/AdminUser'}}}}
         '400': {$ref: '#/components/responses/InvalidRequest'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -73,7 +73,7 @@ paths:
     put:
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters: [{name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}]
-      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminAccessRequest'}}}}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminUserAccessRequest'}}}}
       responses:
         '204': {description: Direct user access replaced}
         '400': {$ref: '#/components/responses/InvalidRequest'}
@@ -643,6 +643,13 @@ components:
       properties:
         administrator: {type: boolean}
         repository_ids: {type: array, maxItems: 100, uniqueItems: true, items: {type: integer, format: int64, minimum: 1}}
+    AdminUserAccessRequest:
+      type: object
+      additionalProperties: false
+      required: [direct_administrator, direct_repository_ids]
+      properties:
+        direct_administrator: {type: boolean}
+        direct_repository_ids: {type: array, maxItems: 100, uniqueItems: true, items: {type: integer, format: int64, minimum: 1}}
     AdminUserList:
       type: object
       additionalProperties: false
@@ -653,7 +660,7 @@ components:
     AdminUser:
       type: object
       additionalProperties: false
-      required: [id, external_id, user_name, display_name, source, scim_active, suspended, administrator, repository_ids]
+      required: [id, external_id, user_name, display_name, source, scim_active, suspended, administrator, repository_ids, direct_administrator, direct_repository_ids]
       properties:
         id: {type: integer, format: int64, minimum: 1}
         external_id: {type: string, readOnly: true}
@@ -664,6 +671,8 @@ components:
         suspended: {type: boolean}
         administrator: {type: boolean}
         repository_ids: {type: array, maxItems: 100, items: {type: integer, format: int64, minimum: 1}}
+        direct_administrator: {type: boolean}
+        direct_repository_ids: {type: array, maxItems: 100, items: {type: integer, format: int64, minimum: 1}}
     AdminGroupList:
       type: object
       additionalProperties: false

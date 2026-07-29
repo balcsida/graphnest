@@ -13,8 +13,14 @@ import (
 
 func TestIdentityServiceListsAndLoadsEffectiveAccess(t *testing.T) {
 	store := &identityStore{
-		users:  []User{{ID: 1, UserName: "ada", Administrator: true, RepositoryIDs: []int64{101}}},
-		user:   User{ID: 1, UserName: "ada", Administrator: true, RepositoryIDs: []int64{101}},
+		users: []User{{
+			ID: 1, UserName: "ada", Administrator: true, RepositoryIDs: []int64{101},
+			DirectAdministrator: false, DirectRepositoryIDs: []int64{},
+		}},
+		user: User{
+			ID: 1, UserName: "ada", Administrator: true, RepositoryIDs: []int64{101},
+			DirectAdministrator: false, DirectRepositoryIDs: []int64{},
+		},
 		groups: []Group{{ID: 2, DisplayName: "Engineering", Administrator: true, RepositoryIDs: []int64{101}}},
 		group:  Group{ID: 2, DisplayName: "Engineering", Administrator: true, RepositoryIDs: []int64{101}},
 	}
@@ -61,7 +67,7 @@ func TestIdentityServiceReplacesAccessAndRevokesCredentials(t *testing.T) {
 	}
 }
 
-func TestIdentityServiceRejectsSelfAdministration(t *testing.T) {
+func TestIdentityServiceRejectsSelfSuspensionButForwardsDirectAccess(t *testing.T) {
 	store := &identityStore{}
 	service := &Service{Store: store}
 	principal := authn.Principal{Subject: "7", Method: "oidc", Administrator: true}
@@ -69,11 +75,11 @@ func TestIdentityServiceRejectsSelfAdministration(t *testing.T) {
 	if err := service.SuspendUser(t.Context(), principal, 7, true); !errors.Is(err, ErrSelfAdministration) {
 		t.Fatalf("self suspension error=%v", err)
 	}
-	if err := service.ReplaceUserAccess(t.Context(), principal, 7, false, nil); !errors.Is(err, ErrSelfAdministration) {
-		t.Fatalf("self removal error=%v", err)
+	if err := service.ReplaceUserAccess(t.Context(), principal, 7, false, []int64{101}); err != nil {
+		t.Fatalf("self direct access error=%v", err)
 	}
-	if store.userID != 0 {
-		t.Fatalf("self mutation reached store for user %d", store.userID)
+	if store.userID != 7 || store.administrator || !reflect.DeepEqual(store.repositoryIDs, []int64{101}) {
+		t.Fatalf("self direct user=%d admin=%v repositories=%v", store.userID, store.administrator, store.repositoryIDs)
 	}
 	if err := service.SuspendUser(t.Context(), principal, 8, true); err != nil || store.userID != 8 || !store.suspended {
 		t.Fatalf("suspend user=%d suspended=%v err=%v", store.userID, store.suspended, err)
