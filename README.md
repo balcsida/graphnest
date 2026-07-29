@@ -268,6 +268,18 @@ ownership.
 
 Optional limits are positive and cannot exceed their server caps:
 
+### Optional OIDC browser sign-in
+
+OIDC requires durable mode and an HTTPS `GREPNEST_PUBLIC_URL`. Configure
+`GREPNEST_OIDC_ISSUER_URL`, `GREPNEST_OIDC_CLIENT_ID`,
+`GREPNEST_OIDC_CLIENT_SECRET_FILE`, and `GREPNEST_OIDC_LINK_CLAIM`; optional
+settings are `GREPNEST_OIDC_CA_FILE`, `GREPNEST_OIDC_SCOPES`,
+`GREPNEST_OIDC_DISPLAY_NAME_CLAIM`, `GREPNEST_SSO_SESSION_IDLE`,
+`GREPNEST_SSO_SESSION_TTL`, and `GREPNEST_SSO_LOGIN_FLOW_TTL`. Register
+`https://<public-host>/auth/oidc/callback` as the Authorization Code + PKCE
+redirect URI. The client secret and optional CA are readable files, never
+environment values or ConfigMap data.
+
 | Variable | Default | Maximum |
 | --- | ---: | ---: |
 | `GREPNEST_DEFAULT_RESULTS` | 25 | `GREPNEST_MAX_RESULTS` (100) |

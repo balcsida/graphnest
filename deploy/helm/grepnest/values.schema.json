@@ -55,7 +55,9 @@
       "required": [
         "runtime",
         "githubApp",
-        "customCA"
+        "customCA",
+        "oidc",
+        "oidcCA"
       ],
       "properties": {
         "runtime": {
@@ -65,6 +67,12 @@
           "$ref": "#/definitions/githubSecret"
         },
         "customCA": {
+          "$ref": "#/definitions/optionalSecret"
+        },
+        "oidc": {
+          "$ref": "#/definitions/oidcSecret"
+        },
+        "oidcCA": {
           "$ref": "#/definitions/optionalSecret"
         }
       }
@@ -77,6 +85,7 @@
         "port",
         "service",
         "config",
+        "sso",
         "resources",
         "nodeSelector",
         "affinity",
@@ -195,6 +204,30 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 268435456
+            }
+          }
+        },
+        "sso": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["publicURL", "sessionIdle", "sessionTTL", "loginFlowTTL", "oidc"],
+          "properties": {
+            "publicURL": {"type": "string"},
+            "sessionIdle": {"$ref": "#/definitions/duration"},
+            "sessionTTL": {"$ref": "#/definitions/duration"},
+            "loginFlowTTL": {"$ref": "#/definitions/duration"},
+            "oidc": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled", "issuerURL", "clientID", "scopes", "linkClaim", "displayNameClaim"],
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "issuerURL": {"type": "string"},
+                "clientID": {"type": "string"},
+                "scopes": {"type": "array", "minItems": 1, "uniqueItems": true, "contains": {"const": "openid"}, "items": {"$ref": "#/definitions/nonEmptyString"}},
+                "linkClaim": {"type": "string"},
+                "displayNameClaim": {"$ref": "#/definitions/nonEmptyString"}
+              }
             }
           }
         },
@@ -582,7 +615,8 @@
             "enabled",
             "dns",
             "postgresql",
-            "github"
+            "github",
+            "identityProvider"
           ],
           "properties": {
             "enabled": {
@@ -639,6 +673,15 @@
                   "$ref": "#/definitions/ports"
                 }
               }
+            },
+            "identityProvider": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["cidrs", "ports"],
+              "properties": {
+                "cidrs": {"$ref": "#/definitions/cidrs"},
+                "ports": {"$ref": "#/definitions/ports"}
+              }
             }
           }
         }
@@ -646,6 +689,20 @@
     }
   },
   "allOf": [
+    {
+      "if": {"properties": {"server": {"properties": {"sso": {"properties": {"oidc": {"properties": {"enabled": {"const": true}}}}}}}}},
+      "then": {"properties": {
+        "secrets": {"properties": {"oidc": {"properties": {"name": {"$ref": "#/definitions/kubernetesObjectName"}}}}},
+        "server": {"properties": {"sso": {"properties": {
+          "publicURL": {"$ref": "#/definitions/httpsURL"},
+          "oidc": {"properties": {"issuerURL": {"$ref": "#/definitions/httpsURL"}, "clientID": {"$ref": "#/definitions/nonEmptyString"}, "linkClaim": {"$ref": "#/definitions/nonEmptyString"}}}
+        }}}}
+      }}
+    },
+    {
+      "if": {"properties": {"networkPolicy": {"properties": {"externalEgress": {"properties": {"enabled": {"const": true}}}}}, "server": {"properties": {"sso": {"properties": {"oidc": {"properties": {"enabled": {"const": true}}}}}}}}},
+      "then": {"properties": {"networkPolicy": {"properties": {"externalEgress": {"properties": {"identityProvider": {"properties": {"cidrs": {"minItems": 1}}}}}}}}}
+    },
     {
       "if": {
         "properties": {
@@ -950,6 +1007,12 @@
       "minimum": 1,
       "maximum": 65535
     },
+    "oidcSecret": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "clientSecretKey"],
+      "properties": {"name": {"$ref": "#/definitions/optionalKubernetesObjectName"}, "clientSecretKey": {"$ref": "#/definitions/secretKey"}}
+    },
     "id": {
       "type": "string",
       "pattern": "^[0-9]+$"
@@ -958,6 +1021,8 @@
       "type": "string",
       "pattern": "^https?://[^ ]+$"
     },
+    "httpsURL": {"type": "string", "pattern": "^https://[^ ]+$"},
+    "nonEmptyString": {"type": "string", "minLength": 1},
     "duration": {
       "type": "string",
       "pattern": "^[0-9]+(ms|s|m|h)$"

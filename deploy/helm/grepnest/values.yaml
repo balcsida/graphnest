@@ -9,6 +9,8 @@ secrets:
   runtime: {name: "", databaseURLKey: database-url, userTokenKey: user-token, adminTokenKey: admin-token, graphSecretKey: graph-secret}
   githubApp: {name: "", privateKeyKey: private-key.pem, webhookSecretKey: webhook-secret}
   customCA: {name: "", key: ca.crt}
+  oidc: {name: "", clientSecretKey: client-secret}
+  oidcCA: {name: "", key: ca.crt}
 server:
   replicas: 2
   port: 8080
@@ -33,6 +35,18 @@ server:
     maxRequestBytes: 65536
     maxResponseBytes: 262144
     scipMaxUploadBytes: 67108864
+  sso:
+    publicURL: ""
+    sessionIdle: 30m
+    sessionTTL: 8h
+    loginFlowTTL: 10m
+    oidc:
+      enabled: false
+      issuerURL: ""
+      clientID: ""
+      scopes: [openid, profile, email]
+      linkClaim: ""
+      displayNameClaim: name
   resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
   nodeSelector: {}
   affinity: {}
@@ -111,3 +125,4 @@ networkPolicy:
       ports: [53]
     postgresql: {cidrs: [], port: 5432}
     github: {cidrs: [], ports: [443]}
+    identityProvider: {cidrs: [], ports: [443]}

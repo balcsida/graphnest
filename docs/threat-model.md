@@ -6,6 +6,7 @@
 - bearer tokens and GitHub App installation credentials;
 - authorization scopes and server-selected Zoekt repository IDs;
 - service and index availability.
+- OIDC login transactions and browser sessions.
 
 ## Milestones 0-1 controls
 
@@ -59,6 +60,10 @@
   scope.
 
 ## Known limits
+
+OIDC session cookies can be replayed until logout or expiry, and database write
+access can forge a chosen session hash. HttpOnly cookies, exact Origin checks,
+bounded TTLs, and server-side revocation limit but do not eliminate that risk.
 
 This remains a local development slice, not a production security boundary.
 Git pack expansion and Zoekt shards require container and volume quotas.

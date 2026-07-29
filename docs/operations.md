@@ -235,6 +235,14 @@ This creates or updates GrepNest-owned skills under `.claude/skills/` and,
 only when `.agents/` already exists, `.agents/skills/`. It refuses symlink or
 unowned destinations.
 
+## Optional OIDC operations
+
+Permit server egress only to the configured IdP discovery, JWKS, and token
+endpoints. The callback is `/auth/oidc/callback`; `GREPNEST_PUBLIC_URL` is the
+authoritative HTTPS origin. Browser clients send same-origin credentials. Unsafe
+session requests require that exact Origin, and GrepNest persists no refresh
+tokens.
+
 ## Kubernetes chart boundary
 
 Releases publish multi-architecture images and an OCI chart. Replace each

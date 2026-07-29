@@ -65,3 +65,19 @@ func TestAdminDocumentHidesContentUntilAuthorization(t *testing.T) {
 		}
 	}
 }
+
+func TestAdminPrefersSameOriginOIDCSessionBeforeBearerFallback(t *testing.T) {
+	for _, want := range []string{
+		`/v1/auth/config`, `/v1/auth/session`, `Sign in with SSO`,
+		`credentials:"same-origin"`, `/auth/logout`, `await logout()`, `enterBearer`,
+	} {
+		if !bytes.Contains(adminDocument, []byte(want)) {
+			t.Errorf("admin document missing OIDC session behavior %q", want)
+		}
+	}
+	for _, forbidden := range []string{`localStorage`, `sessionStorage.setItem("grepnest_session`} {
+		if bytes.Contains(adminDocument, []byte(forbidden)) {
+			t.Errorf("admin stores a session credential %q", forbidden)
+		}
+	}
+}

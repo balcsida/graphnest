@@ -276,7 +276,7 @@ require '^kind: Ingress$' "$tmp/optional-ingress.yaml"
 reject 'pilot-grepnest-zoekt|name: .*zoekt|backend:.*zoekt' "$tmp/optional-ingress.yaml"
 reject 'host: "?\*|path: /\*|host: "?default([.]|"|$)' "$tmp/optional-ingress.yaml"
 
-policies='deny-ingress allow-server-ingress allow-zoekt-ingress allow-indexer-metrics-ingress deny-egress allow-zoekt-egress allow-graph-egress allow-dns-egress allow-postgresql-egress allow-github-egress'
+policies='deny-ingress allow-server-ingress allow-zoekt-ingress allow-indexer-metrics-ingress deny-egress allow-zoekt-egress allow-graph-egress allow-dns-egress allow-postgresql-egress allow-github-egress allow-identity-provider-egress'
 for policy in $policies; do
   sed -n "/^  name: pilot-grepnest-$policy\$/,/^---\$/p" \
     "$tmp/optional.yaml" >"$tmp/$policy.yaml"
@@ -339,6 +339,12 @@ require 'policyTypes: \[Egress\]' "$tmp/allow-github-egress-spec.yaml"
 require 'cidr: "198\.51\.100\.0/24"' "$tmp/allow-github-egress-spec.yaml"
 require 'cidr: "2001:db8:1234::/48"' "$tmp/allow-github-egress-spec.yaml"
 require 'protocol: TCP, port: 443' "$tmp/allow-github-egress-spec.yaml"
+require 'app.kubernetes.io/component: server' "$tmp/allow-identity-provider-egress-spec.yaml"
+require 'cidr: "203\.0\.113\.10/32"' "$tmp/allow-identity-provider-egress-spec.yaml"
+require 'protocol: TCP, port: 443' "$tmp/allow-identity-provider-egress-spec.yaml"
+require 'mountPath: /var/run/secrets/grepnest/oidc/client-secret' "$tmp/optional.yaml"
+require 'secretName: grepnest-oidc' "$tmp/optional.yaml"
+reject 'GREPNEST_OIDC_CLIENT_SECRET: ' "$tmp/optional.yaml"
 
 reject '^ *- \{\}|^ *from: *\[?\]?$|^ *to: *\[?\]?$|^ *- (podSelector|namespaceSelector): *\{\}$' "$tmp/optional.yaml"
 reject 'cidr: "?(0\.0\.0\.0/0|::/0)"?' "$tmp/optional.yaml"
