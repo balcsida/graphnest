@@ -126,6 +126,48 @@ func TestSessionPrincipalRejectsInvalidState(t *testing.T) {
 	}
 }
 
+func TestSessionPrincipalClampsIdleRenewalToAbsoluteExpiry(t *testing.T) {
+	store := migratedStore(t)
+	userID := insertIdentityUser(t, store, "directory-42", "ada")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	for index, test := range []struct {
+		name        string
+		idleExpires time.Time
+		expires     time.Time
+		at          time.Time
+		idleUntil   time.Time
+	}{
+		{
+			name: "near absolute expiry", idleExpires: now.Add(30 * time.Second), expires: now.Add(time.Minute),
+			at: now.Add(15 * time.Second), idleUntil: now.Add(30 * time.Minute),
+		},
+		{
+			name: "idle TTL equals absolute TTL", idleExpires: now.Add(time.Hour), expires: now.Add(time.Hour),
+			at: now.Add(time.Minute), idleUntil: now.Add(61 * time.Minute),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tokenHash := [32]byte{byte(index + 20)}
+			if err := store.CreateSession(t.Context(), authn.SessionRecord{
+				TokenHash: tokenHash, UserID: userID, Provider: "oidc",
+				CreatedAt: now, LastSeenAt: now, IdleExpiresAt: test.idleExpires, ExpiresAt: test.expires,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.SessionPrincipal(t.Context(), tokenHash, test.at, test.idleUntil); err != nil {
+				t.Fatal(err)
+			}
+			var idleExpires time.Time
+			if err := store.pool.QueryRow(t.Context(), `select idle_expires_at from auth_sessions where token_hash=$1`, tokenHash[:]).Scan(&idleExpires); err != nil {
+				t.Fatal(err)
+			}
+			if !idleExpires.Equal(test.expires) {
+				t.Fatalf("idle expiry=%v want absolute expiry=%v", idleExpires, test.expires)
+			}
+		})
+	}
+}
+
 func TestDeleteExpiredAuthRemovesIdleExpiredSessions(t *testing.T) {
 	store := migratedStore(t)
 	userID := insertIdentityUser(t, store, "directory-42", "ada")
