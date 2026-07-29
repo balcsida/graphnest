@@ -92,13 +92,9 @@ func Load() (Config, error) {
 	}
 
 	config := Config{
-		ListenAddress:     valueOr("GREPNEST_LISTEN_ADDRESS", ":8080"),
-		ZoektURL:          zoektURL,
-		RepositoriesFile:  os.Getenv("GREPNEST_REPOSITORIES_FILE"),
-		UserToken:         os.Getenv("GREPNEST_USER_TOKEN"),
-		AdminToken:        os.Getenv("GREPNEST_ADMIN_TOKEN"),
-		UserRepositories:  split(os.Getenv("GREPNEST_USER_REPOSITORIES")),
-		AdminRepositories: split(os.Getenv("GREPNEST_ADMIN_REPOSITORIES")),
+		ListenAddress:    valueOr("GREPNEST_LISTEN_ADDRESS", ":8080"),
+		ZoektURL:         zoektURL,
+		RepositoriesFile: os.Getenv("GREPNEST_REPOSITORIES_FILE"),
 		Limits: Limits{
 			DefaultResults:      25,
 			MaxResults:          100,
@@ -112,9 +108,6 @@ func Load() (Config, error) {
 			GraphMaxUploadBytes: 64 << 20,
 		},
 	}
-	if config.UserToken == "" || config.AdminToken == "" || config.UserToken == config.AdminToken {
-		return Config{}, invalid("distinct tokens are required")
-	}
 	if err := loadLimits(&config.Limits); err != nil {
 		return Config{}, err
 	}
@@ -127,23 +120,20 @@ func Load() (Config, error) {
 		if config.GitHub, err = loadGitHub(true); err != nil {
 			return Config{}, err
 		}
-		if config.UserInstallationID, err = requiredInt64("GREPNEST_USER_INSTALLATION_ID"); err != nil {
-			return Config{}, err
-		}
-		if config.AdminInstallationID, err = requiredInt64("GREPNEST_ADMIN_INSTALLATION_ID"); err != nil {
-			return Config{}, err
-		}
-		if config.UserRepositoryIDs, err = repositoryIDs("GREPNEST_USER_REPOSITORY_IDS"); err != nil {
-			return Config{}, err
-		}
-		if config.AdminRepositoryIDs, err = repositoryIDs("GREPNEST_ADMIN_REPOSITORY_IDS"); err != nil {
-			return Config{}, err
-		}
 		if config.Graph, err = loadServerGraph(); err != nil {
 			return Config{}, err
 		}
-	} else if config.RepositoriesFile == "" {
-		return Config{}, invalid("repository file is required in static mode")
+	} else {
+		config.UserToken = os.Getenv("GREPNEST_USER_TOKEN")
+		config.AdminToken = os.Getenv("GREPNEST_ADMIN_TOKEN")
+		config.UserRepositories = split(os.Getenv("GREPNEST_USER_REPOSITORIES"))
+		config.AdminRepositories = split(os.Getenv("GREPNEST_ADMIN_REPOSITORIES"))
+		if config.RepositoriesFile == "" {
+			return Config{}, invalid("repository file is required in static mode")
+		}
+		if config.UserToken == "" || config.AdminToken == "" || config.UserToken == config.AdminToken {
+			return Config{}, invalid("distinct tokens are required")
+		}
 	}
 	if config.SSO, err = loadSSO(config.DatabaseURL); err != nil {
 		return Config{}, err

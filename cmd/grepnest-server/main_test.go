@@ -69,6 +69,73 @@ func TestAuthRuntimeWithoutOIDCUsesBearerOnly(t *testing.T) {
 	}
 }
 
+func TestAPITokensAuthenticateRESTAndMCPBearerOnly(t *testing.T) {
+	// Break caught: durable API tokens bypassing the shared bearer boundary.
+	store := &mainTokenStore{principal: authn.Principal{Subject: "11", Method: "api_token"}}
+	manager := authn.TokenManager{Store: store, Rand: strings.NewReader(strings.Repeat("x", 32))}
+	_, token, err := manager.Create(t.Context(), 11, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}}, observability.New(), testRequestAuthenticator(manager), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	for _, test := range []struct {
+		name, path string
+		bearer     bool
+		cookie     bool
+		want       int
+	}{
+		{"REST bearer", "/v1/auth/session", true, false, http.StatusOK},
+		{"MCP bearer", "/mcp", true, false, http.StatusUnsupportedMediaType},
+		{"MCP session", "/mcp", false, true, http.StatusUnauthorized},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, test.path, nil)
+			if test.path == "/v1/auth/session" {
+				request.Method = http.MethodGet
+			}
+			if test.bearer {
+				request.Header.Set("Authorization", "Bearer "+token)
+			}
+			if test.cookie {
+				request.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: "session"})
+			}
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.want {
+				t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestDurableAuthenticatorRejectsStaticTokens(t *testing.T) {
+	// Break caught: durable runtime retaining GREPNEST_USER_TOKEN authentication.
+	store := &mainTokenStore{principal: authn.Principal{Subject: "11", Method: "api_token"}}
+	manager := durableAuthenticator(store)
+	if _, err := manager.Authenticate("user-token"); !errors.Is(err, authn.ErrUnauthenticated) {
+		t.Fatalf("static token err=%v", err)
+	}
+}
+
+type mainTokenStore struct {
+	record    authn.APITokenRecord
+	principal authn.Principal
+}
+
+func (s *mainTokenStore) CreateAPIToken(_ context.Context, record authn.APITokenRecord) (int64, error) {
+	s.record = record
+	return 1, nil
+}
+
+func (s *mainTokenStore) APIPrincipal(_ context.Context, hash [32]byte, _ time.Time) (authn.Principal, error) {
+	if hash != s.record.TokenHash {
+		return authn.Principal{}, errors.New("unknown token")
+	}
+	return s.principal, nil
+}
+
+func (*mainTokenStore) RevokeAPIToken(context.Context, int64, int64) error { return nil }
+
 type mainAdminStore struct{ admin.Store }
 
 func (mainAdminStore) AdminOverview(context.Context, int64, []int64) (admin.Overview, error) {
