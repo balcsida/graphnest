@@ -14,7 +14,8 @@ func RequestIDs(random io.Reader, next http.Handler) http.Handler {
 		random = rand.Reader
 	}
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if audit.RequestID(request.Context()) != "" {
+		if requestID := audit.RequestID(request.Context()); requestID != "" {
+			writer.Header().Set("X-Request-ID", requestID)
 			next.ServeHTTP(writer, request)
 			return
 		}
@@ -24,6 +25,7 @@ func RequestIDs(random io.Reader, next http.Handler) http.Handler {
 			return
 		}
 		requestID := hex.EncodeToString(raw)
+		writer.Header().Set("X-Request-ID", requestID)
 		next.ServeHTTP(writer, request.WithContext(audit.WithRequestID(request.Context(), requestID)))
 	})
 }

@@ -78,9 +78,13 @@ func writeSearchError(writer http.ResponseWriter, err error) {
 }
 
 func writeError(writer http.ResponseWriter, status int, code, message string, retryable bool) {
+	requestID := writer.Header().Get("X-Request-ID")
+	if requestID == "" {
+		requestID = rand.Text()
+	}
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(status)
 	_ = json.NewEncoder(writer).Encode(map[string]any{"error": map[string]any{
-		"code": code, "message": message, "request_id": rand.Text(), "retryable": retryable,
+		"code": code, "message": message, "request_id": requestID, "retryable": retryable,
 	}})
 }
