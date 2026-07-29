@@ -108,6 +108,20 @@ func TestParsePatchRejectsTooManyOperations(t *testing.T) {
 	}
 }
 
+func TestParsePatchRequiresOperations(t *testing.T) {
+	for _, parse := range []func(PatchRequest) error{
+		func(request PatchRequest) error { _, err := ParseUserPatch(request); return err },
+		func(request PatchRequest) error { _, err := ParseGroupPatch(request); return err },
+	} {
+		if err := parse(PatchRequest{Schemas: []string{PatchSchema}}); err == nil || !strings.Contains(err.Error(), "invalidValue") {
+			t.Fatalf("omitted Operations err=%v", err)
+		}
+		if err := parse(NewPatchRequest(nil)); err == nil || !strings.Contains(err.Error(), "invalidValue") {
+			t.Fatalf("empty Operations err=%v", err)
+		}
+	}
+}
+
 func TestParsePatchRejectsUnknownAndTrailingNestedJSON(t *testing.T) {
 	for _, test := range []struct {
 		name string

@@ -27,7 +27,7 @@ type GroupMutation struct {
 }
 
 func ParseUserPatch(request PatchRequest) (UserMutation, error) {
-	if len(request.Operations) > 100 {
+	if err := validatePatchOperations(request); err != nil {
 		return UserMutation{}, parseError("invalidValue")
 	}
 	var mutation UserMutation
@@ -111,7 +111,7 @@ func decode[T any](value json.RawMessage, target *Optional[T]) error {
 }
 
 func ParseGroupPatch(request PatchRequest) (GroupMutation, error) {
-	if len(request.Operations) > 100 {
+	if err := validatePatchOperations(request); err != nil {
 		return GroupMutation{}, parseError("invalidValue")
 	}
 	var mutation GroupMutation
@@ -121,6 +121,13 @@ func ParseGroupPatch(request PatchRequest) (GroupMutation, error) {
 		}
 	}
 	return mutation, nil
+}
+
+func validatePatchOperations(request PatchRequest) error {
+	if len(request.Operations) < 1 || len(request.Operations) > 100 {
+		return parseError("invalidValue")
+	}
+	return nil
 }
 
 func applyGroupOperation(mutation *GroupMutation, operation PatchOperation) error {
