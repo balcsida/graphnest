@@ -12,6 +12,7 @@ import (
 	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func testCredential(fill byte) authn.PasswordCredential {
@@ -141,7 +142,78 @@ func TestSecurityUpsertBreakGlassAdminDoesNotConvertUsers(t *testing.T) {
 	}
 }
 
-func TestSecurityLoginThrottleIsConcurrentAndResettable(t *testing.T) {
+func TestSecurityUpsertBreakGlassAdminSerializesFirstCreate(t *testing.T) {
+	store := New(testPool(t))
+	if err := Migrate(t.Context(), store.pool); err != nil {
+		t.Fatal(err)
+	}
+	blocker, err := store.pool.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := blocker.Exec(t.Context(), `select pg_advisory_xact_lock($1,hashtext(lower($2)))`,
+		breakGlassUserLockNamespace, "concurrent-admin"); err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	type result struct {
+		id  int64
+		err error
+	}
+	results := make(chan result, 2)
+	var group sync.WaitGroup
+	for index := range 2 {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			<-start
+			id, err := store.UpsertBreakGlassAdmin(t.Context(), "concurrent-admin",
+				testCredential(byte(index+1)), testAudit("break_glass_password_set"))
+			results <- result{id: id, err: err}
+		}()
+	}
+	close(start)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var waiting int
+		if err := store.pool.QueryRow(t.Context(), `select count(*) from pg_locks
+			where locktype='advisory' and not granted`).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("concurrent upserts did not wait on separate connections")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if err := blocker.Rollback(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	group.Wait()
+	close(results)
+	var userID int64
+	for result := range results {
+		if result.err != nil {
+			t.Fatal(result.err)
+		}
+		if userID != 0 && result.id != userID {
+			t.Fatalf("user IDs %d and %d differ", userID, result.id)
+		}
+		userID = result.id
+	}
+	var users, credentials, events int
+	if err := store.pool.QueryRow(t.Context(), `select
+		(select count(*) from users where lower(user_name)=lower('concurrent-admin')),
+		(select count(*) from password_credentials where user_id=$1),
+		(select count(*) from audit_events where operation='break_glass_password_set')`, userID).
+		Scan(&users, &credentials, &events); err != nil || users != 1 || credentials != 1 || events != 2 {
+		t.Fatalf("users=%d credentials=%d events=%d err=%v", users, credentials, events, err)
+	}
+}
+
+func TestSecurityLoginAttemptConsumptionIsConcurrentAndResettable(t *testing.T) {
 	store := New(testPool(t))
 	if err := Migrate(t.Context(), store.pool); err != nil {
 		t.Fatal(err)
@@ -149,36 +221,62 @@ func TestSecurityLoginThrottleIsConcurrentAndResettable(t *testing.T) {
 	key := sha256.Sum256([]byte("account"))
 	now := time.Now().UTC()
 	var group sync.WaitGroup
-	errors := make(chan error, 5)
-	for range 5 {
-		group.Add(1)
-		go func() {
-			defer group.Done()
-			errors <- store.RecordLoginFailure(t.Context(), key, now)
-		}()
+	start := make(chan struct{})
+	type result struct {
+		allowed bool
+		retryAt time.Time
+		err     error
 	}
-	group.Wait()
-	close(errors)
-	for err := range errors {
+	results := make(chan result, 6)
+	connections := make([]*pgxpool.Conn, 0, 6)
+	for range 6 {
+		connection, err := store.pool.Acquire(t.Context())
 		if err != nil {
 			t.Fatal(err)
 		}
+		connections = append(connections, connection)
+		t.Cleanup(connection.Release)
+		group.Add(1)
+		go func(connection *pgxpool.Conn) {
+			defer group.Done()
+			<-start
+			allowed, retryAt, err := consumeLoginAttempt(t.Context(), connection, key, now)
+			results <- result{allowed: allowed, retryAt: retryAt, err: err}
+		}(connection)
 	}
-	if blocked, err := store.CheckLoginThrottle(t.Context(), key, now); err != nil || !blocked {
-		t.Fatalf("blocked=%v err=%v", blocked, err)
+	close(start)
+	group.Wait()
+	close(results)
+	var allowed, blocked int
+	for result := range results {
+		if result.err != nil {
+			t.Fatal(result.err)
+		}
+		if result.allowed {
+			allowed++
+		} else {
+			blocked++
+			if result.retryAt.Before(now) || result.retryAt.After(now.Add(loginFailureWindow)) {
+				t.Fatalf("unbounded retry time %v", result.retryAt)
+			}
+		}
+	}
+	if allowed != loginFailureLimit || blocked != 1 {
+		t.Fatalf("allowed=%d blocked=%d", allowed, blocked)
 	}
 	if err := store.ClearLoginFailures(t.Context(), key); err != nil {
 		t.Fatal(err)
 	}
-	if blocked, err := store.CheckLoginThrottle(t.Context(), key, now); err != nil || blocked {
-		t.Fatalf("blocked after clear=%v err=%v", blocked, err)
+	if allowed, _, err := store.ConsumeLoginAttempt(t.Context(), key, now); err != nil || !allowed {
+		t.Fatalf("allowed after clear=%v err=%v", allowed, err)
 	}
-	if err := store.RecordLoginFailure(t.Context(), key, now.Add(16*time.Minute)); err != nil {
-		t.Fatal(err)
+	for range loginFailureLimit {
+		if _, _, err := store.ConsumeLoginAttempt(t.Context(), key, now); err != nil {
+			t.Fatal(err)
+		}
 	}
-	var failures int
-	if err := store.pool.QueryRow(t.Context(), `select failures from login_throttles where key_hash=$1`, key[:]).Scan(&failures); err != nil || failures != 1 {
-		t.Fatalf("failures=%d err=%v", failures, err)
+	if allowed, _, err := store.ConsumeLoginAttempt(t.Context(), key, now.Add(loginFailureWindow)); err != nil || !allowed {
+		t.Fatalf("allowed after window=%v err=%v", allowed, err)
 	}
 }
 
