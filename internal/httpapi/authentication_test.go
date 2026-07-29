@@ -62,6 +62,21 @@ func TestAuthenticateRequestWritesGenericErrorAndAttachesPrincipalOnce(t *testin
 	}
 }
 
+func TestAuthenticateRequestRejectsForcedRotationSession(t *testing.T) {
+	handler := AuthenticateRequest(authn.RequestAuthenticator{Session: httpSession{principal: authn.Principal{
+		Subject: "recovery-admin", Method: "local", Administrator: true, ForceRotation: true,
+	}}}, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("handler called")
+	}))
+	request := httptest.NewRequest(http.MethodGet, "/v1/repositories", nil)
+	request.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: "forced-session"})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d", response.Code)
+	}
+}
+
 func TestAuthenticateBearerRejectsSessionCookie(t *testing.T) {
 	handler := AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{"bearer": {Subject: "bearer"}}), http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("handler called")

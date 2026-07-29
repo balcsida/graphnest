@@ -46,6 +46,65 @@ func TestLoadOIDC(t *testing.T) {
 	}
 }
 
+func TestLoadBreakGlass(t *testing.T) {
+	t.Run("disabled by default", func(t *testing.T) {
+		setValidOIDCEnvironment(t)
+		got, err := Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.SSO.BreakGlass {
+			t.Fatal("break glass enabled by default")
+		}
+	})
+	t.Run("exact true enables durable OIDC HTTPS mode", func(t *testing.T) {
+		setValidOIDCEnvironment(t)
+		t.Setenv("GREPNEST_BREAK_GLASS_ENABLED", "true")
+		got, err := Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.SSO.BreakGlass {
+			t.Fatal("break glass disabled")
+		}
+	})
+	for _, value := range []string{"1", "TRUE", " true"} {
+		t.Run("rejects "+value, func(t *testing.T) {
+			setValidOIDCEnvironment(t)
+			t.Setenv("GREPNEST_BREAK_GLASS_ENABLED", value)
+			if _, err := Load(); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("Load() error = %v", err)
+			}
+		})
+	}
+	t.Run("exact false stays disabled", func(t *testing.T) {
+		setValidEnvironment(t)
+		t.Setenv("GREPNEST_BREAK_GLASS_ENABLED", "false")
+		got, err := Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.SSO.BreakGlass {
+			t.Fatal("break glass enabled")
+		}
+	})
+	t.Run("requires OIDC", func(t *testing.T) {
+		setValidEnvironment(t)
+		setDurableEnvironment(t)
+		t.Setenv("GREPNEST_BREAK_GLASS_ENABLED", "true")
+		if _, err := Load(); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("Load() error = %v", err)
+		}
+	})
+	t.Run("rejects static mode", func(t *testing.T) {
+		setValidEnvironment(t)
+		t.Setenv("GREPNEST_BREAK_GLASS_ENABLED", "true")
+		if _, err := Load(); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("Load() error = %v", err)
+		}
+	})
+}
+
 func setValidOIDCEnvironment(t *testing.T) {
 	t.Helper()
 	setValidEnvironment(t)

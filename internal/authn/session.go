@@ -17,6 +17,12 @@ type SessionManager struct {
 	Rand    io.Reader
 }
 
+type PreparedSession struct {
+	Token     string
+	ExpiresAt time.Time
+	Record    SessionRecord
+}
+
 func (m SessionManager) Create(ctx context.Context, identity Identity) (string, time.Time, error) {
 	if m.Store == nil || m.IdleTTL <= 0 || m.TTL < m.IdleTTL || !validIdentity(identity) {
 		return "", time.Time{}, ErrInvalidIdentity
@@ -29,8 +35,19 @@ func (m SessionManager) Create(ctx context.Context, identity Identity) (string, 
 }
 
 func (m SessionManager) CreateForUser(ctx context.Context, userID int64, provider string, forceRotation bool) (string, time.Time, error) {
+	prepared, err := m.PrepareForUser(userID, provider, forceRotation)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	if err := m.Store.CreateSession(ctx, prepared.Record); err != nil {
+		return "", time.Time{}, err
+	}
+	return prepared.Token, prepared.ExpiresAt, nil
+}
+
+func (m SessionManager) PrepareForUser(userID int64, provider string, forceRotation bool) (PreparedSession, error) {
 	if m.Store == nil || m.IdleTTL <= 0 || m.TTL < m.IdleTTL || userID <= 0 || (provider != "oidc" && provider != "local") {
-		return "", time.Time{}, ErrInvalidIdentity
+		return PreparedSession{}, ErrInvalidIdentity
 	}
 	random := make([]byte, 32)
 	reader := m.Rand
@@ -38,21 +55,19 @@ func (m SessionManager) CreateForUser(ctx context.Context, userID int64, provide
 		reader = rand.Reader
 	}
 	if _, err := io.ReadFull(reader, random); err != nil {
-		return "", time.Time{}, err
+		return PreparedSession{}, err
 	}
 	now := time.Now()
 	if m.Now != nil {
 		now = m.Now()
 	}
 	expiresAt := now.Add(m.TTL)
-	if err := m.Store.CreateSession(ctx, SessionRecord{
+	record := SessionRecord{
 		TokenHash: sha256.Sum256(random), UserID: userID, Provider: provider,
 		ForceRotation: forceRotation,
 		CreatedAt:     now, LastSeenAt: now, IdleExpiresAt: now.Add(m.IdleTTL), ExpiresAt: expiresAt,
-	}); err != nil {
-		return "", time.Time{}, err
 	}
-	return base64.RawURLEncoding.EncodeToString(random), expiresAt, nil
+	return PreparedSession{Token: base64.RawURLEncoding.EncodeToString(random), ExpiresAt: expiresAt, Record: record}, nil
 }
 
 func (m SessionManager) Authenticate(ctx context.Context, token string) (Principal, error) {

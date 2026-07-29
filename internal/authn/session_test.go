@@ -80,6 +80,19 @@ func TestSessionManagerCreatesForcedRotationLocalSession(t *testing.T) {
 	}
 }
 
+func TestSessionManagerPreparesLocalSessionWithoutPersisting(t *testing.T) {
+	now := time.Unix(100, 0)
+	store := &sessionStoreStub{}
+	manager := SessionManager{Store: store, IdleTTL: time.Minute, TTL: time.Hour, Now: func() time.Time { return now }, Rand: bytes.NewReader(bytes.Repeat([]byte{7}, 32))}
+	prepared, err := manager.PrepareForUser(7, "local", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.Token == "" || prepared.ExpiresAt != now.Add(time.Hour) || prepared.Record.UserID != 7 || prepared.Record.ForceRotation || store.session.UserID != 0 {
+		t.Fatalf("prepared=%#v persisted=%#v", prepared, store.session)
+	}
+}
+
 func TestSessionManagerRevokesOpaqueToken(t *testing.T) {
 	store := &sessionStoreStub{}
 	manager := SessionManager{Store: store}

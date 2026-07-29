@@ -12,6 +12,7 @@ type SSO struct {
 	SessionIdle  time.Duration
 	SessionTTL   time.Duration
 	LoginFlowTTL time.Duration
+	BreakGlass   bool
 	OIDC         OIDC
 }
 
@@ -46,6 +47,13 @@ func loadSSO(databaseURL string) (SSO, error) {
 	clientID := os.Getenv("GREPNEST_OIDC_CLIENT_ID")
 	clientSecretFile := os.Getenv("GREPNEST_OIDC_CLIENT_SECRET_FILE")
 	if issuerURL == "" && clientID == "" && clientSecretFile == "" {
+		switch os.Getenv("GREPNEST_BREAK_GLASS_ENABLED") {
+		case "", "false":
+		case "true":
+			return SSO{}, invalid("GREPNEST_BREAK_GLASS_ENABLED requires OIDC")
+		default:
+			return SSO{}, invalid("GREPNEST_BREAK_GLASS_ENABLED must be true or false")
+		}
 		return sso, nil
 	}
 	if databaseURL == "" {
@@ -85,6 +93,13 @@ func loadSSO(databaseURL string) (SSO, error) {
 		Scopes:           scopes,
 		LinkClaim:        os.Getenv("GREPNEST_OIDC_LINK_CLAIM"),
 		DisplayNameClaim: valueOr("GREPNEST_OIDC_DISPLAY_NAME_CLAIM", "name"),
+	}
+	switch os.Getenv("GREPNEST_BREAK_GLASS_ENABLED") {
+	case "", "false":
+	case "true":
+		sso.BreakGlass = true
+	default:
+		return SSO{}, invalid("GREPNEST_BREAK_GLASS_ENABLED must be true or false")
 	}
 	return sso, nil
 }

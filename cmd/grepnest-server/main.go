@@ -260,6 +260,17 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 		<-reconcileDone
 		return fail(err)
 	}
+	var localAuth *authn.LocalAuthenticator
+	if settings.SSO.BreakGlass {
+		local, err := authn.NewLocalAuthenticator(store, auth.sessions, nil)
+		if err != nil {
+			cancel()
+			<-done
+			<-reconcileDone
+			return fail(err)
+		}
+		localAuth = &local
+	}
 	provisioning, scimService, err := newProvisioningRuntime(settings, store)
 	if err != nil {
 		cancel()
@@ -283,6 +294,12 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 		},
 	}
 	handler := newAPIHandler(settings, metrics, auth.requestAuth, searchService, repositoryService, scipService, graphService, graphQueries, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend}, auth.providers, auth.sessions, provisioning, scimService)
+	if localAuth != nil {
+		mux := http.NewServeMux()
+		httpapi.RegisterLocalAuth(mux, auth.requestAuth.PublicOrigin, localAuth, store)
+		mux.Handle("/", handler)
+		handler = mux
+	}
 	return handler, func() {
 		cancel()
 		<-done
@@ -297,8 +314,8 @@ func durableAuthenticator(store authn.APITokenStore) authn.Authenticator {
 
 func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scipGraph *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker, providers []sso.Provider, sessions *authn.SessionManager, provisioning *authn.ProvisioningAuthenticator, scimService *scim.Service) http.Handler {
 	mux := http.NewServeMux()
-	httpapi.RegisterAuth(mux, true, providers, authenticator, sessions, metrics)
-	webui.Register(mux)
+	httpapi.RegisterAuth(mux, true, settings.SSO.BreakGlass, providers, authenticator, sessions, metrics)
+	webui.RegisterWithBreakGlass(mux, settings.SSO.BreakGlass)
 	httpapi.RegisterSystem(mux, checker, metrics.Handler())
 	httpapi.RegisterSearch(mux, authenticator, service, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
 	if manager, ok := authenticator.Bearer.(authn.TokenManager); ok {
