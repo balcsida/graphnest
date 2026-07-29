@@ -41,7 +41,7 @@ func TestDirectoryPrincipalUnionsActiveGrantsAndRoles(t *testing.T) {
 		t.Fatal(err)
 	}
 	principal, err := store.UserPrincipal(t.Context(), userID, nil)
-	if err != nil || !principal.Administrator || !reflect.DeepEqual(principal.RepositoryIDs, []int64{101, 102}) {
+	if err != nil || !principal.Administrator || len(principal.RepositoryIDs) != 0 {
 		t.Fatalf("principal=%#v err=%v", principal, err)
 	}
 	now := time.Now().UTC().Truncate(time.Microsecond)
@@ -59,7 +59,7 @@ func TestDirectoryPrincipalUnionsActiveGrantsAndRoles(t *testing.T) {
 		t.Fatal(err)
 	}
 	principal, err = store.UserPrincipal(t.Context(), userID, nil)
-	if err != nil || !principal.Administrator || !reflect.DeepEqual(principal.RepositoryIDs, []int64{101}) {
+	if err != nil || !principal.Administrator || len(principal.RepositoryIDs) != 0 {
 		t.Fatalf("principal after group deletion=%#v err=%v", principal, err)
 	}
 	var memberships int
@@ -142,6 +142,45 @@ func TestAdministratorAPITokenStaysRepositoryScoped(t *testing.T) {
 	}
 	if _, err := service.Status(t.Context(), principal, 102); !errors.Is(err, repository.ErrSearchNodeUnavailable) {
 		t.Fatalf("token repo 102 error=%v", err)
+	}
+}
+
+func TestOIDCAdministratorIsGlobalWhileAPITokenKeepsCeiling(t *testing.T) {
+	store := migratedStore(t)
+	userID := insertIdentityUser(t, store, "directory-5", "sam")
+	for _, id := range []int64{101, 102} {
+		seedReadyRepository(t, store, id, testSHA(byte('a'+id-101)))
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into user_roles (user_id, administrator) values ($1, true)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into user_repository_grants (user_id, repository_id) values ($1, 101)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	principal, err := store.UserPrincipal(t.Context(), userID, nil)
+	if err != nil || !principal.Administrator || len(principal.RepositoryIDs) != 0 {
+		t.Fatalf("OIDC principal=%#v err=%v", principal, err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{
+		TokenHash: [32]byte{10}, Prefix: "gn_test", UserID: userID,
+		RepositoryIDs: []int64{102}, CreatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tokenPrincipal, err := store.APIPrincipal(t.Context(), [32]byte{10}, now)
+	if err != nil || !tokenPrincipal.Administrator || tokenPrincipal.Method != "api_token" ||
+		!reflect.DeepEqual(tokenPrincipal.RepositoryIDs, []int64{102}) {
+		t.Fatalf("API principal=%#v err=%v", tokenPrincipal, err)
+	}
+	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{
+		TokenHash: [32]byte{11}, Prefix: "gn_test", UserID: userID, CreatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.APIPrincipal(t.Context(), [32]byte{11}, now); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("administrator token without ceiling error=%v", err)
 	}
 }
 

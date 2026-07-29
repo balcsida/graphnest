@@ -58,7 +58,7 @@ func TestAuthStoreBindsUsersAndResolvesLivePrincipal(t *testing.T) {
 		t.Fatal(err)
 	}
 	principal, err := store.SessionPrincipal(t.Context(), tokenHash, now, now.Add(30*time.Minute))
-	if err != nil || principal.Subject != strconv.FormatInt(userID, 10) || principal.Method != "oidc" || !principal.Administrator || len(principal.RepositoryIDs) != 1 || principal.RepositoryIDs[0] != 101 {
+	if err != nil || principal.Subject != strconv.FormatInt(userID, 10) || principal.Method != "oidc" || !principal.Administrator || len(principal.RepositoryIDs) != 0 {
 		t.Fatalf("principal=%#v err=%v", principal, err)
 	}
 	if _, err := store.pool.Exec(t.Context(), `delete from user_roles where user_id=$1`, userID); err != nil {

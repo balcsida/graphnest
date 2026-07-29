@@ -36,6 +36,9 @@ func userPrincipal(ctx context.Context, queryer principalQuerier, userID int64, 
 	if err != nil {
 		return authn.Principal{}, err
 	}
+	if administrator && ceiling == nil {
+		repositoryIDs = nil
+	}
 	return authn.Principal{Subject: strconv.FormatInt(userID, 10), Method: "oidc", Administrator: administrator, RepositoryIDs: repositoryIDs}, nil
 }
 
@@ -59,7 +62,10 @@ func (s *Store) APIPrincipal(ctx context.Context, tokenHash [32]byte, now time.T
 	if err != nil {
 		return authn.Principal{}, err
 	}
-	if principal.Administrator && ceiling != nil {
+	if principal.Administrator {
+		if len(ceiling) == 0 {
+			return authn.Principal{}, pgx.ErrNoRows
+		}
 		rows, err := tx.Query(ctx, `select repositories.github_id from repositories join installations on installations.id=repositories.installation_id where repositories.github_id=any($1) and installations.status='active' and repositories.enabled and not repositories.archived order by repositories.github_id`, ceiling)
 		if err != nil {
 			return authn.Principal{}, err
