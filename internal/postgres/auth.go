@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"strconv"
 	"time"
 
 	"github.com/grepnest/grepnest/internal/authn"
@@ -49,8 +48,6 @@ func (s *Store) SessionPrincipal(ctx context.Context, tokenHash [32]byte, now, i
 	}
 	defer tx.Rollback(ctx)
 	var userID int64
-	var administrator bool
-	var repositoryIDs []int64
 	err = tx.QueryRow(ctx, `with live_session as (
             update auth_sessions session set last_seen_at=$2, idle_expires_at=least($3, session.expires_at)
             from users user_record
@@ -58,18 +55,14 @@ func (s *Store) SessionPrincipal(ctx context.Context, tokenHash [32]byte, now, i
               and session.revoked_at is null and session.expires_at>$2 and session.idle_expires_at>$2
               and user_record.scim_active and user_record.suspended_at is null and user_record.deleted_at is null
             returning session.user_id
-        )
-        select live_session.user_id, exists(select 1 from user_roles where user_id=live_session.user_id),
-            coalesce(array_agg(user_repository_grants.repository_id) filter (where user_repository_grants.repository_id is not null), '{}')
-        from live_session left join user_repository_grants on user_repository_grants.user_id=live_session.user_id
-        group by live_session.user_id`, tokenHash[:], now, idleUntil).Scan(&userID, &administrator, &repositoryIDs)
+	        ) select user_id from live_session`, tokenHash[:], now, idleUntil).Scan(&userID)
 	if err != nil {
 		return authn.Principal{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return authn.Principal{}, err
 	}
-	return authn.Principal{Subject: strconv.FormatInt(userID, 10), Method: "oidc", Administrator: administrator, RepositoryIDs: repositoryIDs}, nil
+	return s.UserPrincipal(ctx, userID, nil)
 }
 
 func (s *Store) RevokeSession(ctx context.Context, tokenHash [32]byte) error {
