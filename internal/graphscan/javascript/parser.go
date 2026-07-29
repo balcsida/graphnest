@@ -25,14 +25,9 @@ func Parse(ctx context.Context, path string, source []byte) (graphscan.File, err
 		return graphscan.File{}, queryErr
 	}
 	defer query.Close()
-	parser := tree_sitter.NewParser()
-	defer parser.Close()
-	if err := parser.SetLanguage(language); err != nil {
+	tree, err := graphscan.ParseTree(ctx, language, source)
+	if err != nil {
 		return graphscan.File{}, err
-	}
-	tree := parser.ParseCtx(ctx, source, nil)
-	if tree == nil {
-		return graphscan.File{}, ctx.Err()
 	}
 	defer tree.Close()
 	cursor := tree_sitter.NewQueryCursor()
