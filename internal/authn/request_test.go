@@ -67,3 +67,12 @@ func TestRequestAuthenticatorRequiresExactOriginForUnsafeSessionRequests(t *test
 		}
 	}
 }
+
+func TestRequestAuthenticatorRejectsUnsafeSessionRequestWithoutConfiguredOrigin(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "https://search.example.test/v1/search", nil)
+	request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "session"})
+	_, err := (RequestAuthenticator{Session: requestSessionStub{principal: Principal{Subject: "session"}}}).AuthenticateRequest(request)
+	if !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("err=%v", err)
+	}
+}
