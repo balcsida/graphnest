@@ -18,7 +18,9 @@ func (s *Store) BindOIDCUser(ctx context.Context, issuer, subject, externalID st
 	if err := tx.QueryRow(ctx, `select id from users where external_id=$1 and scim_active and suspended_at is null and deleted_at is null`, externalID).Scan(&userID); err != nil {
 		return 0, err
 	}
-	if _, err := tx.Exec(ctx, `insert into user_identities (user_id, issuer, subject) values ($1, $2, $3)`, userID, issuer, subject); err != nil {
+	if err := tx.QueryRow(ctx, `insert into user_identities (user_id, issuer, subject) values ($1, $2, $3)
+        on conflict (issuer, subject) do update set user_id=excluded.user_id
+        where user_identities.user_id=excluded.user_id returning user_id`, userID, issuer, subject).Scan(&userID); err != nil {
 		return 0, err
 	}
 	return userID, tx.Commit(ctx)
