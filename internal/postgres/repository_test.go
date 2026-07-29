@@ -373,6 +373,42 @@ func TestDurableAdministratorInventoryUsesGlobalEligibleRepositories(t *testing.
 	}
 }
 
+func TestAdministratorAPITokenInventoryUsesOnlyRepositoryCeiling(t *testing.T) {
+	store := migratedStore(t)
+	for _, installation := range []InstallationUpdate{
+		{GitHubID: 10, AccountLogin: "acme", AccountType: "Organization", Status: "active"},
+		{GitHubID: 20, AccountLogin: "other", AccountType: "Organization", Status: "active"},
+	} {
+		if err := store.UpsertInstallation(t.Context(), installation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, item := range []RepositoryUpdate{
+		{GitHubID: 101, InstallationID: 10, Owner: "acme", Name: "one", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true},
+		{GitHubID: 201, InstallationID: 20, Owner: "other", Name: "two", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true},
+	} {
+		if _, err := store.UpsertRepository(t.Context(), item); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	repositories, _, err := store.AdminRepositories(t.Context(), 0, []int64{201}, 10)
+	if err != nil || len(repositories) != 1 || repositories[0].GitHubID != 201 {
+		t.Fatalf("repositories=%#v err=%v", repositories, err)
+	}
+	if _, err := store.AdminRepository(t.Context(), 0, []int64{201}, 101); err == nil {
+		t.Fatal("repository outside API token ceiling was accessible")
+	}
+	overview, err := store.AdminOverview(t.Context(), 0, []int64{201})
+	if err != nil || overview.Repositories["pending"] != 1 || overview.Installations != 1 {
+		t.Fatalf("overview=%#v err=%v", overview, err)
+	}
+	github, err := store.AdminGitHub(t.Context(), 0, []int64{201}, admin.GitHubConfig{}, 10)
+	if err != nil || len(github.Installations) != 1 || github.Installations[0].GitHubID != 20 {
+		t.Fatalf("github=%#v err=%v", github, err)
+	}
+}
+
 func TestAdminReconcileOnlyChangesScopedRepositories(t *testing.T) {
 	store := migratedStore(t)
 	queueRepository(t, store)

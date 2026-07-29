@@ -15,17 +15,18 @@ func (s *Store) AdminOverview(ctx context.Context, installationID int64, reposit
 	r := admin.Overview{Repositories: map[string]int64{}, Jobs: map[string]int64{}, Deliveries: map[string]int64{}}
 	for query, target := range map[string]map[string]int64{
 		`select repositories.status,count(*) from repositories join installations on installations.id=repositories.installation_id
-			where ($1=0 and installations.status='active' and repositories.enabled and not repositories.archived
-			or installations.github_id=$1 and repositories.github_id=any($2)) group by repositories.status`: r.Repositories,
+			where ($1=0 and coalesce(cardinality($2::bigint[]),0)=0 and installations.status='active' and repositories.enabled and not repositories.archived
+			or ($1=0 or installations.github_id=$1) and repositories.github_id=any($2)) group by repositories.status`: r.Repositories,
 		`select jobs.state,count(*) from index_jobs jobs join repositories on repositories.id=jobs.repository_id
 			join installations on installations.id=repositories.installation_id where
-			($1=0 and installations.status='active' and repositories.enabled and not repositories.archived
-			or installations.github_id=$1 and repositories.github_id=any($2)) group by jobs.state`: r.Jobs,
+			($1=0 and coalesce(cardinality($2::bigint[]),0)=0 and installations.status='active' and repositories.enabled and not repositories.archived
+			or ($1=0 or installations.github_id=$1) and repositories.github_id=any($2)) group by jobs.state`: r.Jobs,
 		`select deliveries.state,count(*) from webhook_deliveries deliveries join installations on installations.id=deliveries.installation_id
 			left join repositories on repositories.id=deliveries.repository_id and repositories.installation_id=deliveries.installation_id
-			where ($1=0 and installations.status='active' and (deliveries.repository_id is null
+			where ($1=0 and coalesce(cardinality($2::bigint[]),0)=0 and installations.status='active' and (deliveries.repository_id is null
 			or repositories.enabled and not repositories.archived)
-			or installations.github_id=$1 and (deliveries.repository_id is null or repositories.github_id=any($2)))
+			or $1<>0 and installations.github_id=$1 and (deliveries.repository_id is null or repositories.github_id=any($2))
+			or $1=0 and repositories.github_id=any($2))
 			group by deliveries.state`: r.Deliveries,
 	} {
 		rows, err := s.pool.Query(ctx, query, installationID, repositoryIDs)
@@ -50,13 +51,16 @@ func (s *Store) AdminOverview(ctx context.Context, installationID int64, reposit
 	err := s.pool.QueryRow(ctx, `select
 		(select count(*) from scip_uploads uploads join repositories on repositories.id=uploads.repository_id
 		 join installations on installations.id=repositories.installation_id where
-		 ($1=0 and installations.status='active' and repositories.enabled and not repositories.archived
-		  or installations.github_id=$1 and repositories.github_id=any($2))),
+		 ($1=0 and coalesce(cardinality($2::bigint[]),0)=0 and installations.status='active' and repositories.enabled and not repositories.archived
+		  or ($1=0 or installations.github_id=$1) and repositories.github_id=any($2))),
 		(select count(*) from repository_packages packages join repositories on repositories.id=packages.repository_id
 		 join installations on installations.id=repositories.installation_id where
-		 ($1=0 and installations.status='active' and repositories.enabled and not repositories.archived
-		  or installations.github_id=$1 and repositories.github_id=any($2))),
-		(select count(*) from installations where $1=0 and status='active' or github_id=$1)`, installationID, repositoryIDs).
+		 ($1=0 and coalesce(cardinality($2::bigint[]),0)=0 and installations.status='active' and repositories.enabled and not repositories.archived
+		  or ($1=0 or installations.github_id=$1) and repositories.github_id=any($2))),
+		(select count(*) from installations where
+			$1=0 and coalesce(cardinality($2::bigint[]),0)=0 and status='active'
+			or github_id=$1
+			or $1=0 and id in (select installation_id from repositories where github_id=any($2)))`, installationID, repositoryIDs).
 		Scan(&r.SCIPUploads, &r.Dependencies, &r.Installations)
 	return r, err
 }
@@ -67,8 +71,8 @@ func (s *Store) AdminRepositories(ctx context.Context, installationID int64, rep
 		coalesce(repositories.indexed_sha,''),repositories.status,coalesce(repositories.error_code,''),
 		repositories.web_url,repositories.enabled,repositories.private,repositories.archived,repositories.last_indexed_at
 		from repositories join installations on installations.id=repositories.installation_id
-		where ($1=0 and installations.status='active' and repositories.enabled and not repositories.archived
-			or installations.github_id=$1 and repositories.github_id=any($2))
+		where ($1=0 and coalesce(cardinality($2::bigint[]),0)=0 and installations.status='active' and repositories.enabled and not repositories.archived
+			or ($1=0 or installations.github_id=$1) and repositories.github_id=any($2))
 		order by repositories.owner,repositories.name limit $3`, installationID, repositoryIDs, limit+1)
 	if err != nil {
 		return nil, false, err
@@ -94,17 +98,21 @@ func (s *Store) AdminRepositories(ctx context.Context, installationID int64, rep
 }
 
 func (s *Store) AdminRepository(ctx context.Context, installationID int64, repositoryIDs []int64, githubID int64) (repository.Repository, error) {
-	if installationID == 0 {
+	if installationID == 0 && len(repositoryIDs) == 0 {
 		return s.AnyAuthorizedRepository(ctx, githubID)
 	}
 	return s.AuthorizedRepository(ctx, installationID, repositoryIDs, githubID)
 }
 
-func (s *Store) AdminGitHub(ctx context.Context, installationID int64, _ []int64, c admin.GitHubConfig, limit int) (admin.GitHub, error) {
+func (s *Store) AdminGitHub(ctx context.Context, installationID int64, repositoryIDs []int64, c admin.GitHubConfig, limit int) (admin.GitHub, error) {
 	r := admin.GitHub{AppID: c.AppID, WebURL: c.WebURL, APIURL: c.APIURL, UploadURL: c.UploadURL, GitURL: c.GitURL, APIVersion: c.APIVersion,
 		PrivateKeyConfigured: c.PrivateKeyConfigured, WebhookSecretConfigured: c.WebhookSecretConfigured, CAConfigured: c.CAConfigured, Installations: []admin.Installation{}}
 	rows, err := s.pool.Query(ctx, `select github_id,account_login,account_type,status,suspended_at
-		from installations where $1=0 and status='active' or github_id=$1 order by github_id limit $2`, installationID, limit+1)
+		from installations where
+		$1=0 and coalesce(cardinality($2::bigint[]),0)=0 and status='active'
+		or github_id=$1
+		or $1=0 and id in (select installation_id from repositories where github_id=any($2))
+		order by github_id limit $3`, installationID, repositoryIDs, limit+1)
 	if err != nil {
 		return admin.GitHub{}, err
 	}
