@@ -65,6 +65,7 @@ func (m TokenManager) CreateWithMethod(ctx context.Context, userID int64, method
 	id, err = m.Store.CreateAPITokenAudited(ctx, record, audit.Event{
 		ActorType: "user", ActorID: strconv.FormatInt(userID, 10), TargetType: "api_token",
 		AuthenticationMethod: method, Operation: audit.OperationAPITokenCreated, Outcome: "success",
+		RequestID: audit.RequestID(ctx),
 	})
 	if err != nil {
 		return 0, "", err
@@ -94,7 +95,7 @@ func (m TokenManager) rejected(ctx context.Context) {
 		_ = m.Audit.Record(ctx, audit.Event{
 			ActorType: "anonymous", TargetType: "api_token",
 			AuthenticationMethod: "api_token", Operation: audit.OperationAPITokenUseRejected,
-			Outcome: "denied",
+			Outcome: "denied", RequestID: audit.RequestID(ctx),
 		})
 	}
 }

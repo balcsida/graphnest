@@ -309,7 +309,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 		mux.Handle("/", handler)
 		handler = mux
 	}
-	return handler, func() {
+	return httpapi.RequestIDs(nil, handler), func() {
 		cancel()
 		<-done
 		<-reconcileDone
@@ -366,7 +366,7 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 	if provisioning != nil && scimService != nil {
 		handler = httpapi.GuardSCIMV2(handler, *provisioning, scimService)
 	}
-	return metrics.WrapHTTP(handler)
+	return httpapi.RequestIDs(nil, metrics.WrapHTTP(handler))
 }
 
 func graphQueryLimits(graph config.Graph) graphservice.Limits {
@@ -391,7 +391,11 @@ func newProvisioningRuntime(settings config.Config, store scim.Store) (*authn.Pr
 		return nil, nil, err
 	}
 	origin := settings.SCIM.PublicURL.Scheme + "://" + settings.SCIM.PublicURL.Host
-	return &authenticator, &scim.Service{Store: store, BaseURL: origin, MaxResults: settings.Limits.MaxResults}, nil
+	service := &scim.Service{Store: store, BaseURL: origin, MaxResults: settings.Limits.MaxResults}
+	if recorder, ok := store.(audit.Recorder); ok {
+		service.Audit = recorder
+	}
+	return &authenticator, service, nil
 }
 
 func searchLimits(settings config.Config) search.Limits {

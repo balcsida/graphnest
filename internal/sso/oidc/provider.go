@@ -170,7 +170,7 @@ func (provider *Provider) loginFail(ctx context.Context, writer http.ResponseWri
 		_ = provider.Audit.Record(ctx, audit.Event{
 			ActorType: "anonymous", TargetType: "authentication",
 			AuthenticationMethod: "oidc", Operation: audit.OperationOIDCLoginDenied,
-			Outcome: "error",
+			Outcome: "error", RequestID: audit.RequestID(ctx),
 		})
 	}
 	provider.fail(writer)
@@ -187,7 +187,7 @@ func (provider *Provider) callbackFail(ctx context.Context, writer http.Response
 		_ = provider.Audit.Record(ctx, audit.Event{
 			ActorType: "anonymous", TargetType: "authentication",
 			AuthenticationMethod: "oidc", Operation: audit.OperationOIDCLoginDenied,
-			Outcome: outcome,
+			Outcome: outcome, RequestID: audit.RequestID(ctx),
 		})
 	}
 	provider.fail(writer)

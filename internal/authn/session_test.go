@@ -123,6 +123,24 @@ func TestSessionManagerPreparesLocalSessionWithoutPersisting(t *testing.T) {
 	}
 }
 
+func TestSessionManagerGeneratesIndependentAuditID(t *testing.T) {
+	manager := SessionManager{
+		Store: &sessionStoreStub{}, IdleTTL: time.Minute, TTL: time.Hour,
+		Rand:      bytes.NewReader(bytes.Repeat([]byte{7}, 32)),
+		AuditRand: bytes.NewReader(bytes.Repeat([]byte{0xab}, 16)),
+	}
+	prepared, err := manager.PrepareForUser(7, "local", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.Record.AuditID != "abababababababababababababababab" {
+		t.Fatalf("audit ID=%q", prepared.Record.AuditID)
+	}
+	if strings.Contains(prepared.Token, prepared.Record.AuditID) {
+		t.Fatalf("audit ID derived from token: %#v", prepared)
+	}
+}
+
 func TestSessionManagerRevokesOpaqueToken(t *testing.T) {
 	store := &sessionStoreStub{}
 	manager := SessionManager{Store: store}

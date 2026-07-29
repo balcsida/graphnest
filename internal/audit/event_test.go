@@ -17,6 +17,16 @@ func TestEventRejectsUnapprovedOperation(t *testing.T) {
 	}
 }
 
+func TestRequestIDContextRejectsUnboundedValues(t *testing.T) {
+	ctx := WithRequestID(t.Context(), "request-1")
+	if got := RequestID(ctx); got != "request-1" {
+		t.Fatalf("request ID=%q", got)
+	}
+	if got := RequestID(WithRequestID(t.Context(), strings.Repeat("x", 129))); got != "" {
+		t.Fatalf("unbounded request ID=%q", got)
+	}
+}
+
 func TestEventValidateBoundsFields(t *testing.T) {
 	valid := Event{
 		ActorType: "operator", ActorID: "recovery-admin",

@@ -2,8 +2,10 @@ package postgres
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/grepnest/grepnest/internal/audit"
@@ -54,8 +56,9 @@ func (s *Store) CreateOIDCSessionAudited(ctx context.Context, identity authn.Ide
 	for _, operation := range []string{audit.OperationOIDCLoginSucceeded, audit.OperationSessionCreated} {
 		if err := appendAudit(ctx, tx, audit.Event{
 			ActorType: "user", ActorID: strconv.FormatInt(userID, 10),
-			TargetType: "session", AuthenticationMethod: "oidc",
+			TargetType: "session", TargetID: session.AuditID, AuthenticationMethod: "oidc",
 			Operation: operation, Outcome: "success",
+			RequestID: audit.RequestID(ctx),
 		}); err != nil {
 			return err
 		}
@@ -97,7 +100,17 @@ func (s *Store) CreateSessionAudited(ctx context.Context, session authn.SessionR
 }
 
 func createSession(ctx context.Context, executor auditExecutor, session authn.SessionRecord) error {
-	_, err := executor.Exec(ctx, `insert into auth_sessions (token_hash, user_id, provider, force_rotation, created_at, last_seen_at, idle_expires_at, expires_at) values ($1,$2,$3,$4,$5,$6,$7,$8)`, session.TokenHash[:], session.UserID, session.Provider, session.ForceRotation, session.CreatedAt, session.LastSeenAt, session.IdleExpiresAt, session.ExpiresAt)
+	if session.AuditID == "" {
+		_, err := executor.Exec(ctx, `insert into auth_sessions (token_hash, user_id, provider, force_rotation, created_at, last_seen_at, idle_expires_at, expires_at) values ($1,$2,$3,$4,$5,$6,$7,$8)`, session.TokenHash[:], session.UserID, session.Provider, session.ForceRotation, session.CreatedAt, session.LastSeenAt, session.IdleExpiresAt, session.ExpiresAt)
+		return err
+	}
+	if len(session.AuditID) != 32 || session.AuditID != strings.ToLower(session.AuditID) {
+		return authn.ErrInvalidIdentity
+	}
+	if _, err := hex.DecodeString(session.AuditID); err != nil {
+		return authn.ErrInvalidIdentity
+	}
+	_, err := executor.Exec(ctx, `insert into auth_sessions (token_hash, audit_id, user_id, provider, force_rotation, created_at, last_seen_at, idle_expires_at, expires_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, session.TokenHash[:], session.AuditID, session.UserID, session.Provider, session.ForceRotation, session.CreatedAt, session.LastSeenAt, session.IdleExpiresAt, session.ExpiresAt)
 	return err
 }
 
@@ -148,14 +161,16 @@ func (s *Store) RevokeSessionAudited(ctx context.Context, tokenHash [32]byte) er
 	defer tx.Rollback(ctx)
 	var userID int64
 	var method string
+	var auditID string
 	err = tx.QueryRow(ctx, `update auth_sessions set revoked_at=now()
-		where token_hash=$1 and revoked_at is null returning user_id,provider`, tokenHash[:]).
-		Scan(&userID, &method)
+		where token_hash=$1 and revoked_at is null returning user_id,provider,audit_id`, tokenHash[:]).
+		Scan(&userID, &method, &auditID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			_ = s.AppendAudit(ctx, audit.Event{
 				ActorType: "anonymous", TargetType: "session",
 				Operation: audit.OperationLogout, Outcome: "invalid",
+				RequestID: audit.RequestID(ctx),
 			})
 			return nil
 		}
@@ -164,8 +179,9 @@ func (s *Store) RevokeSessionAudited(ctx context.Context, tokenHash [32]byte) er
 	for _, operation := range []string{audit.OperationLogout, audit.OperationSessionRevoked} {
 		if err := appendAudit(ctx, tx, audit.Event{
 			ActorType: "user", ActorID: strconv.FormatInt(userID, 10),
-			TargetType: "session", AuthenticationMethod: method,
+			TargetType: "session", TargetID: auditID, AuthenticationMethod: method,
 			Operation: operation, Outcome: "success",
+			RequestID: audit.RequestID(ctx),
 		}); err != nil {
 			return err
 		}
