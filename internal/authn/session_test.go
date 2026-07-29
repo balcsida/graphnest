@@ -63,6 +63,18 @@ func TestSessionManagerCreatesOpaqueTokenForExactLinkID(t *testing.T) {
 	}
 }
 
+func TestSessionManagerCreatesForcedRotationLocalSession(t *testing.T) {
+	now := time.Unix(100, 0)
+	store := &sessionStoreStub{}
+	manager := SessionManager{Store: store, IdleTTL: time.Minute, TTL: time.Hour, Now: func() time.Time { return now }, Rand: bytes.NewReader(bytes.Repeat([]byte{7}, 32))}
+	if _, _, err := manager.CreateForUser(t.Context(), 7, "local", true); err != nil {
+		t.Fatal(err)
+	}
+	if !store.session.ForceRotation || store.session.Provider != "local" {
+		t.Fatalf("session = %#v", store.session)
+	}
+}
+
 func TestSessionManagerRevokesOpaqueToken(t *testing.T) {
 	store := &sessionStoreStub{}
 	manager := SessionManager{Store: store}
@@ -91,5 +103,15 @@ func TestSessionManagerAuthenticatesWithHashAndFreshExpiry(t *testing.T) {
 	principal.RepositoryIDs[0] = 999
 	if store.principal.RepositoryIDs[0] != 101 {
 		t.Fatalf("stored repositories mutated: %#v", store.principal.RepositoryIDs)
+	}
+}
+
+func TestSessionManagerPreservesForcedRotationPrincipal(t *testing.T) {
+	store := &sessionStoreStub{principal: Principal{Subject: "7", Method: "local", ForceRotation: true}}
+	manager := SessionManager{Store: store, IdleTTL: time.Minute}
+	token := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
+	principal, err := manager.Authenticate(t.Context(), token)
+	if err != nil || !principal.ForceRotation || principal.Method != "local" {
+		t.Fatalf("principal=%#v err=%v", principal, err)
 	}
 }

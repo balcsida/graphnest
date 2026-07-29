@@ -37,7 +37,7 @@ func (s *Store) ConsumeLoginFlow(ctx context.Context, stateHash, browserHash [32
 }
 
 func (s *Store) CreateSession(ctx context.Context, session authn.SessionRecord) error {
-	_, err := s.pool.Exec(ctx, `insert into auth_sessions (token_hash, user_id, provider, created_at, last_seen_at, idle_expires_at, expires_at) values ($1,$2,$3,$4,$5,$6,$7)`, session.TokenHash[:], session.UserID, session.Provider, session.CreatedAt, session.LastSeenAt, session.IdleExpiresAt, session.ExpiresAt)
+	_, err := s.pool.Exec(ctx, `insert into auth_sessions (token_hash, user_id, provider, force_rotation, created_at, last_seen_at, idle_expires_at, expires_at) values ($1,$2,$3,$4,$5,$6,$7,$8)`, session.TokenHash[:], session.UserID, session.Provider, session.ForceRotation, session.CreatedAt, session.LastSeenAt, session.IdleExpiresAt, session.ExpiresAt)
 	return err
 }
 
@@ -48,21 +48,29 @@ func (s *Store) SessionPrincipal(ctx context.Context, tokenHash [32]byte, now, i
 	}
 	defer tx.Rollback(ctx)
 	var userID int64
+	var provider string
+	var forceRotation bool
 	err = tx.QueryRow(ctx, `with live_session as (
             update auth_sessions session set last_seen_at=$2, idle_expires_at=least($3, session.expires_at)
             from users user_record
             where session.token_hash=$1 and session.user_id=user_record.id
               and session.revoked_at is null and session.expires_at>$2 and session.idle_expires_at>$2
               and user_record.scim_active and user_record.suspended_at is null and user_record.deleted_at is null
-            returning session.user_id
-	        ) select user_id from live_session`, tokenHash[:], now, idleUntil).Scan(&userID)
+            returning session.user_id,session.provider,session.force_rotation
+	        ) select user_id,provider,force_rotation from live_session`, tokenHash[:], now, idleUntil).Scan(&userID, &provider, &forceRotation)
 	if err != nil {
 		return authn.Principal{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return authn.Principal{}, err
 	}
-	return s.UserPrincipal(ctx, userID, nil)
+	principal, err := s.UserPrincipal(ctx, userID, nil)
+	if err != nil {
+		return authn.Principal{}, err
+	}
+	principal.Method = provider
+	principal.ForceRotation = forceRotation
+	return principal, nil
 }
 
 func (s *Store) RevokeSession(ctx context.Context, tokenHash [32]byte) error {

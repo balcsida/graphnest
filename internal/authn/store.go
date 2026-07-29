@@ -15,6 +15,7 @@ type SessionRecord struct {
 	TokenHash                                       [32]byte
 	UserID                                          int64
 	Provider                                        string
+	ForceRotation                                   bool
 	CreatedAt, LastSeenAt, IdleExpiresAt, ExpiresAt time.Time
 }
 

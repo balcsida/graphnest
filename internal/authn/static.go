@@ -13,6 +13,7 @@ type Principal struct {
 	Subject         string
 	Method          string
 	Administrator   bool
+	ForceRotation   bool
 	InstallationID  int64
 	RepositoryIDs   []int64
 	RepositoryNames []string

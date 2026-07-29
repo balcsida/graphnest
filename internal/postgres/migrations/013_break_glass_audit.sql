@@ -8,6 +8,11 @@ create table password_credentials (
     force_rotation boolean not null default true,
     updated_at timestamptz not null default now()
 );
+
+alter table auth_sessions drop constraint auth_sessions_provider_check;
+alter table auth_sessions
+    add column force_rotation boolean not null default false,
+    add check (provider in ('oidc','local'));
 create table login_throttles (
     key_hash bytea primary key check (octet_length(key_hash)=32),
     failures integer not null check (failures > 0),
