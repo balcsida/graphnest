@@ -26,16 +26,20 @@ func ParseFilter(resource ResourceType, raw string) (Filter, error) {
 	if len(raw) > 4096 {
 		return Filter{}, parseError("invalidFilter")
 	}
-	parts := strings.Split(raw, " ")
-	if len(parts) != 3 || parts[0] == "" || !strings.EqualFold(parts[1], "eq") {
+	attributeToken, rest, ok := strings.Cut(raw, " ")
+	if !ok {
 		return Filter{}, parseError("invalidFilter")
 	}
-	attribute, ok := equalityFilterAttribute(resource, parts[0])
+	operator, valueToken, ok := strings.Cut(rest, " ")
+	if !ok || attributeToken == "" || !strings.EqualFold(operator, "eq") {
+		return Filter{}, parseError("invalidFilter")
+	}
+	attribute, ok := equalityFilterAttribute(resource, attributeToken)
 	if !ok {
 		return Filter{}, parseError("invalidFilter")
 	}
 	var value string
-	if err := json.Unmarshal([]byte(parts[2]), &value); err != nil {
+	if err := json.Unmarshal([]byte(valueToken), &value); err != nil {
 		return Filter{}, parseError("invalidFilter")
 	}
 	return Filter{Attribute: attribute, Value: value}, nil
