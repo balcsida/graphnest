@@ -242,17 +242,21 @@ authorized operator has direct access to the same PostgreSQL database used by
 every server replica:
 
 ```sh
-make build
-GREPNEST_DATABASE_URL='postgres://...' \
-  go run ./cmd/grepnest-admin break-glass set-password recovery-admin
+export GREPNEST_DATABASE_URL='postgres://...'
+docker run --rm -it --network <database-network> \
+  --env GREPNEST_DATABASE_URL \
+  "$GREPNEST_APPLICATION_IMAGE" \
+  grepnest-admin break-glass set-password recovery-admin
 ```
 
-The command reads and confirms the password from `/dev/tty`; without a usable
-TTY it accepts exactly two newline-delimited standard-input values. Do not put
-the password in arguments, environment variables, files, shell history, or
-logs. It creates only a local administrator, or rotates that same eligible
-account, forces password rotation, revokes its sessions and API tokens, and
-records `break_glass_password_set`.
+Use the same digest-pinned application image deployed by the server and a
+network path to its PostgreSQL database. The command reads and confirms the
+password from `/dev/tty`; without a usable TTY it accepts exactly two
+newline-delimited standard-input values. Do not put the password in arguments,
+environment variables, files, shell history, or logs. It creates only a local
+administrator, or rotates that same eligible account, forces password
+rotation, revokes its sessions and API tokens, and records
+`break_glass_password_set`.
 
 Creating the credential does not expose local login. An OIDC outage never
 enables it automatically. Set `GREPNEST_BREAK_GLASS_ENABLED=true` (Compose) or
@@ -277,8 +281,8 @@ operation, outcome, request ID, and creation time fields. They never store
 passwords, session tokens, request bodies, or OIDC claims. The API returns a
 bounded newest-first page and reports truncation; this release has no automatic
 audit-retention or deletion mechanism, and the database trigger rejects updates
-and deletes. Operators must account for that growth in PostgreSQL retention and
-backup policy.
+deletes, and truncation. Operators must account for that growth in PostgreSQL
+retention and backup policy.
 
 ## Optional OIDC operations
 

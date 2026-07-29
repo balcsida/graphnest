@@ -134,8 +134,10 @@ PATCH paths, limits, unsupported features, and the OIDC link-claim requirement.
 `breakGlass.enabled=true` exposes only the disabled-by-default local recovery
 routes. It provisions no user name, password, hash, salt, or Secret and never
 activates because OIDC is unavailable. Provision and rotate the operator
-password offline with `grepnest-admin`, then follow the repository
-break-glass runbook.
+password offline with `grepnest-admin` from the same digest-pinned application
+image configured in `images.application`, then follow the repository
+break-glass runbook. The chart requires OIDC to be enabled when break-glass is
+enabled.
 
 ## Scheduling, storage, and capacity
 

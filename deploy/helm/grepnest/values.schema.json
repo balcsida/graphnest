@@ -696,6 +696,10 @@
   },
   "allOf": [
     {
+      "if": {"properties": {"breakGlass": {"properties": {"enabled": {"const": true}}}}},
+      "then": {"properties": {"server": {"properties": {"sso": {"properties": {"oidc": {"properties": {"enabled": {"const": true}}}}}}}}}
+    },
+    {
       "if": {"properties": {"server": {"properties": {"scim": {"properties": {"enabled": {"const": true}}}}}}},
       "then": {"properties": {
         "secrets": {"properties": {"scim": {"properties": {"name": {"$ref": "#/definitions/kubernetesObjectName"}}}}},

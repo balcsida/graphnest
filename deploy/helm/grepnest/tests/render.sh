@@ -102,7 +102,8 @@ helm template scim "$chart" -n grepnest -f "$minimal" \
   --set-string=server.sso.publicURL=https://grepnest.example.invalid \
   --set-string=secrets.scim.name=grepnest-scim >"$tmp/scim.yaml"
 helm template break-glass "$chart" -n grepnest -f "$minimal" \
-  --set=breakGlass.enabled=true >"$tmp/break-glass.yaml"
+  -f "$optional" --set=breakGlass.enabled=true \
+  --api-versions monitoring.coreos.com/v1/ServiceMonitor >"$tmp/break-glass.yaml"
 long_release=abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzx
 helm template "$long_release" "$chart" -n grepnest -f "$minimal" >"$tmp/long-release.yaml"
 
@@ -365,6 +366,8 @@ require 'GREPNEST_BREAK_GLASS_ENABLED: "true"' "$tmp/break-glass.yaml"
 reject 'BREAK_GLASS.*(PASSWORD|HASH|SALT)|^kind: Secret$' "$tmp/break-glass.yaml"
 expect_failure "$tmp/break-glass-type.err" helm template bad "$chart" -f "$minimal" \
   --set-string=breakGlass.enabled=true
+expect_failure "$tmp/break-glass-without-oidc.err" helm template bad "$chart" -f "$minimal" \
+  --set=breakGlass.enabled=true
 
 expect_failure "$tmp/scim-secret.err" helm template bad "$chart" -f "$minimal" \
   --set=server.scim.enabled=true
