@@ -92,7 +92,7 @@ func TestMigrateIsConcurrentAndIdempotent(t *testing.T) {
 		}
 	}
 	var count int
-	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != 10 {
+	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != 11 {
 		t.Fatalf("migrations=%d err=%v", count, err)
 	}
 	var repositoryIDNullable string
