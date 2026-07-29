@@ -43,7 +43,7 @@ func TestAccountTokenRoutesRevealPlaintextOnlyAtCreation(t *testing.T) {
 	post.Header.Set("Content-Type", "application/json")
 	created := httptest.NewRecorder()
 	mux.ServeHTTP(created, post)
-	if created.Code != http.StatusCreated || !strings.Contains(created.Body.String(), `"token":"gnp_`) {
+	if created.Code != http.StatusCreated || !strings.Contains(created.Body.String(), `"token":"gnp_`) || !strings.Contains(created.Body.String(), `"expires_at":"2026-08-29T00:00:00Z"`) {
 		t.Fatalf("created=%d body=%q", created.Code, created.Body.String())
 	}
 
@@ -81,5 +81,24 @@ func TestAccountTokenRouteRejectsNonUTCAndDuplicateRepositoryIDs(t *testing.T) {
 	mux.ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+}
+
+func TestAccountTokenRouteRequiresFutureExpiry(t *testing.T) {
+	// Break caught: HTTP accepts a past or equal expiry despite the service clock.
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	for _, expiry := range []string{"2026-07-31T23:59:59Z", "2026-08-01T00:00:00Z"} {
+		store := &accountStoreStub{}
+		service := &account.Service{Manager: authn.TokenManager{Store: store, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+		mux := http.NewServeMux()
+		RegisterAccount(mux, authn.RequestAuthenticator{Bearer: authn.NewStatic(map[string]authn.Principal{"user": {Subject: "11", Method: "oidc", RepositoryIDs: []int64{101}}})}, service, 1024, 4096)
+		request := httptest.NewRequest(http.MethodPost, "/v1/account/api-tokens", strings.NewReader(`{"expires_at":"`+expiry+`","repository_ids":[101]}`))
+		request.Header.Set("Authorization", "Bearer user")
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, request)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("expiry=%s status=%d", expiry, response.Code)
+		}
 	}
 }

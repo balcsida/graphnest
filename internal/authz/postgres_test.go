@@ -105,9 +105,6 @@ func TestAdministratorAPITokenStaysCeilingScoped(t *testing.T) {
 	if _, err := pool.Exec(t.Context(), `insert into user_roles (user_id, administrator) values ($1, true)`, userID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(t.Context(), `insert into user_repository_grants (user_id, repository_id) values ($1, 101), ($1, 102)`, userID); err != nil {
-		t.Fatal(err)
-	}
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{TokenHash: [32]byte{1}, Prefix: "gn_test", UserID: userID, RepositoryIDs: []int64{102}, CreatedAt: now}); err != nil {
 		t.Fatal(err)

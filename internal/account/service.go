@@ -7,9 +7,13 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/grepnest/grepnest/internal/repository"
 )
 
-var ErrForbidden = errors.New("forbidden")
+var (
+	ErrForbidden = errors.New("forbidden")
+	ErrInvalid   = errors.New("invalid token request")
+)
 
 type Token struct {
 	ID            int64      `json:"id"`
@@ -20,22 +24,45 @@ type Token struct {
 	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
 }
 
-type Service struct{ Manager authn.TokenManager }
+type repositoryAuthorizer interface {
+	AuthorizedRepository(context.Context, authn.Principal, int64) (repository.Repository, error)
+}
+
+type Service struct {
+	Manager    authn.TokenManager
+	Authorizer repositoryAuthorizer
+}
 
 func (s *Service) CreateToken(ctx context.Context, principal authn.Principal, expires *time.Time, repositoryIDs []int64) (Token, string, error) {
 	userID, err := userID(principal)
-	if err != nil || !granted(principal.RepositoryIDs, repositoryIDs) {
+	if err != nil {
 		return Token{}, "", ErrForbidden
+	}
+	if expires == nil || !expires.After(s.now()) {
+		return Token{}, "", ErrInvalid
+	}
+	for _, repositoryID := range repositoryIDs {
+		if s.Authorizer != nil {
+			if _, err := s.Authorizer.AuthorizedRepository(ctx, principal, repositoryID); err != nil {
+				return Token{}, "", ErrForbidden
+			}
+		} else if !granted(principal.RepositoryIDs, repositoryIDs) {
+			return Token{}, "", ErrForbidden
+		}
 	}
 	id, plaintext, err := s.Manager.Create(ctx, userID, repositoryIDs, expires)
 	if err != nil {
 		return Token{}, "", err
 	}
-	createdAt := time.Now()
+	value := *expires
+	return Token{ID: id, Prefix: plaintext[:12], RepositoryIDs: append([]int64(nil), repositoryIDs...), CreatedAt: s.now(), ExpiresAt: &value}, plaintext, nil
+}
+
+func (s *Service) now() time.Time {
 	if s.Manager.Now != nil {
-		createdAt = s.Manager.Now()
+		return s.Manager.Now()
 	}
-	return Token{ID: id, Prefix: plaintext[:12], RepositoryIDs: append([]int64(nil), repositoryIDs...), CreatedAt: createdAt}, plaintext, nil
+	return time.Now()
 }
 
 func (s *Service) Tokens(ctx context.Context, principal authn.Principal) ([]Token, error) {

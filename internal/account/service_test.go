@@ -30,9 +30,26 @@ func (s *storeStub) RevokeAPIToken(_ context.Context, user, id int64) error {
 func TestCreateTokenRejectsRepositoryOutsidePrincipalGrant(t *testing.T) {
 	// Break caught: a user minting a token broader than their own grants.
 	s := &Service{Manager: authn.TokenManager{Store: &storeStub{}, Rand: strings.NewReader(strings.Repeat("x", 32))}}
-	_, _, err := s.CreateToken(t.Context(), authn.Principal{Subject: "11", Method: "oidc", RepositoryIDs: []int64{101}}, nil, []int64{102})
+	expires := time.Now().Add(time.Hour)
+	_, _, err := s.CreateToken(t.Context(), authn.Principal{Subject: "11", Method: "oidc", RepositoryIDs: []int64{101}}, &expires, []int64{102})
 	if !errors.Is(err, ErrForbidden) {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestCreateTokenRequiresFutureExpiry(t *testing.T) {
+	// Break caught: tokens created already expired or expiring exactly now.
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	s := &Service{Manager: authn.TokenManager{Store: &storeStub{}, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+	for _, expiry := range []time.Time{now.Add(-time.Second), now} {
+		if _, _, err := s.CreateToken(t.Context(), authn.Principal{Subject: "11", Method: "oidc", RepositoryIDs: []int64{101}}, &expiry, []int64{101}); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("expiry=%s err=%v", expiry, err)
+		}
+	}
+	future := now.Add(time.Second)
+	token, _, err := s.CreateToken(t.Context(), authn.Principal{Subject: "11", Method: "oidc", RepositoryIDs: []int64{101}}, &future, []int64{101})
+	if err != nil || token.ExpiresAt == nil || !token.ExpiresAt.Equal(future) {
+		t.Fatalf("token=%#v err=%v", token, err)
 	}
 }
 

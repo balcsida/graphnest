@@ -122,6 +122,10 @@ func uniquePositiveIDs(ids []int64) bool {
 }
 
 func writeAccountError(writer http.ResponseWriter, err error) {
+	if errors.Is(err, account.ErrInvalid) {
+		writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
+		return
+	}
 	if errors.Is(err, account.ErrForbidden) {
 		writeError(writer, http.StatusForbidden, "forbidden", "forbidden", false)
 		return
