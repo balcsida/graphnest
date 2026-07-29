@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 )
 
@@ -21,12 +22,18 @@ func (s *storeStub) CreateAPIToken(_ context.Context, token authn.APITokenRecord
 	s.created = token
 	return 7, nil
 }
+func (s *storeStub) CreateAPITokenAudited(ctx context.Context, token authn.APITokenRecord, _ audit.Event) (int64, error) {
+	return s.CreateAPIToken(ctx, token)
+}
 func (s *storeStub) ListAPITokens(context.Context, int64) ([]authn.APITokenMetadata, error) {
 	return s.tokens, nil
 }
 func (s *storeStub) RevokeAPIToken(_ context.Context, user, id int64) error {
 	s.revokedUser, s.revokedID = user, id
 	return nil
+}
+func (s *storeStub) RevokeAPITokenAudited(ctx context.Context, user, id int64, _ audit.Event) error {
+	return s.RevokeAPIToken(ctx, user, id)
 }
 
 func TestCreateTokenRejectsRepositoryOutsidePrincipalGrant(t *testing.T) {

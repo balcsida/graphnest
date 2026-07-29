@@ -4,10 +4,39 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/grepnest/grepnest/internal/audit"
 )
+
+type failingAuditRecorder struct{ events []audit.Event }
+
+func (r *failingAuditRecorder) Record(_ context.Context, event audit.Event) error {
+	r.events = append(r.events, event)
+	return errors.New("audit unavailable")
+}
+
+func TestLocalDenialIgnoresAuditFailureAndStoresNoCredentialInput(t *testing.T) {
+	store := &localStoreStub{lookupErr: errors.New("missing")}
+	recorder := &failingAuditRecorder{}
+	authenticator := localAuthenticator(t, store)
+	authenticator.Audit = recorder
+	password := []byte("sentinel-password")
+	_, err := authenticator.Verify(t.Context(), "sentinel-user", password, "192.0.2.1")
+	if !errors.Is(err, ErrUnauthenticated) || len(recorder.events) != 1 {
+		t.Fatalf("error=%v events=%#v", err, recorder.events)
+	}
+	encoded := fmt.Sprintf("%#v", recorder.events[0])
+	for _, secret := range []string{"sentinel-password", "sentinel-user", "192.0.2.1"} {
+		if strings.Contains(encoded, secret) {
+			t.Fatalf("event leaked %q: %s", secret, encoded)
+		}
+	}
+}
 
 type localStoreStub struct {
 	mu         sync.Mutex

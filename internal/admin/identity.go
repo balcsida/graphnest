@@ -68,54 +68,74 @@ func (service *Service) Group(ctx context.Context, principal authn.Principal, id
 
 func (service *Service) SuspendUser(ctx context.Context, principal authn.Principal, id int64, suspended bool) error {
 	if err := requireIdentityAdmin(principal); err != nil {
+		service.recordDenied(ctx, principal, "user", id)
 		return err
 	}
 	actorID := principalUserID(principal)
 	if suspended && actorID == id {
+		service.recordDenied(ctx, principal, "user", id)
 		return ErrSelfAdministration
 	}
 	operation := audit.OperationUserRestored
 	if suspended {
 		operation = audit.OperationUserSuspended
 	}
-	if store, ok := service.Store.(auditedIdentityStore); ok {
-		return store.SuspendAdminUserAudited(ctx, actorID, id, suspended, identityAudit(principal, "user", id, operation))
-	}
-	return service.Store.SuspendAdminUser(ctx, actorID, id, suspended)
+	return service.Store.SuspendAdminUserAudited(ctx, actorID, id, suspended, identityAudit(principal, "user", id, operation))
 }
 
 func (service *Service) ReplaceUserAccess(ctx context.Context, principal authn.Principal, id int64, administrator bool, repositoryIDs []int64) error {
 	if err := requireIdentityAdmin(principal); err != nil {
+		service.recordDenied(ctx, principal, "user", id)
 		return err
 	}
 	actorID := principalUserID(principal)
-	if store, ok := service.Store.(auditedIdentityStore); ok {
-		return store.ReplaceAdminUserAccessAudited(ctx, actorID, id, administrator, repositoryIDs,
-			identityAudit(principal, "user", id, audit.OperationUserRoleChanged))
-	}
-	return service.Store.ReplaceAdminUserAccess(ctx, actorID, id, administrator, repositoryIDs)
+	return service.Store.ReplaceAdminUserAccessAudited(ctx, actorID, id, administrator, repositoryIDs,
+		identityAudit(principal, "user", id, audit.OperationUserRoleChanged))
 }
 
 func (service *Service) ReplaceGroupAccess(ctx context.Context, principal authn.Principal, id int64, administrator bool, repositoryIDs []int64) error {
 	if err := requireIdentityAdmin(principal); err != nil {
+		service.recordDenied(ctx, principal, "group", id)
 		return err
 	}
-	if store, ok := service.Store.(auditedIdentityStore); ok {
-		return store.ReplaceAdminGroupAccessAudited(ctx, principalUserID(principal), id, administrator, repositoryIDs,
-			identityAudit(principal, "group", id, audit.OperationGroupRoleChanged))
-	}
-	return service.Store.ReplaceAdminGroupAccess(ctx, principalUserID(principal), id, administrator, repositoryIDs)
+	return service.Store.ReplaceAdminGroupAccessAudited(ctx, principalUserID(principal), id, administrator, repositoryIDs,
+		identityAudit(principal, "group", id, audit.OperationGroupRoleChanged))
 }
 
 func (service *Service) RevokeUserCredentials(ctx context.Context, principal authn.Principal, id int64) error {
 	if err := requireIdentityAdmin(principal); err != nil {
+		service.recordDenied(ctx, principal, "user", id)
 		return err
 	}
-	if store, ok := service.Store.(auditedIdentityStore); ok {
-		return store.RevokeAdminUserCredentialsAudited(ctx, id,
-			identityAudit(principal, "user", id, audit.OperationUserCredentialsRevoked))
+	return service.Store.RevokeAdminUserCredentialsAudited(ctx, id,
+		identityAudit(principal, "user", id, audit.OperationUserCredentialsRevoked))
+}
+
+func (service *Service) recordDenied(ctx context.Context, principal authn.Principal, targetType string, targetID int64) {
+	if service.Audit == nil {
+		return
 	}
-	return service.Store.RevokeAdminUserCredentials(ctx, id)
+	actorID := ""
+	if id := principalUserID(principal); id > 0 {
+		actorID = strconv.FormatInt(id, 10)
+	}
+	method := principal.Method
+	if method != "oidc" && method != "local" && method != "api_token" {
+		method = ""
+	}
+	target := ""
+	if targetID > 0 {
+		target = strconv.FormatInt(targetID, 10)
+	}
+	_ = service.Audit.Record(ctx, audit.Event{
+		ActorType: "user", ActorID: actorID, TargetType: targetType,
+		TargetID: target, AuthenticationMethod: method,
+		Operation: audit.OperationAdminMutationDenied, Outcome: "denied",
+	})
+}
+
+func (service *Service) RecordDeniedMutation(ctx context.Context, principal authn.Principal) {
+	service.recordDenied(ctx, principal, "authentication", 0)
 }
 
 type auditedIdentityStore interface {

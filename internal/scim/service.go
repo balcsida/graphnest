@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -68,7 +69,9 @@ func (s *Service) CreateUser(ctx context.Context, user User) (User, error) {
 	if err := validateUserWrite(&user, true); err != nil {
 		return User{}, err
 	}
-	created, err := s.Store.CreateUser(ctx, user)
+	var created User
+	var err error
+	created, err = s.Store.CreateUserAudited(ctx, user, scimEvents("user", "", audit.OperationSCIMUserCreated))
 	if err != nil {
 		return User{}, mapServiceError(err)
 	}
@@ -88,7 +91,13 @@ func (s *Service) ReplaceUser(ctx context.Context, id int64, user User) (User, e
 	if err := validateUserWrite(&user, true); err != nil {
 		return User{}, err
 	}
-	replaced, err := s.Store.ReplaceUser(ctx, id, user)
+	operations := []string{audit.OperationSCIMUserReplaced}
+	if user.Active != nil && !*user.Active {
+		operations = append(operations, audit.OperationSCIMUserDeactivated)
+	}
+	var replaced User
+	var err error
+	replaced, err = s.Store.ReplaceUserAudited(ctx, id, user, scimEvents("user", fmt.Sprint(id), operations...))
 	if err != nil {
 		return User{}, mapServiceError(err)
 	}
@@ -128,7 +137,12 @@ func (s *Service) PatchUser(ctx context.Context, id int64, request PatchRequest)
 			return User{}, err
 		}
 	}
-	patched, err := s.Store.PatchUser(ctx, id, mutation)
+	operations := []string{audit.OperationSCIMUserPatched}
+	if mutation.Active.Set && !mutation.Active.Value {
+		operations = append(operations, audit.OperationSCIMUserDeactivated)
+	}
+	var patched User
+	patched, err = s.Store.PatchUserAudited(ctx, id, mutation, scimEvents("user", fmt.Sprint(id), operations...))
 	if err != nil {
 		return User{}, mapServiceError(err)
 	}
@@ -145,7 +159,8 @@ func (s *Service) DeleteUser(ctx context.Context, id int64) error {
 	if id < 1 {
 		return invalidValue("resource ID must be a positive decimal integer")
 	}
-	return mapServiceError(s.Store.DeleteUser(ctx, id))
+	return mapServiceError(s.Store.DeleteUserAudited(ctx, id, scimEvents("user", fmt.Sprint(id),
+		audit.OperationSCIMUserDeactivated, audit.OperationSCIMUserDeleted)))
 }
 
 func (s *Service) Groups(ctx context.Context, filter Filter, page Page, projection Projection) (ListResponse[Group], error) {
@@ -191,7 +206,13 @@ func (s *Service) CreateGroup(ctx context.Context, group Group) (Group, error) {
 	if err := validateGroupWrite(group); err != nil {
 		return Group{}, err
 	}
-	created, err := s.Store.CreateGroup(ctx, group)
+	operations := []string{audit.OperationSCIMGroupCreated}
+	if len(group.Members) > 0 {
+		operations = append(operations, audit.OperationGroupMembershipChanged)
+	}
+	var created Group
+	var err error
+	created, err = s.Store.CreateGroupAudited(ctx, group, scimEvents("group", "", operations...))
 	if err != nil {
 		return Group{}, mapServiceError(err)
 	}
@@ -211,7 +232,10 @@ func (s *Service) ReplaceGroup(ctx context.Context, id int64, group Group) (Grou
 	if err := validateGroupWrite(group); err != nil {
 		return Group{}, err
 	}
-	replaced, err := s.Store.ReplaceGroup(ctx, id, group)
+	operations := []string{audit.OperationSCIMGroupReplaced, audit.OperationGroupMembershipChanged}
+	var replaced Group
+	var err error
+	replaced, err = s.Store.ReplaceGroupAudited(ctx, id, group, scimEvents("group", fmt.Sprint(id), operations...))
 	if err != nil {
 		return Group{}, mapServiceError(err)
 	}
@@ -235,7 +259,12 @@ func (s *Service) PatchGroup(ctx context.Context, id int64, request PatchRequest
 	if err != nil {
 		return Group{}, mapServiceError(err)
 	}
-	patched, err := s.Store.PatchGroup(ctx, id, mutation)
+	operations := []string{audit.OperationSCIMGroupPatched}
+	if mutation.ReplaceMembers != nil || len(mutation.AddMembers) > 0 || len(mutation.RemoveMembers) > 0 {
+		operations = append(operations, audit.OperationGroupMembershipChanged)
+	}
+	var patched Group
+	patched, err = s.Store.PatchGroupAudited(ctx, id, mutation, scimEvents("group", fmt.Sprint(id), operations...))
 	if err != nil {
 		return Group{}, mapServiceError(err)
 	}
@@ -252,7 +281,29 @@ func (s *Service) DeleteGroup(ctx context.Context, id int64) error {
 	if id < 1 {
 		return invalidValue("resource ID must be a positive decimal integer")
 	}
-	return mapServiceError(s.Store.DeleteGroup(ctx, id))
+	return mapServiceError(s.Store.DeleteGroupAudited(ctx, id, scimEvents("group", fmt.Sprint(id), audit.OperationSCIMGroupDeleted)))
+}
+
+type auditedStore interface {
+	CreateUserAudited(context.Context, User, []audit.Event) (User, error)
+	ReplaceUserAudited(context.Context, int64, User, []audit.Event) (User, error)
+	PatchUserAudited(context.Context, int64, UserMutation, []audit.Event) (User, error)
+	DeleteUserAudited(context.Context, int64, []audit.Event) error
+	CreateGroupAudited(context.Context, Group, []audit.Event) (Group, error)
+	ReplaceGroupAudited(context.Context, int64, Group, []audit.Event) (Group, error)
+	PatchGroupAudited(context.Context, int64, GroupMutation, []audit.Event) (Group, error)
+	DeleteGroupAudited(context.Context, int64, []audit.Event) error
+}
+
+func scimEvents(targetType, targetID string, operations ...string) []audit.Event {
+	events := make([]audit.Event, len(operations))
+	for index, operation := range operations {
+		events[index] = audit.Event{
+			ActorType: "scim", ActorID: "provisioning", TargetType: targetType, TargetID: targetID,
+			AuthenticationMethod: "scim_token", Operation: operation, Outcome: "success",
+		}
+	}
+	return events
 }
 
 func validateUserWrite(user *User, defaultActive bool) error {

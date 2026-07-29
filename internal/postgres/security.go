@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -77,6 +78,15 @@ func (s *Store) CreatePasswordSession(ctx context.Context, userID int64, expecte
 	if err := createSession(ctx, tx, session); err != nil {
 		return err
 	}
+	for _, operation := range []string{audit.OperationLocalLoginSucceeded, audit.OperationSessionCreated} {
+		if err := appendAudit(ctx, tx, audit.Event{
+			ActorType: "user", ActorID: strconv.FormatInt(userID, 10),
+			TargetType: "session", AuthenticationMethod: "local",
+			Operation: operation, Outcome: "success",
+		}); err != nil {
+			return err
+		}
+	}
 	return tx.Commit(ctx)
 }
 
@@ -119,6 +129,13 @@ func (s *Store) RotatePasswordCredential(ctx context.Context, userID int64, expe
 		return err
 	}
 	if err := appendAudit(ctx, tx, event); err != nil {
+		return err
+	}
+	if err := appendAudit(ctx, tx, audit.Event{
+		ActorType: event.ActorType, ActorID: event.ActorID, TargetType: "session",
+		AuthenticationMethod: "local", Operation: audit.OperationSessionCreated,
+		Outcome: "success", RequestID: event.RequestID,
+	}); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -267,6 +284,10 @@ func (s *Store) ClearLoginFailures(ctx context.Context, accountKey, sourceKey [3
 
 func (s *Store) AppendAudit(ctx context.Context, event audit.Event) error {
 	return appendAudit(ctx, s.pool, event)
+}
+
+func (s *Store) Record(ctx context.Context, event audit.Event) error {
+	return s.AppendAudit(ctx, event)
 }
 
 type auditExecutor interface {

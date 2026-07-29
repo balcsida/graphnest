@@ -13,6 +13,7 @@ var (
 )
 
 type Store interface {
+	auditedStore
 	ListUsers(context.Context, Filter, Page) ([]User, int, error)
 	User(context.Context, int64) (User, error)
 	CreateUser(context.Context, User) (User, error)

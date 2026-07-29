@@ -124,6 +124,7 @@ type IndexRequest struct {
 }
 
 type Store interface {
+	auditedIdentityStore
 	AuditEvents(context.Context, int) ([]audit.Event, bool, error)
 	AdminUsers(context.Context, int) ([]User, bool, error)
 	AdminUser(context.Context, int64) (User, error)
@@ -154,6 +155,7 @@ type GitHubClient interface {
 
 type Service struct {
 	Store        Store
+	Audit        audit.Recorder
 	GitHub       GitHubClient
 	ReconcileAll func(context.Context) error
 	Config       GitHubConfig

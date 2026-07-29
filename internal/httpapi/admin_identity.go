@@ -49,13 +49,16 @@ func registerAdminIdentity(mux *http.ServeMux, authenticator authn.RequestAuthen
 		}{groups, truncated}, err
 	}))
 	mux.Handle("/v1/admin/audit-events", get(func(request *http.Request) (any, error) {
+		if request.URL.RawQuery != "" {
+			return nil, admin.ErrInvalid
+		}
 		events, truncated, err := service.AuditEvents(request.Context(), PrincipalFromContext(request.Context()))
 		return struct {
 			Events    []audit.Event `json:"events"`
 			Truncated bool          `json:"truncated"`
 		}{events, truncated}, err
 	}))
-	mux.Handle("/v1/admin/users/", adminIdentityResource(authenticator, func(writer http.ResponseWriter, request *http.Request) {
+	mux.Handle("/v1/admin/users/", adminIdentityResource(authenticator, service, func(writer http.ResponseWriter, request *http.Request) {
 		principal := PrincipalFromContext(request.Context())
 		if id, ok := adminPathID(request.URL.Path, "/v1/admin/users/", ""); ok {
 			if !adminIdentityMethod(writer, request, http.MethodGet) {
@@ -110,7 +113,7 @@ func registerAdminIdentity(mux *http.ServeMux, authenticator authn.RequestAuthen
 		}
 		writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
 	}))
-	mux.Handle("/v1/admin/groups/", adminIdentityResource(authenticator, func(writer http.ResponseWriter, request *http.Request) {
+	mux.Handle("/v1/admin/groups/", adminIdentityResource(authenticator, service, func(writer http.ResponseWriter, request *http.Request) {
 		principal := PrincipalFromContext(request.Context())
 		if id, ok := adminPathID(request.URL.Path, "/v1/admin/groups/", ""); ok {
 			if !adminIdentityMethod(writer, request, http.MethodGet) {
@@ -143,8 +146,18 @@ func registerAdminIdentity(mux *http.ServeMux, authenticator authn.RequestAuthen
 	}))
 }
 
-func adminIdentityResource(authenticator authn.RequestAuthenticator, handler http.HandlerFunc) http.Handler {
-	return AuthenticateRequest(authenticator, administratorOnly(handler))
+func adminIdentityResource(authenticator authn.RequestAuthenticator, service *admin.Service, handler http.HandlerFunc) http.Handler {
+	return AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		principal := PrincipalFromContext(request.Context())
+		if !principal.Administrator {
+			if request.Method == http.MethodPost || request.Method == http.MethodPut || request.Method == http.MethodDelete {
+				service.RecordDeniedMutation(request.Context(), principal)
+			}
+			writeAdminError(writer, admin.ErrForbidden)
+			return
+		}
+		handler.ServeHTTP(writer, request)
+	}))
 }
 
 func adminIdentityMethod(writer http.ResponseWriter, request *http.Request, method string) bool {

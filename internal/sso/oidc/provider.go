@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/sso"
 	"github.com/jackc/pgx/v5"
@@ -28,6 +29,7 @@ type Provider struct {
 	LoginTTL time.Duration
 	Now      func() time.Time
 	Rand     io.Reader
+	Audit    audit.Recorder
 }
 
 const maxCallbackValueLen = 2048
@@ -45,17 +47,17 @@ func (provider *Provider) login(writer http.ResponseWriter, request *http.Reques
 	privateHeaders(writer)
 	state, stateRaw, err := provider.randomToken()
 	if err != nil {
-		provider.fail(writer)
+		provider.loginFail(request.Context(), writer)
 		return
 	}
 	browser, browserRaw, err := provider.randomToken()
 	if err != nil {
-		provider.fail(writer)
+		provider.loginFail(request.Context(), writer)
 		return
 	}
 	nonce, _, err := provider.randomToken()
 	if err != nil {
-		provider.fail(writer)
+		provider.loginFail(request.Context(), writer)
 		return
 	}
 	now := provider.now()
@@ -68,7 +70,7 @@ func (provider *Provider) login(writer http.ResponseWriter, request *http.Reques
 	}
 	if provider.Client == nil || provider.Store == nil || provider.LoginTTL <= 0 ||
 		provider.Store.CreateLoginFlow(request.Context(), flow) != nil {
-		provider.fail(writer)
+		provider.loginFail(request.Context(), writer)
 		return
 	}
 	http.SetCookie(writer, sso.OIDCLoginCookie(browser, expires, now))
@@ -81,7 +83,7 @@ func (provider *Provider) callback(writer http.ResponseWriter, request *http.Req
 	query := request.URL.Query()
 	state, ok := exactlyOne(query["state"])
 	if !ok {
-		provider.callbackFail(writer, "invalid")
+		provider.callbackFail(request.Context(), writer, "invalid")
 		return
 	}
 	codeValues, codePresent := query["code"]
@@ -89,22 +91,22 @@ func (provider *Provider) callback(writer http.ResponseWriter, request *http.Req
 	code, validCode := exactlyOne(codeValues)
 	oauthError, validError := exactlyOne(errorValues)
 	if !((validCode && !errorPresent) || (validError && !codePresent)) {
-		provider.callbackFail(writer, "invalid")
+		provider.callbackFail(request.Context(), writer, "invalid")
 		return
 	}
 	stateHash, ok := tokenHash(state)
 	if !ok {
-		provider.callbackFail(writer, "invalid")
+		provider.callbackFail(request.Context(), writer, "invalid")
 		return
 	}
 	browser, count := cookieValue(request, sso.OIDCLoginCookieName)
 	browserHash, validBrowser := tokenHash(browser)
 	if count != 1 || !validBrowser {
-		provider.callbackFail(writer, "invalid")
+		provider.callbackFail(request.Context(), writer, "invalid")
 		return
 	}
 	if provider.Store == nil {
-		provider.callbackFail(writer, "error")
+		provider.callbackFail(request.Context(), writer, "error")
 		return
 	}
 	flow, err := provider.Store.ConsumeLoginFlow(request.Context(), stateHash, browserHash, "oidc", provider.now())
@@ -113,26 +115,26 @@ func (provider *Provider) callback(writer http.ResponseWriter, request *http.Req
 		if errors.Is(err, pgx.ErrNoRows) {
 			result = "invalid"
 		}
-		provider.callbackFail(writer, result)
+		provider.callbackFail(request.Context(), writer, result)
 		return
 	}
 	if validError {
 		_ = oauthError
-		provider.callbackFail(writer, "denied")
+		provider.callbackFail(request.Context(), writer, "denied")
 		return
 	}
 	if provider.Client == nil || provider.Sessions == nil {
-		provider.callbackFail(writer, "error")
+		provider.callbackFail(request.Context(), writer, "error")
 		return
 	}
 	identity, err := provider.Client.Exchange(request.Context(), code, flow.CodeVerifier, flow.Nonce)
 	if err != nil {
-		provider.callbackFail(writer, "invalid")
+		provider.callbackFail(request.Context(), writer, "invalid")
 		return
 	}
 	token, expires, err := provider.Sessions.Create(request.Context(), identity)
 	if err != nil {
-		provider.callbackFail(writer, "error")
+		provider.callbackFail(request.Context(), writer, "error")
 		return
 	}
 	http.SetCookie(writer, sso.SessionCookie(token, expires, provider.now()))
@@ -163,7 +165,31 @@ func (*Provider) fail(writer http.ResponseWriter) {
 	writer.WriteHeader(http.StatusSeeOther)
 }
 
-func (provider *Provider) callbackFail(writer http.ResponseWriter, _ string) {
+func (provider *Provider) loginFail(ctx context.Context, writer http.ResponseWriter) {
+	if provider.Audit != nil {
+		_ = provider.Audit.Record(ctx, audit.Event{
+			ActorType: "anonymous", TargetType: "authentication",
+			AuthenticationMethod: "oidc", Operation: audit.OperationOIDCLoginDenied,
+			Outcome: "error",
+		})
+	}
+	provider.fail(writer)
+}
+
+func (provider *Provider) callbackFail(ctx context.Context, writer http.ResponseWriter, result string) {
+	if provider.Audit != nil {
+		outcome := "denied"
+		if result == "error" {
+			outcome = "error"
+		} else if result == "invalid" {
+			outcome = "invalid"
+		}
+		_ = provider.Audit.Record(ctx, audit.Event{
+			ActorType: "anonymous", TargetType: "authentication",
+			AuthenticationMethod: "oidc", Operation: audit.OperationOIDCLoginDenied,
+			Outcome: outcome,
+		})
+	}
 	provider.fail(writer)
 }
 

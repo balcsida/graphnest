@@ -13,10 +13,31 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/sso"
 	"github.com/jackc/pgx/v5"
 )
+
+type failingRecorder struct{ events []audit.Event }
+
+func (r *failingRecorder) Record(_ context.Context, event audit.Event) error {
+	r.events = append(r.events, event)
+	return errors.New("audit unavailable")
+}
+
+func TestCallbackDenialIgnoresAuditFailure(t *testing.T) {
+	recorder := &failingRecorder{}
+	provider := &Provider{Audit: recorder}
+	response := httptest.NewRecorder()
+	provider.callback(response, httptest.NewRequest(http.MethodGet, "/auth/oidc/callback?error=sentinel-claim", nil))
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d", response.Code)
+	}
+	if len(recorder.events) != 1 || strings.Contains(recorder.events[0].ActorID+recorder.events[0].TargetID, "sentinel") {
+		t.Fatalf("events=%#v", recorder.events)
+	}
+}
 
 type providerClient struct {
 	identity authn.Identity
@@ -69,6 +90,17 @@ func (store *providerStore) CreateSession(_ context.Context, session authn.Sessi
 	store.session = session
 	return nil
 }
+func (store *providerStore) CreateSessionAudited(ctx context.Context, session authn.SessionRecord, _ audit.Event) error {
+	return store.CreateSession(ctx, session)
+}
+func (store *providerStore) CreateOIDCSessionAudited(ctx context.Context, identity authn.Identity, session authn.SessionRecord) error {
+	userID, err := store.BindOIDCUser(ctx, identity.Issuer, identity.Subject, identity.LinkID)
+	if err != nil {
+		return err
+	}
+	session.UserID = userID
+	return store.CreateSession(ctx, session)
+}
 func (store *providerStore) BindOIDCUser(context.Context, string, string, string) (int64, error) {
 	return 1, nil
 }
@@ -76,6 +108,9 @@ func (*providerStore) SessionPrincipal(context.Context, [32]byte, time.Time, tim
 	return authn.Principal{}, errors.New("unused")
 }
 func (*providerStore) RevokeSession(context.Context, [32]byte) error { return nil }
+func (store *providerStore) RevokeSessionAudited(ctx context.Context, hash [32]byte) error {
+	return store.RevokeSession(ctx, hash)
+}
 func (*providerStore) DeleteExpiredAuth(context.Context, time.Time) (int64, int64, error) {
 	return 0, 0, nil
 }

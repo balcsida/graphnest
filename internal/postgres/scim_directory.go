@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/admin"
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/scim"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -90,6 +91,7 @@ func (s *Store) CreateUser(ctx context.Context, user scim.User) (created scim.Us
 			values ($1,$2,$3,$4,'scim',$5,$6)
 			returning id, external_id, user_name, display_name, scim_active, scim_name, scim_emails, created_at, updated_at`,
 			user.ExternalID, user.UserName, user.DisplayName, active, name, emails))
+		setSCIMAuditTarget(ctx, created.ID)
 		return err
 	})
 	return created, mapSCIMError(err)
@@ -313,6 +315,7 @@ func (s *Store) CreateGroup(ctx context.Context, group scim.Group) (created scim
 			return err
 		}
 		created, err = scanSCIMGroup(ctx, tx, tx.QueryRow(ctx, scimGroupsSQL+` and groups.id=$1`, id))
+		setSCIMAuditTarget(ctx, created.ID)
 		return err
 	})
 	return created, mapSCIMError(err)
@@ -499,7 +502,67 @@ func uniqueInt64(ids []int64) []int64 {
 }
 
 func (s *Store) scimMutation(ctx context.Context, change func(pgx.Tx) error) error {
-	return s.adminIdentityMutation(ctx, change)
+	return s.adminIdentityMutation(ctx, func(tx pgx.Tx) error {
+		if err := change(tx); err != nil {
+			return err
+		}
+		state, _ := ctx.Value(scimAuditContextKey{}).(*scimAuditState)
+		if state == nil {
+			return nil
+		}
+		for _, event := range state.events {
+			if event.TargetID == "" {
+				event.TargetID = state.targetID
+			}
+			if err := appendAudit(ctx, tx, event); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+type scimAuditContextKey struct{}
+type scimAuditState struct {
+	events   []audit.Event
+	targetID string
+}
+
+func withSCIMAudit(ctx context.Context, targetID string, events []audit.Event) context.Context {
+	return context.WithValue(ctx, scimAuditContextKey{}, &scimAuditState{
+		events: append([]audit.Event(nil), events...), targetID: targetID,
+	})
+}
+
+func setSCIMAuditTarget(ctx context.Context, targetID string) {
+	if state, _ := ctx.Value(scimAuditContextKey{}).(*scimAuditState); state != nil {
+		state.targetID = targetID
+	}
+}
+
+func (s *Store) CreateUserAudited(ctx context.Context, user scim.User, events []audit.Event) (scim.User, error) {
+	return s.CreateUser(withSCIMAudit(ctx, "", events), user)
+}
+func (s *Store) ReplaceUserAudited(ctx context.Context, id int64, user scim.User, events []audit.Event) (scim.User, error) {
+	return s.ReplaceUser(withSCIMAudit(ctx, strconv.FormatInt(id, 10), events), id, user)
+}
+func (s *Store) PatchUserAudited(ctx context.Context, id int64, mutation scim.UserMutation, events []audit.Event) (scim.User, error) {
+	return s.PatchUser(withSCIMAudit(ctx, strconv.FormatInt(id, 10), events), id, mutation)
+}
+func (s *Store) DeleteUserAudited(ctx context.Context, id int64, events []audit.Event) error {
+	return s.DeleteUser(withSCIMAudit(ctx, strconv.FormatInt(id, 10), events), id)
+}
+func (s *Store) CreateGroupAudited(ctx context.Context, group scim.Group, events []audit.Event) (scim.Group, error) {
+	return s.CreateGroup(withSCIMAudit(ctx, "", events), group)
+}
+func (s *Store) ReplaceGroupAudited(ctx context.Context, id int64, group scim.Group, events []audit.Event) (scim.Group, error) {
+	return s.ReplaceGroup(withSCIMAudit(ctx, strconv.FormatInt(id, 10), events), id, group)
+}
+func (s *Store) PatchGroupAudited(ctx context.Context, id int64, mutation scim.GroupMutation, events []audit.Event) (scim.Group, error) {
+	return s.PatchGroup(withSCIMAudit(ctx, strconv.FormatInt(id, 10), events), id, mutation)
+}
+func (s *Store) DeleteGroupAudited(ctx context.Context, id int64, events []audit.Event) error {
+	return s.DeleteGroup(withSCIMAudit(ctx, strconv.FormatInt(id, 10), events), id)
 }
 
 func mapSCIMError(err error) error {

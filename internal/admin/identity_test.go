@@ -143,6 +143,25 @@ type identityStore struct {
 	revokedUserID int64
 }
 
+type deniedAuditRecorder struct{ events []audit.Event }
+
+func (r *deniedAuditRecorder) Record(_ context.Context, event audit.Event) error {
+	r.events = append(r.events, event)
+	return errors.New("audit unavailable")
+}
+
+func TestDeniedMutationIgnoresAuditFailure(t *testing.T) {
+	recorder := &deniedAuditRecorder{}
+	service := &Service{Store: &identityStore{}, Audit: recorder}
+	err := service.SuspendUser(t.Context(), authn.Principal{
+		Subject: "7", Method: "api_token", Administrator: true,
+	}, 8, true)
+	if !errors.Is(err, ErrForbidden) || len(recorder.events) != 1 ||
+		recorder.events[0].Operation != audit.OperationAdminMutationDenied {
+		t.Fatalf("error=%v events=%#v", err, recorder.events)
+	}
+}
+
 func (*identityStore) AuditEvents(context.Context, int) ([]audit.Event, bool, error) {
 	return nil, false, nil
 }
@@ -178,6 +197,18 @@ func (store *identityStore) ReplaceAdminGroupAccess(_ context.Context, actorID, 
 func (store *identityStore) RevokeAdminUserCredentials(_ context.Context, userID int64) error {
 	store.revokedUserID = userID
 	return nil
+}
+func (store *identityStore) SuspendAdminUserAudited(ctx context.Context, actorID, userID int64, suspended bool, _ audit.Event) error {
+	return store.SuspendAdminUser(ctx, actorID, userID, suspended)
+}
+func (store *identityStore) ReplaceAdminUserAccessAudited(ctx context.Context, actorID, userID int64, administrator bool, repositoryIDs []int64, _ audit.Event) error {
+	return store.ReplaceAdminUserAccess(ctx, actorID, userID, administrator, repositoryIDs)
+}
+func (store *identityStore) ReplaceAdminGroupAccessAudited(ctx context.Context, actorID, groupID int64, administrator bool, repositoryIDs []int64, _ audit.Event) error {
+	return store.ReplaceAdminGroupAccess(ctx, actorID, groupID, administrator, repositoryIDs)
+}
+func (store *identityStore) RevokeAdminUserCredentialsAudited(ctx context.Context, userID int64, _ audit.Event) error {
+	return store.RevokeAdminUserCredentials(ctx, userID)
 }
 
 func (*identityStore) AdminOverview(context.Context, int64, []int64) (Overview, error) {

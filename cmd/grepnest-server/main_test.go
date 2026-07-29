@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/admin"
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/config"
 	"github.com/grepnest/grepnest/internal/githubapp"
@@ -254,6 +255,9 @@ func (s *mainTokenStore) CreateAPIToken(_ context.Context, record authn.APIToken
 	s.record = record
 	return 1, nil
 }
+func (s *mainTokenStore) CreateAPITokenAudited(ctx context.Context, record authn.APITokenRecord, _ audit.Event) (int64, error) {
+	return s.CreateAPIToken(ctx, record)
+}
 
 func (s *mainTokenStore) APIPrincipal(_ context.Context, hash [32]byte, _ time.Time) (authn.Principal, error) {
 	if hash != s.record.TokenHash {
@@ -263,6 +267,9 @@ func (s *mainTokenStore) APIPrincipal(_ context.Context, hash [32]byte, _ time.T
 }
 
 func (*mainTokenStore) RevokeAPIToken(context.Context, int64, int64) error { return nil }
+func (s *mainTokenStore) RevokeAPITokenAudited(ctx context.Context, userID, tokenID int64, _ audit.Event) error {
+	return s.RevokeAPIToken(ctx, userID, tokenID)
+}
 
 type mainAdminStore struct{ admin.Store }
 

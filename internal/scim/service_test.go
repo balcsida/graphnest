@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -320,3 +321,27 @@ func (f *fakeStore) PatchGroup(context.Context, int64, GroupMutation) (Group, er
 	return Group{}, f.userErr
 }
 func (f *fakeStore) DeleteGroup(context.Context, int64) error { f.calls++; return f.userErr }
+func (f *fakeStore) CreateUserAudited(ctx context.Context, user User, _ []audit.Event) (User, error) {
+	return f.CreateUser(ctx, user)
+}
+func (f *fakeStore) ReplaceUserAudited(ctx context.Context, id int64, user User, _ []audit.Event) (User, error) {
+	return f.ReplaceUser(ctx, id, user)
+}
+func (f *fakeStore) PatchUserAudited(ctx context.Context, id int64, mutation UserMutation, _ []audit.Event) (User, error) {
+	return f.PatchUser(ctx, id, mutation)
+}
+func (f *fakeStore) DeleteUserAudited(ctx context.Context, id int64, _ []audit.Event) error {
+	return f.DeleteUser(ctx, id)
+}
+func (f *fakeStore) CreateGroupAudited(ctx context.Context, group Group, _ []audit.Event) (Group, error) {
+	return f.CreateGroup(ctx, group)
+}
+func (f *fakeStore) ReplaceGroupAudited(ctx context.Context, id int64, group Group, _ []audit.Event) (Group, error) {
+	return f.ReplaceGroup(ctx, id, group)
+}
+func (f *fakeStore) PatchGroupAudited(ctx context.Context, id int64, mutation GroupMutation, _ []audit.Event) (Group, error) {
+	return f.PatchGroup(ctx, id, mutation)
+}
+func (f *fakeStore) DeleteGroupAudited(ctx context.Context, id int64, _ []audit.Event) error {
+	return f.DeleteGroup(ctx, id)
+}

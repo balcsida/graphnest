@@ -15,6 +15,7 @@ import (
 
 	"github.com/grepnest/grepnest/internal/account"
 	"github.com/grepnest/grepnest/internal/admin"
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/authz"
 	"github.com/grepnest/grepnest/internal/config"
@@ -166,9 +167,16 @@ func newAuthRuntime(ctx context.Context, settings config.Config, store authn.Ses
 		return nil, err
 	}
 	runtime.sessions = &authn.SessionManager{Store: store, IdleTTL: settings.SSO.SessionIdle, TTL: settings.SSO.SessionTTL}
+	if recorder, ok := store.(audit.Recorder); ok {
+		runtime.sessions.Audit = recorder
+	}
 	runtime.requestAuth.Session = runtime.sessions
 	runtime.requestAuth.PublicOrigin = settings.SSO.PublicURL.Scheme + "://" + settings.SSO.PublicURL.Host
-	runtime.providers = []sso.Provider{&oidc.Provider{Client: client, Store: store, Sessions: runtime.sessions, LoginTTL: settings.SSO.LoginFlowTTL}}
+	provider := &oidc.Provider{Client: client, Store: store, Sessions: runtime.sessions, LoginTTL: settings.SSO.LoginFlowTTL}
+	if recorder, ok := store.(audit.Recorder); ok {
+		provider.Audit = recorder
+	}
+	runtime.providers = []sso.Provider{provider}
 	return runtime, nil
 }
 
@@ -269,6 +277,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 			<-reconcileDone
 			return fail(err)
 		}
+		local.Audit = store
 		localAuth = &local
 	}
 	provisioning, scimService, err := newProvisioningRuntime(settings, store)
@@ -285,7 +294,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	graphQueries := &graphservice.Service{Store: store, Backend: graphClient, Files: repositoryService, Limits: graphQueryLimits(settings.Graph), Observe: metrics.ObserveGraphQuery}
 	processor := webhook.NewGitHubProcessor(store, reconcileRequests, metrics)
 	adminService := &admin.Service{
-		Store: store, GitHub: githubClient, ReconcileAll: reconciler.All,
+		Store: store, Audit: store, GitHub: githubClient, ReconcileAll: reconciler.All,
 		Config: admin.GitHubConfig{
 			AppID: settings.GitHub.AppID, WebURL: settings.GitHub.WebURL, APIURL: settings.GitHub.APIURL,
 			UploadURL: settings.GitHub.UploadURL, GitURL: settings.GitHub.GitURL, APIVersion: settings.GitHub.APIVersion,
@@ -309,7 +318,11 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 }
 
 func durableAuthenticator(store authn.APITokenStore) authn.Authenticator {
-	return authn.TokenManager{Store: store}
+	manager := authn.TokenManager{Store: store}
+	if recorder, ok := store.(audit.Recorder); ok {
+		manager.Audit = recorder
+	}
+	return manager
 }
 
 func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scipGraph *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker, providers []sso.Provider, sessions *authn.SessionManager, provisioning *authn.ProvisioningAuthenticator, scimService *scim.Service) http.Handler {
