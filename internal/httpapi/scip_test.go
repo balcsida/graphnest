@@ -274,6 +274,12 @@ func (store *scipStoreStub) AuthorizedRepository(_ context.Context, _ int64, ids
 	}
 	return repository.Repository{}, pgx.ErrNoRows
 }
+func (store *scipStoreStub) AnyAuthorizedRepository(_ context.Context, id int64) (repository.Repository, error) {
+	if id == store.repository.GitHubID {
+		return store.repository, nil
+	}
+	return repository.Repository{}, pgx.ErrNoRows
+}
 func (store *scipStoreStub) ReplaceSCIP(_ context.Context, _ int64, commit string, _ scipgraph.Upload) error {
 	store.replacedCommit = commit
 	return nil
