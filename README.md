@@ -210,6 +210,12 @@ indexer-only setting. It requires these server settings:
 - Optional SCIM configuration: `GREPNEST_SCIM_TOKEN_FILE`; SCIM also uses the
   HTTPS public URL and durable PostgreSQL directory.
 
+For last-resort administrator recovery, build `grepnest-admin` with
+`make build` and follow the
+[break-glass runbook](docs/operations.md#break-glass-administrator-recovery).
+The offline command only creates or rotates a local credential in PostgreSQL;
+it does not enable a server login route or replace SSO.
+
 `GREPNEST_GITHUB_API_VERSION` defaults to `2022-11-28` and
 `GREPNEST_GITHUB_CA_FILE` optionally extends system trust. Startup pings and
 migrates PostgreSQL, records the singleton Zoekt node as `primary`, reconciles
