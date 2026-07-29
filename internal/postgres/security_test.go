@@ -101,12 +101,12 @@ func TestSecurityCredentialReplacementIsAtomic(t *testing.T) {
 		TokenHash: sha256.Sum256([]byte("rotation-session")), UserID: userID, Provider: "local",
 		CreatedAt: now, LastSeenAt: now, IdleExpiresAt: now.Add(time.Hour), ExpiresAt: now.Add(2 * time.Hour),
 	}
-	if err := store.RotatePasswordCredential(t.Context(), userID, testCredential(2), replacement, session, testAudit("password_rotated")); err != nil {
+	if err := store.RotatePasswordCredential(t.Context(), userID, testCredential(2), replacement, session, [32]byte{}, [32]byte{}, testAudit("password_rotated")); err != nil {
 		t.Fatal(err)
 	}
 	staleReplacement := testCredential(4)
 	staleReplacement.ForceRotation = false
-	if err := store.RotatePasswordCredential(t.Context(), userID, testCredential(2), staleReplacement, session, testAudit("password_rotated")); !errors.Is(err, authn.ErrUnauthenticated) {
+	if err := store.RotatePasswordCredential(t.Context(), userID, testCredential(2), staleReplacement, session, [32]byte{}, [32]byte{}, testAudit("password_rotated")); !errors.Is(err, authn.ErrUnauthenticated) {
 		t.Fatalf("stale rotation error=%v", err)
 	}
 	_, got, err = store.PasswordCredential(t.Context(), "recovery-admin")
@@ -130,13 +130,13 @@ func TestSecurityCredentialReplacementIsAtomic(t *testing.T) {
 	}
 	normalSession := session
 	normalSession.TokenHash = sha256.Sum256([]byte("normal-session"))
-	if err := store.CreatePasswordSession(t.Context(), userID, normalCredential, normalSession); err != nil {
+	if err := store.CreatePasswordSession(t.Context(), userID, normalCredential, normalSession, [32]byte{}, [32]byte{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SetPasswordCredential(t.Context(), userID, testCredential(6), testAudit("password_set")); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreatePasswordSession(t.Context(), userID, normalCredential, normalSession); !errors.Is(err, authn.ErrUnauthenticated) {
+	if err := store.CreatePasswordSession(t.Context(), userID, normalCredential, normalSession, [32]byte{}, [32]byte{}); !errors.Is(err, authn.ErrUnauthenticated) {
 		t.Fatalf("stale login session error=%v", err)
 	}
 	if err := store.pool.QueryRow(t.Context(), `select count(*) from auth_sessions where user_id=$1 and revoked_at is null`, userID).Scan(&liveSessions); err != nil || liveSessions != 0 {

@@ -137,9 +137,13 @@ func (s *Store) RevokeAPITokenAudited(ctx context.Context, userID, tokenID int64
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, `update api_tokens set revoked_at=now()
-		where id=$1 and user_id=$2 and revoked_at is null`, tokenID, userID); err != nil {
+	tag, err := tx.Exec(ctx, `update api_tokens set revoked_at=now()
+		where id=$1 and user_id=$2 and revoked_at is null`, tokenID, userID)
+	if err != nil {
 		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return pgx.ErrNoRows
 	}
 	if err := appendAudit(ctx, tx, event); err != nil {
 		return err

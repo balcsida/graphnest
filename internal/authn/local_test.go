@@ -78,6 +78,16 @@ func (s *localStoreStub) ClearLoginFailures(_ context.Context, accountKey, sourc
 	return s.clearErr
 }
 
+func (s *localStoreStub) CreatePasswordSession(ctx context.Context, _ int64, _ PasswordCredential, session SessionRecord, accountKey, sourceKey [32]byte) error {
+	if s.clearErr != nil || s.sessions.createErr != nil {
+		return errors.New("atomic session creation failed")
+	}
+	if err := s.ClearLoginFailures(ctx, accountKey, sourceKey); err != nil {
+		return err
+	}
+	return s.sessions.CreateSession(ctx, session)
+}
+
 func localCredential(t *testing.T, forceRotation bool) PasswordCredential {
 	t.Helper()
 	credential, err := HashPassword([]byte("sixteen-byte-secret"), bytes.NewReader(make([]byte, 16)))
@@ -126,7 +136,7 @@ func TestLocalAuthenticateConsumesAccountAndCanonicalSourceThenCreatesSession(t 
 	if len(store.cleared) != 1 || store.cleared[0] != [2][32]byte{accountKey, sourceKey} {
 		t.Fatalf("cleared = %#v", store.cleared)
 	}
-	if len(store.events) != 2 || store.events[0] != "session" || store.events[1] != "clear" {
+	if len(store.events) != 2 || store.events[0] != "clear" || store.events[1] != "session" {
 		t.Fatalf("events = %v", store.events)
 	}
 }
@@ -149,7 +159,7 @@ func TestLocalVerifyDefersForcedRotationSessionAndThrottleClear(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.UserID != 42 || result.ForceRotation || len(store.events) != 1 || store.events[0] != "clear" {
+	if result.UserID != 42 || result.ForceRotation || len(store.events) != 0 {
 		t.Fatalf("result=%#v events=%v", result, store.events)
 	}
 }
@@ -281,8 +291,8 @@ func TestLocalAuthenticateFailsClosedOnThrottleStoreErrors(t *testing.T) {
 		if result.Token != "" {
 			t.Fatal("plaintext token returned after store failure")
 		}
-		if store.clearErr != nil && store.sessions.revoked == ([32]byte{}) {
-			t.Fatal("orphan session was not revoked after atomic clear failure")
+		if store.clearErr != nil && store.sessions.session.UserID != 0 {
+			t.Fatal("orphan session persisted after atomic clear failure")
 		}
 	}
 }

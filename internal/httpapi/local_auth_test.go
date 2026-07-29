@@ -85,7 +85,7 @@ func (s *localAuthStore) RevokeSessionAudited(ctx context.Context, hash [32]byte
 func (*localAuthStore) DeleteExpiredAuth(context.Context, time.Time) (int64, int64, error) {
 	return 0, 0, nil
 }
-func (s *localAuthStore) RotatePasswordCredential(_ context.Context, _ int64, _ authn.PasswordCredential, credential authn.PasswordCredential, session authn.SessionRecord, event audit.Event) error {
+func (s *localAuthStore) RotatePasswordCredential(_ context.Context, _ int64, _ authn.PasswordCredential, credential authn.PasswordCredential, session authn.SessionRecord, _, _ [32]byte, event audit.Event) error {
 	if s.rotateErr != nil {
 		return s.rotateErr
 	}
@@ -95,13 +95,15 @@ func (s *localAuthStore) RotatePasswordCredential(_ context.Context, _ int64, _ 
 	s.event = event
 	s.credential = credential
 	s.sessions = append(s.sessions, session)
+	s.attempts = 0
 	return nil
 }
-func (s *localAuthStore) CreatePasswordSession(_ context.Context, _ int64, _ authn.PasswordCredential, session authn.SessionRecord) error {
+func (s *localAuthStore) CreatePasswordSession(_ context.Context, _ int64, _ authn.PasswordCredential, session authn.SessionRecord, _, _ [32]byte) error {
 	if s.loginErr != nil {
 		return s.loginErr
 	}
 	s.sessions = append(s.sessions, session)
+	s.attempts = 0
 	return nil
 }
 

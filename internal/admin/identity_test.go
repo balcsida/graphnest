@@ -141,6 +141,7 @@ type identityStore struct {
 	suspended     bool
 	repositoryIDs []int64
 	revokedUserID int64
+	mutationErr   error
 }
 
 type deniedAuditRecorder struct{ events []audit.Event }
@@ -182,17 +183,31 @@ func (store *identityStore) AdminGroup(context.Context, int64) (Group, error) {
 }
 func (store *identityStore) SuspendAdminUser(_ context.Context, actorID, userID int64, suspended bool) error {
 	store.actorID, store.userID, store.suspended = actorID, userID, suspended
-	return nil
+	return store.mutationErr
 }
 func (store *identityStore) ReplaceAdminUserAccess(_ context.Context, actorID, userID int64, administrator bool, repositoryIDs []int64) error {
 	store.actorID, store.userID, store.administrator = actorID, userID, administrator
 	store.repositoryIDs = append([]int64(nil), repositoryIDs...)
-	return nil
+	return store.mutationErr
 }
 func (store *identityStore) ReplaceAdminGroupAccess(_ context.Context, actorID, groupID int64, administrator bool, repositoryIDs []int64) error {
 	store.actorID, store.groupID, store.administrator = actorID, groupID, administrator
 	store.repositoryIDs = append([]int64(nil), repositoryIDs...)
-	return nil
+	return store.mutationErr
+}
+
+func TestFinalAdministratorDenialIsAuditedAndPreserved(t *testing.T) {
+	recorder := &deniedAuditRecorder{}
+	service := &Service{Store: &identityStore{mutationErr: ErrFinalAdministrator}, Audit: recorder}
+	ctx := audit.WithRequestID(t.Context(), "request-42")
+	principal := authn.Principal{Subject: "7", Method: "oidc", Administrator: true}
+	if err := service.ReplaceUserAccess(ctx, principal, 8, false, nil); !errors.Is(err, ErrFinalAdministrator) {
+		t.Fatalf("error=%v", err)
+	}
+	if len(recorder.events) != 1 || recorder.events[0].TargetID != "8" ||
+		recorder.events[0].RequestID != "request-42" {
+		t.Fatalf("events=%#v", recorder.events)
+	}
 }
 func (store *identityStore) RevokeAdminUserCredentials(_ context.Context, userID int64) error {
 	store.revokedUserID = userID
