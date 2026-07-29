@@ -106,6 +106,23 @@ func TestSCIMV2RejectsAmbiguousAndOversizedInput(t *testing.T) {
 	}
 }
 
+func TestSCIMV2RejectsMissingPatchOperationsBeforeStore(t *testing.T) {
+	store := &scimHTTPStore{}
+	handler := scimTestHandler(t, store)
+	for _, body := range []string{
+		`{"schemas":["` + scim.PatchSchema + `"]}`,
+		`{"schemas":["` + scim.PatchSchema + `"],"Operations":[]}`,
+	} {
+		response := scimRequest(handler, http.MethodPatch, "/scim/v2/Users/1", body, "valid")
+		if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"scimType":"invalidValue"`) {
+			t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+		}
+	}
+	if store.patchUsers != 0 {
+		t.Fatalf("PatchUser calls=%d", store.patchUsers)
+	}
+}
+
 func TestSCIMV2PreservesRFCErrorTypesAndMethodPrecedence(t *testing.T) {
 	handler := scimTestHandler(t, &scimHTTPStore{})
 	for _, test := range []struct {
@@ -151,7 +168,7 @@ func scimRequest(handler http.Handler, method, path, body, token string) *httpte
 	return response
 }
 
-type scimHTTPStore struct{}
+type scimHTTPStore struct{ patchUsers int }
 
 func (*scimHTTPStore) ListUsers(context.Context, scim.Filter, scim.Page) ([]scim.User, int, error) {
 	return []scim.User{{ID: "1", ExternalID: "e", UserName: "ada"}}, 1, nil
@@ -167,7 +184,8 @@ func (*scimHTTPStore) ReplaceUser(_ context.Context, _ int64, user scim.User) (s
 	user.ID = "1"
 	return user, nil
 }
-func (*scimHTTPStore) PatchUser(context.Context, int64, scim.UserMutation) (scim.User, error) {
+func (s *scimHTTPStore) PatchUser(context.Context, int64, scim.UserMutation) (scim.User, error) {
+	s.patchUsers++
 	return scim.User{ID: "1", ExternalID: "e", UserName: "ada"}, nil
 }
 func (*scimHTTPStore) DeleteUser(context.Context, int64) error { return nil }
