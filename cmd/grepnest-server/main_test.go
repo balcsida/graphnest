@@ -141,6 +141,46 @@ func TestSCIMBearerIsIsolatedFromApplicationSurfaces(t *testing.T) {
 	}
 }
 
+func TestSCIMGuardAuthenticatesBeforeCanonicalRouting(t *testing.T) {
+	scimToken := strings.Repeat("s", 32)
+	provisioning, err := authn.NewProvisioningAuthenticator([]byte(scimToken))
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}}
+	rest := testRequestAuthenticator(authn.NewStatic(map[string]authn.Principal{"rest": {Subject: "user"}}))
+	withSCIM := newAPIHandler(settings, observability.New(), rest, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		&provisioning, &scimapi.Service{BaseURL: "https://grepnest.example", MaxResults: 10})
+	withoutSCIM := newAPIHandler(settings, observability.New(), rest, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	for _, path := range []string{"/scim/v2//Users", "/scim/v2/../v1/auth/session", "/scim/v2/%2e%2e/v1/auth/session"} {
+		for _, authenticated := range []bool{false, true} {
+			request := httptest.NewRequest(http.MethodGet, path, nil)
+			if authenticated {
+				request.Header.Set("Authorization", "Bearer "+scimToken)
+			}
+			response := httptest.NewRecorder()
+			withSCIM.ServeHTTP(response, request)
+			want := http.StatusUnauthorized
+			if authenticated {
+				want = http.StatusNotFound
+			}
+			if response.Code != want || response.Header().Get("Content-Type") != "application/scim+json" ||
+				response.Header().Get("Location") != "" {
+				t.Fatalf("%s authenticated=%t status=%d headers=%v", path, authenticated, response.Code, response.Header())
+			}
+		}
+	}
+
+	path := "/v1//auth/session"
+	withResponse, withoutResponse := httptest.NewRecorder(), httptest.NewRecorder()
+	withSCIM.ServeHTTP(withResponse, httptest.NewRequest(http.MethodGet, path, nil))
+	withoutSCIM.ServeHTTP(withoutResponse, httptest.NewRequest(http.MethodGet, path, nil))
+	if withResponse.Code != withoutResponse.Code || withResponse.Header().Get("Location") != withoutResponse.Header().Get("Location") {
+		t.Fatalf("ordinary route changed: with=%d %q without=%d %q", withResponse.Code, withResponse.Header().Get("Location"), withoutResponse.Code, withoutResponse.Header().Get("Location"))
+	}
+}
+
 func TestNewProvisioningRuntimeReadsBoundedSecret(t *testing.T) {
 	tokenFile := filepath.Join(t.TempDir(), "token")
 	if err := os.WriteFile(tokenFile, []byte(strings.Repeat("s", 32)), 0o600); err != nil {

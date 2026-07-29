@@ -318,9 +318,6 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 	if graphQueries != nil {
 		httpapi.RegisterGraphQueries(mux, authenticator.Bearer, graphQueries, settings.Graph.MaxRequestBytes, settings.Graph.MaxResponseBytes)
 	}
-	if provisioning != nil && scimService != nil {
-		httpapi.RegisterSCIMV2(mux, *provisioning, scimService)
-	}
 	if adminService != nil {
 		httpapi.RegisterAdmin(mux, authenticator, adminService, settings.Limits.MaxResults, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
 	}
@@ -335,7 +332,11 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 		request.Body = http.MaxBytesReader(writer, request.Body, settings.Limits.MaxRequestBytes)
 		mcpHandler.ServeHTTP(writer, request)
 	})))
-	return metrics.WrapHTTP(mux)
+	var handler http.Handler = mux
+	if provisioning != nil && scimService != nil {
+		handler = httpapi.GuardSCIMV2(handler, *provisioning, scimService)
+	}
+	return metrics.WrapHTTP(handler)
 }
 
 func graphQueryLimits(graph config.Graph) graphservice.Limits {
