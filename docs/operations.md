@@ -254,15 +254,31 @@ logs. It creates only a local administrator, or rotates that same eligible
 account, forces password rotation, revokes its sessions and API tokens, and
 records `break_glass_password_set`.
 
-Creating the credential does not expose or enable local login. An OIDC outage
-never enables it automatically. When a deployed server version supplies the
-separate `GREPNEST_BREAK_GLASS_ENABLED` route, enable it only for the recovery
-window and restart every replica; all replicas must share the database above.
-After SSO is restored, rotate the password by rerunning the command if the
-account must remain, or remove/suspend the recovery account through normal
-identity administration. Then disable the route, restart every replica, and
-verify SSO before closing the incident. Forced rotation on first recovery
-sign-in is expected.
+Creating the credential does not expose local login. An OIDC outage never
+enables it automatically. Set `GREPNEST_BREAK_GLASS_ENABLED=true` (Compose) or
+`breakGlass.enabled=true` (Helm) only for the recovery window, apply the
+configuration, and wait for every replica to restart. All replicas must share
+the same PostgreSQL database, which holds throttles and sessions. The first
+sign-in must use `/auth/local/rotate`; it replaces the operator password,
+clears forced rotation, revokes older sessions and API tokens, and issues a
+new session.
+
+After SSO is restored, first verify an OIDC sign-in. If the recovery account
+must remain, rerun `grepnest-admin` to replace its password and revoke its
+credentials; otherwise suspend it through identity administration and revoke
+its credentials. Set the Compose switch to `false` or Helm
+`breakGlass.enabled=false`, apply the configuration, and verify
+`/v1/auth/config` reports `break_glass:false` on every replica before closing
+the incident. Configuration is read only at process startup, so a partial
+rollout can temporarily leave different route availability across replicas.
+
+Security audit events record bounded actor, target, authentication method,
+operation, outcome, request ID, and creation time fields. They never store
+passwords, session tokens, request bodies, or OIDC claims. The API returns a
+bounded newest-first page and reports truncation; this release has no automatic
+audit-retention or deletion mechanism, and the database trigger rejects updates
+and deletes. Operators must account for that growth in PostgreSQL retention and
+backup policy.
 
 ## Optional OIDC operations
 

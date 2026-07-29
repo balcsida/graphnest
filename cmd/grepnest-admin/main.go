@@ -47,10 +47,6 @@ func main() {
 	os.Exit(realRuntime().run(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
-func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	return realRuntime().run(context.Background(), args, stdin, stdout, stderr)
-}
-
 func realRuntime() commandRuntime {
 	return commandRuntime{
 		getenv:       os.Getenv,

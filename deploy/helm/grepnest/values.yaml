@@ -12,6 +12,7 @@ secrets:
   oidc: {name: "", clientSecretKey: client-secret}
   oidcCA: {name: "", key: ca.crt}
   scim: {name: "", tokenKey: token}
+breakGlass: {enabled: false}
 server:
   replicas: 2
   port: 8080

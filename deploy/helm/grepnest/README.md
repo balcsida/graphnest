@@ -131,6 +131,12 @@ rendered into a ConfigMap or environment value. Replace the Secret and restart
 the server pods to rotate it. See the repository README for supported filters,
 PATCH paths, limits, unsupported features, and the OIDC link-claim requirement.
 
+`breakGlass.enabled=true` exposes only the disabled-by-default local recovery
+routes. It provisions no user name, password, hash, salt, or Secret and never
+activates because OIDC is unavailable. Provision and rotate the operator
+password offline with `grepnest-admin`, then follow the repository
+break-glass runbook.
+
 ## Scheduling, storage, and capacity
 
 Server and node workloads have independent `nodeSelector`, `affinity`,

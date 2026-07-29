@@ -8,6 +8,31 @@
 - service and index availability.
 - OIDC login transactions and browser sessions.
 - the dedicated SCIM provisioning token and directory mutations.
+- local recovery credentials, shared login throttles, sessions, and immutable
+  security audit events.
+
+## SSO and break-glass recovery
+
+OIDC is the primary browser authentication path. Local administrator recovery
+is disabled by default and requires two independent operator actions: offline
+password provisioning through `grepnest-admin` standard input or a terminal,
+then deliberate route enablement in deployment configuration. Passwords,
+hashes, salts, session tokens, request bodies, and OIDC claims are absent from
+deployment values and audit records. An unavailable or failing IdP never
+enables the local route.
+
+The first recovery authentication is rotation-only. Successful rotation
+replaces the password, clears the forced-rotation state, revokes existing
+sessions and API tokens, and issues a new opaque session. PostgreSQL stores
+credentials, attempt throttles, and sessions, so limits and revocation apply
+across replicas. The sixth attempt in the fixed fifteen-minute window is
+blocked with a bounded `Retry-After`.
+
+Recovery ends by restoring and verifying OIDC, replacing or suspending the
+local account and revoking its credentials, disabling the route, applying the
+deployment, and checking every replica. Configuration is loaded at process
+startup; partial rollouts can expose different route availability until all
+replicas restart.
 
 ## Milestones 0-1 controls
 
@@ -76,6 +101,12 @@ bounded TTLs, and server-side revocation limit but do not eliminate that risk.
 The SCIM token remains valid until every server replica restarts after secret
 replacement; protect the public endpoint with HTTPS and restrict token
 distribution.
+
+Audit events contain bounded actor/target identifiers, authentication method,
+operation, outcome, request ID, and timestamp. The admin API returns a bounded
+newest-first page with truncation. Events are append-only, but this release has
+no automatic retention or export policy; PostgreSQL growth, backup retention,
+and external archival remain operator responsibilities.
 
 This remains a local development slice, not a production security boundary.
 Git pack expansion and Zoekt shards require container and volume quotas.

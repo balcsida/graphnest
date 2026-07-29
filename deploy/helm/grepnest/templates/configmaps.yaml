@@ -27,6 +27,9 @@ data:
   GREPNEST_SCIP_MAX_UPLOAD_BYTES: {{ printf "%d" (int64 .Values.server.config.scipMaxUploadBytes) | quote }}
   GREPNEST_GITHUB_PRIVATE_KEY_FILE: /var/run/secrets/grepnest/github/private-key.pem
   GREPNEST_GITHUB_WEBHOOK_SECRET_FILE: /var/run/secrets/grepnest/github/webhook-secret
+  {{- if .Values.breakGlass.enabled }}
+  GREPNEST_BREAK_GLASS_ENABLED: "true"
+  {{- end }}
   {{- if .Values.secrets.customCA.name }}
   GREPNEST_GITHUB_CA_FILE: /var/run/secrets/grepnest/ca/ca.crt
   {{- end }}

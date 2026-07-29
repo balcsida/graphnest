@@ -48,6 +48,7 @@ render_files() {
     GREPNEST_OIDC_LINK_CLAIM= \
     GREPNEST_OIDC_DISPLAY_NAME_CLAIM= \
     GREPNEST_SCIM_TOKEN_FILE= \
+    GREPNEST_BREAK_GLASS_ENABLED= \
     GREPNEST_GITHUB_PRIVATE_KEY_FILE=/tmp/private-key.pem \
     GREPNEST_GITHUB_WEBHOOK_SECRET_FILE=/tmp/webhook-secret \
     GREPNEST_GITHUB_WEB_URL=https://github.example \
@@ -160,7 +161,7 @@ printf '%s' "$config" | jq -e '
   and $server.depends_on.postgres.condition == "service_healthy"
   and $server.depends_on["zoekt-durable"].condition == "service_healthy"
   and ($server.environment | keys | sort) == [
-    "GREPNEST_DATABASE_URL", "GREPNEST_GITHUB_API_URL", "GREPNEST_GITHUB_APP_ID",
+    "GREPNEST_BREAK_GLASS_ENABLED", "GREPNEST_DATABASE_URL", "GREPNEST_GITHUB_API_URL", "GREPNEST_GITHUB_APP_ID",
     "GREPNEST_GITHUB_CA_FILE", "GREPNEST_GITHUB_GIT_URL", "GREPNEST_GITHUB_PRIVATE_KEY_FILE", "GREPNEST_GITHUB_UPLOAD_URL",
     "GREPNEST_GITHUB_WEBHOOK_SECRET_FILE", "GREPNEST_GITHUB_WEB_URL", "GREPNEST_OIDC_CA_FILE", "GREPNEST_OIDC_CLIENT_ID", "GREPNEST_OIDC_CLIENT_SECRET_FILE", "GREPNEST_OIDC_DISPLAY_NAME_CLAIM", "GREPNEST_OIDC_ISSUER_URL", "GREPNEST_OIDC_LINK_CLAIM", "GREPNEST_OIDC_SCOPES", "GREPNEST_PUBLIC_URL", "GREPNEST_SCIM_TOKEN_FILE", "GREPNEST_SCIP_MAX_UPLOAD_BYTES", "GREPNEST_SSO_LOGIN_FLOW_TTL", "GREPNEST_SSO_SESSION_IDLE", "GREPNEST_SSO_SESSION_TTL",
     "GREPNEST_ZOEKT_URL"
@@ -176,9 +177,19 @@ printf '%s' "$config" | jq -e '
   and ($server.volumes | any(.source == "/tmp/oidc-client-secret" and .target == "/run/secrets/grepnest/oidc-client-secret" and .read_only))
   and ($server.volumes | any(.source == "/tmp/oidc-ca.pem" and .target == "/run/secrets/grepnest/oidc-ca.pem" and .read_only))
   and $server.environment.GREPNEST_SCIM_TOKEN_FILE == "/run/secrets/grepnest/scim/token"
+  and $server.environment.GREPNEST_BREAK_GLASS_ENABLED == "false"
   and ($server.volumes | any(.source == "/tmp/scim-token" and .target == "/run/secrets/grepnest/scim/token" and .read_only))
   and $server.healthcheck.test == ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/readyz"]
   end
+' >/dev/null
+
+enabled=$(render \
+  GREPNEST_APPLICATION_IMAGE=registry.example/grepnest/application:test \
+  GREPNEST_BREAK_GLASS_ENABLED=true)
+
+printf '%s' "$enabled" | jq -e '
+  .services["grepnest-server"].environment.GREPNEST_BREAK_GLASS_ENABLED == "true"
+  and ([.services["grepnest-server"].environment | keys[] | select(test("PASSWORD|HASH|SALT"))] | length == 0)
 ' >/dev/null
 
 without_ca=$(render GREPNEST_APPLICATION_IMAGE=registry.example/grepnest/application:test)
