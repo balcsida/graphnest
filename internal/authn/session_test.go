@@ -16,6 +16,8 @@ type sessionStoreStub struct {
 	lookupHash                             [32]byte
 	lookupNow, lookupIdleUntil             time.Time
 	revoked                                [32]byte
+	createErr                              error
+	onCreate                               func()
 }
 
 func (s *sessionStoreStub) BindOIDCUser(_ context.Context, issuer, subject, linkID string) (int64, error) {
@@ -28,8 +30,11 @@ func (s *sessionStoreStub) ConsumeLoginFlow(context.Context, [32]byte, [32]byte,
 	return LoginFlow{}, nil
 }
 func (s *sessionStoreStub) CreateSession(_ context.Context, session SessionRecord) error {
+	if s.onCreate != nil {
+		s.onCreate()
+	}
 	s.session = session
-	return nil
+	return s.createErr
 }
 func (s *sessionStoreStub) SessionPrincipal(_ context.Context, hash [32]byte, now, idleUntil time.Time) (Principal, error) {
 	s.lookupHash, s.lookupNow, s.lookupIdleUntil = hash, now, idleUntil

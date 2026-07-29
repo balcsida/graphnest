@@ -17,7 +17,7 @@ const maxLoginRetryAfter = 15 * time.Minute
 type LocalStore interface {
 	PasswordCredential(context.Context, string) (int64, PasswordCredential, error)
 	ConsumeLoginAttempt(context.Context, [32]byte, time.Time) (bool, time.Time, error)
-	ClearLoginFailures(context.Context, [32]byte) error
+	ClearLoginFailures(context.Context, [32]byte, [32]byte) error
 }
 
 type LocalAuthentication struct {
@@ -60,25 +60,15 @@ func (a LocalAuthenticator) Authenticate(ctx context.Context, userName string, p
 	}
 	normalized := strings.ToLower(userName)
 	accountKey, sourceKey := localThrottleKeys(normalized, canonicalRemoteAddress(remoteAddr))
-	accountAllowed, accountRetry, accountErr := a.consume(ctx, accountKey, now)
-	sourceAllowed, sourceRetry, sourceErr := a.consume(ctx, sourceKey, now)
+	accountAllowed, _, accountErr := a.consume(ctx, accountKey, now)
+	sourceAllowed, _, sourceErr := a.consume(ctx, sourceKey, now)
 	if accountErr != nil || sourceErr != nil {
 		clear(password)
 		return LocalAuthentication{}, ErrUnauthenticated
 	}
 	if !accountAllowed || !sourceAllowed {
 		clear(password)
-		retryAt := accountRetry
-		if sourceRetry.After(retryAt) {
-			retryAt = sourceRetry
-		}
-		retryAfter := retryAt.Sub(now)
-		if retryAfter < time.Second {
-			retryAfter = time.Second
-		} else if retryAfter > maxLoginRetryAfter {
-			retryAfter = maxLoginRetryAfter
-		}
-		return LocalAuthentication{}, &LoginThrottleError{RetryAfter: retryAfter}
+		return LocalAuthentication{}, &LoginThrottleError{RetryAfter: maxLoginRetryAfter}
 	}
 
 	userID, credential, lookupErr := a.Store.PasswordCredential(ctx, normalized)
@@ -94,13 +84,15 @@ func (a LocalAuthenticator) Authenticate(ctx context.Context, userName string, p
 	if !eligible || !valid {
 		return LocalAuthentication{}, ErrUnauthenticated
 	}
-	accountClearErr := a.Store.ClearLoginFailures(ctx, accountKey)
-	sourceClearErr := a.Store.ClearLoginFailures(ctx, sourceKey)
-	if accountClearErr != nil || sourceClearErr != nil || a.Sessions == nil {
+	if a.Sessions == nil {
 		return LocalAuthentication{}, ErrUnauthenticated
 	}
 	token, expiresAt, err := a.Sessions.CreateForUser(ctx, userID, "local", credential.ForceRotation)
 	if err != nil {
+		return LocalAuthentication{}, ErrUnauthenticated
+	}
+	if err := a.Store.ClearLoginFailures(ctx, accountKey, sourceKey); err != nil {
+		_ = a.Sessions.Revoke(ctx, token)
 		return LocalAuthentication{}, ErrUnauthenticated
 	}
 	return LocalAuthentication{Token: token, ExpiresAt: expiresAt, ForceRotation: credential.ForceRotation}, nil

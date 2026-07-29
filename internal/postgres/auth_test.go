@@ -126,6 +126,43 @@ func TestSessionPrincipalRejectsInvalidState(t *testing.T) {
 	}
 }
 
+func TestLocalSessionRequiresLiveBreakGlassEligibility(t *testing.T) {
+	store := migratedStore(t)
+	userID := seedSecurityUser(t, store, "recovery-admin", "local", true)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	tokenHash := [32]byte{31}
+	if err := store.CreateSession(t.Context(), authn.SessionRecord{
+		TokenHash: tokenHash, UserID: userID, Provider: "local",
+		CreatedAt: now, LastSeenAt: now, IdleExpiresAt: now.Add(time.Minute), ExpiresAt: now.Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if principal, err := store.SessionPrincipal(t.Context(), tokenHash, now, now.Add(time.Minute)); err != nil || !principal.Administrator || principal.Method != "local" {
+		t.Fatalf("principal=%#v err=%v", principal, err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `delete from user_roles where user_id=$1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SessionPrincipal(t.Context(), tokenHash, now.Add(time.Second), now.Add(time.Minute)); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("role-removed local session error = %v", err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into user_roles (user_id,administrator) values ($1,true)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `update users set source='scim' where id=$1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SessionPrincipal(t.Context(), tokenHash, now.Add(time.Second), now.Add(time.Minute)); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("source-changed local session error = %v", err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `update users set source='local',scim_active=false where id=$1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SessionPrincipal(t.Context(), tokenHash, now.Add(time.Second), now.Add(time.Minute)); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("inactive local session error = %v", err)
+	}
+}
+
 func TestSessionPrincipalClampsIdleRenewalToAbsoluteExpiry(t *testing.T) {
 	store := migratedStore(t)
 	userID := insertIdentityUser(t, store, "directory-42", "ada")
