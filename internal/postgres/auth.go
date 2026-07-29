@@ -52,7 +52,7 @@ func (s *Store) SessionPrincipal(ctx context.Context, tokenHash [32]byte, now, i
 	var administrator bool
 	var repositoryIDs []int64
 	err = tx.QueryRow(ctx, `with live_session as (
-            update auth_sessions session set last_seen_at=$2, idle_expires_at=$3
+            update auth_sessions session set last_seen_at=$2, idle_expires_at=least($3, session.expires_at)
             from users user_record
             where session.token_hash=$1 and session.user_id=user_record.id
               and session.revoked_at is null and session.expires_at>$2 and session.idle_expires_at>$2
