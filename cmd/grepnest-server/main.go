@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/account"
 	"github.com/grepnest/grepnest/internal/admin"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/authz"
@@ -291,6 +292,9 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 	webui.Register(mux)
 	httpapi.RegisterSystem(mux, checker, metrics.Handler())
 	httpapi.RegisterSearch(mux, authenticator, service, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
+	if manager, ok := authenticator.Bearer.(authn.TokenManager); ok {
+		httpapi.RegisterAccount(mux, authenticator, &account.Service{Manager: manager}, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
+	}
 	if repositories != nil {
 		httpapi.RegisterRepositories(mux, authenticator, repositories, settings.Limits.MaxRequestBytes, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
 	}

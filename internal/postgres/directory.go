@@ -79,3 +79,21 @@ func (s *Store) RevokeAPIToken(ctx context.Context, userID, tokenID int64) error
 	_, err := s.pool.Exec(ctx, `update api_tokens set revoked_at=now() where id=$1 and user_id=$2 and revoked_at is null`, tokenID, userID)
 	return err
 }
+
+func (s *Store) ListAPITokens(ctx context.Context, userID int64) ([]authn.APITokenMetadata, error) {
+	rows, err := s.pool.Query(ctx, `select id, prefix, repository_ids, created_at, last_used_at, expires_at from api_tokens where user_id=$1 and revoked_at is null order by id`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []authn.APITokenMetadata
+	for rows.Next() {
+		var item authn.APITokenMetadata
+		if err := rows.Scan(&item.ID, &item.Prefix, &item.RepositoryIDs, &item.CreatedAt, &item.LastUsedAt, &item.ExpiresAt); err != nil {
+			return nil, err
+		}
+		item.RepositoryIDs = append([]int64(nil), item.RepositoryIDs...)
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}

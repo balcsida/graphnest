@@ -10,3 +10,12 @@ type APITokenRecord struct {
 	CreatedAt     time.Time
 	ExpiresAt     *time.Time
 }
+
+type APITokenMetadata struct {
+	ID            int64
+	Prefix        string
+	RepositoryIDs []int64
+	CreatedAt     time.Time
+	LastUsedAt    *time.Time
+	ExpiresAt     *time.Time
+}
