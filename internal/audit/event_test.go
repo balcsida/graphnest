@@ -1,10 +1,21 @@
 package audit
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestEventRejectsUnapprovedOperation(t *testing.T) {
+	event := Event{
+		ActorType: "user", ActorID: "7", TargetType: "user", TargetID: "8",
+		AuthenticationMethod: "oidc", Operation: "free_form_operation", Outcome: "success",
+	}
+	if _, err := NewEvent(event); !errors.Is(err, ErrInvalidEvent) {
+		t.Fatalf("error=%v", err)
+	}
+}
 
 func TestEventValidateBoundsFields(t *testing.T) {
 	valid := Event{
@@ -35,7 +46,7 @@ func TestEventValidateBoundsFields(t *testing.T) {
 func TestNewEventSetsTimestampAfterValidation(t *testing.T) {
 	event, err := NewEvent(Event{
 		ActorType: "system", TargetType: "authentication",
-		Operation: "login_denied", Outcome: "denied",
+		Operation: OperationOIDCLoginDenied, Outcome: "denied",
 	})
 	if err != nil || event.CreatedAt.IsZero() {
 		t.Fatalf("event=%#v err=%v", event, err)

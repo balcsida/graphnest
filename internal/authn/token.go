@@ -6,8 +6,11 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"io"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/grepnest/grepnest/internal/audit"
 )
 
 const apiTokenPrefix = "gnp_"
@@ -46,10 +49,22 @@ func (m TokenManager) Create(ctx context.Context, userID int64, repositoryIDs []
 		value := *expiresAt
 		expiry = &value
 	}
-	id, err := m.Store.CreateAPIToken(ctx, APITokenRecord{
+	record := APITokenRecord{
 		TokenHash: sha256.Sum256([]byte(plaintext)), Prefix: plaintext[:12], UserID: userID,
 		RepositoryIDs: append([]int64(nil), repositoryIDs...), CreatedAt: now, ExpiresAt: expiry,
-	})
+	}
+	var id int64
+	var err error
+	if store, ok := m.Store.(interface {
+		CreateAPITokenAudited(context.Context, APITokenRecord, audit.Event) (int64, error)
+	}); ok {
+		id, err = store.CreateAPITokenAudited(ctx, record, audit.Event{
+			ActorType: "user", ActorID: strconv.FormatInt(userID, 10), TargetType: "api_token",
+			AuthenticationMethod: "oidc", Operation: audit.OperationAPITokenCreated, Outcome: "success",
+		})
+	} else {
+		id, err = m.Store.CreateAPIToken(ctx, record)
+	}
 	if err != nil {
 		return 0, "", err
 	}

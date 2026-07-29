@@ -2,8 +2,10 @@ package postgres
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/grepnest/grepnest/internal/admin"
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -121,7 +123,11 @@ func scanAdminGroup(row rowScanner) (admin.Group, error) {
 }
 
 func (s *Store) SuspendAdminUser(ctx context.Context, actorID, userID int64, suspended bool) error {
-	return s.adminIdentityMutation(ctx, func(tx pgx.Tx) error {
+	return s.SuspendAdminUserAudited(ctx, actorID, userID, suspended, adminMutationEvent(actorID, "user", userID, audit.OperationUserSuspended))
+}
+
+func (s *Store) SuspendAdminUserAudited(ctx context.Context, actorID, userID int64, suspended bool, event audit.Event) error {
+	return s.auditedAdminIdentityMutation(ctx, event, func(tx pgx.Tx) error {
 		if actorID == userID && suspended {
 			return admin.ErrSelfAdministration
 		}
@@ -144,7 +150,11 @@ func (s *Store) SuspendAdminUser(ctx context.Context, actorID, userID int64, sus
 }
 
 func (s *Store) ReplaceAdminUserAccess(ctx context.Context, actorID, userID int64, administrator bool, repositoryIDs []int64) error {
-	return s.adminIdentityMutation(ctx, func(tx pgx.Tx) error {
+	return s.ReplaceAdminUserAccessAudited(ctx, actorID, userID, administrator, repositoryIDs, adminMutationEvent(actorID, "user", userID, audit.OperationUserRoleChanged))
+}
+
+func (s *Store) ReplaceAdminUserAccessAudited(ctx context.Context, actorID, userID int64, administrator bool, repositoryIDs []int64, event audit.Event) error {
+	return s.auditedAdminIdentityMutation(ctx, event, func(tx pgx.Tx) error {
 		if err := requireAdminUser(ctx, tx, userID); err != nil {
 			return err
 		}
@@ -173,7 +183,11 @@ func (s *Store) ReplaceAdminUserAccess(ctx context.Context, actorID, userID int6
 }
 
 func (s *Store) ReplaceAdminGroupAccess(ctx context.Context, actorID, groupID int64, administrator bool, repositoryIDs []int64) error {
-	return s.adminIdentityMutation(ctx, func(tx pgx.Tx) error {
+	return s.ReplaceAdminGroupAccessAudited(ctx, actorID, groupID, administrator, repositoryIDs, adminMutationEvent(actorID, "group", groupID, audit.OperationGroupRoleChanged))
+}
+
+func (s *Store) ReplaceAdminGroupAccessAudited(ctx context.Context, actorID, groupID int64, administrator bool, repositoryIDs []int64, event audit.Event) error {
+	return s.auditedAdminIdentityMutation(ctx, event, func(tx pgx.Tx) error {
 		if err := requireAdminGroup(ctx, tx, groupID); err != nil {
 			return err
 		}
@@ -202,11 +216,35 @@ func (s *Store) ReplaceAdminGroupAccess(ctx context.Context, actorID, groupID in
 }
 
 func (s *Store) RevokeAdminUserCredentials(ctx context.Context, userID int64) error {
-	return s.adminIdentityMutation(ctx, func(tx pgx.Tx) error {
+	return s.RevokeAdminUserCredentialsAudited(ctx, userID, adminMutationEvent(0, "user", userID, audit.OperationUserCredentialsRevoked))
+}
+
+func (s *Store) RevokeAdminUserCredentialsAudited(ctx context.Context, userID int64, event audit.Event) error {
+	return s.auditedAdminIdentityMutation(ctx, event, func(tx pgx.Tx) error {
 		if err := requireAdminUser(ctx, tx, userID); err != nil {
 			return err
 		}
 		return revokeAdminCredentials(ctx, tx, userID)
+	})
+}
+
+func adminMutationEvent(actorID int64, targetType string, targetID int64, operation string) audit.Event {
+	return audit.Event{
+		ActorType: "user", ActorID: strconv.FormatInt(actorID, 10), TargetType: targetType,
+		TargetID: strconv.FormatInt(targetID, 10), AuthenticationMethod: "oidc",
+		Operation: operation, Outcome: "success",
+	}
+}
+
+func (s *Store) auditedAdminIdentityMutation(ctx context.Context, event audit.Event, change func(pgx.Tx) error) error {
+	if err := event.Validate(); err != nil {
+		return err
+	}
+	return s.adminIdentityMutation(ctx, func(tx pgx.Tx) error {
+		if err := change(tx); err != nil {
+			return err
+		}
+		return appendAudit(ctx, tx, event)
 	})
 }
 

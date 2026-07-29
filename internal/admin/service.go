@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/repository"
@@ -123,6 +124,7 @@ type IndexRequest struct {
 }
 
 type Store interface {
+	AuditEvents(context.Context, int) ([]audit.Event, bool, error)
 	AdminUsers(context.Context, int) ([]User, bool, error)
 	AdminUser(context.Context, int64) (User, error)
 	AdminGroups(context.Context, int) ([]Group, bool, error)

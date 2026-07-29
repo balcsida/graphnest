@@ -46,6 +46,16 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '405': {$ref: '#/components/responses/InvalidRequest'}
         '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/audit-events:
+    get:
+      security: [{sessionCookie: []}]
+      responses:
+        '200': {description: Bounded security audit events, newest first, content: {application/json: {schema: {$ref: '#/components/schemas/AuditEventList'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
   /v1/admin/users:
     get:
       security: [{bearerAuth: []}, {sessionCookie: []}]
@@ -702,6 +712,27 @@ components:
       properties:
         users: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/AdminUser'}}
         truncated: {type: boolean}
+    AuditEventList:
+      type: object
+      additionalProperties: false
+      required: [events, truncated]
+      properties:
+        events: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/AuditEvent'}}
+        truncated: {type: boolean}
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required: [actor_type, actor_id, target_type, target_id, authentication_method, operation, outcome, request_id, created_at]
+      properties:
+        actor_type: {type: string, enum: [anonymous, operator, scim, system, user]}
+        actor_id: {type: string, maxLength: 128}
+        target_type: {type: string, enum: [api_token, authentication, group, session, user]}
+        target_id: {type: string, maxLength: 128}
+        authentication_method: {type: string, enum: ['', api_token, local, oidc, operator, scim_token]}
+        operation: {type: string, maxLength: 64}
+        outcome: {type: string, enum: [success, denied, invalid, error]}
+        request_id: {type: string, maxLength: 128}
+        created_at: {type: string, format: date-time}
     AdminUser:
       type: object
       additionalProperties: false
