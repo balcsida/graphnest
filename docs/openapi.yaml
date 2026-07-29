@@ -5,7 +5,7 @@ info:
 paths:
   /v1/admin/overview:
     get:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       responses:
         '200': {description: Durable service totals, content: {application/json: {schema: {$ref: '#/components/schemas/AdminOverview'}}}}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -14,7 +14,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/admin/repositories:
     get:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       responses:
         '200': {description: Bounded durable repository inventory, content: {application/json: {schema: {$ref: '#/components/schemas/AdminRepositoryList'}}}}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -22,7 +22,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/admin/jobs:
     get:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       responses:
         '200': {description: Bounded indexing job inventory, content: {application/json: {schema: {$ref: '#/components/schemas/AdminJobList'}}}}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -30,7 +30,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/admin/scip/uploads:
     get:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       responses:
         '200': {description: Bounded SCIP upload inventory, content: {application/json: {schema: {$ref: '#/components/schemas/AdminSCIPUploadList'}}}}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -38,7 +38,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/admin/scip/dependencies:
     get:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       responses:
         '200': {description: Bounded SCIP dependency inventory, content: {application/json: {schema: {$ref: '#/components/schemas/AdminSCIPDependencyList'}}}}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -46,7 +46,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/admin/webhook-deliveries:
     get:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       responses:
         '200': {description: Bounded webhook delivery inventory, content: {application/json: {schema: {$ref: '#/components/schemas/AdminDeliveryList'}}}}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -54,7 +54,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/admin/github:
     get:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       responses:
         '200': {description: Sanitized GitHub App settings and installations, content: {application/json: {schema: {$ref: '#/components/schemas/AdminGitHub'}}}}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -62,7 +62,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/admin/repositories/{github_id}/reindex:
     post:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters: [{name: github_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}]
       responses:
         '204': {description: Current default branch SHA resolved and queued}
@@ -73,7 +73,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/admin/reconcile:
     post:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       responses:
         '204': {description: GitHub App installations reconciled}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -81,7 +81,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/admin/jobs/{id}/retry:
     post:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters: [{name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}]
       responses:
         '204': {description: Current authorized failed job requeued}
@@ -92,7 +92,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/repositories:
     get:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       responses:
         '200':
           description: Authorized repositories and index status
@@ -104,7 +104,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/repositories/{id}:
     get:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
       responses:
@@ -120,7 +120,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/repositories/{id}/status:
     get:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
       responses:
@@ -136,7 +136,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/files/read:
     post:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       requestBody:
         required: true
         content:
@@ -160,7 +160,7 @@ paths:
         '504': {$ref: '#/components/responses/Timeout'}
   /v1/search:
     post:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       requestBody:
         required: true
         content:
@@ -182,7 +182,7 @@ paths:
         '504': {$ref: '#/components/responses/Timeout'}
   /v1/scip/uploads:
     post:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: repository_id, in: query, required: true, schema: {type: integer, format: int64, minimum: 1}}
         - {name: commit, in: query, required: true, schema: {type: string, pattern: '^[0-9a-f]{40}$'}}
@@ -319,7 +319,7 @@ paths:
         '504': {$ref: '#/components/responses/Timeout'}
   /v1/scip/navigation:
     post:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       requestBody:
         required: true
         content:
@@ -342,7 +342,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/scip/dependencies:
     put:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       requestBody:
         required: true
         content:
@@ -360,7 +360,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/scip/dependencies/github:
     post:
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       requestBody:
         required: true
         content:
@@ -422,7 +422,7 @@ paths:
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer}
-    sessionCookie: {type: apiKey, in: cookie, name: __Host-grepnest_session}
+    sessionCookie: {type: apiKey, in: cookie, name: __Host-grepnest_session, description: Browser session; unsafe methods require the exact configured public Origin.}
   responses:
     InvalidRequest: {description: Invalid request, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     GraphConflict: {description: Graph request conflict; error code is ambiguous, branch_not_indexed, or graph_not_ready, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}

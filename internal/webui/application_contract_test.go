@@ -47,6 +47,14 @@ func TestConsolePrefersSameOriginOIDCSessionBeforeBearerFallback(t *testing.T) {
 	}
 }
 
+func TestConsoleRequiresSuccessfulLogoutBeforeBearerFallback(t *testing.T) {
+	for _, want := range []string{`status!==204`, `await logout();enterBearer(t)`, `reportValidity()`} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Errorf("console does not gate bearer fallback on logout: %q", want)
+		}
+	}
+}
+
 func TestConsoleProvidesFunctionalSearchFiltersAndExamples(t *testing.T) {
 	for _, want := range []string{
 		`id="language-filter"`,
