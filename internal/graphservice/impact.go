@@ -37,7 +37,11 @@ func (s *Service) Impact(ctx context.Context, principal authn.Principal, request
 	if err := s.reauthorize(ctx, principal, selected, response.Commits); err != nil {
 		return api.GraphImpactResponse{}, err
 	}
-	result = api.GraphImpactResponse{Status: response.Status, ByDepth: map[int][]api.GraphSymbol{}, Boundaries: boundaries(response.Boundaries), Commits: response.Commits, Partial: response.Partial}
+	publicBoundaries, err := publicBoundaries(response.Boundaries, snapshots)
+	if err != nil {
+		return api.GraphImpactResponse{}, err
+	}
+	result = api.GraphImpactResponse{Status: response.Status, ByDepth: map[int][]api.GraphSymbol{}, Boundaries: publicBoundaries, Commits: response.Commits, Partial: response.Partial}
 	for _, value := range response.Candidates {
 		converted, convertErr := candidate(value, snapshots)
 		if convertErr != nil {
@@ -47,11 +51,19 @@ func (s *Service) Impact(ctx context.Context, principal authn.Principal, request
 	}
 	for depth, values := range response.ByDepth {
 		for _, value := range values {
-			result.ByDepth[depth] = append(result.ByDepth[depth], symbol(value))
+			converted, convertErr := publicSymbol(value, snapshots)
+			if convertErr != nil {
+				return api.GraphImpactResponse{}, convertErr
+			}
+			result.ByDepth[depth] = append(result.ByDepth[depth], converted)
 		}
 	}
 	for _, value := range response.Edges {
-		result.Relations = append(result.Relations, reference(value))
+		converted, convertErr := publicReference(value, snapshots)
+		if convertErr != nil {
+			return api.GraphImpactResponse{}, convertErr
+		}
+		result.Relations = append(result.Relations, converted)
 	}
 	return result, nil
 }

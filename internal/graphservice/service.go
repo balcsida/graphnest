@@ -140,8 +140,12 @@ func (s *Service) limits() Limits {
 	return limits
 }
 
-func symbol(value graphprotocol.Symbol) api.GraphSymbol {
-	return api.GraphSymbol{UID: value.UID, Name: value.Name, Kind: value.Kind, FilePath: value.FilePath, Language: value.Language, Signature: value.Signature, RepositoryID: value.RepositoryID, Range: position(value.Range), Test: value.Test}
+func publicSymbol(value graphprotocol.Symbol, snapshots map[int64]Snapshot) (api.GraphSymbol, error) {
+	snapshot, ok := snapshots[value.RepositoryID]
+	if !ok {
+		return api.GraphSymbol{}, ErrGraphNotReady
+	}
+	return api.GraphSymbol{UID: value.UID, Name: value.Name, Kind: value.Kind, FilePath: value.FilePath, Language: value.Language, Signature: value.Signature, RepositoryID: snapshot.GitHubID, Range: position(value.Range), Test: value.Test}, nil
 }
 
 func candidate(value graphprotocol.Symbol, snapshots map[int64]Snapshot) (api.GraphCandidate, error) {
@@ -157,16 +161,32 @@ func candidate(value graphprotocol.Symbol, snapshots map[int64]Snapshot) (api.Gr
 func position(value graphprotocol.Position) api.GraphPosition {
 	return api.GraphPosition{StartLine: int(value.StartLine), StartCharacter: int(value.StartCharacter), EndLine: int(value.EndLine), EndCharacter: int(value.EndCharacter)}
 }
-func reference(value graphprotocol.Relationship) api.GraphReference {
-	return api.GraphReference{SourceRepositoryID: value.SourceRepositoryID, TargetRepositoryID: value.TargetRepositoryID, SourceUID: value.SourceUID, TargetUID: value.TargetUID, Kind: value.Kind, Path: value.Path, Range: position(value.Range), Confidence: value.Confidence, ResolutionReason: value.ResolutionReason}
-}
-func boundary(value graphprotocol.Boundary) api.GraphBoundary {
-	return api.GraphBoundary{RepositoryID: value.RepositoryID, Repository: value.Repository, Reason: value.Reason, Depth: value.Depth}
-}
-func boundaries(values []graphprotocol.Boundary) []api.GraphBoundary {
-	result := make([]api.GraphBoundary, len(values))
-	for i := range values {
-		result[i] = boundary(values[i])
+func publicReference(value graphprotocol.Relationship, snapshots map[int64]Snapshot) (api.GraphReference, error) {
+	source, sourceOK := snapshots[value.SourceRepositoryID]
+	target, targetOK := snapshots[value.TargetRepositoryID]
+	if !sourceOK || !targetOK {
+		return api.GraphReference{}, ErrGraphNotReady
 	}
-	return result
+	return api.GraphReference{SourceRepositoryID: source.GitHubID, TargetRepositoryID: target.GitHubID, SourceUID: value.SourceUID, TargetUID: value.TargetUID, Kind: value.Kind, Path: value.Path, Range: position(value.Range), Confidence: value.Confidence, ResolutionReason: value.ResolutionReason}, nil
+}
+func publicBoundary(value graphprotocol.Boundary, snapshots map[int64]Snapshot) (api.GraphBoundary, error) {
+	if value.RepositoryID == 0 {
+		return api.GraphBoundary{Reason: value.Reason, Depth: value.Depth}, nil
+	}
+	snapshot, ok := snapshots[value.RepositoryID]
+	if !ok {
+		return api.GraphBoundary{}, ErrGraphNotReady
+	}
+	return api.GraphBoundary{RepositoryID: snapshot.GitHubID, Repository: snapshot.Name, Reason: value.Reason, Depth: value.Depth}, nil
+}
+func publicBoundaries(values []graphprotocol.Boundary, snapshots map[int64]Snapshot) ([]api.GraphBoundary, error) {
+	result := make([]api.GraphBoundary, 0, len(values))
+	for i := range values {
+		value, err := publicBoundary(values[i], snapshots)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, value)
+	}
+	return result, nil
 }
