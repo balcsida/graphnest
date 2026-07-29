@@ -3,7 +3,6 @@
 package ladybug
 
 import (
-	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -85,19 +84,11 @@ func TestRebuildLoadFailurePreservesLiveDatabase(t *testing.T) {
 func TestRebuildOwnsInterruptedSchemaExecution(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "graph")
 	original := schemaStatements
-	schemaStatements = []string{`UNWIND range(1, 3000000) AS value RETURN sum(value)`}
+	schemaStatements = []string{slowQuery}
 	t.Cleanup(func() { schemaStatements = original })
 
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	source := &fakeSource{synced: make(chan struct{}, 1)}
-	go func() {
-		<-source.synced
-		time.Sleep(100 * time.Millisecond)
-		cancel()
-	}()
-	err := Rebuild(ctx, source, Options{
-		Path: path, QueryTimeout: time.Second, InterruptGrace: time.Nanosecond,
+	err := Rebuild(t.Context(), &fakeSource{}, Options{
+		Path: path, QueryTimeout: 10 * time.Millisecond, InterruptGrace: time.Nanosecond,
 	})
 	if err == nil || !strings.Contains(err.Error(), "interrupt grace elapsed") {
 		t.Fatalf("Rebuild() error = %v, want owned interrupt-grace error", err)
