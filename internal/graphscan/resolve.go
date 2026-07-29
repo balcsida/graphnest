@@ -42,6 +42,10 @@ func Resolve(repositoryID int64, commit string, files []File) (graphartifact.Art
 	byFile := map[string][]symbol{}
 	byModule := map[string][]symbol{}
 	filesByTarget := map[string][]string{}
+	goInterfaces := map[string]map[string]map[string]string{}
+	goEmbeds := map[string]map[string][]string{}
+	goMethods := map[string]map[string]map[string]string{}
+	goTypes := map[string]map[string]symbol{}
 	seenNodes := map[string]bool{repositoryUID: true}
 	seenEdges := map[string]bool{}
 	addEdge := func(edge graphartifact.Edge) {
@@ -54,6 +58,18 @@ func Resolve(repositoryID int64, commit string, files []File) (graphartifact.Art
 
 	for _, file := range ordered {
 		fileUID := "file:" + file.Path
+		if file.Language == Go {
+			scope := goPackageScope(file)
+			for _, heritage := range file.Heritage {
+				if heritage.Kind != graphartifact.EdgeExtends {
+					continue
+				}
+				if goEmbeds[scope] == nil {
+					goEmbeds[scope] = map[string][]string{}
+				}
+				goEmbeds[scope][heritage.ChildLocalID] = append(goEmbeds[scope][heritage.ChildLocalID], heritage.Candidates...)
+			}
+		}
 		if !seenNodes[fileUID] {
 			seenNodes[fileUID] = true
 			artifact.Nodes = append(artifact.Nodes, graphartifact.Node{UID: fileUID, Kind: graphartifact.NodeFile, Path: file.Path})
@@ -73,6 +89,36 @@ func Resolve(repositoryID int64, commit string, files []File) (graphartifact.Art
 			if path == "" {
 				path = file.Path
 			}
+			if file.Language == Go {
+				scope := goPackageScope(file)
+				if declaration.TypeName != "" {
+					if goInterfaces[scope] == nil {
+						goInterfaces[scope] = map[string]map[string]string{}
+					}
+					if goInterfaces[scope][declaration.TypeName] == nil {
+						goInterfaces[scope][declaration.TypeName] = map[string]string{}
+					}
+					goInterfaces[scope][declaration.TypeName][declaration.Name] = declaration.Signature
+					continue
+				}
+				if declaration.Kind == "Interface" {
+					if goInterfaces[scope] == nil {
+						goInterfaces[scope] = map[string]map[string]string{}
+					}
+					if goInterfaces[scope][declaration.Name] == nil {
+						goInterfaces[scope][declaration.Name] = map[string]string{}
+					}
+				}
+				if declaration.Receiver != "" && !declaration.PointerReceiver {
+					if goMethods[scope] == nil {
+						goMethods[scope] = map[string]map[string]string{}
+					}
+					if goMethods[scope][declaration.Receiver] == nil {
+						goMethods[scope][declaration.Receiver] = map[string]string{}
+					}
+					goMethods[scope][declaration.Receiver][declaration.Name] = declaration.Signature
+				}
+			}
 			uid := declaration.SCIPSymbol
 			if uid == "" {
 				uid = CanonicalUID(file.Language, path, declaration.Kind, declaration.QualifiedName, declaration.Signature)
@@ -89,6 +135,13 @@ func Resolve(repositoryID int64, commit string, files []File) (graphartifact.Art
 			byFile[path] = append(byFile[path], s)
 			if file.Module != "" {
 				byModule[scoped(file.Language, "", file.Module)] = append(byModule[scoped(file.Language, "", file.Module)], s)
+			}
+			if file.Language == Go && (declaration.Kind == "Type" || declaration.Kind == "Interface") {
+				scope := goPackageScope(file)
+				if goTypes[scope] == nil {
+					goTypes[scope] = map[string]symbol{}
+				}
+				goTypes[scope][declaration.Name] = s
 			}
 			filesByTarget[s.qualifiedName] = append(filesByTarget[s.qualifiedName], fileUID)
 			if seenNodes[uid] {
@@ -133,6 +186,22 @@ func Resolve(repositoryID int64, commit string, files []File) (graphartifact.Art
 		}
 	}
 
+	for scope, interfaces := range goInterfaces {
+		for interfaceName := range interfaces {
+			target, ok := goTypes[scope][interfaceName]
+			if !ok {
+				continue
+			}
+			required := interfaceMethodSet(interfaceName, interfaces, goEmbeds[scope], map[string]bool{})
+			for receiver, methods := range goMethods[scope] {
+				source, ok := goTypes[scope][receiver]
+				if ok && containsMethodSet(methods, required) {
+					addEdge(resolvedEdge(source.uid, target.uid, graphartifact.EdgeImplements, source.path, Range{}, "go-method-set", .9))
+				}
+			}
+		}
+	}
+
 	sort.Slice(artifact.Nodes, func(i, j int) bool { return artifact.Nodes[i].UID < artifact.Nodes[j].UID })
 	sort.Slice(artifact.Edges, func(i, j int) bool { return edgeKey(artifact.Edges[i]) < edgeKey(artifact.Edges[j]) })
 	artifact.ContentHash = contentHash(artifact)
@@ -140,6 +209,39 @@ func Resolve(repositoryID int64, commit string, files []File) (graphartifact.Art
 		return graphartifact.Artifact{}, err
 	}
 	return artifact, nil
+}
+
+func interfaceMethodSet(name string, interfaces map[string]map[string]string, embeds map[string][]string, seen map[string]bool) map[string]string {
+	if seen[name] {
+		return nil
+	}
+	seen[name] = true
+	methods := map[string]string{}
+	for method, signature := range interfaces[name] {
+		methods[method] = signature
+	}
+	for _, parent := range embeds[name] {
+		for method, signature := range interfaceMethodSet(parent, interfaces, embeds, seen) {
+			methods[method] = signature
+		}
+	}
+	return methods
+}
+
+func goPackageScope(file File) string {
+	return filepath.Dir(file.Path) + "\x00" + file.Module
+}
+
+func containsMethodSet(methods, required map[string]string) bool {
+	if len(required) == 0 {
+		return false
+	}
+	for name, signature := range required {
+		if methods[name] != signature {
+			return false
+		}
+	}
+	return true
 }
 
 func resolve(file File, candidates []string, bySCIP, byQualified map[string][]symbol, byFile, byModule map[string][]symbol, filesByTarget map[string][]string) (symbol, bool) {
@@ -341,8 +443,8 @@ func declarationLess(left, right Declaration, fallback string) bool {
 	if rightPath == "" {
 		rightPath = fallback
 	}
-	leftFields := [...]string{left.SCIPSymbol, leftPath, left.Name, left.QualifiedName, left.Signature, left.Kind, left.ScopeID, left.Receiver, left.TypeName, left.LocalID}
-	rightFields := [...]string{right.SCIPSymbol, rightPath, right.Name, right.QualifiedName, right.Signature, right.Kind, right.ScopeID, right.Receiver, right.TypeName, right.LocalID}
+	leftFields := [...]string{left.SCIPSymbol, leftPath, left.Name, left.QualifiedName, left.Signature, left.Kind, left.ScopeID, left.Receiver, left.TypeName, fmt.Sprint(left.PointerReceiver), left.LocalID}
+	rightFields := [...]string{right.SCIPSymbol, rightPath, right.Name, right.QualifiedName, right.Signature, right.Kind, right.ScopeID, right.Receiver, right.TypeName, fmt.Sprint(right.PointerReceiver), right.LocalID}
 	for i := range leftFields {
 		if leftFields[i] != rightFields[i] {
 			return leftFields[i] < rightFields[i]
