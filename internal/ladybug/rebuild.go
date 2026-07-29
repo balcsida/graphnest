@@ -60,7 +60,7 @@ func Rebuild(ctx context.Context, source SnapshotSource, options Options) error 
 		}
 	}()
 	if err := db.Update(ctx, func(session *Session) error {
-		return EnsureSchema(ctx, session.connection)
+		return ensureSchema(ctx, session)
 	}); err != nil {
 		return err
 	}

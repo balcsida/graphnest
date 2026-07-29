@@ -57,7 +57,9 @@ func EnsureSchema(ctx context.Context, connection *lbug.Connection) error {
 	db := &Database{options: normalizeOptions(Options{})}
 	session := db.session(connection)
 	defer session.invalidate()
-	return ensureSchema(ctx, session)
+	err := ensureSchema(ctx, session)
+	db.queries.Wait()
+	return err
 }
 
 func ensureSchema(ctx context.Context, session *Session) error {
