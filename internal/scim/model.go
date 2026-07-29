@@ -1,6 +1,7 @@
 package scim
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 )
@@ -120,5 +121,7 @@ func (u *User) UnmarshalJSON(data []byte) error {
 		return ErrPasswordNotSupported
 	}
 	type user User
-	return json.Unmarshal(data, (*user)(u))
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	return decoder.Decode((*user)(u))
 }

@@ -82,6 +82,13 @@ type Config struct {
 	UserRepositoryIDs, AdminRepositoryIDs     []int64
 	Limits                                    Limits
 	SSO                                       SSO
+	SCIM                                      SCIM
+}
+
+type SCIM struct {
+	Enabled   bool
+	TokenFile string
+	PublicURL *url.URL
 }
 
 func Load() (Config, error) {
@@ -138,7 +145,32 @@ func Load() (Config, error) {
 	if config.SSO, err = loadSSO(config.DatabaseURL); err != nil {
 		return Config{}, err
 	}
+	if config.SCIM, err = loadSCIM(config.DatabaseURL); err != nil {
+		return Config{}, err
+	}
 	return config, nil
+}
+
+func loadSCIM(databaseURL string) (SCIM, error) {
+	tokenFile, token := os.Getenv("GREPNEST_SCIM_TOKEN_FILE"), os.Getenv("GREPNEST_SCIM_TOKEN")
+	if token != "" {
+		return SCIM{}, invalid("GREPNEST_SCIM_TOKEN is not supported; use GREPNEST_SCIM_TOKEN_FILE")
+	}
+	if tokenFile == "" {
+		return SCIM{}, nil
+	}
+	if databaseURL == "" {
+		return SCIM{}, invalid("GREPNEST_DATABASE_URL is required for SCIM")
+	}
+	info, err := os.Stat(tokenFile)
+	if err != nil || !info.Mode().IsRegular() {
+		return SCIM{}, invalid("GREPNEST_SCIM_TOKEN_FILE must be a regular file")
+	}
+	publicURL, err := parseHTTPSOrigin("GREPNEST_PUBLIC_URL", os.Getenv("GREPNEST_PUBLIC_URL"))
+	if err != nil {
+		return SCIM{}, err
+	}
+	return SCIM{Enabled: true, TokenFile: tokenFile, PublicURL: publicURL}, nil
 }
 
 func loadGitHub(requireWebhookSecret bool) (GitHub, error) {
