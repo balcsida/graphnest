@@ -15,6 +15,7 @@ import (
 
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/grepnest/grepnest/internal/repository"
+	"golang.org/x/sys/unix"
 )
 
 var ErrTargetMissing = errors.New("target commit unavailable")
@@ -26,7 +27,14 @@ type Git struct {
 }
 
 func (git *Git) Prepare(ctx context.Context, repo repository.Repository, job postgres.IndexJob, token string) (string, string, error) {
-	if git == nil || git.Binary == "" || git.AskPass == "" || token == "" || git.MirrorsDir == "" || git.WorktreesDir == "" || git.Runner.MaxOutput <= 0 || git.Runner.KillGrace <= 0 || repo.ID <= 0 || repo.ZoektID == 0 || repo.Name == "" || repo.WebURL == "" || job.ID <= 0 || job.RepositoryID != repo.ID || !validSHA(job.TargetSHA) || repo.Branch == "" {
+	if job.RepositoryID != repo.ID {
+		return "", "", errors.New("invalid Git repository job")
+	}
+	return git.PrepareCommit(ctx, repo, job.ID, job.TargetSHA, token)
+}
+
+func (git *Git) PrepareCommit(ctx context.Context, repo repository.Repository, jobID int64, targetSHA, token string) (string, string, error) {
+	if git == nil || git.Binary == "" || git.AskPass == "" || token == "" || git.MirrorsDir == "" || git.WorktreesDir == "" || git.Runner.MaxOutput <= 0 || git.Runner.KillGrace <= 0 || repo.ID <= 0 || repo.ZoektID == 0 || repo.Name == "" || repo.WebURL == "" || jobID <= 0 || !validSHA(targetSHA) || repo.Branch == "" {
 		return "", "", errors.New("invalid Git repository job")
 	}
 	remote, err := git.remoteURL(repo.Name)
@@ -42,7 +50,7 @@ func (git *Git) Prepare(ctx context.Context, repo repository.Repository, job pos
 		return "", "", err
 	}
 	mirror := mirrorBase + ".git"
-	worktree, err := numericPath(git.WorktreesDir, strconv.FormatInt(repo.ID, 10), strconv.FormatInt(job.ID, 10))
+	worktree, err := numericPath(git.WorktreesDir, strconv.FormatInt(repo.ID, 10), strconv.FormatInt(jobID, 10))
 	if err != nil {
 		return "", "", err
 	}
@@ -52,6 +60,11 @@ func (git *Git) Prepare(ctx context.Context, repo repository.Repository, job pos
 	if err := ensureDirectory(filepath.Dir(worktree)); err != nil {
 		return "", "", err
 	}
+	unlock, err := lockMirror(ctx, mirrorBase+".lock")
+	if err != nil {
+		return "", "", err
+	}
+	defer unlock()
 	environment := git.environment(token, origin)
 	if info, err := os.Lstat(mirror); errors.Is(err, os.ErrNotExist) {
 		if err := git.run(ctx, environment, "init", "--bare", mirror); err != nil {
@@ -79,15 +92,20 @@ func (git *Git) Prepare(ctx context.Context, repo repository.Repository, job pos
 			return "", "", err
 		}
 	}
-	if err := git.run(ctx, environment, "--git-dir", mirror, "cat-file", "-e", job.TargetSHA+"^{commit}"); err != nil {
-		return "", "", errors.Join(ErrTargetMissing, err)
+	if err := git.run(ctx, environment, "--git-dir", mirror, "cat-file", "-e", targetSHA+"^{commit}"); err != nil {
+		if fetchErr := git.run(ctx, environment, "--git-dir", mirror, "fetch", "--no-tags", "origin", targetSHA); fetchErr != nil {
+			return "", "", errors.Join(ErrTargetMissing, err, fetchErr)
+		}
+		if verifyErr := git.run(ctx, environment, "--git-dir", mirror, "cat-file", "-e", targetSHA+"^{commit}"); verifyErr != nil {
+			return "", "", errors.Join(ErrTargetMissing, verifyErr)
+		}
 	}
 	if _, err := os.Lstat(worktree); err == nil {
 		return "", "", errors.New("worktree already exists")
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", "", err
 	}
-	if err := git.run(ctx, environment, "--git-dir", mirror, "worktree", "add", "--detach", worktree, job.TargetSHA); err != nil {
+	if err := git.run(ctx, environment, "--git-dir", mirror, "worktree", "add", "--detach", worktree, targetSHA); err != nil {
 		return "", "", err
 	}
 	return mirror, worktree, nil
@@ -115,7 +133,47 @@ func (git *Git) Cleanup(ctx context.Context, repositoryID, jobID int64) error {
 	} else if err != nil {
 		return err
 	}
+	unlock, err := lockMirror(ctx, mirrorBase+".lock")
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	return git.run(ctx, git.environment("", ""), "--git-dir", mirror, "worktree", "prune")
+}
+
+func lockMirror(ctx context.Context, path string) (func(), error) {
+	fd, err := unix.Open(path, unix.O_CREAT|unix.O_RDWR|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	closeLock := func() { _ = unix.Close(fd) }
+	var stat unix.Stat_t
+	if err := unix.Fstat(fd, &stat); err != nil || stat.Mode&unix.S_IFMT != unix.S_IFREG {
+		closeLock()
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New("mirror lock must be a regular file")
+	}
+	for {
+		if err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); err == nil {
+			return func() {
+				_ = unix.Flock(fd, unix.LOCK_UN)
+				closeLock()
+			}, nil
+		} else if !errors.Is(err, unix.EWOULDBLOCK) {
+			closeLock()
+			return nil, err
+		}
+		timer := time.NewTimer(10 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			closeLock()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func (git *Git) Prune(ctx context.Context, active map[int64]struct{}) error {

@@ -1,0 +1,45 @@
+services:
+  grepnest-server:
+    depends_on:
+      grepnest-graph:
+        condition: service_started
+    environment:
+      GREPNEST_GRAPH_URL: http://grepnest-graph:8081
+      GREPNEST_GRAPH_SECRET_FILE: /run/secrets/grepnest/graph-secret
+    volumes:
+      - type: bind
+        source: ${GREPNEST_GRAPH_INTERNAL_SECRET_FILE:?GREPNEST_GRAPH_INTERNAL_SECRET_FILE is required}
+        target: /run/secrets/grepnest/graph-secret
+        read_only: true
+        bind:
+          create_host_path: false
+
+  grepnest-indexer:
+    environment:
+      GREPNEST_GRAPH_MODE: separate
+
+  grepnest-graph:
+    profiles: [durable]
+    image: ${GREPNEST_NODE_IMAGE:?GREPNEST_NODE_IMAGE is required}
+    entrypoint: ["grepnest-graph"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      GREPNEST_DATABASE_URL: postgres://grepnest:grepnest@postgres:5432/grepnest?sslmode=disable
+      GREPNEST_GRAPH_MODE: separate
+      GREPNEST_GRAPH_DATA_DIR: /var/lib/grepnest/graph
+      GREPNEST_GRAPH_LISTEN_ADDRESS: :8081
+      GREPNEST_GRAPH_SECRET_FILE: /run/secrets/grepnest/graph-secret
+    volumes:
+      - grepnest-graph:/var/lib/grepnest/graph
+      - type: bind
+        source: ${GREPNEST_GRAPH_INTERNAL_SECRET_FILE:?GREPNEST_GRAPH_INTERNAL_SECRET_FILE is required}
+        target: /run/secrets/grepnest/graph-secret
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [internal]
+
+volumes:
+  grepnest-graph:

@@ -34,3 +34,21 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "grepnest.nodeName" -}}{{ include "grepnest.resourceName" (list . "node") }}{{- end }}
 {{- define "grepnest.zoektName" -}}{{ include "grepnest.resourceName" (list . "zoekt") }}{{- end }}
 {{- define "grepnest.indexerName" -}}{{ include "grepnest.resourceName" (list . "indexer") }}{{- end }}
+{{- define "grepnest.graphName" -}}{{ include "grepnest.resourceName" (list . "graph") }}{{- end }}
+{{- define "grepnest.scannerName" -}}{{ include "grepnest.resourceName" (list . "scanner") }}{{- end }}
+{{- define "grepnest.graphSecretInit" -}}
+- name: stage-graph-secret
+  image: {{ include "grepnest.image" .image | quote }}
+  imagePullPolicy: {{ .image.pullPolicy }}
+  command: [{{ .executable | quote }}]
+  args: ["stage-secret", "/var/run/secrets/grepnest/graph-source/secret", "/var/run/secrets/grepnest/graph/secret"]
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities: {drop: [ALL]}
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    seccompProfile: {type: RuntimeDefault}
+  volumeMounts:
+    - {name: graph-secret-source, mountPath: /var/run/secrets/grepnest/graph-source, readOnly: true}
+    - {name: graph-secret-runtime, mountPath: /var/run/secrets/grepnest/graph}
+{{- end }}

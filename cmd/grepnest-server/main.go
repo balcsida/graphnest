@@ -18,6 +18,9 @@ import (
 	"github.com/grepnest/grepnest/internal/authz"
 	"github.com/grepnest/grepnest/internal/config"
 	"github.com/grepnest/grepnest/internal/githubapp"
+	"github.com/grepnest/grepnest/internal/graphclient"
+	"github.com/grepnest/grepnest/internal/graphingest"
+	"github.com/grepnest/grepnest/internal/graphservice"
 	"github.com/grepnest/grepnest/internal/httpapi"
 	"github.com/grepnest/grepnest/internal/mcpserver"
 	"github.com/grepnest/grepnest/internal/observability"
@@ -126,7 +129,7 @@ func newHandler(settings config.Config) (http.Handler, error) {
 		DefaultTimeout: settings.Limits.DefaultTimeout, MaxTimeout: settings.Limits.MaxTimeout,
 		MaxResponseBytes: settings.Limits.MaxResponseBytes,
 	})
-	return newAPIHandler(settings, metrics, authenticator, service, nil, nil, nil, nil, nil, backend), nil
+	return newAPIHandler(settings, metrics, authenticator, service, nil, nil, nil, nil, nil, nil, nil, backend), nil
 }
 
 func newRuntime(ctx context.Context, settings config.Config, logger *slog.Logger) (http.Handler, func(), error) {
@@ -176,6 +179,10 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	if err := postgres.Migrate(ctx, pool); err != nil {
 		return fail(err)
 	}
+	graphClient, err := graphclient.New(settings.Graph.URL, settings.Graph.InternalSecret, http.DefaultClient, settings.Graph.MaxResponseBytes)
+	if err != nil {
+		return fail(err)
+	}
 	metrics := observability.New()
 	store := postgres.New(pool)
 	if err := store.UpsertSearchNode(ctx, searchNodeID, settings.ZoektURL); err != nil {
@@ -209,6 +216,8 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	searchService := search.NewService(backend, authz.NewPostgres(store), searchLimits(settings))
 	repositoryService := &repository.Service{Store: store, GitHub: githubClient}
 	scipService := &scipgraph.Service{Store: store, GitHub: githubClient, MaxResults: settings.Limits.MaxResults}
+	graphService := &graphingest.Service{Store: store}
+	graphQueries := &graphservice.Service{Store: store, Backend: graphClient, Files: repositoryService, Limits: graphQueryLimits(settings.Graph), Observe: metrics.ObserveGraphQuery}
 	processor := webhook.NewGitHubProcessor(store, reconcileRequests, metrics)
 	adminService := &admin.Service{
 		Store: store, GitHub: githubClient,
@@ -219,7 +228,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 			CAConfigured: settings.GitHub.CAFile != "",
 		},
 	}
-	handler := newAPIHandler(settings, metrics, authenticator, searchService, repositoryService, scipService, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend})
+	handler := newAPIHandler(settings, metrics, authenticator, searchService, repositoryService, scipService, graphService, graphQueries, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend})
 	return handler, func() {
 		cancel()
 		<-done
@@ -228,7 +237,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	}, nil
 }
 
-func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.Authenticator, service *search.Service, repositories *repository.Service, scip *scipgraph.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker) http.Handler {
+func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.Authenticator, service *search.Service, repositories *repository.Service, scip *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker) http.Handler {
 	mux := http.NewServeMux()
 	webui.Register(mux)
 	httpapi.RegisterSystem(mux, checker, metrics.Handler())
@@ -239,21 +248,36 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 	if scip != nil {
 		httpapi.RegisterSCIP(mux, authenticator, scip, settings.Limits.MaxRequestBytes, settings.Limits.SCIPMaxUploadBytes, settings.Limits.MaxResponseBytes)
 	}
+	if graph != nil {
+		httpapi.RegisterGraphIngestion(mux, authenticator, graph, settings.Limits.GraphMaxUploadBytes, settings.Limits.MaxResponseBytes)
+	}
+	if graphQueries != nil {
+		httpapi.RegisterGraphQueries(mux, authenticator, graphQueries, settings.Graph.MaxRequestBytes, settings.Graph.MaxResponseBytes)
+	}
 	if adminService != nil {
 		httpapi.RegisterAdmin(mux, authenticator, adminService, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
 	}
 	if processor != nil {
 		httpapi.RegisterGitHubWebhook(mux, webhookSecret, 1<<20, processor)
 	}
-	mcpServer := mcpserver.NewWithLimits(service, repositories, mcpserver.Limits{
-		MaxItems: settings.Limits.MaxResults, MaxOutputBytes: settings.Limits.MaxResponseBytes,
-	}, scip)
+	mcpServer := mcpserver.NewWithLimits(mcpserver.Services{Search: service, Repositories: repositories, SCIP: scip, Graph: graphQueries}, mcpserver.Limits{
+		MaxItems: settings.Limits.MaxResults, MaxOutputBytes: settings.Limits.MaxResponseBytes, GraphMaxOutputBytes: settings.Graph.MaxResponseBytes,
+	})
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer }, nil)
 	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		request.Body = http.MaxBytesReader(writer, request.Body, settings.Limits.MaxRequestBytes)
 		mcpHandler.ServeHTTP(writer, request)
 	})))
 	return metrics.WrapHTTP(mux)
+}
+
+func graphQueryLimits(graph config.Graph) graphservice.Limits {
+	return graphservice.Limits{
+		PerCategory: graph.QueryLimits.PerCategory, DefaultImpactDepth: graph.QueryLimits.DefaultImpactDepth, MaxDepth: graph.QueryLimits.MaxDepth,
+		DefaultTraceDepth: graph.QueryLimits.DefaultTraceDepth, MaxTraceDepth: graph.QueryLimits.MaxTraceDepth, MaxRows: graph.QueryLimits.MaxRows,
+		MaxNodes: graph.QueryLimits.MaxNodes, MaxEdges: graph.QueryLimits.MaxEdges, MaxFanout: graph.QueryLimits.MaxFanout,
+		MaxResponseBytes: int(graph.MaxResponseBytes),
+	}
 }
 
 func searchLimits(settings config.Config) search.Limits {

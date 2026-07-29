@@ -1,24 +1,28 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/grepnest/grepnest/internal/graphtransport"
 )
 
 var ErrInvalid = errors.New("invalid configuration")
 
 type Limits struct {
-	DefaultResults, MaxResults           int
-	DefaultContextLines, MaxContextLines int
-	DefaultTimeout, MaxTimeout           time.Duration
-	MaxRequestBytes, MaxResponseBytes    int64
-	SCIPMaxUploadBytes                   int64
+	DefaultResults, MaxResults              int
+	DefaultContextLines, MaxContextLines    int
+	DefaultTimeout, MaxTimeout              time.Duration
+	MaxRequestBytes, MaxResponseBytes       int64
+	SCIPMaxUploadBytes, GraphMaxUploadBytes int64
 }
 
 type GitHub struct {
@@ -31,8 +35,39 @@ type GitHub struct {
 type Indexer struct {
 	DatabaseURL, ZoektURL, MetricsListenAddress         string
 	GitHub                                              GitHub
+	Graph                                               Graph
 	DataDir, IndexDir, GitPath, ZoektGitIndex, WorkerID string
 	MinFreeBytes, MaxRepositoryBytes                    int64
+}
+
+type Graph struct {
+	Mode, URL, ListenAddress, DataDir, SecretFile, DatabaseURL string
+	InternalSecret                                             []byte
+	SyncInterval, QueryTimeout, InterruptGrace                 time.Duration
+	ReadConnections, DefaultImpactDepth, MaxImpactDepth        int
+	DefaultTraceDepth, MaxTraceDepth, MaxRows                  int
+	MaxNodes, MaxEdges                                         int
+	MaxRequestBytes, MaxResponseBytes                          int64
+	QueryLimits                                                GraphQueryLimits
+}
+
+type GraphQueryLimits struct {
+	PerCategory, DefaultImpactDepth, MaxDepth int
+	DefaultTraceDepth, MaxTraceDepth, MaxRows int
+	MaxNodes, MaxEdges, MaxFanout             int
+}
+
+type GraphScanLimits struct {
+	MaxFileBytes, MaxTotalBytes  int64
+	MaxFiles, MaxNodes, MaxEdges int
+	ParseTimeout                 time.Duration
+	SkipDirectories              []string
+}
+
+type Scanner struct {
+	DatabaseURL, DataDir, GitPath, WorkerID, MetricsListenAddress string
+	GitHub                                                        GitHub
+	Limits                                                        GraphScanLimits
 }
 
 type Config struct {
@@ -41,6 +76,7 @@ type Config struct {
 	UserRepositories, AdminRepositories       []string
 	DatabaseURL                               string
 	GitHub                                    GitHub
+	Graph                                     Graph
 	Indexer                                   Indexer
 	UserInstallationID, AdminInstallationID   int64
 	UserRepositoryIDs, AdminRepositoryIDs     []int64
@@ -72,6 +108,7 @@ func Load() (Config, error) {
 			MaxRequestBytes:     64 << 10,
 			MaxResponseBytes:    256 << 10,
 			SCIPMaxUploadBytes:  64 << 20,
+			GraphMaxUploadBytes: 64 << 20,
 		},
 	}
 	if config.UserToken == "" || config.AdminToken == "" || config.UserToken == config.AdminToken {
@@ -99,6 +136,9 @@ func Load() (Config, error) {
 			return Config{}, err
 		}
 		if config.AdminRepositoryIDs, err = repositoryIDs("GREPNEST_ADMIN_REPOSITORY_IDS"); err != nil {
+			return Config{}, err
+		}
+		if config.Graph, err = loadServerGraph(); err != nil {
 			return Config{}, err
 		}
 	} else if config.RepositoriesFile == "" {
@@ -171,12 +211,237 @@ func LoadIndexer() (Indexer, error) {
 	if indexer.MaxRepositoryBytes, err = strconv.ParseInt(valueOr("GREPNEST_MAX_REPOSITORY_BYTES", "5368709120"), 10, 64); err != nil || indexer.MaxRepositoryBytes <= 0 {
 		return Indexer{}, invalid("GREPNEST_MAX_REPOSITORY_BYTES must be a positive integer")
 	}
-	_, port, err := net.SplitHostPort(indexer.MetricsListenAddress)
-	portNumber, portErr := strconv.Atoi(port)
-	if err != nil || portErr != nil || portNumber < 1 || portNumber > 65535 {
-		return Indexer{}, invalid("GREPNEST_METRICS_LISTEN_ADDRESS must be a host:port address")
+	if err := validListenAddress(indexer.MetricsListenAddress); err != nil {
+		return Indexer{}, err
+	}
+	if indexer.Graph, err = loadGraph(false); err != nil {
+		return Indexer{}, err
 	}
 	return indexer, nil
+}
+
+func LoadGraph() (Graph, error) { return loadGraph(true) }
+
+func loadServerGraph() (Graph, error) {
+	graph, err := loadGraph(true)
+	if err != nil {
+		return Graph{}, err
+	}
+	parsed, err := url.Parse(graph.URL)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || (parsed.EscapedPath() != "" && parsed.EscapedPath() != "/") {
+		return Graph{}, invalid("GREPNEST_GRAPH_URL must be an HTTP(S) URL without credentials, query, fragment, or path")
+	}
+	return graph, nil
+}
+
+func loadGraph(force bool) (Graph, error) {
+	graph := Graph{
+		Mode:          valueOr("GREPNEST_GRAPH_MODE", "embedded"),
+		URL:           os.Getenv("GREPNEST_GRAPH_URL"),
+		ListenAddress: valueOr("GREPNEST_GRAPH_LISTEN_ADDRESS", "127.0.0.1:8081"),
+		DataDir:       valueOr("GREPNEST_GRAPH_DATA_DIR", "/var/lib/grepnest/graph"),
+		SecretFile:    os.Getenv("GREPNEST_GRAPH_SECRET_FILE"),
+		DatabaseURL:   os.Getenv("GREPNEST_DATABASE_URL"),
+		SyncInterval:  30 * time.Second, QueryTimeout: 5 * time.Second,
+		InterruptGrace: 2 * time.Second, ReadConnections: 8,
+		DefaultImpactDepth: 3, MaxImpactDepth: 32,
+		DefaultTraceDepth: 10, MaxTraceDepth: 30,
+		MaxRows: 1_000, MaxNodes: 1_000, MaxEdges: 5_000,
+		MaxRequestBytes: 64 << 10, MaxResponseBytes: 256 << 10,
+		QueryLimits: GraphQueryLimits{
+			PerCategory: 100, DefaultImpactDepth: 3, MaxDepth: 32,
+			DefaultTraceDepth: 10, MaxTraceDepth: 30, MaxRows: 1_000,
+			MaxNodes: 1_000, MaxEdges: 5_000, MaxFanout: 100,
+		},
+	}
+	if graph.Mode != "embedded" && graph.Mode != "separate" {
+		return Graph{}, invalid("GREPNEST_GRAPH_MODE must be embedded or separate")
+	}
+	if err := validListenAddress(graph.ListenAddress); err != nil {
+		return Graph{}, invalid("GREPNEST_GRAPH_LISTEN_ADDRESS must be a host:port address")
+	}
+	for name, target := range map[string]*time.Duration{
+		"GREPNEST_GRAPH_SYNC_INTERVAL":   &graph.SyncInterval,
+		"GREPNEST_GRAPH_QUERY_TIMEOUT":   &graph.QueryTimeout,
+		"GREPNEST_GRAPH_INTERRUPT_GRACE": &graph.InterruptGrace,
+	} {
+		if err := durationValue(name, target); err != nil {
+			return Graph{}, err
+		}
+	}
+	if err := intValue("GREPNEST_GRAPH_READ_CONNECTIONS", &graph.ReadConnections); err != nil {
+		return Graph{}, err
+	}
+	if err := int64Value("GREPNEST_GRAPH_MAX_REQUEST_BYTES", &graph.MaxRequestBytes); err != nil {
+		return Graph{}, err
+	}
+	if err := int64Value("GREPNEST_GRAPH_MAX_RESPONSE_BYTES", &graph.MaxResponseBytes); err != nil {
+		return Graph{}, err
+	}
+	for name, target := range map[string]*int{
+		"GREPNEST_GRAPH_DEFAULT_IMPACT_DEPTH": &graph.DefaultImpactDepth,
+		"GREPNEST_GRAPH_MAX_IMPACT_DEPTH":     &graph.MaxImpactDepth,
+		"GREPNEST_GRAPH_DEFAULT_TRACE_DEPTH":  &graph.DefaultTraceDepth,
+		"GREPNEST_GRAPH_MAX_TRACE_DEPTH":      &graph.MaxTraceDepth,
+		"GREPNEST_GRAPH_MAX_ROWS":             &graph.MaxRows,
+		"GREPNEST_GRAPH_MAX_NODES":            &graph.MaxNodes,
+		"GREPNEST_GRAPH_MAX_EDGES":            &graph.MaxEdges,
+	} {
+		if err := intValue(name, target); err != nil {
+			return Graph{}, err
+		}
+	}
+	if graph.ReadConnections > 32 {
+		graph.ReadConnections = 32
+	}
+	if graph.QueryTimeout > 5*time.Second || graph.InterruptGrace > 2*time.Second {
+		return Graph{}, invalid("graph timeouts exceed safety caps")
+	}
+	if graph.MaxRequestBytes > 64<<10 || graph.MaxResponseBytes > 256<<10 {
+		return Graph{}, invalid("graph public limits exceed safety caps")
+	}
+	if graph.MaxImpactDepth > 32 || graph.MaxTraceDepth > 30 || graph.MaxRows > 1_000 ||
+		graph.MaxNodes > 1_000 || graph.MaxEdges > 5_000 ||
+		graph.DefaultImpactDepth > graph.MaxImpactDepth || graph.DefaultTraceDepth > graph.MaxTraceDepth {
+		return Graph{}, invalid("graph query limits exceed safety caps")
+	}
+	graph.QueryLimits.MaxDepth = graph.MaxImpactDepth
+	graph.QueryLimits.DefaultImpactDepth = graph.DefaultImpactDepth
+	graph.QueryLimits.DefaultTraceDepth = graph.DefaultTraceDepth
+	graph.QueryLimits.MaxTraceDepth = graph.MaxTraceDepth
+	graph.QueryLimits.MaxRows = graph.MaxRows
+	graph.QueryLimits.MaxNodes = graph.MaxNodes
+	graph.QueryLimits.MaxEdges = graph.MaxEdges
+	if force || graph.Mode == "embedded" {
+		parsed, err := url.Parse(graph.DatabaseURL)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") {
+			return Graph{}, invalid("GREPNEST_DATABASE_URL must be a PostgreSQL URL")
+		}
+		secret, err := readSecretFile(graph.SecretFile, 4<<10)
+		if err != nil {
+			return Graph{}, err
+		}
+		graph.InternalSecret = append([]byte(nil), secret...)
+	}
+	return graph, nil
+}
+
+func readSecretFile(path string, maxBytes int64) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+		return nil, invalid("GREPNEST_GRAPH_SECRET_FILE must be a secure regular file")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, invalid("GREPNEST_GRAPH_SECRET_FILE cannot be read")
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !opened.Mode().IsRegular() || opened.Mode().Perm()&0o077 != 0 || !os.SameFile(info, opened) {
+		return nil, invalid("GREPNEST_GRAPH_SECRET_FILE must be a secure regular file")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
+	if err != nil || len(data) == 0 || int64(len(data)) > maxBytes {
+		return nil, invalid("GREPNEST_GRAPH_SECRET_FILE size is invalid")
+	}
+	if bytes.HasSuffix(data, []byte("\r\n")) {
+		data = data[:len(data)-2]
+	} else if bytes.HasSuffix(data, []byte("\n")) {
+		data = data[:len(data)-1]
+	}
+	if !graphtransport.ValidBearerToken(data) {
+		return nil, invalid("GREPNEST_GRAPH_SECRET_FILE must contain an RFC 6750 bearer token")
+	}
+	return data, nil
+}
+
+func LoadScanner() (Scanner, error) {
+	scanner := Scanner{
+		DatabaseURL:          os.Getenv("GREPNEST_DATABASE_URL"),
+		DataDir:              os.Getenv("GREPNEST_DATA_DIR"),
+		GitPath:              os.Getenv("GREPNEST_GIT_PATH"),
+		WorkerID:             os.Getenv("GREPNEST_WORKER_ID"),
+		MetricsListenAddress: valueOr("GREPNEST_METRICS_LISTEN_ADDRESS", ":9090"),
+		Limits: GraphScanLimits{
+			MaxFileBytes: 2 << 20, MaxTotalBytes: 1 << 30, MaxFiles: 100_000,
+			MaxNodes: 500_000, MaxEdges: 2_000_000, ParseTimeout: 30 * time.Second,
+			SkipDirectories: []string{"node_modules", "vendor", "target", "build", "dist", ".gradle"},
+		},
+	}
+	parsed, err := url.Parse(scanner.DatabaseURL)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") {
+		return Scanner{}, invalid("GREPNEST_DATABASE_URL must be a PostgreSQL URL")
+	}
+	if scanner.GitHub, err = loadGitHub(false); err != nil {
+		return Scanner{}, err
+	}
+	if scanner.DataDir == "" || scanner.GitPath == "" || scanner.WorkerID == "" {
+		return Scanner{}, invalid("scanner paths and worker ID are required")
+	}
+	if err := loadGraphScanLimits(&scanner.Limits); err != nil {
+		return Scanner{}, err
+	}
+	if err := validListenAddress(scanner.MetricsListenAddress); err != nil {
+		return Scanner{}, err
+	}
+	return scanner, nil
+}
+
+func loadGraphScanLimits(limits *GraphScanLimits) error {
+	if err := int64Value("GREPNEST_GRAPH_SCAN_MAX_FILE_BYTES", &limits.MaxFileBytes); err != nil {
+		return err
+	}
+	if err := int64Value("GREPNEST_GRAPH_SCAN_MAX_TOTAL_BYTES", &limits.MaxTotalBytes); err != nil {
+		return err
+	}
+	if err := intValue("GREPNEST_GRAPH_SCAN_MAX_FILES", &limits.MaxFiles); err != nil {
+		return err
+	}
+	if err := intValue("GREPNEST_GRAPH_SCAN_MAX_NODES", &limits.MaxNodes); err != nil {
+		return err
+	}
+	if err := intValue("GREPNEST_GRAPH_SCAN_MAX_EDGES", &limits.MaxEdges); err != nil {
+		return err
+	}
+	if err := durationValue("GREPNEST_GRAPH_SCAN_PARSE_TIMEOUT", &limits.ParseTimeout); err != nil {
+		return err
+	}
+	if limits.MaxFileBytes > 2<<20 || limits.MaxTotalBytes > 1<<30 || limits.MaxFiles > 100_000 ||
+		limits.MaxNodes > 500_000 || limits.MaxEdges > 2_000_000 || limits.ParseTimeout > 30*time.Second {
+		return invalid("graph scan limits exceed safety caps")
+	}
+	if value, present := os.LookupEnv("GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES"); present {
+		var err error
+		if limits.SkipDirectories, err = skipDirectories(value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func skipDirectories(value string) ([]string, error) {
+	seen := map[string]bool{}
+	var result []string
+	for _, part := range strings.Split(value, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" || part == "." || part == ".." || strings.ContainsAny(part, `/\`) {
+			return nil, invalid("GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES must contain directory names")
+		}
+		if !seen[part] {
+			seen[part] = true
+			result = append(result, part)
+		}
+	}
+	return result, nil
+}
+
+func validListenAddress(address string) error {
+	_, port, err := net.SplitHostPort(address)
+	portNumber, portErr := strconv.Atoi(port)
+	if err != nil || portErr != nil || portNumber < 1 || portNumber > 65535 {
+		return invalid("GREPNEST_METRICS_LISTEN_ADDRESS must be a host:port address")
+	}
+	return nil
 }
 
 func loadLimits(limits *Limits) error {
@@ -207,7 +472,11 @@ func loadLimits(limits *Limits) error {
 	if err := int64Value("GREPNEST_SCIP_MAX_UPLOAD_BYTES", &limits.SCIPMaxUploadBytes); err != nil {
 		return err
 	}
-	if limits.MaxResults > 100 || limits.MaxContextLines > 20 || limits.MaxTimeout > 5*time.Second || limits.MaxRequestBytes > 64<<10 || limits.MaxResponseBytes > 256<<10 || limits.SCIPMaxUploadBytes > 256<<20 {
+	if err := int64Value("GREPNEST_GRAPH_MAX_UPLOAD_BYTES", &limits.GraphMaxUploadBytes); err != nil {
+		return err
+	}
+	if limits.MaxResults > 100 || limits.MaxContextLines > 20 || limits.MaxTimeout > 5*time.Second || limits.MaxRequestBytes > 64<<10 ||
+		limits.MaxResponseBytes > 256<<10 || limits.SCIPMaxUploadBytes > 256<<20 || limits.GraphMaxUploadBytes > 256<<20 {
 		return invalid("maximums exceed server safety caps")
 	}
 	if limits.DefaultResults > limits.MaxResults || limits.DefaultContextLines > limits.MaxContextLines || limits.DefaultTimeout > limits.MaxTimeout {

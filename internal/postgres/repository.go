@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/admin"
+	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/jackc/pgx/v5"
@@ -346,6 +347,23 @@ func (s *Store) AllAuthorizedRepositories(ctx context.Context, names []string) (
 	return repositories, rows.Err()
 }
 
+func (s *Store) GraphRepositories(ctx context.Context, principal authn.Principal) ([]repository.Repository, error) {
+	rows, err := s.pool.Query(ctx, graphRepositoriesQuery, principal.Administrator, principal.InstallationID, principal.RepositoryIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var repositories []repository.Repository
+	for rows.Next() {
+		repository, err := scanRepository(rows)
+		if err != nil {
+			return nil, err
+		}
+		repositories = append(repositories, repository)
+	}
+	return repositories, rows.Err()
+}
+
 func (s *Store) AnyAuthorizedRepository(ctx context.Context, repositoryID int64) (repository.Repository, error) {
 	return scanRepository(s.pool.QueryRow(ctx, allRepositoriesQuery+" and repositories.github_id = $2", []string{}, repositoryID))
 }
@@ -383,6 +401,11 @@ const allRepositoriesQuery = `select ` + repositoryColumns + ` from repositories
 	and (coalesce(cardinality($1::text[]), 0) = 0 or repositories.owner || '/' || repositories.name = any($1))`
 
 const repositoryByIDQuery = `select ` + repositoryColumns + ` from repositories join installations on installations.id = repositories.installation_id where repositories.id = $1`
+
+const graphRepositoriesQuery = `select ` + repositoryColumns + ` from repositories join installations on installations.id = repositories.installation_id
+	where installations.status = 'active' and repositories.enabled and not repositories.archived
+	and ($1 or installations.github_id = $2 and repositories.github_id = any($3))
+	order by repositories.owner, repositories.name, repositories.github_id`
 
 type repositoryScanner interface{ Scan(...any) error }
 

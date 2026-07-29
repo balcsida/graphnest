@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package grepnest.graph.v1;
+
+option go_package = "github.com/grepnest/grepnest/internal/graphartifact/v1;graphv1";
+
+message Artifact {
+  uint32 schema_version = 1;
+  int64 repository_id = 2;
+  string commit = 3;
+  bytes content_hash = 4;
+  Analyzer analyzer = 5;
+  repeated Node nodes = 6;
+  repeated Edge edges = 7;
+}
+
+message Analyzer { string name = 1; string version = 2; }
+
+message Range {
+  int32 start_line = 1;
+  int32 start_character = 2;
+  int32 end_line = 3;
+  int32 end_character = 4;
+}
+
+enum NodeKind {
+  NODE_KIND_UNSPECIFIED = 0;
+  NODE_KIND_REPOSITORY = 1;
+  NODE_KIND_FILE = 2;
+  NODE_KIND_SYMBOL = 3;
+}
+
+enum EdgeKind {
+  EDGE_KIND_UNSPECIFIED = 0;
+  EDGE_KIND_CONTAINS = 1;
+  EDGE_KIND_IMPORTS = 2;
+  EDGE_KIND_REFERENCES = 3;
+  EDGE_KIND_CALLS = 4;
+  EDGE_KIND_EXTENDS = 5;
+  EDGE_KIND_IMPLEMENTS = 6;
+}
+
+message Node {
+  string uid = 1;
+  NodeKind kind = 2;
+  string path = 3;
+  string language = 4;
+  string symbol_kind = 5;
+  string qualified_name = 6;
+  string signature = 7;
+  string scip_symbol = 8;
+  Range range = 9;
+}
+
+message Edge {
+  string source_uid = 1;
+  string target_uid = 2;
+  EdgeKind kind = 3;
+  string path = 4;
+  Range range = 5;
+  float confidence = 6;
+  string resolution_reason = 7;
+}

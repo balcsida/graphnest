@@ -2,15 +2,38 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+func TestRunInstallsSkillsOnlyForExplicitSubcommand(t *testing.T) {
+	root := t.TempDir()
+	clientTransport, _ := mcp.NewInMemoryTransports()
+	if err := run(t.Context(), []string{"install-skills", "--root", root}, "", "", clientTransport); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".claude", "skills", "grepnest-guide", "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunRejectsUnknownArguments(t *testing.T) {
+	clientTransport, _ := mcp.NewInMemoryTransports()
+	if err := run(t.Context(), []string{"unknown"}, "", "", clientTransport); !errors.Is(err, errUsage) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestProxyForwardsToolsWithBearerAuthentication(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
 	authenticated := false
 	upstream := mcp.NewServer(&mcp.Implementation{Name: "upstream", Version: "1"}, nil)
 	mcp.AddTool(upstream, &mcp.Tool{Name: "search_code"}, func(_ context.Context, _ *mcp.CallToolRequest, input struct {
@@ -65,6 +88,13 @@ func TestProxyForwardsToolsWithBearerAuthentication(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("proxy did not stop after cancellation")
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("normal proxy lifecycle wrote files: %v", entries)
 	}
 }
 
