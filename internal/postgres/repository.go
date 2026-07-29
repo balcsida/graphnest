@@ -393,7 +393,7 @@ const repositoryColumns = `repositories.id, installations.github_id, repositorie
 	coalesce((select node_id from search_nodes where singleton), ''), repositories.enabled, repositories.last_indexed_at`
 
 const repositoryQuery = `select ` + repositoryColumns + ` from repositories join installations on installations.id = repositories.installation_id
-	where installations.github_id = $1 and repositories.github_id = any($2) and installations.status = 'active'
+	where ($1 = 0 or installations.github_id = $1) and repositories.github_id = any($2) and installations.status = 'active'
 	and repositories.enabled and not repositories.archived and (coalesce(cardinality($3::text[]), 0) = 0 or repositories.owner || '/' || repositories.name = any($3))`
 
 const allRepositoriesQuery = `select ` + repositoryColumns + ` from repositories join installations on installations.id = repositories.installation_id
