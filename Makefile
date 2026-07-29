@@ -84,7 +84,7 @@ ifeq ($(LADYBUG_OS),Darwin)
 	done
 else
 	@set -e; for binary in grepnest-indexer grepnest-graph; do \
-		ldd $(NATIVE_BIN_DIR)/$$binary | rg 'liblbug.*=>.*$(LADYBUG_LIB_DIR)'; \
+		ldd $(NATIVE_BIN_DIR)/$$binary | grep -E 'liblbug.*=>.*$(LADYBUG_LIB_DIR)'; \
 	done
 endif
 
