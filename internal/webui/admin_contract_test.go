@@ -81,3 +81,12 @@ func TestAdminPrefersSameOriginOIDCSessionBeforeBearerFallback(t *testing.T) {
 		}
 	}
 }
+
+func TestAdminRequiresSuccessfulLogoutBeforeBearerFallback(t *testing.T) {
+	for _, want := range []string{`response.status!==204`, `await logout();mode="bearer"`, `showAccess("Unable to sign out.")`} {
+		if !bytes.Contains(adminDocument, []byte(want)) {
+			t.Errorf("admin does not gate bearer fallback on logout: %q", want)
+		}
+	}
+
+}

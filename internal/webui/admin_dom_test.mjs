@@ -109,6 +109,7 @@ let allowMutation = false;
 let delayedOverview;
 globalThis.fetch = async (path, options = {}) => {
   requests.push({path, options});
+  if (path === "/auth/logout") return {ok:true,status:204};
   if (path === "/healthz" || path === "/readyz") return {ok:true,status:200};
   if (path === "/v1/admin/overview" && delayedOverview) return delayedOverview;
   if (mutationDenial && options.method === "POST") return {ok:false,status:mutationDenial,json:async()=>({})};
