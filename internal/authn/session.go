@@ -21,6 +21,17 @@ func (m SessionManager) Create(ctx context.Context, identity Identity) (string, 
 	if m.Store == nil || m.IdleTTL <= 0 || m.TTL < m.IdleTTL || !validIdentity(identity) {
 		return "", time.Time{}, ErrInvalidIdentity
 	}
+	userID, err := m.Store.BindOIDCUser(ctx, identity.Issuer, identity.Subject, identity.LinkID)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return m.CreateForUser(ctx, userID, identity.Provider, false)
+}
+
+func (m SessionManager) CreateForUser(ctx context.Context, userID int64, provider string, forceRotation bool) (string, time.Time, error) {
+	if m.Store == nil || m.IdleTTL <= 0 || m.TTL < m.IdleTTL || userID <= 0 || (provider != "oidc" && provider != "local") {
+		return "", time.Time{}, ErrInvalidIdentity
+	}
 	random := make([]byte, 32)
 	reader := m.Rand
 	if reader == nil {
@@ -29,18 +40,15 @@ func (m SessionManager) Create(ctx context.Context, identity Identity) (string, 
 	if _, err := io.ReadFull(reader, random); err != nil {
 		return "", time.Time{}, err
 	}
-	userID, err := m.Store.BindOIDCUser(ctx, identity.Issuer, identity.Subject, identity.LinkID)
-	if err != nil {
-		return "", time.Time{}, err
-	}
 	now := time.Now()
 	if m.Now != nil {
 		now = m.Now()
 	}
 	expiresAt := now.Add(m.TTL)
 	if err := m.Store.CreateSession(ctx, SessionRecord{
-		TokenHash: sha256.Sum256(random), UserID: userID, Provider: identity.Provider,
-		CreatedAt: now, LastSeenAt: now, IdleExpiresAt: now.Add(m.IdleTTL), ExpiresAt: expiresAt,
+		TokenHash: sha256.Sum256(random), UserID: userID, Provider: provider,
+		ForceRotation: forceRotation,
+		CreatedAt:     now, LastSeenAt: now, IdleExpiresAt: now.Add(m.IdleTTL), ExpiresAt: expiresAt,
 	}); err != nil {
 		return "", time.Time{}, err
 	}
