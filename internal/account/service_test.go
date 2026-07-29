@@ -13,10 +13,12 @@ import (
 type storeStub struct {
 	authn.APITokenStore
 	tokens                 []authn.APITokenMetadata
+	created                authn.APITokenRecord
 	revokedUser, revokedID int64
 }
 
-func (s *storeStub) CreateAPIToken(context.Context, authn.APITokenRecord) (int64, error) {
+func (s *storeStub) CreateAPIToken(_ context.Context, token authn.APITokenRecord) (int64, error) {
+	s.created = token
 	return 7, nil
 }
 func (s *storeStub) ListAPITokens(context.Context, int64) ([]authn.APITokenMetadata, error) {
@@ -50,6 +52,29 @@ func TestCreateTokenRequiresFutureExpiry(t *testing.T) {
 	token, _, err := s.CreateToken(t.Context(), authn.Principal{Subject: "11", Method: "oidc", RepositoryIDs: []int64{101}}, &future, []int64{101})
 	if err != nil || token.ExpiresAt == nil || !token.ExpiresAt.Equal(future) {
 		t.Fatalf("token=%#v err=%v", token, err)
+	}
+}
+
+func TestCreateTokenAllowsOptionalControlsForOrdinaryUsers(t *testing.T) {
+	store := &storeStub{}
+	s := &Service{Manager: authn.TokenManager{Store: store, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+	token, _, err := s.CreateToken(t.Context(), authn.Principal{Subject: "11", Method: "oidc"}, nil, nil)
+	if err != nil || token.ExpiresAt != nil || token.RepositoryIDs != nil ||
+		store.created.ExpiresAt != nil || store.created.RepositoryIDs != nil {
+		t.Fatalf("token=%#v stored=%#v err=%v", token, store.created, err)
+	}
+}
+
+func TestCreateTokenRequiresAdministratorCeilingAndBoundsExpiry(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	s := &Service{Manager: authn.TokenManager{Store: &storeStub{}, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+	admin := authn.Principal{Subject: "11", Method: "oidc", Administrator: true}
+	if _, _, err := s.CreateToken(t.Context(), admin, nil, nil); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("empty administrator ceiling err=%v", err)
+	}
+	tooLate := now.Add(90*24*time.Hour + time.Second)
+	if _, _, err := s.CreateToken(t.Context(), authn.Principal{Subject: "11", Method: "oidc"}, &tooLate, nil); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("overlong expiry err=%v", err)
 	}
 }
 
