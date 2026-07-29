@@ -235,6 +235,35 @@ This creates or updates GrepNest-owned skills under `.claude/skills/` and,
 only when `.agents/` already exists, `.agents/skills/`. It refuses symlink or
 unowned destinations.
 
+## Break-glass administrator recovery
+
+SSO remains the primary sign-in method. Use the offline command only when an
+authorized operator has direct access to the same PostgreSQL database used by
+every server replica:
+
+```sh
+make build
+GREPNEST_DATABASE_URL='postgres://...' \
+  go run ./cmd/grepnest-admin break-glass set-password recovery-admin
+```
+
+The command reads and confirms the password from `/dev/tty`; without a usable
+TTY it accepts exactly two newline-delimited standard-input values. Do not put
+the password in arguments, environment variables, files, shell history, or
+logs. It creates only a local administrator, or rotates that same eligible
+account, forces password rotation, revokes its sessions and API tokens, and
+records `break_glass_password_set`.
+
+Creating the credential does not expose or enable local login. An OIDC outage
+never enables it automatically. When a deployed server version supplies the
+separate `GREPNEST_BREAK_GLASS_ENABLED` route, enable it only for the recovery
+window and restart every replica; all replicas must share the database above.
+After SSO is restored, rotate the password by rerunning the command if the
+account must remain, or remove/suspend the recovery account through normal
+identity administration. Then disable the route, restart every replica, and
+verify SSO before closing the incident. Forced rotation on first recovery
+sign-in is expected.
+
 ## Optional OIDC operations
 
 Permit server egress only to the configured IdP discovery, JWKS, and token
