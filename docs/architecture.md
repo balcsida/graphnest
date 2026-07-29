@@ -14,6 +14,11 @@ those repositories to Zoekt `RepoIDs`, applies bounded search limits, and
 normalizes the response. A request that selects no authorized repositories
 returns no matches without calling Zoekt.
 
+When enabled, OIDC verifies the Authorization Code + PKCE callback then stores
+only a hashed opaque GrepNest session. Same-origin browser REST requests use
+the HttpOnly session cookie; no IdP refresh token is persisted and `/mcp`
+remains bearer-only.
+
 REST and MCP call the same search service. `/mcp` is hosted Streamable HTTP
 MCP behind bearer authentication. `grepnest-mcp` is a stdio proxy: it connects
 to `<GREPNEST_SERVER_URL>/mcp` with `GREPNEST_TOKEN`, lists the hosted tools,

@@ -34,6 +34,21 @@ data:
   {{- if .Values.secrets.customCA.name }}
   GREPNEST_GITHUB_CA_FILE: /var/run/secrets/grepnest/ca/ca.crt
   {{- end }}
+  {{- if .Values.server.sso.oidc.enabled }}
+  GREPNEST_PUBLIC_URL: {{ .Values.server.sso.publicURL | quote }}
+  GREPNEST_SSO_SESSION_IDLE: {{ .Values.server.sso.sessionIdle | quote }}
+  GREPNEST_SSO_SESSION_TTL: {{ .Values.server.sso.sessionTTL | quote }}
+  GREPNEST_SSO_LOGIN_FLOW_TTL: {{ .Values.server.sso.loginFlowTTL | quote }}
+  GREPNEST_OIDC_ISSUER_URL: {{ .Values.server.sso.oidc.issuerURL | quote }}
+  GREPNEST_OIDC_CLIENT_ID: {{ .Values.server.sso.oidc.clientID | quote }}
+  GREPNEST_OIDC_CLIENT_SECRET_FILE: /var/run/secrets/grepnest/oidc/client-secret
+  GREPNEST_OIDC_SCOPES: {{ join "," .Values.server.sso.oidc.scopes | quote }}
+  GREPNEST_OIDC_LINK_CLAIM: {{ .Values.server.sso.oidc.linkClaim | quote }}
+  GREPNEST_OIDC_DISPLAY_NAME_CLAIM: {{ .Values.server.sso.oidc.displayNameClaim | quote }}
+  {{- if .Values.secrets.oidcCA.name }}
+  GREPNEST_OIDC_CA_FILE: /var/run/secrets/grepnest/oidc-ca/ca.crt
+  {{- end }}
+  {{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap

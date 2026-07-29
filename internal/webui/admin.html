@@ -21,6 +21,7 @@
  <div class="access">
   <h1>Administrator access</h1>
   <p id="access-message">Enter an administrator bearer token. It stays in this tab and is sent only to this GrepNest origin.</p>
+  <div id="provider-options" aria-label="Single sign-on providers"></div>
   <form id="token-form"><label for="token">Bearer token</label><input id="token" type="password" autocomplete="off" required><button class="primary">Open administrator console</button></form>
  </div>
 </section>
@@ -52,15 +53,16 @@
 const $=id=>document.getElementById(id),access=$("access-panel"),shell=$("admin-shell"),status=$("admin-status"),bounded=value=>Array.isArray(value)?value.slice(0,100):[];
 const screens={overview:["Overview","system health at a glance"],repositories:["Repositories","index state reconciled from GitHub"],queue:["Index queue","durable default-branch indexing"],scip:["SCIP indexes","pre-generated code-navigation data"],webhooks:["Webhook deliveries","verified GitHub HMAC intake"],github:["GitHub App","sanitized configuration and installations"]};
 const freshState=()=>({repositories:[],jobs:[],uploads:[],dependencies:[],deliveries:[],github:null,overview:null,filter:"",repoStatus:"all",truncated:{}});
-let token="";try{token=sessionStorage.getItem("grepnest_admin_token")||""}catch(_){}let state=freshState(),loadVersion=0,loadAbort;
+let mode="anonymous",token="";try{token=sessionStorage.getItem("grepnest_admin_token")||"";if(token)mode="bearer"}catch(_){}let state=freshState(),loadVersion=0,loadAbort;
 const el=(tag,text,cls)=>{const node=document.createElement(tag);if(text!==undefined)node.textContent=String(text);if(cls)node.className=cls;return node};
 const clear=node=>{while(node.firstChild)node.removeChild(node.firstChild)};
 const short=value=>value?String(value).slice(0,8):"—";
 const when=value=>value?new Intl.DateTimeFormat(undefined,{dateStyle:"medium",timeStyle:"short"}).format(new Date(value)):"—";
 const say=(message,bad=false)=>{status.textContent=message;status.style.borderColor=bad?"var(--err)":"var(--border)"};
-async function request(path,options={},discover=false){const headers=new Headers(options.headers||{});if(token)headers.set("Authorization","Bearer "+token);const response=await fetch(path,{...options,headers,cache:"no-store"});if(response.status===401||response.status===403||discover&&response.status===404){const message=response.status===401?"Token required or expired.":response.status===403?"This token is not an administrator.":"Administrator API is unavailable in static mode.";lockAccess(message);const error=new Error(message);error.access=response.status;throw error}if(!response.ok){let message="Service unavailable.";try{message=(await response.json()).error?.message||message}catch(_){}throw new Error(message)}return response.status===204?null:response.json()}
+async function api(path,options={}){const headers=new Headers(options.headers||{});if(mode==="bearer"&&token)headers.set("Authorization","Bearer "+token);return fetch(path,{...options,headers,cache:"no-store",credentials:"same-origin"})}
+async function request(path,options={},discover=false){const response=await api(path,options);if(response.status===401||response.status===403||discover&&response.status===404){const message=response.status===401?"Token required or expired.":response.status===403?"This account is not an administrator.":"Administrator API is unavailable in static mode.";lockAccess(message);const error=new Error(message);error.access=response.status;throw error}if(!response.ok){let message="Service unavailable.";try{message=(await response.json()).error?.message||message}catch(_){}throw new Error(message)}return response.status===204?null:response.json()}
 function showAccess(message){shell.hidden=true;access.hidden=false;if(message)$("access-message").textContent=message;$("token").focus()}
-function lockAccess(message){token="";loadVersion++;loadAbort?.abort();loadAbort=null;$("token").value="";try{sessionStorage.removeItem("grepnest_admin_token")}catch(_){}state=freshState();for(const id of ["repo-rows","job-rows","upload-list","dependency-list","delivery-rows","github-config","installations","overview-cards","queue-cards","github-cards","inventory-notices"])clear($(id));showAccess(message)}
+function lockAccess(message){mode="anonymous";token="";loadVersion++;loadAbort?.abort();loadAbort=null;$("token").value="";try{sessionStorage.removeItem("grepnest_admin_token")}catch(_){}state=freshState();for(const id of ["repo-rows","job-rows","upload-list","dependency-list","delivery-rows","github-config","installations","overview-cards","queue-cards","github-cards","inventory-notices"])clear($(id));showAccess(message)}
 function showScreen(name){for(const node of document.querySelectorAll("[data-screen]"))node.hidden=node.dataset.screen!==name;for(const node of document.querySelectorAll("[data-nav]"))node.setAttribute("aria-current",node.dataset.nav===name?"page":"false");$("title").textContent=screens[name][0];$("subtitle").textContent=screens[name][1];location.hash=name}
 function pill(value){const node=el("span",value||"unknown","pill"),v=String(value).toLowerCase();const ok=new Set(["ready","healthy","succeeded"]),warn=new Set(["pending","queued","running","indexing"]),bad=new Set(["failed","error","disabled","superseded","unavailable"]);node.classList.add(ok.has(v)?"ok":warn.has(v)?"warn":bad.has(v)?"err":"unknown");return node}
 function card(label,value){const node=el("div",undefined,"card");node.append(el("small",label),el("strong",value));return node}
@@ -79,8 +81,12 @@ async function health(){for(const [path,dot,text] of [["/healthz","health-dot","
 async function confirmed(message,path,success,options={method:"POST"}){if(!window.confirm(message))return;try{await request(path,options);say(success);await load()}catch(error){say(error.message,true)}}
 function reindex(r){return confirmed("Queue a fresh index for "+r.name+"?","/v1/admin/repositories/"+encodeURIComponent(r.github_id)+"/reindex","Reindex queued.")}
 function retryJob(j){return confirmed("Retry failed job #"+j.id+"?","/v1/admin/jobs/"+encodeURIComponent(j.id)+"/retry","Job retry queued.")}
-$("token-form").addEventListener("submit",event=>{event.preventDefault();token=$("token").value.trim();try{sessionStorage.setItem("grepnest_admin_token",token)}catch(_){}load()});
-$("logout").addEventListener("click",()=>lockAccess("Administrator console locked."));
+function renderProviders(providers){const host=$("provider-options");if(!host)return;clear(host);for(const provider of providers){if(!provider||typeof provider.login_url!=="string")continue;let login;try{login=new URL(provider.login_url,location.origin)}catch(_){continue}if(login.origin!==location.origin)continue;const link=el("a",provider.label||"Sign in with SSO","primary");link.href=login.pathname+login.search+login.hash;host.append(link)}}
+async function logout(){try{await api("/auth/logout",{method:"POST"})}catch(_){}}
+async function enterBearer(){const next=$("token").value.trim();if(!next)return;await logout();mode="bearer";token=next;try{sessionStorage.setItem("grepnest_admin_token",token)}catch(_){}load()}
+async function start(){let config={token_login:true,providers:[]};try{const response=await api("/v1/auth/config");if(response.ok){const body=await response.json();config={token_login:body.token_login===true,providers:Array.isArray(body.providers)?body.providers:[]}}}catch(_){}renderProviders(config.providers);$("token-form").hidden=!config.token_login;try{if((await api("/v1/auth/session")).ok){mode="session";await load();return}}catch(_){}if(token){await logout();mode="bearer";load();return}showAccess()}
+$("token-form").addEventListener("submit",event=>{event.preventDefault();void enterBearer()});
+$("logout").addEventListener("click",()=>{if(mode==="session")void logout();lockAccess("Administrator console locked.")});
 $("theme").addEventListener("click",()=>document.documentElement.classList.toggle("light"));
 for(const button of document.querySelectorAll("[data-nav]"))button.addEventListener("click",()=>showScreen(button.dataset.nav));
 $("repo-filter").addEventListener("input",event=>{state.filter=event.target.value;renderRepositories()});
@@ -90,7 +96,7 @@ $("github-reconcile").addEventListener("click",()=>confirmed("Reconcile reposito
 $("reindex-selected").addEventListener("click",async()=>{const ids=[...document.querySelectorAll("[data-repo]:checked")].map(n=>n.dataset.repo);if(!ids.length)return say("Select at least one repository.",true);if(!window.confirm("Queue "+ids.length+" selected repositories for reindexing?"))return;for(const id of ids)try{await request("/v1/admin/repositories/"+encodeURIComponent(id)+"/reindex",{method:"POST"})}catch(error){return say(error.message,true)}say("Selected repositories queued.");load()});
 $("scip-upload").addEventListener("submit",async event=>{event.preventDefault();const file=$("scip-file").files[0],repo=$("scip-repo").value,commit=$("scip-commit").value;if(!window.confirm("Upload "+file.name+" for repository "+repo+"?"))return;try{await request("/v1/scip/uploads?repository_id="+encodeURIComponent(repo)+"&commit="+encodeURIComponent(commit),{method:"POST",headers:{"Content-Type":"application/vnd.scip+protobuf"},body:file});say("SCIP index uploaded.");await load()}catch(error){say(error.message,true)}});
 $("dependency-refresh").addEventListener("submit",async event=>{event.preventDefault();const repository_id=Number($("dependency-repo").value);if(!window.confirm("Replace dependency metadata with GitHub dependency graph data?"))return;try{await request("/v1/scip/dependencies/github",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({repository_id})});say("GitHub dependencies refreshed.");await load()}catch(error){say(error.message,true)}});
-health();setInterval(()=>{if(token)load();health()},30000);if(token)load();
+health();setInterval(()=>{if(mode!=="anonymous")load();health()},30000);void start();
 })();
 </script>
 </body>
