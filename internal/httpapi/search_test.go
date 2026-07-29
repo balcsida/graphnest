@@ -90,7 +90,7 @@ func TestSearchResponseRespectsWireBudgetIncludingNewline(t *testing.T) {
 	}
 	service := search.NewService(backend, authz.NewStatic(registry), search.Limits{MaxResults: 100, MaxResponseBytes: int64(len(payload))})
 	mux := http.NewServeMux()
-	RegisterSearch(mux, authn.NewStatic(map[string]authn.Principal{"secret": principal}), service, 1024, int64(len(payload)))
+	RegisterSearch(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{"secret": principal})), service, 1024, int64(len(payload)))
 
 	request := httptest.NewRequest(http.MethodPost, "/v1/search", strings.NewReader(`{"query":"needle"}`))
 	request.Header.Set("Authorization", "Bearer secret")
@@ -146,7 +146,7 @@ func testHandler(t *testing.T, backend *stubBackend, maxBytes int64) http.Handle
 	}
 	service := search.NewService(backend, authz.NewStatic(registry), search.Limits{MaxResults: 100})
 	mux := http.NewServeMux()
-	RegisterSearch(mux, authn.NewStatic(map[string]authn.Principal{"secret": {Subject: "user", RepositoryNames: []string{"acme/one"}}}), service, maxBytes, 256<<10)
+	RegisterSearch(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{"secret": {Subject: "user", RepositoryNames: []string{"acme/one"}}})), service, maxBytes, 256<<10)
 	return mux
 }
 

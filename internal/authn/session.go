@@ -65,3 +65,14 @@ func (m SessionManager) Authenticate(ctx context.Context, token string) (Princip
 	}
 	return clonePrincipal(principal), nil
 }
+
+func (m SessionManager) Revoke(ctx context.Context, token string) error {
+	if m.Store == nil {
+		return ErrUnauthenticated
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil || len(raw) != 32 {
+		return ErrUnauthenticated
+	}
+	return m.Store.RevokeSession(ctx, sha256.Sum256(raw))
+}

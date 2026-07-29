@@ -31,6 +31,7 @@ type Metrics struct {
 	graphSyncs         *prometheus.CounterVec
 	graphSyncDuration  *prometheus.HistogramVec
 	graphReady         prometheus.Gauge
+	authEvents         *prometheus.CounterVec
 }
 
 func New() *Metrics {
@@ -54,7 +55,8 @@ func New() *Metrics {
 	metrics.graphSyncs = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "grepnest_graph_sync_total", Help: "Graph synchronizations."}, []string{"result"})
 	metrics.graphSyncDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "grepnest_graph_sync_duration_seconds", Help: "Graph synchronization duration."}, []string{"result"})
 	metrics.graphReady = prometheus.NewGauge(prometheus.GaugeOpts{Name: "grepnest_graph_ready", Help: "Graph readiness."})
-	metrics.registry.MustRegister(metrics.activeRequests, metrics.httpRequests, metrics.httpDuration, metrics.httpResponseSize, metrics.backendCalls, metrics.backendDuration, metrics.githubRequests, metrics.webhookDeliveries, metrics.indexQueueDepth, metrics.indexPhases, metrics.indexDuration, metrics.graphQueueDepth, metrics.graphPhases, metrics.graphDuration, metrics.graphQueries, metrics.graphQueryDuration, metrics.graphSyncs, metrics.graphSyncDuration, metrics.graphReady)
+	metrics.authEvents = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "grepnest_auth_events_total", Help: "Authentication events."}, []string{"provider", "event", "result"})
+	metrics.registry.MustRegister(metrics.activeRequests, metrics.httpRequests, metrics.httpDuration, metrics.httpResponseSize, metrics.backendCalls, metrics.backendDuration, metrics.githubRequests, metrics.webhookDeliveries, metrics.indexQueueDepth, metrics.indexPhases, metrics.indexDuration, metrics.graphQueueDepth, metrics.graphPhases, metrics.graphDuration, metrics.graphQueries, metrics.graphQueryDuration, metrics.graphSyncs, metrics.graphSyncDuration, metrics.graphReady, metrics.authEvents)
 	return metrics
 }
 
@@ -150,6 +152,19 @@ func (metrics *Metrics) ObserveGraphPhase(phase, result string, duration time.Du
 	labels := []string{phase, successOrError(result)}
 	metrics.graphPhases.WithLabelValues(labels...).Inc()
 	metrics.graphDuration.WithLabelValues(labels...).Observe(duration.Seconds())
+}
+
+func (metrics *Metrics) ObserveAuth(provider, event, result string) {
+	metrics.authEvents.WithLabelValues(fixed(provider, "oidc", "session", "static"), fixed(event, "login_start", "callback", "session_auth", "logout", "cleanup"), authResult(result)).Inc()
+}
+
+func authResult(result string) string {
+	for _, candidate := range []string{"success", "invalid", "denied", "error"} {
+		if result == candidate {
+			return result
+		}
+	}
+	return "error"
 }
 
 func fixed(value string, allowed ...string) string {

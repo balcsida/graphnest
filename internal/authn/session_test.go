@@ -15,6 +15,7 @@ type sessionStoreStub struct {
 	principal                              Principal
 	lookupHash                             [32]byte
 	lookupNow, lookupIdleUntil             time.Time
+	revoked                                [32]byte
 }
 
 func (s *sessionStoreStub) BindOIDCUser(_ context.Context, issuer, subject, linkID string) (int64, error) {
@@ -34,7 +35,10 @@ func (s *sessionStoreStub) SessionPrincipal(_ context.Context, hash [32]byte, no
 	s.lookupHash, s.lookupNow, s.lookupIdleUntil = hash, now, idleUntil
 	return s.principal, nil
 }
-func (s *sessionStoreStub) RevokeSession(context.Context, [32]byte) error { return nil }
+func (s *sessionStoreStub) RevokeSession(_ context.Context, hash [32]byte) error {
+	s.revoked = hash
+	return nil
+}
 func (s *sessionStoreStub) DeleteExpiredAuth(context.Context, time.Time) (int64, int64, error) {
 	return 0, 0, nil
 }
@@ -56,6 +60,18 @@ func TestSessionManagerCreatesOpaqueTokenForExactLinkID(t *testing.T) {
 	}
 	if store.session.UserID != 42 || store.session.Provider != "oidc" || store.session.TokenHash != sha256.Sum256(raw) || store.session.CreatedAt != now || store.session.LastSeenAt != now || store.session.IdleExpiresAt != now.Add(30*time.Minute) || store.session.ExpiresAt != now.Add(8*time.Hour) {
 		t.Fatalf("session = %#v", store.session)
+	}
+}
+
+func TestSessionManagerRevokesOpaqueToken(t *testing.T) {
+	store := &sessionStoreStub{}
+	manager := SessionManager{Store: store}
+	token := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
+	if err := manager.Revoke(t.Context(), token); err != nil {
+		t.Fatal(err)
+	}
+	if want := sha256.Sum256(bytes.Repeat([]byte{7}, 32)); store.revoked != want {
+		t.Fatalf("revoked=%x want=%x", store.revoked, want)
 	}
 }
 
