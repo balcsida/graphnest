@@ -45,7 +45,10 @@ func (session *Session) Execute(ctx context.Context, query string, parameters ma
 		result, err = executeQuery(session.connection, query, parameters, normalizeLimits(limits))
 		return err
 	})
-	return result, err
+	if err != nil {
+		return Result{}, err
+	}
+	return result, nil
 }
 
 func (session *Session) executeNative(ctx context.Context, operation func() error) error {
