@@ -36,35 +36,35 @@ type Group struct {
 }
 
 func (service *Service) Users(ctx context.Context, principal authn.Principal) ([]User, bool, error) {
-	if err := requireAdmin(principal); err != nil {
+	if err := requireIdentityAdmin(principal); err != nil {
 		return nil, false, err
 	}
 	return service.Store.AdminUsers(ctx, service.limit())
 }
 
 func (service *Service) User(ctx context.Context, principal authn.Principal, id int64) (User, error) {
-	if err := requireAdmin(principal); err != nil {
+	if err := requireIdentityAdmin(principal); err != nil {
 		return User{}, err
 	}
 	return service.Store.AdminUser(ctx, id)
 }
 
 func (service *Service) Groups(ctx context.Context, principal authn.Principal) ([]Group, bool, error) {
-	if err := requireAdmin(principal); err != nil {
+	if err := requireIdentityAdmin(principal); err != nil {
 		return nil, false, err
 	}
 	return service.Store.AdminGroups(ctx, service.limit())
 }
 
 func (service *Service) Group(ctx context.Context, principal authn.Principal, id int64) (Group, error) {
-	if err := requireAdmin(principal); err != nil {
+	if err := requireIdentityAdmin(principal); err != nil {
 		return Group{}, err
 	}
 	return service.Store.AdminGroup(ctx, id)
 }
 
 func (service *Service) SuspendUser(ctx context.Context, principal authn.Principal, id int64, suspended bool) error {
-	if err := requireAdmin(principal); err != nil {
+	if err := requireIdentityAdmin(principal); err != nil {
 		return err
 	}
 	actorID := principalUserID(principal)
@@ -75,7 +75,7 @@ func (service *Service) SuspendUser(ctx context.Context, principal authn.Princip
 }
 
 func (service *Service) ReplaceUserAccess(ctx context.Context, principal authn.Principal, id int64, administrator bool, repositoryIDs []int64) error {
-	if err := requireAdmin(principal); err != nil {
+	if err := requireIdentityAdmin(principal); err != nil {
 		return err
 	}
 	actorID := principalUserID(principal)
@@ -86,14 +86,14 @@ func (service *Service) ReplaceUserAccess(ctx context.Context, principal authn.P
 }
 
 func (service *Service) ReplaceGroupAccess(ctx context.Context, principal authn.Principal, id int64, administrator bool, repositoryIDs []int64) error {
-	if err := requireAdmin(principal); err != nil {
+	if err := requireIdentityAdmin(principal); err != nil {
 		return err
 	}
 	return service.Store.ReplaceAdminGroupAccess(ctx, principalUserID(principal), id, administrator, repositoryIDs)
 }
 
 func (service *Service) RevokeUserCredentials(ctx context.Context, principal authn.Principal, id int64) error {
-	if err := requireAdmin(principal); err != nil {
+	if err := requireIdentityAdmin(principal); err != nil {
 		return err
 	}
 	return service.Store.RevokeAdminUserCredentials(ctx, id)
@@ -102,4 +102,11 @@ func (service *Service) RevokeUserCredentials(ctx context.Context, principal aut
 func principalUserID(principal authn.Principal) int64 {
 	id, _ := strconv.ParseInt(principal.Subject, 10, 64)
 	return id
+}
+
+func requireIdentityAdmin(principal authn.Principal) error {
+	if err := requireAdmin(principal); err != nil || principal.Method == "api_token" {
+		return ErrForbidden
+	}
+	return nil
 }

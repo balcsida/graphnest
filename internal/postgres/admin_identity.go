@@ -39,20 +39,26 @@ func (s *Store) AdminUser(ctx context.Context, id int64) (admin.User, error) {
 
 const adminUsersSQL = `select users.id, users.external_id, users.user_name, users.display_name,
 	users.source, users.scim_active, users.suspended_at is not null,
-	exists(select 1 from user_roles where user_roles.user_id=users.id)
-		or exists(select 1 from group_memberships
-			join groups on groups.id=group_memberships.group_id and groups.deleted_at is null
-			join group_roles on group_roles.group_id=groups.id
-			where group_memberships.user_id=users.id),
-	coalesce(array(
-		select repository_id from user_repository_grants where user_id=users.id
-		union
-		select grants.repository_id from group_memberships
-			join groups on groups.id=group_memberships.group_id and groups.deleted_at is null
-			join group_repository_grants grants on grants.group_id=groups.id
-			where group_memberships.user_id=users.id
-		order by repository_id
-	), '{}')
+	users.scim_active and users.suspended_at is null and (
+		exists(select 1 from user_roles where user_roles.user_id=users.id)
+			or exists(select 1 from group_memberships
+				join groups on groups.id=group_memberships.group_id and groups.deleted_at is null
+				join group_roles on group_roles.group_id=groups.id
+				where group_memberships.user_id=users.id)),
+	case when users.scim_active and users.suspended_at is null then coalesce(array(
+		select grants.repository_id from (
+			select repository_id from user_repository_grants where user_id=users.id
+			union
+			select group_grants.repository_id from group_memberships
+				join groups on groups.id=group_memberships.group_id and groups.deleted_at is null
+				join group_repository_grants group_grants on group_grants.group_id=groups.id
+				where group_memberships.user_id=users.id
+		) grants
+		join repositories on repositories.github_id=grants.repository_id
+		join installations on installations.id=repositories.installation_id
+		where installations.status='active' and repositories.enabled and not repositories.archived
+		order by grants.repository_id
+	), '{}') else '{}' end
 	from users where users.deleted_at is null`
 
 type rowScanner interface{ Scan(...any) error }
@@ -94,7 +100,14 @@ func (s *Store) AdminGroup(ctx context.Context, id int64) (admin.Group, error) {
 
 const adminGroupsSQL = `select groups.id, groups.external_id, groups.display_name,
 	exists(select 1 from group_roles where group_roles.group_id=groups.id),
-	coalesce(array(select repository_id from group_repository_grants where group_id=groups.id order by repository_id), '{}'),
+	coalesce(array(
+		select grants.repository_id from group_repository_grants grants
+		join repositories on repositories.github_id=grants.repository_id
+		join installations on installations.id=repositories.installation_id
+		where grants.group_id=groups.id and installations.status='active'
+			and repositories.enabled and not repositories.archived
+		order by grants.repository_id
+	), '{}'),
 	(select count(*) from group_memberships where group_id=groups.id)
 	from groups where groups.deleted_at is null`
 
