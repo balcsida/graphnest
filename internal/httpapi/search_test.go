@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/authz"
 	"github.com/grepnest/grepnest/internal/repository"
@@ -69,6 +70,26 @@ func TestSearchHTTP(t *testing.T) {
 			}
 			assertSafeError(t, response.Body.String(), test.token, test.code, test.message, test.retryable)
 		})
+	}
+}
+
+func TestSearchErrorUsesRequestContextID(t *testing.T) {
+	handler := RequestIDs(nil, testHandler(t, &stubBackend{err: context.DeadlineExceeded}, 1024))
+	request := httptest.NewRequest(http.MethodPost, "/v1/search", strings.NewReader(`{"query":"needle"}`))
+	request.Header.Set("Authorization", "Bearer secret")
+	request.Header.Set("Content-Type", "application/json")
+	request = request.WithContext(audit.WithRequestID(request.Context(), "trusted-request"))
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	var envelope struct {
+		Error struct {
+			RequestID string `json:"request_id"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil || envelope.Error.RequestID != "trusted-request" {
+		t.Fatalf("request ID=%q err=%v body=%s", envelope.Error.RequestID, err, response.Body.String())
 	}
 }
 
