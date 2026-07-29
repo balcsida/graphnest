@@ -30,6 +30,8 @@ type Provider struct {
 	Rand     io.Reader
 }
 
+const maxCallbackValueLen = 2048
+
 func (*Provider) Metadata() sso.Metadata {
 	return sso.Metadata{ID: "oidc", Label: "Sign in with SSO", LoginURL: "/auth/oidc/login"}
 }
@@ -170,10 +172,13 @@ func exactlyOne(values []string) (string, bool) {
 	if len(values) == 1 {
 		returnValue = values[0]
 	}
-	return returnValue, len(values) == 1 && returnValue != ""
+	return returnValue, len(values) == 1 && returnValue != "" && len(returnValue) <= maxCallbackValueLen
 }
 
 func tokenHash(value string) ([32]byte, bool) {
+	if len(value) > maxCallbackValueLen {
+		return [32]byte{}, false
+	}
 	raw, err := base64.RawURLEncoding.DecodeString(value)
 	if err != nil || len(raw) != 32 {
 		return [32]byte{}, false

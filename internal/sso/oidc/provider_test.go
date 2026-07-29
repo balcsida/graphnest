@@ -209,6 +209,41 @@ func TestOIDCProviderCallbackRejectsMalformedAndBoundRequests(t *testing.T) {
 	}
 }
 
+func TestOIDCProviderCallbackBoundsValuesBeforeConsumingFlow(t *testing.T) {
+	for _, test := range []struct {
+		name, nameValue    string
+		wantConsumed, okay bool
+	}{
+		{"exact code", "code=" + strings.Repeat("c", maxCallbackValueLen), true, true},
+		{"long code", "code=" + strings.Repeat("c", maxCallbackValueLen+1), false, false},
+		{"exact error", "error=" + strings.Repeat("e", maxCallbackValueLen), true, false},
+		{"long error", "error=" + strings.Repeat("e", maxCallbackValueLen+1), false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newCallbackFixture(t)
+			recorder := fixture.callback(t, "?state="+fixture.state+"&"+test.nameValue, fixture.browser)
+			if test.okay && recorder.Header().Get("Location") != "/" {
+				t.Fatalf("exact code response = %q", recorder.Header().Get("Location"))
+			}
+			if test.wantConsumed && !test.okay {
+				assertGenericFailure(t, recorder)
+			}
+			if fixture.store.consumed != test.wantConsumed {
+				t.Fatalf("consumed = %t", fixture.store.consumed)
+			}
+		})
+	}
+}
+
+func TestExactlyOneBoundsCallbackValues(t *testing.T) {
+	if _, ok := exactlyOne([]string{strings.Repeat("x", maxCallbackValueLen)}); !ok {
+		t.Fatal("exact boundary rejected")
+	}
+	if _, ok := exactlyOne([]string{strings.Repeat("x", maxCallbackValueLen+1)}); ok {
+		t.Fatal("over-boundary value accepted")
+	}
+}
+
 func TestOIDCProviderCallbackRejectsDuplicateBindingCookie(t *testing.T) {
 	fixture := newCallbackFixture(t)
 	mux := http.NewServeMux()
