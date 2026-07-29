@@ -187,8 +187,9 @@ func (oidcSearchBackend) Search(context.Context, search.BackendRequest) (api.Sea
 func (oidcSearchBackend) Health(context.Context) error { return nil }
 
 type oidcTestProvider struct {
-	server *httptest.Server
-	key    *rsa.PrivateKey
+	server      *httptest.Server
+	key         *rsa.PrivateKey
+	displayName string
 }
 
 func newOIDCTestProvider(t *testing.T) *oidcTestProvider {
@@ -197,7 +198,7 @@ func newOIDCTestProvider(t *testing.T) *oidcTestProvider {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider := &oidcTestProvider{key: key}
+	provider := &oidcTestProvider{key: key, displayName: "Ada"}
 	provider.server = httptest.NewTLSServer(http.HandlerFunc(provider.serveHTTP))
 	t.Cleanup(provider.server.Close)
 	return provider
@@ -210,6 +211,9 @@ func (provider *oidcTestProvider) caPEM() []byte {
 func (provider *oidcTestProvider) serveHTTP(writer http.ResponseWriter, request *http.Request) {
 	issuer := provider.server.URL
 	switch request.URL.Path {
+	case "/app/installations":
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte("[]"))
 	case "/.well-known/openid-configuration":
 		_ = json.NewEncoder(writer).Encode(map[string]string{"issuer": issuer, "authorization_endpoint": issuer + "/authorize", "token_endpoint": issuer + "/token", "jwks_uri": issuer + "/keys"})
 	case "/authorize":
@@ -240,7 +244,7 @@ func (provider *oidcTestProvider) token(issuer, nonce string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	claims, err := json.Marshal(map[string]any{"iss": issuer, "sub": "subject-42", "aud": "grepnest-e2e", "exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(), "nonce": nonce, "directory_id": oidcDirectoryID, "name": "Ada"})
+	claims, err := json.Marshal(map[string]any{"iss": issuer, "sub": "subject-42", "aud": "grepnest-e2e", "exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(), "nonce": nonce, "directory_id": oidcDirectoryID, "name": provider.displayName})
 	if err != nil {
 		return "", err
 	}
