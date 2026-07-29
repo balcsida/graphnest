@@ -140,12 +140,17 @@ func repositoryID(requestPath string) (int64, bool) {
 }
 
 func writeBoundedJSON(writer http.ResponseWriter, value any, maxBytes int64) {
+	writeBoundedJSONStatus(writer, http.StatusOK, value, maxBytes)
+}
+
+func writeBoundedJSONStatus(writer http.ResponseWriter, status int, value any, maxBytes int64) {
 	data, err := json.Marshal(value)
 	if err != nil || int64(len(data)+1) > maxBytes {
 		writer.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(status)
 	_, _ = writer.Write(append(data, '\n'))
 }
 
