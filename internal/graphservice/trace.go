@@ -33,7 +33,11 @@ func (s *Service) Trace(ctx context.Context, principal authn.Principal, request 
 	if err := s.reauthorize(ctx, principal, selected, response.Commits); err != nil {
 		return api.GraphTraceResponse{}, err
 	}
-	result = api.GraphTraceResponse{Status: response.Status, Boundaries: boundaries(response.Boundaries), Commits: response.Commits}
+	publicBoundaries, err := publicBoundaries(response.Boundaries, snapshots)
+	if err != nil {
+		return api.GraphTraceResponse{}, err
+	}
+	result = api.GraphTraceResponse{Status: response.Status, Boundaries: publicBoundaries, Commits: response.Commits}
 	for _, value := range response.Candidates {
 		converted, convertErr := candidate(value, snapshots)
 		if convertErr != nil {
@@ -42,10 +46,18 @@ func (s *Service) Trace(ctx context.Context, principal authn.Principal, request 
 		result.Candidates = append(result.Candidates, converted)
 	}
 	for _, value := range response.Nodes {
-		result.Nodes = append(result.Nodes, symbol(value))
+		converted, convertErr := publicSymbol(value, snapshots)
+		if convertErr != nil {
+			return api.GraphTraceResponse{}, convertErr
+		}
+		result.Nodes = append(result.Nodes, converted)
 	}
 	for _, value := range response.Edges {
-		result.Relations = append(result.Relations, reference(value))
+		converted, convertErr := publicReference(value, snapshots)
+		if convertErr != nil {
+			return api.GraphTraceResponse{}, convertErr
+		}
+		result.Relations = append(result.Relations, converted)
 	}
 	return result, nil
 }

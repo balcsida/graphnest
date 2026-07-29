@@ -66,3 +66,31 @@ func TestImpactMapsAmbiguousCandidates(t *testing.T) {
 		t.Fatalf("Impact()=%#v,%v", got, err)
 	}
 }
+
+func TestImpactMapsCrossRepositorySymbolsEdgesAndBoundaries(t *testing.T) {
+	first, second := readyRepository("a"), readyRepository("b")
+	second.ID, second.GitHubID = 2, 202
+	backend := &fakeBackend{impact: func() graphprotocol.ImpactResponse {
+		return graphprotocol.ImpactResponse{
+			Status:  graphprotocol.StatusFound,
+			ByDepth: map[int][]graphprotocol.Symbol{1: {{UID: "b", RepositoryID: 2}}},
+			Edges: []graphprotocol.Relationship{
+				{SourceRepositoryID: 1, TargetRepositoryID: 2, SourceUID: "a", TargetUID: "b"},
+				{SourceRepositoryID: 2, TargetRepositoryID: 1, SourceUID: "b", TargetUID: "a"},
+			},
+			Boundaries: []graphprotocol.Boundary{{RepositoryID: 2, Repository: "internal", Reason: "depth_limit"}},
+			Commits:    map[string]string{"a": first.IndexedSHA, "b": second.IndexedSHA},
+		}
+	}}
+	principal := principalFor(101)
+	principal.RepositoryIDs = append(principal.RepositoryIDs, 202)
+	got, err := (&Service{Store: &fakeRepositoryStore{repositories: []repository.Repository{first, second}}, Backend: backend}).
+		Impact(t.Context(), principal, api.GraphImpactRequest{Repo: api.GraphRepositorySelector{ID: 101}, TargetUID: "a", Direction: "downstream"})
+	if err != nil || got.ByDepth[1][0].RepositoryID != 202 ||
+		got.Relations[0].SourceRepositoryID != 101 || got.Relations[0].TargetRepositoryID != 202 ||
+		got.Relations[1].SourceRepositoryID != 202 || got.Relations[1].TargetRepositoryID != 101 ||
+		got.Relations[0].SourceUID != "a" || got.Relations[0].TargetUID != "b" ||
+		got.Boundaries[0].RepositoryID != 202 || got.Boundaries[0].Repository != "b" {
+		t.Fatalf("Impact() = %#v, %v", got, err)
+	}
+}

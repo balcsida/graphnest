@@ -30,11 +30,19 @@ func (s *Service) Context(ctx context.Context, principal authn.Principal, reques
 	if err := s.reauthorize(ctx, principal, selected, response.Commits); err != nil {
 		return api.GraphContextResponse{}, err
 	}
-	result = api.GraphContextResponse{Status: response.Status, Incoming: map[string][]api.GraphReference{}, Outgoing: map[string][]api.GraphReference{}, Boundaries: boundaries(response.Boundaries), Commits: response.Commits}
+	publicBoundaries, err := publicBoundaries(response.Boundaries, snapshots)
+	if err != nil {
+		return api.GraphContextResponse{}, err
+	}
+	result = api.GraphContextResponse{Status: response.Status, Incoming: map[string][]api.GraphReference{}, Outgoing: map[string][]api.GraphReference{}, Boundaries: publicBoundaries, Commits: response.Commits}
 	if response.Symbol != nil {
-		value := symbol(*response.Symbol)
+		internal := *response.Symbol
+		value, convertErr := publicSymbol(internal, snapshots)
+		if convertErr != nil {
+			return api.GraphContextResponse{}, convertErr
+		}
 		if request.IncludeContent {
-			if snapshot, ok := snapshots[value.RepositoryID]; ok && s.Files != nil {
+			if snapshot, ok := snapshots[internal.RepositoryID]; ok && s.Files != nil {
 				file, readErr := s.Files.ReadFileAt(ctx, principal, api.ReadFileRequest{RepositoryID: snapshot.GitHubID, Path: value.FilePath, StartLine: value.Range.StartLine + 1, EndLine: value.Range.EndLine + 1}, snapshot.Commit)
 				if readErr != nil {
 					return api.GraphContextResponse{}, readErr
@@ -53,12 +61,20 @@ func (s *Service) Context(ctx context.Context, principal authn.Principal, reques
 	}
 	for relation, values := range response.IncomingEdges {
 		for _, value := range values {
-			result.Incoming[relation] = append(result.Incoming[relation], reference(value))
+			converted, convertErr := publicReference(value, snapshots)
+			if convertErr != nil {
+				return api.GraphContextResponse{}, convertErr
+			}
+			result.Incoming[relation] = append(result.Incoming[relation], converted)
 		}
 	}
 	for relation, values := range response.OutgoingEdges {
 		for _, value := range values {
-			result.Outgoing[relation] = append(result.Outgoing[relation], reference(value))
+			converted, convertErr := publicReference(value, snapshots)
+			if convertErr != nil {
+				return api.GraphContextResponse{}, convertErr
+			}
+			result.Outgoing[relation] = append(result.Outgoing[relation], converted)
 		}
 	}
 	return result, nil

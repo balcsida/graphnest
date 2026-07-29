@@ -172,3 +172,45 @@ func TestContextRejectsCandidateOutsideAuthorizedScope(t *testing.T) {
 		t.Fatalf("Context() error = %v", err)
 	}
 }
+
+func TestContextMapsEveryRepositoryIdentity(t *testing.T) {
+	first, second := readyRepository("a"), readyRepository("b")
+	second.ID, second.GitHubID = 2, 202
+	backend := &fakeBackend{context: func() graphprotocol.ContextResponse {
+		return graphprotocol.ContextResponse{
+			Status: graphprotocol.StatusFound,
+			Symbol: &graphprotocol.Symbol{UID: "target", RepositoryID: 2},
+			IncomingEdges: map[string][]graphprotocol.Relationship{"calls": {{
+				SourceRepositoryID: 1, TargetRepositoryID: 2, SourceUID: "source", TargetUID: "target",
+			}}},
+			OutgoingEdges: map[string][]graphprotocol.Relationship{"calls": {{
+				SourceRepositoryID: 2, TargetRepositoryID: 1, SourceUID: "target", TargetUID: "source",
+			}}},
+			Boundaries: []graphprotocol.Boundary{{RepositoryID: 2, Repository: "internal", Reason: "graph_missing"}},
+			Commits:    map[string]string{"a": first.IndexedSHA, "b": second.IndexedSHA},
+		}
+	}}
+	principal := principalFor(101)
+	principal.RepositoryIDs = append(principal.RepositoryIDs, 202)
+	got, err := (&Service{Store: &fakeRepositoryStore{repositories: []repository.Repository{first, second}}, Backend: backend}).
+		Context(t.Context(), principal, api.GraphContextRequest{Repo: api.GraphRepositorySelector{ID: 101}, GraphSymbolSelector: api.GraphSymbolSelector{UID: "target"}})
+	if err != nil || got.Symbol.RepositoryID != 202 ||
+		got.Incoming["calls"][0].SourceRepositoryID != 101 || got.Incoming["calls"][0].TargetRepositoryID != 202 ||
+		got.Outgoing["calls"][0].SourceRepositoryID != 202 || got.Outgoing["calls"][0].TargetRepositoryID != 101 ||
+		got.Boundaries[0].RepositoryID != 202 || got.Boundaries[0].Repository != "b" {
+		t.Fatalf("Context() = %#v, %v", got, err)
+	}
+}
+
+func TestPublicIdentityRejectsUnknownBackendRepository(t *testing.T) {
+	snapshots := map[int64]Snapshot{1: {ID: 1, GitHubID: 101, Name: "a"}}
+	if _, err := publicSymbol(graphprotocol.Symbol{RepositoryID: 2}, snapshots); !errors.Is(err, ErrGraphNotReady) {
+		t.Fatalf("publicSymbol() error = %v", err)
+	}
+	if _, err := publicReference(graphprotocol.Relationship{SourceRepositoryID: 1, TargetRepositoryID: 2}, snapshots); !errors.Is(err, ErrGraphNotReady) {
+		t.Fatalf("publicReference() error = %v", err)
+	}
+	if _, err := publicBoundary(graphprotocol.Boundary{RepositoryID: 2}, snapshots); !errors.Is(err, ErrGraphNotReady) {
+		t.Fatalf("publicBoundary() error = %v", err)
+	}
+}

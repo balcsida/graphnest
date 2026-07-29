@@ -19,7 +19,7 @@ func (s *Service) Cypher(ctx context.Context, principal authn.Principal, request
 	if request.Statement == "" || request.MaxRows < 0 || request.MaxBytes < 0 {
 		return api.GraphCypherResponse{}, ErrInvalidRequest
 	}
-	selected, scope, _, err := s.scope(ctx, principal, request.Repo, request.Branch)
+	selected, scope, snapshots, err := s.scope(ctx, principal, request.Repo, request.Branch)
 	if err != nil {
 		return api.GraphCypherResponse{}, err
 	}
@@ -47,7 +47,11 @@ func (s *Service) Cypher(ctx context.Context, principal authn.Principal, request
 	if err := s.reauthorize(ctx, principal, selected, response.Commits); err != nil {
 		return api.GraphCypherResponse{}, err
 	}
-	result = api.GraphCypherResponse{Status: "ok", Columns: response.Columns, Truncated: response.Truncated, Boundaries: boundaries(response.Boundaries), Commits: response.Commits}
+	publicBoundaries, err := publicBoundaries(response.Boundaries, snapshots)
+	if err != nil {
+		return api.GraphCypherResponse{}, err
+	}
+	result = api.GraphCypherResponse{Status: "ok", Columns: response.Columns, Truncated: response.Truncated, Boundaries: publicBoundaries, Commits: response.Commits}
 	for _, row := range response.Rows {
 		encoded := make([]json.RawMessage, len(row))
 		for i, value := range row {
