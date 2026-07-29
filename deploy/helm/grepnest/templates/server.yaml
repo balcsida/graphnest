@@ -85,6 +85,9 @@ spec:
             {{- if .Values.secrets.customCA.name }}
             - {name: custom-ca, mountPath: /var/run/secrets/grepnest/ca/ca.crt, subPath: ca.crt, readOnly: true}
             {{- end }}
+            {{- if .Values.server.scim.enabled }}
+            - {name: scim-token, mountPath: /var/run/secrets/grepnest/scim/token, subPath: token, readOnly: true}
+            {{- end }}
             {{- if .Values.server.sso.oidc.enabled }}
             - {name: oidc-client-secret, mountPath: /var/run/secrets/grepnest/oidc/client-secret, subPath: client-secret, readOnly: true}
             {{- if .Values.secrets.oidcCA.name }}
@@ -129,6 +132,13 @@ spec:
             items:
               - {key: {{ .Values.secrets.oidcCA.key }}, path: ca.crt}
         {{- end }}
+        {{- end }}
+        {{- if .Values.server.scim.enabled }}
+        - name: scim-token
+          secret:
+            secretName: {{ .Values.secrets.scim.name }}
+            items:
+              - {key: {{ .Values.secrets.scim.tokenKey }}, path: token}
         {{- end }}
 ---
 apiVersion: v1

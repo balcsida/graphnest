@@ -243,6 +243,26 @@ authoritative HTTPS origin. Browser clients send same-origin credentials. Unsafe
 session requests require that exact Origin, and GrepNest persists no refresh
 tokens.
 
+## Optional SCIM operations
+
+Publish only the HTTPS `<GREPNEST_PUBLIC_URL>/scim/v2` endpoint and configure
+`GREPNEST_SCIM_TOKEN_FILE` from a read-only secret mount. Use a dedicated
+high-entropy token; it cannot access REST, MCP, or admin APIs. The OIDC link
+claim must exactly equal each SCIM user's `externalId`.
+
+Supported reconciliation filters are Users `id`, `userName`, or `externalId`
+and Groups `id`, `displayName`, or `externalId`, all with `eq`. PATCH accepts
+user `active`, `userName`, `displayName`, `name`, and `emails`; group PATCH
+accepts `members` and `members[value eq "USER_ID"]`. Limits are 1 MiB per
+body, 8 KiB per query, 16 KiB per URL, 100 PATCH operations, and the configured
+maximum result count.
+
+Rotate the token by replacing the mounted secret and restarting every server
+replica; the process reads it only at startup. Deactivation and deletion deny
+existing sessions and API tokens on their next request. Bulk, sorting, ETags,
+passwords, `/Me`, `/.search`, root search, enterprise extensions, custom
+schemas/resources, roles, and entitlements are unsupported.
+
 ## Kubernetes chart boundary
 
 Releases publish multi-architecture images and an OCI chart. Replace each

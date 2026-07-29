@@ -111,6 +111,7 @@ services:
       GREPNEST_OIDC_SCOPES: ${GREPNEST_OIDC_SCOPES:-}
       GREPNEST_OIDC_LINK_CLAIM: ${GREPNEST_OIDC_LINK_CLAIM:-}
       GREPNEST_OIDC_DISPLAY_NAME_CLAIM: ${GREPNEST_OIDC_DISPLAY_NAME_CLAIM:-}
+      GREPNEST_SCIM_TOKEN_FILE: ${GREPNEST_SCIM_TOKEN_FILE:+/run/secrets/grepnest/scim/token}
     volumes:
       - type: bind
         source: ${GREPNEST_GITHUB_PRIVATE_KEY_FILE:?GREPNEST_GITHUB_PRIVATE_KEY_FILE is required}
@@ -139,6 +140,12 @@ services:
       - type: bind
         source: ${GREPNEST_OIDC_CA_FILE:-/dev/null}
         target: /run/secrets/grepnest/oidc-ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${GREPNEST_SCIM_TOKEN_FILE:-/dev/null}
+        target: /run/secrets/grepnest/scim/token
         read_only: true
         bind:
           create_host_path: false

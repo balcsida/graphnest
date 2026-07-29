@@ -19,6 +19,12 @@ only a hashed opaque GrepNest session. Same-origin browser REST requests use
 the HttpOnly session cookie; no IdP refresh token is persisted and `/mcp`
 remains bearer-only.
 
+When enabled, `/scim/v2` uses a separate secret-file bearer credential and
+writes the same PostgreSQL users, groups, and memberships used by OIDC and
+authorization. OIDC binds its configured link claim to SCIM `externalId`.
+Sessions and API tokens resolve live directory state on every request, so SCIM
+deactivation or deletion takes effect immediately.
+
 REST and MCP call the same search service. `/mcp` is hosted Streamable HTTP
 MCP behind bearer authentication. `grepnest-mcp` is a stdio proxy: it connects
 to `<GREPNEST_SERVER_URL>/mcp` with `GREPNEST_TOKEN`, lists the hosted tools,

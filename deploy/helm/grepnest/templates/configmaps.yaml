@@ -30,8 +30,10 @@ data:
   {{- if .Values.secrets.customCA.name }}
   GREPNEST_GITHUB_CA_FILE: /var/run/secrets/grepnest/ca/ca.crt
   {{- end }}
-  {{- if .Values.server.sso.oidc.enabled }}
+  {{- if or .Values.server.sso.oidc.enabled .Values.server.scim.enabled }}
   GREPNEST_PUBLIC_URL: {{ .Values.server.sso.publicURL | quote }}
+  {{- end }}
+  {{- if .Values.server.sso.oidc.enabled }}
   GREPNEST_SSO_SESSION_IDLE: {{ .Values.server.sso.sessionIdle | quote }}
   GREPNEST_SSO_SESSION_TTL: {{ .Values.server.sso.sessionTTL | quote }}
   GREPNEST_SSO_LOGIN_FLOW_TTL: {{ .Values.server.sso.loginFlowTTL | quote }}
@@ -44,6 +46,9 @@ data:
   {{- if .Values.secrets.oidcCA.name }}
   GREPNEST_OIDC_CA_FILE: /var/run/secrets/grepnest/oidc-ca/ca.crt
   {{- end }}
+  {{- end }}
+  {{- if .Values.server.scim.enabled }}
+  GREPNEST_SCIM_TOKEN_FILE: /var/run/secrets/grepnest/scim/token
   {{- end }}
 ---
 apiVersion: v1

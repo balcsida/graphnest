@@ -57,7 +57,8 @@
         "githubApp",
         "customCA",
         "oidc",
-        "oidcCA"
+        "oidcCA",
+        "scim"
       ],
       "properties": {
         "runtime": {
@@ -74,6 +75,9 @@
         },
         "oidcCA": {
           "$ref": "#/definitions/optionalSecret"
+        },
+        "scim": {
+          "$ref": "#/definitions/scimSecret"
         }
       }
     },
@@ -86,6 +90,7 @@
         "service",
         "config",
         "sso",
+        "scim",
         "resources",
         "nodeSelector",
         "affinity",
@@ -211,6 +216,14 @@
                 "displayNameClaim": {"$ref": "#/definitions/nonEmptyString"}
               }
             }
+          }
+        },
+        "scim": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": {"type": "boolean"}
           }
         },
         "resources": {
@@ -672,6 +685,13 @@
   },
   "allOf": [
     {
+      "if": {"properties": {"server": {"properties": {"scim": {"properties": {"enabled": {"const": true}}}}}}},
+      "then": {"properties": {
+        "secrets": {"properties": {"scim": {"properties": {"name": {"$ref": "#/definitions/kubernetesObjectName"}}}}},
+        "server": {"properties": {"sso": {"properties": {"publicURL": {"$ref": "#/definitions/httpsURL"}}}}}
+      }}
+    },
+    {
       "if": {"properties": {"server": {"properties": {"sso": {"properties": {"oidc": {"properties": {"enabled": {"const": true}}}}}}}}},
       "then": {"properties": {
         "secrets": {"properties": {"oidc": {"properties": {"name": {"$ref": "#/definitions/kubernetesObjectName"}}}}},
@@ -1012,6 +1032,15 @@
       "type": "object",
       "additionalProperties": {
         "type": "string"
+      }
+    },
+    "scimSecret": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "tokenKey"],
+      "properties": {
+        "name": {"$ref": "#/definitions/optionalKubernetesObjectName"},
+        "tokenKey": {"$ref": "#/definitions/secretKey"}
       }
     },
     "array": {
