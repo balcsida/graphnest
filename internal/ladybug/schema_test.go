@@ -1,11 +1,51 @@
 package ladybug
 
 import (
+	"context"
+	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	lbug "github.com/LadybugDB/go-ladybug"
 )
+
+func TestEnsureSchemaInterruptsCanceledStatement(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		ctx  func() (context.Context, context.CancelFunc)
+		want error
+	}{
+		{"canceled", func() (context.Context, context.CancelFunc) {
+			ctx, cancel := context.WithCancel(t.Context())
+			time.AfterFunc(time.Millisecond, cancel)
+			return ctx, cancel
+		}, context.Canceled},
+		{"deadline", func() (context.Context, context.CancelFunc) {
+			return context.WithTimeout(t.Context(), time.Millisecond)
+		}, context.DeadlineExceeded},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			db := testDatabase(t, Options{InterruptGrace: 2 * time.Second})
+			original := schemaStatements
+			schemaStatements = []string{slowQuery}
+			t.Cleanup(func() { schemaStatements = original })
+
+			ctx, cancel := test.ctx()
+			defer cancel()
+			err := db.EnsureSchema(ctx)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("EnsureSchema() error = %v, want %v", err, test.want)
+			}
+			if err := db.Update(t.Context(), func(session *Session) error {
+				_, err := session.Execute(t.Context(), `RETURN 1`, nil, QueryLimits{})
+				return err
+			}); err != nil {
+				t.Fatalf("Update() after interrupted schema = %v", err)
+			}
+		})
+	}
+}
 
 func TestEnsureSchemaIsIdempotent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "graph")

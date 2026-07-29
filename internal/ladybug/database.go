@@ -3,7 +3,6 @@ package ladybug
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -111,8 +110,8 @@ func (db *Database) Close() error {
 }
 
 func (db *Database) EnsureSchema(ctx context.Context) error {
-	return db.Update(ctx, func(session *Session) error {
-		return EnsureSchema(ctx, session.connection)
+	return db.update(ctx, defaultQueryTimeout, func(session *Session) error {
+		return ensureSchema(ctx, session)
 	})
 }
 
@@ -129,7 +128,7 @@ func (db *Database) Health(ctx context.Context) error {
 	return nil
 }
 
-func (db *Database) View(ctx context.Context, fn func(*Session) error) error {
+func (db *Database) View(ctx context.Context, fn func(*Session) error) (err error) {
 	db.operations.RLock()
 	defer db.operations.RUnlock()
 	if err := db.Health(ctx); err != nil {
@@ -142,27 +141,48 @@ func (db *Database) View(ctx context.Context, fn func(*Session) error) error {
 		return ctx.Err()
 	}
 	session := db.session(connection)
-	defer func() {
+	if err := executeStatement(ctx, session, `BEGIN TRANSACTION READ ONLY`); err != nil {
+		session.invalidate()
 		if session.reusable.Load() {
 			db.readers <- connection
 		}
+		return err
+	}
+	defer func() {
+		panicValue := recover()
+		if session.reusable.Load() {
+			cleanupCtx, cancel := transactionCleanupContext(ctx, session.timeout)
+			rollbackErr := executeStatement(cleanupCtx, session, `ROLLBACK`)
+			cancel()
+			if err == nil {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					err = ctxErr
+				} else {
+					err = rollbackErr
+				}
+			}
+			if rollbackErr != nil {
+				session.reusable.Store(false)
+				db.unhealthy.Store(true)
+			}
+		}
+		session.invalidate()
+		if session.reusable.Load() {
+			db.readers <- connection
+		}
+		if panicValue != nil {
+			panic(panicValue)
+		}
 	}()
-	defer session.invalidate()
-	if err := executeAndClose(connection, `BEGIN TRANSACTION READ ONLY`); err != nil {
-		return err
-	}
-	err := fn(session)
-	session.invalidate()
-	if !session.reusable.Load() {
-		return err
-	}
-	if rollbackErr := executeAndClose(connection, `ROLLBACK`); err == nil {
-		err = rollbackErr
-	}
+	err = fn(session)
 	return err
 }
 
-func (db *Database) Update(ctx context.Context, fn func(*Session) error) error {
+func (db *Database) Update(ctx context.Context, fn func(*Session) error) (err error) {
+	return db.update(ctx, db.options.QueryTimeout, fn)
+}
+
+func (db *Database) update(ctx context.Context, timeout time.Duration, fn func(*Session) error) (err error) {
 	db.operations.RLock()
 	defer db.operations.RUnlock()
 	if err := db.Health(ctx); err != nil {
@@ -174,22 +194,40 @@ func (db *Database) Update(ctx context.Context, fn func(*Session) error) error {
 		return err
 	}
 	session := db.session(db.writer)
-	defer session.invalidate()
-	if err := executeAndClose(db.writer, `BEGIN TRANSACTION`); err != nil {
+	session.timeout = timeout
+	if err := executeStatement(ctx, session, `BEGIN TRANSACTION`); err != nil {
+		session.invalidate()
 		return err
 	}
-	err := fn(session)
-	session.invalidate()
-	if !session.reusable.Load() {
-		return err
-	}
-	statement := `COMMIT`
-	if err != nil {
-		statement = `ROLLBACK`
-	}
-	if transactionErr := executeAndClose(db.writer, statement); err == nil {
-		err = transactionErr
-	}
+	defer func() {
+		panicValue := recover()
+		committed := false
+		if panicValue == nil && err == nil && ctx.Err() == nil && session.reusable.Load() {
+			err = executeStatement(ctx, session, `COMMIT`)
+			committed = err == nil
+		}
+		if !committed && session.reusable.Load() {
+			cleanupCtx, cancel := transactionCleanupContext(ctx, session.timeout)
+			rollbackErr := executeStatement(cleanupCtx, session, `ROLLBACK`)
+			cancel()
+			if err == nil {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					err = ctxErr
+				} else {
+					err = rollbackErr
+				}
+			}
+			if rollbackErr != nil {
+				session.reusable.Store(false)
+				db.unhealthy.Store(true)
+			}
+		}
+		session.invalidate()
+		if panicValue != nil {
+			panic(panicValue)
+		}
+	}()
+	err = fn(session)
 	return err
 }
 
@@ -205,13 +243,6 @@ func (db *Database) session(connection *lbug.Connection) *Session {
 	return session
 }
 
-func executeAndClose(connection *lbug.Connection, query string) error {
-	result, err := connection.Query(query)
-	if result != nil {
-		result.Close()
-	}
-	if err != nil {
-		return fmt.Errorf("%s: %w", query, err)
-	}
-	return nil
+func transactionCleanupContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), timeout)
 }

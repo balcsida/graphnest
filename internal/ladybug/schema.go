@@ -54,15 +54,20 @@ func (db *Database) Compatible(ctx context.Context) (bool, error) {
 }
 
 func EnsureSchema(ctx context.Context, connection *lbug.Connection) error {
+	db := &Database{options: normalizeOptions(Options{})}
+	session := db.session(connection)
+	defer session.invalidate()
+	return ensureSchema(ctx, session)
+}
+
+func ensureSchema(ctx context.Context, session *Session) error {
 	for _, statement := range schemaStatements {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		result, err := connection.Query(statement)
-		if err != nil {
+		if err := executeStatementWithTimeout(ctx, session, defaultQueryTimeout, statement); err != nil {
 			return err
 		}
-		result.Close()
 	}
 	return nil
 }
