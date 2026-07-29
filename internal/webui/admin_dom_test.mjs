@@ -79,11 +79,13 @@ for (const id of [
   "ready-dot", "ready-text", "token-form", "logout", "theme", "repo-filter", "select-all",
   "reconcile", "github-reconcile", "reindex-selected", "scip-upload", "scip-file", "scip-repo",
   "scip-commit", "dependency-refresh", "dependency-repo", "inventory-notices",
+  "user-rows", "user-empty", "group-rows", "group-empty", "user-access", "user-id", "user-admin",
+  "user-repositories", "group-access", "group-id", "group-admin", "group-repositories",
 ]) {
   const node = document.createElement(id.includes("form") || id.includes("upload") || id.includes("refresh") ? "form" : "div");
   ids.set(id, node);
 }
-for (const name of ["overview", "repositories", "queue", "scip", "webhooks", "github"]) {
+for (const name of ["overview", "repositories", "queue", "users", "groups", "scip", "webhooks", "github"]) {
   const screen = document.createElement("section"); screen.dataset.screen = name;
   const nav = document.createElement("button"); nav.dataset.nav = name;
 }
@@ -95,6 +97,8 @@ const responses = {
     {github_id:8,name:"acme/failed",default_branch:"main",status:"failed",error_code:"clone_failed"},
   ],truncated:true},
   "/v1/admin/jobs": {jobs:["queued","running","succeeded","failed","superseded"].map((state,id)=>({id:id+1,repository:"acme/repo",target_ref:id === 0 ? "refs/heads/main" : "",target_sha:"a".repeat(40),state,error_code:id === 3 ? "index_failed" : "",attempt:1,max_attempts:3,updated_at:"2026-01-01T00:00:00Z"})),truncated:true},
+  "/v1/admin/users": {users:[{id:7,user_name:"ada",display_name:"Ada",scim_active:true,suspended:false,administrator:true,repository_ids:[101,102],direct_administrator:false,direct_repository_ids:[101]}],truncated:true},
+  "/v1/admin/groups": {groups:[{id:9,display_name:"Engineering",administrator:true,repository_ids:[101,102],member_count:2}],truncated:true},
   "/v1/admin/scip/uploads": {uploads:[],truncated:true},
   "/v1/admin/scip/dependencies": {dependencies:[],truncated:true},
   "/v1/admin/webhook-deliveries": {deliveries:[
@@ -152,6 +156,26 @@ assert.equal(requests.at(-1).path, "/v1/admin/repositories/8/reindex");
 assert.equal(ids.get("admin-shell").hidden, false, "action 404 must not lock the console");
 assert.equal(ids.get("access-panel").hidden, true, "action 404 must not report static mode");
 assert.equal(storageRemovals, 0, "action 404 must not remove the token");
+
+const userRow = ids.get("user-rows").children[0];
+assert.match(text(userRow), /ada.*Administrator.*101/);
+const userActions = userRow.children.at(-1).children[0];
+const suspendUser = userActions.children.find(node => node.textContent === "Suspend user");
+await suspendUser.dispatch("click");
+assert.equal(requests.findLast(request => request.path === "/v1/admin/users/7/suspend").options.method, "POST");
+const revokeCredentials = userActions.children.find(node => node.textContent === "Revoke credentials");
+await revokeCredentials.dispatch("click");
+assert.equal(requests.findLast(request => request.path === "/v1/admin/users/7/revoke-credentials").options.method, "POST");
+const editUser = userActions.children.find(node => node.textContent === "Edit access");
+await editUser.dispatch("click");
+assert.equal(ids.get("user-id").value, 7);
+assert.equal(ids.get("user-repositories").value, "101");
+await ids.get("user-access").dispatch("submit");
+const userAccess = requests.findLast(request => request.path === "/v1/admin/users/7/access");
+assert.equal(userAccess.options.method, "PUT");
+assert.deepEqual(JSON.parse(userAccess.options.body), {direct_administrator:false,direct_repository_ids:[101]});
+const groupRow = ids.get("group-rows").children[0];
+assert.match(text(groupRow), /Engineering.*2.*Administrator/);
 
 ids.get("dependency-repo").value = "7";
 await ids.get("dependency-refresh").dispatch("submit");

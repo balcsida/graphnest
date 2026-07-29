@@ -205,8 +205,8 @@ indexer-only setting. It requires these server settings:
   `GREPNEST_GITHUB_UPLOAD_URL`, and `GREPNEST_GITHUB_GIT_URL` as HTTPS URLs;
 - `GREPNEST_GITHUB_APP_ID`, `GREPNEST_GITHUB_PRIVATE_KEY_FILE`, and
   `GREPNEST_GITHUB_WEBHOOK_SECRET_FILE`;
-- `GREPNEST_USER_INSTALLATION_ID`, `GREPNEST_USER_REPOSITORY_IDS`,
-  `GREPNEST_ADMIN_INSTALLATION_ID`, and `GREPNEST_ADMIN_REPOSITORY_IDS`.
+- OIDC configuration: `GREPNEST_PUBLIC_URL`, `GREPNEST_OIDC_ISSUER_URL`,
+  `GREPNEST_OIDC_CLIENT_ID`, and `GREPNEST_OIDC_CLIENT_SECRET_FILE`.
 
 `GREPNEST_GITHUB_API_VERSION` defaults to `2022-11-28` and
 `GREPNEST_GITHUB_CA_FILE` optionally extends system trust. Startup pings and
@@ -219,8 +219,8 @@ search, repository, file-read, and MCP routes require bearer authentication.
 
 The durable Compose overlay runs the server, indexer, scalable scanners,
 PostgreSQL, and Zoekt. Set `GREPNEST_APPLICATION_IMAGE`, `GREPNEST_NODE_IMAGE`,
-and `GREPNEST_SCANNER_IMAGE` to existing images plus the GitHub and
-token/repository-scope variables listed above. The image must provide
+and `GREPNEST_SCANNER_IMAGE` to existing images plus the GitHub, graph, and
+OIDC variables listed above. The image must provide
 `grepnest-server` and `wget` on `PATH`; the node image must provide
 `grepnest-indexer`, `grepnest-graph`, `git`, and `zoekt-git-index`; the scanner
 image must provide `grepnest-scanner` and `git`. The overlay also requires
@@ -249,12 +249,10 @@ GREPNEST_GITHUB_API_URL=https://github.example/api/v3 \
 GREPNEST_GITHUB_UPLOAD_URL=https://github.example/api/uploads \
 GREPNEST_GITHUB_GIT_URL=https://github.example \
 GREPNEST_GITHUB_APP_ID=123 \
-GREPNEST_USER_TOKEN=replace-user-token \
-GREPNEST_USER_INSTALLATION_ID=456 \
-GREPNEST_USER_REPOSITORY_IDS=789 \
-GREPNEST_ADMIN_TOKEN=replace-admin-token \
-GREPNEST_ADMIN_INSTALLATION_ID=456 \
-GREPNEST_ADMIN_REPOSITORY_IDS=789 \
+GREPNEST_PUBLIC_URL=https://grepnest.example \
+GREPNEST_OIDC_ISSUER_URL=https://id.example \
+GREPNEST_OIDC_CLIENT_ID=grepnest \
+GREPNEST_OIDC_CLIENT_SECRET_FILE=$PWD/oidc-client-secret \
 docker compose \
   -f deploy/compose/compose.yml \
   -f deploy/compose/durable.yml \

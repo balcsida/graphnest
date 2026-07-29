@@ -116,10 +116,6 @@
             "githubGitURL",
             "githubAPIVersion",
             "githubAppID",
-            "userInstallationID",
-            "adminInstallationID",
-            "userRepositoryIDs",
-            "adminRepositoryIDs",
             "defaultResults",
             "maxResults",
             "defaultContextLines",
@@ -149,20 +145,6 @@
             },
             "githubAppID": {
               "$ref": "#/definitions/id"
-            },
-            "userInstallationID": {
-              "$ref": "#/definitions/id"
-            },
-            "adminInstallationID": {
-              "$ref": "#/definitions/id"
-            },
-            "userRepositoryIDs": {
-              "type": "string",
-              "pattern": "^[0-9]+(,[0-9]+)*$"
-            },
-            "adminRepositoryIDs": {
-              "type": "string",
-              "pattern": "^[0-9]+(,[0-9]+)*$"
             },
             "defaultResults": {
               "type": "integer",
@@ -944,8 +926,6 @@
       "required": [
         "name",
         "databaseURLKey",
-        "userTokenKey",
-        "adminTokenKey",
         "graphSecretKey"
       ],
       "properties": {
@@ -953,12 +933,6 @@
           "$ref": "#/definitions/kubernetesObjectName"
         },
         "databaseURLKey": {
-          "$ref": "#/definitions/secretKey"
-        },
-        "userTokenKey": {
-          "$ref": "#/definitions/secretKey"
-        },
-        "adminTokenKey": {
           "$ref": "#/definitions/secretKey"
         },
         "graphSecretKey": {

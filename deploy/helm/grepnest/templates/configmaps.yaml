@@ -16,10 +16,6 @@ data:
   GREPNEST_GITHUB_GIT_URL: {{ .Values.server.config.githubGitURL | quote }}
   GREPNEST_GITHUB_API_VERSION: {{ .Values.server.config.githubAPIVersion | quote }}
   GREPNEST_GITHUB_APP_ID: {{ .Values.server.config.githubAppID | quote }}
-  GREPNEST_USER_INSTALLATION_ID: {{ .Values.server.config.userInstallationID | quote }}
-  GREPNEST_ADMIN_INSTALLATION_ID: {{ .Values.server.config.adminInstallationID | quote }}
-  GREPNEST_USER_REPOSITORY_IDS: {{ .Values.server.config.userRepositoryIDs | quote }}
-  GREPNEST_ADMIN_REPOSITORY_IDS: {{ .Values.server.config.adminRepositoryIDs | quote }}
   GREPNEST_DEFAULT_RESULTS: {{ .Values.server.config.defaultResults | quote }}
   GREPNEST_MAX_RESULTS: {{ .Values.server.config.maxResults | quote }}
   GREPNEST_DEFAULT_CONTEXT_LINES: {{ .Values.server.config.defaultContextLines | quote }}

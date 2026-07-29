@@ -61,7 +61,7 @@ GREPNEST_METRICS_LISTEN_ADDRESS=127.0.0.1:9090 \
 
 The indexer rejects repositories whose GHES-reported size exceeds the configured
 cap before minting credentials or fetching Git data. It never reads the webhook
-secret or user/admin bearer configuration.
+secret or OIDC credentials.
 It runs migrations, records search node `primary`, reaps expired leases, prunes
 retention and abandoned worktrees, then processes one leased job at a time.
 SIGINT or SIGTERM cancels child process groups and waits for lease renewal and

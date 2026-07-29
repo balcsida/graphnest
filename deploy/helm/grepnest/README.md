@@ -19,7 +19,7 @@ corresponding values. The key names below are the defaults.
 
 | Values | Required keys | Purpose |
 | --- | --- | --- |
-| `secrets.runtime.name` | `database-url`, `user-token`, `admin-token`, `graph-secret` | PostgreSQL DSN, user/admin tokens, and the internal graph bearer token |
+| `secrets.runtime.name` | `database-url`, `graph-secret` | PostgreSQL DSN and the internal graph bearer token |
 | `secrets.githubApp.name` | `private-key.pem`, `webhook-secret` | GitHub App private key and webhook secret |
 | `secrets.customCA.name` | `ca.crt` | Optional GitHub CA bundle; set the key with `secrets.customCA.key` |
 | `secrets.oidc.name` | `client-secret` | OIDC client secret; set `secrets.oidc.clientSecretKey` to override |
@@ -27,8 +27,8 @@ corresponding values. The key names below are the defaults.
 | `images.pullSecrets[]` | Kubernetes pull-secret contract | Optional private-registry credentials |
 | `ingress.tls[].secretName` | Ingress-controller TLS contract | Optional existing TLS Secret for the listed hosts |
 
-Override the runtime key names with `databaseURLKey`, `userTokenKey`,
-`adminTokenKey`, and `graphSecretKey`, and the GitHub App key names with `privateKeyKey` and
+Override the runtime key names with `databaseURLKey` and `graphSecretKey`, and
+the GitHub App key names with `privateKeyKey` and
 `webhookSecretKey`. The chart never accepts plaintext credentials in values.
 Referenced object names must be Kubernetes DNS subdomains. Secret data keys
 may contain letters, digits, `-`, `_`, and `.`.
