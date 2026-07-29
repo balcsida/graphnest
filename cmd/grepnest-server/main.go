@@ -310,7 +310,7 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 		httpapi.RegisterGraphQueries(mux, authenticator.Bearer, graphQueries, settings.Graph.MaxRequestBytes, settings.Graph.MaxResponseBytes)
 	}
 	if adminService != nil {
-		httpapi.RegisterAdmin(mux, authenticator, adminService, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
+		httpapi.RegisterAdmin(mux, authenticator, adminService, settings.Limits.MaxResults, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
 	}
 	if processor != nil {
 		httpapi.RegisterGitHubWebhook(mux, webhookSecret, 1<<20, processor)
