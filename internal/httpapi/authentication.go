@@ -35,7 +35,7 @@ func AuthenticateBearer(authenticator authn.Authenticator, next http.Handler) ht
 			writeUnauthenticated(writer)
 			return
 		}
-		principal, err := authenticator.Authenticate(parts[1])
+		principal, err := authenticator.Authenticate(request.Context(), parts[1])
 		if err != nil {
 			writeUnauthenticated(writer)
 			return

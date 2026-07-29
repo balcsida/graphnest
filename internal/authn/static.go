@@ -1,6 +1,7 @@
 package authn
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
@@ -18,7 +19,7 @@ type Principal struct {
 }
 
 type Authenticator interface {
-	Authenticate(string) (Principal, error)
+	Authenticate(context.Context, string) (Principal, error)
 }
 
 type Static struct{ principals map[string]Principal }
@@ -33,7 +34,7 @@ func NewStatic(principals map[string]Principal) *Static {
 	return &Static{principals: copy}
 }
 
-func (auth *Static) Authenticate(token string) (Principal, error) {
+func (auth *Static) Authenticate(_ context.Context, token string) (Principal, error) {
 	presented := sha256.Sum256([]byte(token))
 	var principal Principal
 	matched := 0

@@ -47,7 +47,7 @@ func (a RequestAuthenticator) AuthenticateRequest(request *http.Request) (Princi
 			observe("invalid")
 			return Principal{}, ErrUnauthenticated
 		}
-		principal, err := a.Bearer.Authenticate(parts[1])
+		principal, err := a.Bearer.Authenticate(request.Context(), parts[1])
 		if err != nil {
 			observe("invalid")
 			return Principal{}, ErrUnauthenticated

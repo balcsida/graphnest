@@ -112,7 +112,7 @@ func TestDurableAuthenticatorRejectsStaticTokens(t *testing.T) {
 	// Break caught: durable runtime retaining GREPNEST_USER_TOKEN authentication.
 	store := &mainTokenStore{principal: authn.Principal{Subject: "11", Method: "api_token"}}
 	manager := durableAuthenticator(store)
-	if _, err := manager.Authenticate("user-token"); !errors.Is(err, authn.ErrUnauthenticated) {
+	if _, err := manager.Authenticate(t.Context(), "user-token"); !errors.Is(err, authn.ErrUnauthenticated) {
 		t.Fatalf("static token err=%v", err)
 	}
 }
