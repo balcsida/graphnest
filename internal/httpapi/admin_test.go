@@ -50,6 +50,20 @@ func TestAdminRouteAcceptsAdministratorSession(t *testing.T) {
 	}
 }
 
+func TestAdminReconcileRejectsAdministratorAPIToken(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterAdmin(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{
+		"token": {Method: "api_token", Administrator: true, RepositoryIDs: []int64{101}},
+	})), &admin.Service{Store: &adminHTTPStore{}, GitHub: adminHTTPGitHub{}}, 2, 1024, 4096)
+	request := httptest.NewRequest(http.MethodPost, "/v1/admin/reconcile", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+}
+
 func TestAdminRoutesExposeBoundedDataAndActions(t *testing.T) {
 	store := &adminHTTPStore{}
 	service := &admin.Service{Store: store, GitHub: adminHTTPGitHub{}}
