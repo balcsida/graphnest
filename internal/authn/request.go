@@ -36,7 +36,7 @@ func (a RequestAuthenticator) AuthenticateRequest(request *http.Request) (Princi
 		}
 		return principal, nil
 	}
-	if sessionCount != 1 || a.Session == nil || (unsafeMethod(request.Method) && request.Header.Get("Origin") != a.PublicOrigin) {
+	if sessionCount != 1 || a.Session == nil || (unsafeMethod(request.Method) && (a.PublicOrigin == "" || request.Header.Get("Origin") != a.PublicOrigin)) {
 		return Principal{}, ErrUnauthenticated
 	}
 	principal, err := a.Session.Authenticate(request.Context(), session)
