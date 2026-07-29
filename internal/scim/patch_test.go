@@ -26,9 +26,72 @@ func TestParseGroupPatchMemberships(t *testing.T) {
 		{Op: "remove", Path: `members[value eq "8"]`},
 		{Op: "replace", Path: "members", Value: json.RawMessage(`[{"value":"9"}]`)},
 	}))
-	if err != nil || len(got.AddMembers) != 1 || got.AddMembers[0] != 7 || len(got.RemoveMembers) != 1 || got.RemoveMembers[0] != 8 || got.ReplaceMembers == nil || len(*got.ReplaceMembers) != 1 || (*got.ReplaceMembers)[0] != 9 {
+	if err != nil || len(got.AddMembers) != 0 || len(got.RemoveMembers) != 0 || got.ReplaceMembers == nil || len(*got.ReplaceMembers) != 1 || (*got.ReplaceMembers)[0] != 9 {
 		t.Fatalf("mutation=%#v err=%v", got, err)
 	}
+}
+
+func TestParseGroupPatchNormalizesMemberOperationOrder(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		operations  []PatchOperation
+		replace     []int64
+		hasReplace  bool
+		add, remove []int64
+	}{
+		{
+			name: "replace clears prior add and remove",
+			operations: []PatchOperation{
+				{Op: "add", Path: "members", Value: json.RawMessage(`[{"value":"7"}]`)},
+				{Op: "remove", Path: `members[value eq "8"]`},
+				{Op: "replace", Path: "members", Value: json.RawMessage(`[{"value":"9"}]`)},
+			},
+			replace: []int64{9}, hasReplace: true,
+		},
+		{
+			name: "add after replace stays a delta",
+			operations: []PatchOperation{
+				{Op: "replace", Path: "members", Value: json.RawMessage(`[{"value":"9"}]`)},
+				{Op: "add", Path: "members", Value: json.RawMessage(`[{"value":"7"}]`)},
+			},
+			replace: []int64{9}, hasReplace: true, add: []int64{7},
+		},
+		{
+			name: "remove supersedes prior add",
+			operations: []PatchOperation{
+				{Op: "add", Path: "members", Value: json.RawMessage(`[{"value":"7"},{"value":"7"}]`)},
+				{Op: "remove", Path: `members[value eq "7"]`},
+			},
+			remove: []int64{7},
+		},
+		{
+			name: "add supersedes prior remove",
+			operations: []PatchOperation{
+				{Op: "remove", Path: `members[value eq "7"]`},
+				{Op: "add", Path: "members", Value: json.RawMessage(`[{"value":"7"},{"value":"7"}]`)},
+			},
+			add: []int64{7},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := ParseGroupPatch(NewPatchRequest(test.operations))
+			if err != nil || (test.hasReplace != (got.ReplaceMembers != nil)) || (got.ReplaceMembers != nil && !sameIDs(*got.ReplaceMembers, test.replace)) || !sameIDs(got.AddMembers, test.add) || !sameIDs(got.RemoveMembers, test.remove) {
+				t.Fatalf("mutation=%#v err=%v", got, err)
+			}
+		})
+	}
+}
+
+func sameIDs(got, want []int64) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestParseGroupPatchRejectsMissingRemovePath(t *testing.T) {
