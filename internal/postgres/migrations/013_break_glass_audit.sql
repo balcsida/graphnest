@@ -39,7 +39,7 @@ begin
 end
 $$;
 create trigger audit_events_append_only
-before update or delete on audit_events
+before update or delete or truncate on audit_events
 for each statement execute function reject_audit_event_mutation();
 
 alter table auth_sessions drop constraint auth_sessions_provider_check;

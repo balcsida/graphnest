@@ -10,6 +10,8 @@ COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
     -o /out/grepnest-server ./cmd/grepnest-server \
  && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
+    -o /out/grepnest-admin ./cmd/grepnest-admin \
+ && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
     -o /out/grepnest-migrate ./cmd/grepnest-migrate \
  && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
     -o /out/grepnest-mcp ./cmd/grepnest-mcp \
@@ -28,7 +30,7 @@ RUN apt-get update \
  && mkdir -p /tmp /var/run/grepnest \
  && chgrp -R 0 /tmp /var/run/grepnest \
  && chmod -R g=u /tmp /var/run/grepnest
-COPY --from=builder /out/grepnest-server /out/grepnest-migrate /out/grepnest-mcp /usr/local/bin/
+COPY --from=builder /out/grepnest-server /out/grepnest-admin /out/grepnest-migrate /out/grepnest-mcp /usr/local/bin/
 USER 65532:0
 EXPOSE 8080
 CMD ["grepnest-server"]

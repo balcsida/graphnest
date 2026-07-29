@@ -365,6 +365,9 @@ func TestSecurityAuditEventsAreBoundedNewestFirst(t *testing.T) {
 	if _, err := store.pool.Exec(t.Context(), `delete from audit_events`); err == nil {
 		t.Fatal("audit delete accepted")
 	}
+	if _, err := store.pool.Exec(t.Context(), `truncate audit_events`); err == nil {
+		t.Fatal("audit truncate accepted")
+	}
 }
 
 func TestSecurityPasswordCredentialDoesNotRevealAccountShape(t *testing.T) {
