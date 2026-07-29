@@ -67,7 +67,7 @@ func ensureSchema(ctx context.Context, session *Session) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := executeStatementWithTimeout(ctx, session, defaultQueryTimeout, statement); err != nil {
+		if err := executeStatement(ctx, session, statement); err != nil {
 			return err
 		}
 	}
