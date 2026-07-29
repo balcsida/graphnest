@@ -249,10 +249,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 		<-reconcileDone
 		return fail(err)
 	}
-	authenticator := authn.NewStatic(map[string]authn.Principal{
-		settings.UserToken:  {Subject: "user", Method: "bearer", InstallationID: settings.UserInstallationID, RepositoryIDs: settings.UserRepositoryIDs},
-		settings.AdminToken: {Subject: "admin", Method: "bearer", Administrator: true, InstallationID: settings.AdminInstallationID, RepositoryIDs: settings.AdminRepositoryIDs},
-	})
+	authenticator := durableAuthenticator(store)
 	auth, err := newAuthRuntime(loopCtx, settings, store, authenticator, metrics)
 	if err != nil {
 		cancel()
@@ -282,6 +279,10 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 		<-reconcileDone
 		pool.Close()
 	}, nil
+}
+
+func durableAuthenticator(store authn.APITokenStore) authn.Authenticator {
+	return authn.TokenManager{Store: store}
 }
 
 func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scip *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker, providers []sso.Provider, sessions *authn.SessionManager) http.Handler {
