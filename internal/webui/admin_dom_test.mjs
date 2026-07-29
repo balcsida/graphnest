@@ -113,10 +113,12 @@ const requests = [];
 let mutationDenial = 0;
 let allowMutation = false;
 let delayedOverview;
+let accountTokenDenied = false;
 globalThis.fetch = async (path, options = {}) => {
   requests.push({path, options});
   if (path === "/auth/logout") return {ok:true,status:204};
   if (path === "/healthz" || path === "/readyz") return {ok:true,status:200};
+  if (path === "/v1/account/api-tokens" && accountTokenDenied && !options.method) return {ok:false,status:403,json:async()=>({})};
   if (path === "/v1/account/api-tokens" && options.method === "POST") return {ok:true,status:201,json:async()=>({id:4,prefix:"gnp_new",repository_ids:[101],created_at:"2026-01-01T00:00:00Z",expires_at:"2026-08-29T00:00:00Z",token:"gnp_reveal_once"})};
   if (path === "/v1/account/api-tokens/3" && options.method === "DELETE") return {ok:true,status:204};
   if (path === "/v1/admin/overview" && delayedOverview) return delayedOverview;
@@ -192,6 +194,15 @@ await ids.get("token-create").dispatch("submit");
 const createdToken = requests.findLast(request => request.path === "/v1/account/api-tokens" && request.options.method === "POST");
 assert.deepEqual(JSON.parse(createdToken.options.body), {expires_at:"2026-08-28T22:00:00Z",repository_ids:[101]});
 assert.match(text(ids.get("token-reveal")), /gnp_reveal_once/);
+
+accountTokenDenied = true;
+ids.get("token").value = "admin";
+await ids.get("token-form").dispatch("submit");
+await new Promise(resolve => setTimeout(resolve, 10));
+assert.equal(ids.get("admin-shell").hidden, false, "static-admin token denial must not lock the console");
+assert.equal(ids.get("token-rows").children.length, 0, "static-admin token list must stay empty");
+assert.equal(ids.get("token-create").hidden, true, "static-admin token management must stay unavailable");
+accountTokenDenied = false;
 
 ids.get("dependency-repo").value = "7";
 await ids.get("dependency-refresh").dispatch("submit");
