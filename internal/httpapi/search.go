@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/search"
@@ -22,29 +21,8 @@ func PrincipalFromContext(ctx context.Context) authn.Principal {
 	return principal
 }
 
-func AuthenticateBearer(authenticator authn.Authenticator, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		values := request.Header.Values("Authorization")
-		if len(values) != 1 {
-			writeError(writer, http.StatusUnauthorized, "unauthenticated", "authentication required", false)
-			return
-		}
-		parts := strings.Fields(values[0])
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-			writeError(writer, http.StatusUnauthorized, "unauthenticated", "authentication required", false)
-			return
-		}
-		principal, err := authenticator.Authenticate(parts[1])
-		if err != nil {
-			writeError(writer, http.StatusUnauthorized, "unauthenticated", "authentication required", false)
-			return
-		}
-		next.ServeHTTP(writer, request.WithContext(context.WithValue(request.Context(), principalContextKey{}, principal)))
-	})
-}
-
-func RegisterSearch(mux *http.ServeMux, authenticator authn.Authenticator, service *search.Service, maxRequestBytes, maxResponseBytes int64) {
-	searchHandler := AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+func RegisterSearch(mux *http.ServeMux, authenticator authn.RequestAuthenticator, service *search.Service, maxRequestBytes, maxResponseBytes int64) {
+	searchHandler := AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Header.Get("Content-Type") != "application/json" {
 			writeError(writer, http.StatusUnsupportedMediaType, "invalid_request", "request is invalid", false)
 			return

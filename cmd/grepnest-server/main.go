@@ -28,6 +28,8 @@ import (
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/internal/scipgraph"
 	"github.com/grepnest/grepnest/internal/search"
+	"github.com/grepnest/grepnest/internal/sso"
+	"github.com/grepnest/grepnest/internal/sso/oidc"
 	"github.com/grepnest/grepnest/internal/webhook"
 	"github.com/grepnest/grepnest/internal/webui"
 	"github.com/grepnest/grepnest/internal/zoekt"
@@ -35,12 +37,14 @@ import (
 )
 
 const (
-	searchNodeID           = "primary"
-	reconcileInterval      = 5 * time.Minute
-	maxPrivateKeyBytes     = 64 << 10
-	maxWebhookKeyBytes     = 64 << 10
-	maxCABytes             = 1 << 20
-	maxGitHubResponseBytes = 2 << 20
+	searchNodeID             = "primary"
+	reconcileInterval        = 5 * time.Minute
+	maxPrivateKeyBytes       = 64 << 10
+	maxWebhookKeyBytes       = 64 << 10
+	maxCABytes               = 1 << 20
+	maxOIDCClientSecretBytes = 64 << 10
+	maxOIDCCABytes           = 1 << 20
+	maxGitHubResponseBytes   = 2 << 20
 )
 
 func main() { os.Exit(run()) }
@@ -129,7 +133,40 @@ func newHandler(settings config.Config) (http.Handler, error) {
 		DefaultTimeout: settings.Limits.DefaultTimeout, MaxTimeout: settings.Limits.MaxTimeout,
 		MaxResponseBytes: settings.Limits.MaxResponseBytes,
 	})
-	return newAPIHandler(settings, metrics, authenticator, service, nil, nil, nil, nil, nil, nil, nil, backend), nil
+	return newAPIHandler(settings, metrics, authn.RequestAuthenticator{Bearer: authenticator, Metrics: metrics}, service, nil, nil, nil, nil, nil, nil, nil, backend, nil, nil), nil
+}
+
+type authRuntime struct {
+	requestAuth authn.RequestAuthenticator
+	sessions    *authn.SessionManager
+	providers   []sso.Provider
+}
+
+func newAuthRuntime(ctx context.Context, settings config.Config, store authn.SessionStore, bearer authn.Authenticator, metrics *observability.Metrics) (*authRuntime, error) {
+	runtime := &authRuntime{requestAuth: authn.RequestAuthenticator{Bearer: bearer, Metrics: metrics}}
+	if !settings.SSO.OIDC.Enabled {
+		return runtime, nil
+	}
+	secret, err := readBoundedRegularFile(settings.SSO.OIDC.ClientSecretFile, maxOIDCClientSecretBytes)
+	if err != nil {
+		return nil, fmt.Errorf("read OIDC client secret: %w", err)
+	}
+	var caPEM []byte
+	if settings.SSO.OIDC.CAFile != "" {
+		caPEM, err = readBoundedRegularFile(settings.SSO.OIDC.CAFile, maxOIDCCABytes)
+		if err != nil {
+			return nil, fmt.Errorf("read OIDC CA: %w", err)
+		}
+	}
+	client, err := oidc.New(ctx, settings.SSO.OIDC, settings.SSO.PublicURL, secret, caPEM)
+	if err != nil {
+		return nil, err
+	}
+	runtime.sessions = &authn.SessionManager{Store: store, IdleTTL: settings.SSO.SessionIdle, TTL: settings.SSO.SessionTTL}
+	runtime.requestAuth.Session = runtime.sessions
+	runtime.requestAuth.PublicOrigin = settings.SSO.PublicURL.Scheme + "://" + settings.SSO.PublicURL.Host
+	runtime.providers = []sso.Provider{&oidc.Provider{Client: client, Store: store, Sessions: runtime.sessions, LoginTTL: settings.SSO.LoginFlowTTL}}
+	return runtime, nil
 }
 
 func newRuntime(ctx context.Context, settings config.Config, logger *slog.Logger) (http.Handler, func(), error) {
@@ -213,6 +250,13 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 		settings.UserToken:  {Subject: "user", Method: "bearer", InstallationID: settings.UserInstallationID, RepositoryIDs: settings.UserRepositoryIDs},
 		settings.AdminToken: {Subject: "admin", Method: "bearer", Administrator: true, InstallationID: settings.AdminInstallationID, RepositoryIDs: settings.AdminRepositoryIDs},
 	})
+	auth, err := newAuthRuntime(loopCtx, settings, store, authenticator, metrics)
+	if err != nil {
+		cancel()
+		<-done
+		<-reconcileDone
+		return fail(err)
+	}
 	searchService := search.NewService(backend, authz.NewPostgres(store), searchLimits(settings))
 	repositoryService := &repository.Service{Store: store, GitHub: githubClient}
 	scipService := &scipgraph.Service{Store: store, GitHub: githubClient, MaxResults: settings.Limits.MaxResults}
@@ -228,7 +272,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 			CAConfigured: settings.GitHub.CAFile != "",
 		},
 	}
-	handler := newAPIHandler(settings, metrics, authenticator, searchService, repositoryService, scipService, graphService, graphQueries, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend})
+	handler := newAPIHandler(settings, metrics, auth.requestAuth, searchService, repositoryService, scipService, graphService, graphQueries, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend}, auth.providers, auth.sessions)
 	return handler, func() {
 		cancel()
 		<-done
@@ -237,8 +281,9 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	}, nil
 }
 
-func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.Authenticator, service *search.Service, repositories *repository.Service, scip *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker) http.Handler {
+func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scip *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker, providers []sso.Provider, sessions *authn.SessionManager) http.Handler {
 	mux := http.NewServeMux()
+	httpapi.RegisterAuth(mux, true, providers, authenticator, sessions, metrics)
 	webui.Register(mux)
 	httpapi.RegisterSystem(mux, checker, metrics.Handler())
 	httpapi.RegisterSearch(mux, authenticator, service, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
@@ -249,10 +294,10 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 		httpapi.RegisterSCIP(mux, authenticator, scip, settings.Limits.MaxRequestBytes, settings.Limits.SCIPMaxUploadBytes, settings.Limits.MaxResponseBytes)
 	}
 	if graph != nil {
-		httpapi.RegisterGraphIngestion(mux, authenticator, graph, settings.Limits.GraphMaxUploadBytes, settings.Limits.MaxResponseBytes)
+		httpapi.RegisterGraphIngestion(mux, authenticator.Bearer, graph, settings.Limits.GraphMaxUploadBytes, settings.Limits.MaxResponseBytes)
 	}
 	if graphQueries != nil {
-		httpapi.RegisterGraphQueries(mux, authenticator, graphQueries, settings.Graph.MaxRequestBytes, settings.Graph.MaxResponseBytes)
+		httpapi.RegisterGraphQueries(mux, authenticator.Bearer, graphQueries, settings.Graph.MaxRequestBytes, settings.Graph.MaxResponseBytes)
 	}
 	if adminService != nil {
 		httpapi.RegisterAdmin(mux, authenticator, adminService, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
@@ -264,7 +309,7 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 		MaxItems: settings.Limits.MaxResults, MaxOutputBytes: settings.Limits.MaxResponseBytes, GraphMaxOutputBytes: settings.Graph.MaxResponseBytes,
 	})
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer }, nil)
-	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator.Bearer, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		request.Body = http.MaxBytesReader(writer, request.Body, settings.Limits.MaxRequestBytes)
 		mcpHandler.ServeHTTP(writer, request)
 	})))
@@ -295,6 +340,32 @@ func readBoundedFile(path string, maxBytes int64) ([]byte, error) {
 		return nil, err
 	}
 	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, errors.New("file exceeds size limit")
+	}
+	if len(data) == 0 {
+		return nil, errors.New("file is empty")
+	}
+	return data, nil
+}
+
+func readBoundedRegularFile(path string, maxBytes int64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("not a regular file")
+	}
 	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
 	if err != nil {
 		return nil, err

@@ -40,7 +40,7 @@ import (
 func TestAdminRoutesRegisterOnlyWithDurableService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"admin": {Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}}})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}}
-	static := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	static := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	request := httptest.NewRequest(http.MethodGet, "/v1/admin/overview", nil)
 	request.Header.Set("Authorization", "Bearer admin")
 	response := httptest.NewRecorder()
@@ -49,12 +49,23 @@ func TestAdminRoutesRegisterOnlyWithDurableService(t *testing.T) {
 		t.Fatalf("static status=%d", response.Code)
 	}
 
-	durable := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil,
-		&admin.Service{Store: mainAdminStore{}}, nil)
+	durable := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil,
+		&admin.Service{Store: mainAdminStore{}}, nil, nil, nil)
 	response = httptest.NewRecorder()
 	durable.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("durable status=%d body=%q", response.Code, response.Body.String())
+	}
+}
+
+func TestAuthRuntimeWithoutOIDCUsesBearerOnly(t *testing.T) {
+	bearer := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
+	runtime, err := newAuthRuntime(t.Context(), config.Config{}, nil, bearer, observability.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.requestAuth.Bearer != bearer || runtime.requestAuth.Session != nil || runtime.sessions != nil || len(runtime.providers) != 0 {
+		t.Fatalf("runtime=%#v", runtime)
 	}
 }
 
@@ -159,7 +170,7 @@ func TestServerDeadlinesIsolateSCIPUploads(t *testing.T) {
 		"admin": {Subject: "admin", Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}},
 	})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, SCIPMaxUploadBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}
-	handler := newAPIHandler(settings, observability.New(), authenticator, nil, nil, &scipgraph.Service{Store: store}, nil, nil, nil, nil, nil, nil)
+	handler := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, &scipgraph.Service{Store: store}, nil, nil, nil, nil, nil, nil, nil, nil)
 	server := newHTTPServer("127.0.0.1:0", handler)
 	if server.ReadTimeout != 10*time.Second || server.WriteTimeout != 10*time.Second || server.ReadHeaderTimeout != 5*time.Second || server.IdleTimeout != time.Minute {
 		t.Fatalf("deadlines = read %s, write %s, header %s, idle %s", server.ReadTimeout, server.WriteTimeout, server.ReadHeaderTimeout, server.IdleTimeout)
@@ -496,7 +507,7 @@ func (stub *healthStub) Health(context.Context) error {
 
 func TestDurableRoutesKeepWebhookOutsideBearerAuthentication(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
-	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), authenticator, nil, &repository.Service{Store: repositoryStoreStub{}}, nil, nil, nil, []byte("secret"), webhookProcessorStub{}, nil, nil)
+	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), testRequestAuthenticator(authenticator), nil, &repository.Service{Store: repositoryStoreStub{}}, nil, nil, nil, []byte("secret"), webhookProcessorStub{}, nil, nil, nil, nil)
 
 	webhookResponse := httptest.NewRecorder()
 	handler.ServeHTTP(webhookResponse, httptest.NewRequest(http.MethodPost, "/webhooks/github", nil))
@@ -573,8 +584,8 @@ func TestStaticHandlerRegistersSystemRoutes(t *testing.T) {
 func TestSCIPRoutesRegisterOnlyWithDurableService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, SCIPMaxUploadBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}
-	without := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	with := newAPIHandler(settings, observability.New(), authenticator, nil, nil, &scipgraph.Service{}, nil, nil, nil, nil, nil, nil)
+	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, &scipgraph.Service{}, nil, nil, nil, nil, nil, nil, nil, nil)
 	for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/scip/navigation", nil))
@@ -591,8 +602,8 @@ func TestSCIPRoutesRegisterOnlyWithDurableService(t *testing.T) {
 func TestGraphRoutesRegisterOnlyWithDurableService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	settings := config.Config{Limits: config.Limits{GraphMaxUploadBytes: 1024, MaxResponseBytes: 1024}}
-	without := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	with := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, &graphingest.Service{}, nil, nil, nil, nil, nil)
+	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, &graphingest.Service{}, nil, nil, nil, nil, nil, nil, nil)
 	for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/graph/repositories/101/status", nil))
@@ -609,8 +620,8 @@ func TestGraphRoutesRegisterOnlyWithDurableService(t *testing.T) {
 func TestGraphQueryRoutesRegisterOnlyWithService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024}}
-	without := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	with := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, &graphservice.Service{}, nil, nil, nil, nil)
+	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, &graphservice.Service{}, nil, nil, nil, nil, nil, nil)
 	for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/graph/context", nil))
@@ -628,7 +639,7 @@ func TestAPIHandlerMountsWebUIWithoutFallback(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	handler := newAPIHandler(
 		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}},
-		observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	for _, path := range []string{"/", "/index.html", "/admin"} {
 		response := httptest.NewRecorder()
@@ -644,6 +655,10 @@ func TestAPIHandlerMountsWebUIWithoutFallback(t *testing.T) {
 			t.Fatalf("%s status=%d", path, response.Code)
 		}
 	}
+}
+
+func testRequestAuthenticator(bearer authn.Authenticator) authn.RequestAuthenticator {
+	return authn.RequestAuthenticator{Bearer: bearer}
 }
 
 func TestStaticHandlerProtectsMCPRoute(t *testing.T) {
