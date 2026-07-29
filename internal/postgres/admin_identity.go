@@ -58,7 +58,12 @@ const adminUsersSQL = `select users.id, users.external_id, users.user_name, user
 		join installations on installations.id=repositories.installation_id
 		where installations.status='active' and repositories.enabled and not repositories.archived
 		order by grants.repository_id
-	), '{}') else '{}' end
+	), '{}') else '{}' end,
+	exists(select 1 from user_roles where user_roles.user_id=users.id),
+	coalesce(array(
+		select repository_id from user_repository_grants
+		where user_id=users.id order by repository_id
+	), '{}')
 	from users where users.deleted_at is null`
 
 type rowScanner interface{ Scan(...any) error }
@@ -66,7 +71,8 @@ type rowScanner interface{ Scan(...any) error }
 func scanAdminUser(row rowScanner) (admin.User, error) {
 	var user admin.User
 	err := row.Scan(&user.ID, &user.ExternalID, &user.UserName, &user.DisplayName,
-		&user.Source, &user.SCIMActive, &user.Suspended, &user.Administrator, &user.RepositoryIDs)
+		&user.Source, &user.SCIMActive, &user.Suspended, &user.Administrator, &user.RepositoryIDs,
+		&user.DirectAdministrator, &user.DirectRepositoryIDs)
 	return user, err
 }
 
@@ -143,9 +149,6 @@ func (s *Store) SuspendAdminUser(ctx context.Context, actorID, userID int64, sus
 
 func (s *Store) ReplaceAdminUserAccess(ctx context.Context, actorID, userID int64, administrator bool, repositoryIDs []int64) error {
 	return s.adminIdentityMutation(ctx, func(tx pgx.Tx) error {
-		if actorID == userID && !administrator {
-			return admin.ErrSelfAdministration
-		}
 		if err := requireAdminUser(ctx, tx, userID); err != nil {
 			return err
 		}
@@ -255,6 +258,13 @@ func validateAdminRepositories(ctx context.Context, tx pgx.Tx, repositoryIDs []i
 }
 
 func protectAdministrators(ctx context.Context, tx pgx.Tx, actorID int64) error {
+	var administratorExists bool
+	if err := tx.QueryRow(ctx, `select exists(`+activeAdministratorSQL+`)`).Scan(&administratorExists); err != nil {
+		return err
+	}
+	if !administratorExists {
+		return admin.ErrFinalAdministrator
+	}
 	if actorID > 0 {
 		var actorAdministrator bool
 		if err := tx.QueryRow(ctx, `select exists(`+activeAdministratorSQL+` and users.id=$1)`, actorID).Scan(&actorAdministrator); err != nil {
@@ -263,13 +273,6 @@ func protectAdministrators(ctx context.Context, tx pgx.Tx, actorID int64) error 
 		if !actorAdministrator {
 			return admin.ErrSelfAdministration
 		}
-	}
-	var administratorExists bool
-	if err := tx.QueryRow(ctx, `select exists(`+activeAdministratorSQL+`)`).Scan(&administratorExists); err != nil {
-		return err
-	}
-	if !administratorExists {
-		return admin.ErrFinalAdministrator
 	}
 	return nil
 }

@@ -26,6 +26,13 @@ func TestAdminIdentityRoutesExposeBoundedEffectiveAccess(t *testing.T) {
 		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), want) || response.Body.Len() > 4096 {
 			t.Fatalf("%s status=%d bytes=%d body=%q", path, response.Code, response.Body.Len(), response.Body.String())
 		}
+		if path == "/v1/admin/users/7" &&
+			(!strings.Contains(response.Body.String(), `"administrator":true`) ||
+				!strings.Contains(response.Body.String(), `"repository_ids":[101]`) ||
+				!strings.Contains(response.Body.String(), `"direct_administrator":false`) ||
+				!strings.Contains(response.Body.String(), `"direct_repository_ids":[]`)) {
+			t.Fatalf("%s did not separate effective and direct access: %q", path, response.Body.String())
+		}
 	}
 }
 
@@ -33,7 +40,7 @@ func TestAdminIdentityRoutesReplaceOnlyAccessFields(t *testing.T) {
 	store := &adminHTTPStore{}
 	mux := adminIdentityMux(store, 4096)
 
-	request := adminIdentityRequest(http.MethodPut, "/v1/admin/users/8/access", `{"administrator":true,"repository_ids":[101]}`)
+	request := adminIdentityRequest(http.MethodPut, "/v1/admin/users/8/access", `{"direct_administrator":true,"direct_repository_ids":[101]}`)
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	mux.ServeHTTP(response, request)
@@ -53,7 +60,7 @@ func TestAdminIdentityRoutesReplaceOnlyAccessFields(t *testing.T) {
 	}
 
 	store.identityUserID = 0
-	request = adminIdentityRequest(http.MethodPut, "/v1/admin/users/8/access", `{"administrator":true,"repository_ids":[],"display_name":"Changed"}`)
+	request = adminIdentityRequest(http.MethodPut, "/v1/admin/users/8/access", `{"direct_administrator":true,"direct_repository_ids":[],"display_name":"Changed"}`)
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	mux.ServeHTTP(response, request)
@@ -89,14 +96,19 @@ func TestAdminIdentityRoutesRejectMalformedRequests(t *testing.T) {
 		"wrong method": adminIdentityRequest(http.MethodPost, "/v1/admin/users/8/access", ""),
 		"wrong path":   adminIdentityRequest(http.MethodGet, "/v1/admin/users/8/extra", ""),
 		"missing content type": adminIdentityRequest(http.MethodPut, "/v1/admin/users/8/access",
-			`{"administrator":true,"repository_ids":[]}`),
+			`{"direct_administrator":true,"direct_repository_ids":[]}`),
 		"missing field": func() *http.Request {
-			request := adminIdentityRequest(http.MethodPut, "/v1/admin/users/8/access", `{"administrator":true}`)
+			request := adminIdentityRequest(http.MethodPut, "/v1/admin/users/8/access", `{"direct_administrator":true}`)
 			request.Header.Set("Content-Type", "application/json")
 			return request
 		}(),
 		"duplicate repository": func() *http.Request {
-			request := adminIdentityRequest(http.MethodPut, "/v1/admin/users/8/access", `{"administrator":true,"repository_ids":[101,101]}`)
+			request := adminIdentityRequest(http.MethodPut, "/v1/admin/users/8/access", `{"direct_administrator":true,"direct_repository_ids":[101,101]}`)
+			request.Header.Set("Content-Type", "application/json")
+			return request
+		}(),
+		"effective fields": func() *http.Request {
+			request := adminIdentityRequest(http.MethodPut, "/v1/admin/users/8/access", `{"administrator":true,"repository_ids":[101]}`)
 			request.Header.Set("Content-Type", "application/json")
 			return request
 		}(),
@@ -139,10 +151,10 @@ func adminIdentityRequest(method, path, body string) *http.Request {
 }
 
 func (store *adminHTTPStore) AdminUsers(context.Context, int) ([]admin.User, bool, error) {
-	return []admin.User{{ID: 7, ExternalID: "directory-7", UserName: "ada", Source: "scim", SCIMActive: true, Administrator: true, RepositoryIDs: []int64{101}}}, true, store.identityErr
+	return []admin.User{{ID: 7, ExternalID: "directory-7", UserName: "ada", Source: "scim", SCIMActive: true, Administrator: true, RepositoryIDs: []int64{101}, DirectRepositoryIDs: []int64{}}}, true, store.identityErr
 }
 func (store *adminHTTPStore) AdminUser(context.Context, int64) (admin.User, error) {
-	return admin.User{ID: 7, ExternalID: "directory-7", UserName: "ada", Source: "scim", SCIMActive: true, Administrator: true, RepositoryIDs: []int64{101}}, store.identityErr
+	return admin.User{ID: 7, ExternalID: "directory-7", UserName: "ada", Source: "scim", SCIMActive: true, Administrator: true, RepositoryIDs: []int64{101}, DirectRepositoryIDs: []int64{}}, store.identityErr
 }
 func (store *adminHTTPStore) AdminGroups(context.Context, int) ([]admin.Group, bool, error) {
 	return []admin.Group{{ID: 9, ExternalID: "engineering", DisplayName: "Engineering", Administrator: true, RepositoryIDs: []int64{101}, MemberCount: 2}}, false, store.identityErr
