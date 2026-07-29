@@ -359,10 +359,11 @@ func (s *Store) PatchGroup(ctx context.Context, id int64, mutation scim.GroupMut
 			return err
 		}
 		if mutation.ReplaceMembers != nil {
-			if err := replaceSCIMMembers(ctx, tx, id, *mutation.ReplaceMembers, hadAdministrator); err != nil {
+			if err := replaceSCIMMembers(ctx, tx, id, *mutation.ReplaceMembers, false); err != nil {
 				return err
 			}
-		} else {
+		}
+		if len(mutation.AddMembers) > 0 || len(mutation.RemoveMembers) > 0 {
 			if err := validateSCIMMembers(ctx, tx, mutation.AddMembers); err != nil {
 				return err
 			}
