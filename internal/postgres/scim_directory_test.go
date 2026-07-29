@@ -65,6 +65,44 @@ func TestSCIMUserLifecycle(t *testing.T) {
 	}
 }
 
+func TestSCIMCannotReadMutateOrAddLocalRecoveryUsers(t *testing.T) {
+	store := migratedStore(t)
+	localID := seedSecurityUser(t, store, "recovery-admin", "local", true)
+	group, err := store.CreateGroup(t.Context(), scim.Group{ExternalID: "g-local", DisplayName: "Local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	groupID := scimID(t, group.ID)
+
+	users, total, err := store.ListUsers(t.Context(), scim.Filter{}, scim.Page{StartIndex: 1, Count: 10})
+	if err != nil || total != 0 || len(users) != 0 {
+		t.Fatalf("local user leaked from list: users=%#v total=%d err=%v", users, total, err)
+	}
+	if _, err := store.User(t.Context(), localID); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("local user read error=%v", err)
+	}
+	if _, err := store.ReplaceUser(t.Context(), localID, scim.User{ExternalID: "changed", UserName: "changed"}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("local user replace error=%v", err)
+	}
+	if _, err := store.PatchUser(t.Context(), localID, scim.UserMutation{
+		UserName: scim.Optional[string]{Set: true, Value: "changed"},
+	}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("local user patch error=%v", err)
+	}
+	if err := store.DeleteUser(t.Context(), localID); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("local user delete error=%v", err)
+	}
+	if _, err := store.PatchGroup(t.Context(), groupID, scim.GroupMutation{AddMembers: []int64{localID}}); !errors.Is(err, scim.ErrInvalidMember) {
+		t.Fatalf("local group member error=%v", err)
+	}
+	var userName string
+	var deletedAt *time.Time
+	if err := store.pool.QueryRow(t.Context(), `select user_name,deleted_at from users where id=$1`, localID).Scan(&userName, &deletedAt); err != nil ||
+		userName != "recovery-admin" || deletedAt != nil {
+		t.Fatalf("local user mutated: userName=%q deletedAt=%v err=%v", userName, deletedAt, err)
+	}
+}
+
 func TestSCIMGroupLifecycleRollsBackInvalidMembersAndPreservesGrants(t *testing.T) {
 	store := migratedStore(t)
 	first, err := store.CreateUser(t.Context(), scim.User{ExternalID: "u-1", UserName: "ada"})
