@@ -59,6 +59,23 @@ func TestAdminRoutesRegisterOnlyWithDurableService(t *testing.T) {
 	}
 }
 
+func TestStaticHandlerHasNoBreakGlassSurface(t *testing.T) {
+	handler := newAPIHandler(
+		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}},
+		observability.New(), authn.RequestAuthenticator{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	login := httptest.NewRecorder()
+	handler.ServeHTTP(login, httptest.NewRequest(http.MethodPost, "/auth/local", nil))
+	if login.Code != http.StatusNotFound {
+		t.Fatalf("login status=%d", login.Code)
+	}
+	page := httptest.NewRecorder()
+	handler.ServeHTTP(page, httptest.NewRequest(http.MethodGet, "/", nil))
+	if strings.Contains(page.Body.String(), `id="local-auth"`) {
+		t.Fatal("static page exposes administrator recovery")
+	}
+}
+
 func TestAuthRuntimeWithoutOIDCUsesBearerOnly(t *testing.T) {
 	bearer := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	runtime, err := newAuthRuntime(t.Context(), config.Config{}, nil, bearer, observability.New())

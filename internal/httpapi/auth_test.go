@@ -40,19 +40,20 @@ func (service *authSessionService) Revoke(_ context.Context, token string) error
 func TestRegisterAuthConfigExposesOnlyEnabledMetadata(t *testing.T) {
 	provider := &authProvider{metadata: sso.Metadata{ID: "oidc", Label: "Sign in with SSO", LoginURL: "/auth/oidc/login"}}
 	mux := http.NewServeMux()
-	RegisterAuth(mux, true, []sso.Provider{provider}, authn.RequestAuthenticator{}, nil, nil)
+	RegisterAuth(mux, true, true, []sso.Provider{provider}, authn.RequestAuthenticator{}, nil, nil)
 	recorder := requestAuth(mux, http.MethodGet, "/v1/auth/config", "")
 	if recorder.Code != http.StatusOK || !provider.registered {
 		t.Fatalf("response=%d registered=%v", recorder.Code, provider.registered)
 	}
 	var body struct {
 		TokenLogin bool           `json:"token_login"`
+		BreakGlass bool           `json:"break_glass"`
 		Providers  []sso.Metadata `json:"providers"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if !body.TokenLogin || len(body.Providers) != 1 || body.Providers[0] != provider.metadata {
+	if !body.TokenLogin || !body.BreakGlass || len(body.Providers) != 1 || body.Providers[0] != provider.metadata {
 		t.Fatalf("body = %#v", body)
 	}
 	for _, secret := range []string{"issuer", "client_id", "groups", "secret", "file"} {
@@ -62,9 +63,9 @@ func TestRegisterAuthConfigExposesOnlyEnabledMetadata(t *testing.T) {
 	}
 	assertAuthPrivateHeaders(t, recorder)
 	emptyMux := http.NewServeMux()
-	RegisterAuth(emptyMux, false, nil, authn.RequestAuthenticator{}, nil, nil)
+	RegisterAuth(emptyMux, false, false, nil, authn.RequestAuthenticator{}, nil, nil)
 	empty := requestAuth(emptyMux, http.MethodGet, "/v1/auth/config", "")
-	if empty.Body.String() != "{\"token_login\":false,\"providers\":[]}\n" {
+	if empty.Body.String() != "{\"token_login\":false,\"break_glass\":false,\"providers\":[]}\n" {
 		t.Fatalf("disabled config = %q", empty.Body.String())
 	}
 }
@@ -82,7 +83,7 @@ func TestRegisterAuthSessionReportsOnlyMethodAndDisplayName(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			mux := http.NewServeMux()
-			RegisterAuth(mux, true, nil, test.authenticator, nil, nil)
+			RegisterAuth(mux, true, false, nil, test.authenticator, nil, nil)
 			request := httptest.NewRequest(http.MethodGet, "/v1/auth/session", nil)
 			if test.authorization != "" {
 				request.Header.Set("Authorization", test.authorization)
@@ -123,7 +124,7 @@ func TestRegisterAuthLogoutIsIdempotentAndClearsCookie(t *testing.T) {
 			sessions := &authSessionService{revokeErr: test.revokeErr}
 			metrics := observability.New()
 			mux := http.NewServeMux()
-			RegisterAuth(mux, true, nil, authn.RequestAuthenticator{}, sessions, metrics)
+			RegisterAuth(mux, true, false, nil, authn.RequestAuthenticator{}, sessions, metrics)
 			request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
 			if test.cookie != "" {
 				request.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: test.cookie})
@@ -166,7 +167,7 @@ func TestRegisterAuthLogoutRequiresSessionRequestBoundary(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			sessions := &authSessionService{}
 			mux := http.NewServeMux()
-			RegisterAuth(mux, true, nil, authn.RequestAuthenticator{PublicOrigin: publicOrigin}, sessions, nil)
+			RegisterAuth(mux, true, false, nil, authn.RequestAuthenticator{PublicOrigin: publicOrigin}, sessions, nil)
 			request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
 			request.Header.Set("Origin", test.origin)
 			if test.authorization != "" {
@@ -196,7 +197,7 @@ func TestRegisterAuthEnforcesMethodsAndExactPaths(t *testing.T) {
 		want         int
 	}{{http.MethodPost, "/v1/auth/config", http.StatusMethodNotAllowed}, {http.MethodPost, "/v1/auth/session", http.StatusMethodNotAllowed}, {http.MethodGet, "/auth/logout", http.StatusMethodNotAllowed}, {http.MethodGet, "/v1/auth/config/extra", http.StatusNotFound}, {http.MethodGet, "/v1/auth/session/extra", http.StatusNotFound}, {http.MethodPost, "/auth/logout/extra", http.StatusNotFound}}
 	mux := http.NewServeMux()
-	RegisterAuth(mux, true, nil, authn.RequestAuthenticator{}, nil, nil)
+	RegisterAuth(mux, true, false, nil, authn.RequestAuthenticator{}, nil, nil)
 	for _, test := range tests {
 		recorder := requestAuth(mux, test.method, test.path, "")
 		if recorder.Code != test.want {

@@ -37,7 +37,11 @@ func (s *Store) ConsumeLoginFlow(ctx context.Context, stateHash, browserHash [32
 }
 
 func (s *Store) CreateSession(ctx context.Context, session authn.SessionRecord) error {
-	_, err := s.pool.Exec(ctx, `insert into auth_sessions (token_hash, user_id, provider, force_rotation, created_at, last_seen_at, idle_expires_at, expires_at) values ($1,$2,$3,$4,$5,$6,$7,$8)`, session.TokenHash[:], session.UserID, session.Provider, session.ForceRotation, session.CreatedAt, session.LastSeenAt, session.IdleExpiresAt, session.ExpiresAt)
+	return createSession(ctx, s.pool, session)
+}
+
+func createSession(ctx context.Context, executor auditExecutor, session authn.SessionRecord) error {
+	_, err := executor.Exec(ctx, `insert into auth_sessions (token_hash, user_id, provider, force_rotation, created_at, last_seen_at, idle_expires_at, expires_at) values ($1,$2,$3,$4,$5,$6,$7,$8)`, session.TokenHash[:], session.UserID, session.Provider, session.ForceRotation, session.CreatedAt, session.LastSeenAt, session.IdleExpiresAt, session.ExpiresAt)
 	return err
 }
 

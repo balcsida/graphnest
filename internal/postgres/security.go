@@ -51,6 +51,85 @@ func (s *Store) SetPasswordCredential(ctx context.Context, userID int64, credent
 	return tx.Commit(ctx)
 }
 
+func (s *Store) CreatePasswordSession(ctx context.Context, userID int64, expected authn.PasswordCredential, session authn.SessionRecord) error {
+	if expected.Validate() != nil || expected.ForceRotation || !validStandardLocalSession(userID, session) {
+		return authn.ErrInvalidIdentity
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := requireLocalAdministrator(ctx, tx, userID); err != nil {
+		return err
+	}
+	var matches bool
+	if err := tx.QueryRow(ctx, `select exists(select 1 from password_credentials
+		where user_id=$1 and salt=$2 and hash=$3 and memory_kib=$4
+		and iterations=$5 and parallelism=$6 and force_rotation=false)`,
+		userID, expected.Salt, expected.Hash, expected.MemoryKiB,
+		expected.Iterations, expected.Parallelism).Scan(&matches); err != nil {
+		return err
+	}
+	if !matches {
+		return authn.ErrUnauthenticated
+	}
+	if err := createSession(ctx, tx, session); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *Store) RotatePasswordCredential(ctx context.Context, userID int64, expected, replacement authn.PasswordCredential, session authn.SessionRecord, event audit.Event) error {
+	if expected.Validate() != nil || replacement.Validate() != nil || !expected.ForceRotation || replacement.ForceRotation {
+		return authn.ErrInvalidPasswordCredential
+	}
+	if !validStandardLocalSession(userID, session) {
+		return authn.ErrInvalidIdentity
+	}
+	if err := event.Validate(); err != nil {
+		return err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := requireLocalAdministrator(ctx, tx, userID); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `update password_credentials set
+		salt=$2,hash=$3,memory_kib=$4,iterations=$5,parallelism=$6,
+		force_rotation=false,updated_at=now()
+		where user_id=$1 and salt=$7 and hash=$8 and memory_kib=$9
+		and iterations=$10 and parallelism=$11 and force_rotation=true`,
+		userID, replacement.Salt, replacement.Hash, replacement.MemoryKiB,
+		replacement.Iterations, replacement.Parallelism, expected.Salt, expected.Hash,
+		expected.MemoryKiB, expected.Iterations, expected.Parallelism)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return authn.ErrUnauthenticated
+	}
+	if err := revokeAdminCredentials(ctx, tx, userID); err != nil {
+		return err
+	}
+	if err := createSession(ctx, tx, session); err != nil {
+		return err
+	}
+	if err := appendAudit(ctx, tx, event); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func validStandardLocalSession(userID int64, session authn.SessionRecord) bool {
+	return session.UserID == userID && session.Provider == "local" && !session.ForceRotation &&
+		!session.CreatedAt.IsZero() && session.LastSeenAt == session.CreatedAt &&
+		session.IdleExpiresAt.After(session.CreatedAt) && !session.ExpiresAt.Before(session.IdleExpiresAt)
+}
+
 func (s *Store) UpsertBreakGlassAdmin(ctx context.Context, userName string, credential authn.PasswordCredential, event audit.Event) (int64, error) {
 	if !validSecurityUserName(userName) {
 		return 0, ErrInvalidSecurityPrincipal

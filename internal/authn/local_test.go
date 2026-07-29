@@ -24,7 +24,10 @@ type localStoreStub struct {
 }
 
 func (s *localStoreStub) PasswordCredential(_ context.Context, _ string) (int64, PasswordCredential, error) {
-	return s.userID, s.credential, s.lookupErr
+	credential := s.credential
+	credential.Salt = bytes.Clone(credential.Salt)
+	credential.Hash = bytes.Clone(credential.Hash)
+	return s.userID, credential, s.lookupErr
 }
 
 func (s *localStoreStub) ConsumeLoginAttempt(_ context.Context, key [32]byte, _ time.Time) (bool, time.Time, error) {
@@ -84,7 +87,7 @@ func TestLocalAuthenticateConsumesAccountAndCanonicalSourceThenCreatesSession(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Token == "" || !result.ForceRotation {
+	if result.UserID != 42 || result.Token == "" || !result.ForceRotation {
 		t.Fatalf("result = %#v", result)
 	}
 	accountKey, sourceKey := localThrottleKeys("recovery-admin", "2001:db8::1")
@@ -96,6 +99,29 @@ func TestLocalAuthenticateConsumesAccountAndCanonicalSourceThenCreatesSession(t 
 	}
 	if len(store.events) != 2 || store.events[0] != "session" || store.events[1] != "clear" {
 		t.Fatalf("events = %v", store.events)
+	}
+}
+
+func TestLocalVerifyDefersForcedRotationSessionAndThrottleClear(t *testing.T) {
+	store := &localStoreStub{userID: 42, credential: localCredential(t, true)}
+	authenticator := localAuthenticator(t, store)
+	verification, err := authenticator.Verify(t.Context(), "Recovery-Admin", []byte("sixteen-byte-secret"), "192.0.2.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verification.UserID != 42 || !verification.ForceRotation || len(store.events) != 0 {
+		t.Fatalf("verification=%#v events=%v", verification, store.events)
+	}
+	prepared, err := authenticator.Sessions.PrepareForUser(verification.UserID, "local", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := authenticator.CompleteRotation(t.Context(), verification, prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.UserID != 42 || result.ForceRotation || len(store.events) != 1 || store.events[0] != "clear" {
+		t.Fatalf("result=%#v events=%v", result, store.events)
 	}
 }
 

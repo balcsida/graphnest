@@ -11,7 +11,7 @@ import (
 func AuthenticateRequest(authenticator authn.RequestAuthenticator, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		principal, err := authenticator.AuthenticateRequest(request)
-		if err != nil {
+		if err != nil || principal.ForceRotation {
 			writeUnauthenticated(writer)
 			return
 		}

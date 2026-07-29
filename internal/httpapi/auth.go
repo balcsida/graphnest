@@ -14,7 +14,7 @@ type sessionRevoker interface {
 	Revoke(context.Context, string) error
 }
 
-func RegisterAuth(mux *http.ServeMux, tokenLogin bool, providers []sso.Provider, authenticator authn.RequestAuthenticator, sessions sessionRevoker, metrics *observability.Metrics) {
+func RegisterAuth(mux *http.ServeMux, tokenLogin, breakGlass bool, providers []sso.Provider, authenticator authn.RequestAuthenticator, sessions sessionRevoker, metrics *observability.Metrics) {
 	metadata := make([]sso.Metadata, 0, len(providers))
 	for _, provider := range providers {
 		if provider == nil {
@@ -26,8 +26,9 @@ func RegisterAuth(mux *http.ServeMux, tokenLogin bool, providers []sso.Provider,
 	mux.Handle("/v1/auth/config", privateAuth(exactMethod(http.MethodGet, http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writeBoundedJSON(writer, struct {
 			TokenLogin bool           `json:"token_login"`
+			BreakGlass bool           `json:"break_glass"`
 			Providers  []sso.Metadata `json:"providers"`
-		}{tokenLogin, metadata}, 64<<10)
+		}{tokenLogin, breakGlass, metadata}, 64<<10)
 	}))))
 	mux.Handle("/v1/auth/session", privateAuth(exactMethod(http.MethodGet, AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		principal := PrincipalFromContext(request.Context())

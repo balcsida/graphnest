@@ -118,7 +118,7 @@ func newOIDCReplica(t *testing.T, database milestoneDatabase, idp *oidcTestProvi
 	sessions := &authn.SessionManager{Store: database.store, IdleTTL: time.Hour, TTL: 2 * time.Hour}
 	authenticator := authn.RequestAuthenticator{Session: sessions, PublicOrigin: publicURL}
 	mux := http.NewServeMux()
-	httpapi.RegisterAuth(mux, false, []sso.Provider{&oidcclient.Provider{Client: client, Store: database.store, Sessions: sessions, LoginTTL: time.Minute}}, authenticator, sessions, nil)
+	httpapi.RegisterAuth(mux, false, false, []sso.Provider{&oidcclient.Provider{Client: client, Store: database.store, Sessions: sessions, LoginTTL: time.Minute}}, authenticator, sessions, nil)
 	httpapi.RegisterRepositories(mux, authenticator, &repository.Service{Store: database.store}, 64<<10, 10, 64<<10)
 	httpapi.RegisterSearch(mux, authenticator, search.NewService(oidcSearchBackend{}, authz.NewPostgres(database.store), search.Limits{MaxResults: 10, MaxResponseBytes: 64 << 10}), 64<<10, 64<<10)
 	return mux

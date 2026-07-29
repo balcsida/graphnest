@@ -93,6 +93,55 @@ func TestSecurityCredentialReplacementIsAtomic(t *testing.T) {
 	if err != nil || got.Hash[0] != 2 {
 		t.Fatalf("credential changed without audit: %#v err=%v", got, err)
 	}
+
+	replacement := testCredential(3)
+	replacement.ForceRotation = false
+	now := time.Now().UTC()
+	session := authn.SessionRecord{
+		TokenHash: sha256.Sum256([]byte("rotation-session")), UserID: userID, Provider: "local",
+		CreatedAt: now, LastSeenAt: now, IdleExpiresAt: now.Add(time.Hour), ExpiresAt: now.Add(2 * time.Hour),
+	}
+	if err := store.RotatePasswordCredential(t.Context(), userID, testCredential(2), replacement, session, testAudit("password_rotated")); err != nil {
+		t.Fatal(err)
+	}
+	staleReplacement := testCredential(4)
+	staleReplacement.ForceRotation = false
+	if err := store.RotatePasswordCredential(t.Context(), userID, testCredential(2), staleReplacement, session, testAudit("password_rotated")); !errors.Is(err, authn.ErrUnauthenticated) {
+		t.Fatalf("stale rotation error=%v", err)
+	}
+	_, got, err = store.PasswordCredential(t.Context(), "recovery-admin")
+	if err != nil || got.Hash[0] != 3 || got.ForceRotation {
+		t.Fatalf("credential after compare-and-replace: %#v err=%v", got, err)
+	}
+	if err := store.pool.QueryRow(t.Context(), `select count(*) from auth_sessions where user_id=$1 and revoked_at is null`, userID).Scan(&liveSessions); err != nil || liveSessions != 1 {
+		t.Fatalf("rotation sessions=%d err=%v", liveSessions, err)
+	}
+	if err := store.SetPasswordCredential(t.Context(), userID, testCredential(4), testAudit("password_set")); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.pool.QueryRow(t.Context(), `select count(*) from auth_sessions where user_id=$1 and revoked_at is null`, userID).Scan(&liveSessions); err != nil || liveSessions != 0 {
+		t.Fatalf("sessions after operator reset=%d err=%v", liveSessions, err)
+	}
+
+	normalCredential := testCredential(5)
+	normalCredential.ForceRotation = false
+	if err := store.SetPasswordCredential(t.Context(), userID, normalCredential, testAudit("password_set")); err != nil {
+		t.Fatal(err)
+	}
+	normalSession := session
+	normalSession.TokenHash = sha256.Sum256([]byte("normal-session"))
+	if err := store.CreatePasswordSession(t.Context(), userID, normalCredential, normalSession); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetPasswordCredential(t.Context(), userID, testCredential(6), testAudit("password_set")); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreatePasswordSession(t.Context(), userID, normalCredential, normalSession); !errors.Is(err, authn.ErrUnauthenticated) {
+		t.Fatalf("stale login session error=%v", err)
+	}
+	if err := store.pool.QueryRow(t.Context(), `select count(*) from auth_sessions where user_id=$1 and revoked_at is null`, userID).Scan(&liveSessions); err != nil || liveSessions != 0 {
+		t.Fatalf("normal sessions after operator reset=%d err=%v", liveSessions, err)
+	}
 }
 
 func TestSecurityRejectsNonLocalAdministratorCredentials(t *testing.T) {

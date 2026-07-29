@@ -1,6 +1,7 @@
 package authn
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -21,9 +22,18 @@ type LocalStore interface {
 }
 
 type LocalAuthentication struct {
+	UserID        int64
 	Token         string
 	ExpiresAt     time.Time
 	ForceRotation bool
+}
+
+type LocalVerification struct {
+	UserID        int64
+	ForceRotation bool
+	Credential    PasswordCredential
+	accountKey    [32]byte
+	sourceKey     [32]byte
 }
 
 type LoginThrottleError struct{ RetryAfter time.Duration }
@@ -54,6 +64,16 @@ func NewLocalAuthenticator(store LocalStore, sessions *SessionManager, random io
 }
 
 func (a LocalAuthenticator) Authenticate(ctx context.Context, userName string, password []byte, remoteAddr string) (LocalAuthentication, error) {
+	verification, err := a.Verify(ctx, userName, password, remoteAddr)
+	if err != nil {
+		return LocalAuthentication{}, err
+	}
+	defer clear(verification.Credential.Salt)
+	defer clear(verification.Credential.Hash)
+	return a.complete(ctx, verification, verification.ForceRotation)
+}
+
+func (a LocalAuthenticator) Verify(ctx context.Context, userName string, password []byte, remoteAddr string) (LocalVerification, error) {
 	now := time.Now()
 	if a.Now != nil {
 		now = a.Now()
@@ -64,16 +84,18 @@ func (a LocalAuthenticator) Authenticate(ctx context.Context, userName string, p
 	sourceAllowed, _, sourceErr := a.consume(ctx, sourceKey, now)
 	if accountErr != nil || sourceErr != nil {
 		clear(password)
-		return LocalAuthentication{}, ErrUnauthenticated
+		return LocalVerification{}, ErrUnauthenticated
 	}
 	if !accountAllowed || !sourceAllowed {
 		clear(password)
-		return LocalAuthentication{}, &LoginThrottleError{RetryAfter: maxLoginRetryAfter}
+		return LocalVerification{}, &LoginThrottleError{RetryAfter: maxLoginRetryAfter}
 	}
 
 	userID, credential, lookupErr := a.Store.PasswordCredential(ctx, normalized)
 	eligible := lookupErr == nil && credential.Validate() == nil
 	if !eligible {
+		clear(credential.Salt)
+		clear(credential.Hash)
 		credential = a.Dummy
 	}
 	verify := a.verify
@@ -82,20 +104,63 @@ func (a LocalAuthenticator) Authenticate(ctx context.Context, userName string, p
 	}
 	valid := verify(password, credential)
 	if !eligible || !valid {
+		if eligible {
+			clear(credential.Salt)
+			clear(credential.Hash)
+		}
+		return LocalVerification{}, ErrUnauthenticated
+	}
+	salt, hash := bytes.Clone(credential.Salt), bytes.Clone(credential.Hash)
+	clear(credential.Salt)
+	clear(credential.Hash)
+	credential.Salt, credential.Hash = salt, hash
+	return LocalVerification{
+		UserID: userID, ForceRotation: credential.ForceRotation, Credential: credential,
+		accountKey: accountKey, sourceKey: sourceKey,
+	}, nil
+}
+
+func (a LocalAuthenticator) CompleteLogin(ctx context.Context, verification LocalVerification, prepared PreparedSession) (LocalAuthentication, error) {
+	if verification.ForceRotation {
 		return LocalAuthentication{}, ErrUnauthenticated
 	}
+	return a.completePrepared(ctx, verification, prepared)
+}
+
+func (a LocalAuthenticator) CompleteRotation(ctx context.Context, verification LocalVerification, prepared PreparedSession) (LocalAuthentication, error) {
+	if !verification.ForceRotation {
+		return LocalAuthentication{}, ErrUnauthenticated
+	}
+	return a.completePrepared(ctx, verification, prepared)
+}
+
+func (a LocalAuthenticator) completePrepared(ctx context.Context, verification LocalVerification, prepared PreparedSession) (LocalAuthentication, error) {
+	if prepared.Record.UserID != verification.UserID || prepared.Record.Provider != "local" || prepared.Record.ForceRotation {
+		return LocalAuthentication{}, ErrUnauthenticated
+	}
+	if err := a.Store.ClearLoginFailures(ctx, verification.accountKey, verification.sourceKey); err != nil {
+		_ = a.Sessions.Revoke(ctx, prepared.Token)
+		return LocalAuthentication{}, ErrUnauthenticated
+	}
+	return LocalAuthentication{
+		UserID: verification.UserID, Token: prepared.Token,
+		ExpiresAt: prepared.ExpiresAt, ForceRotation: false,
+	}, nil
+}
+
+func (a LocalAuthenticator) complete(ctx context.Context, verification LocalVerification, forceRotation bool) (LocalAuthentication, error) {
 	if a.Sessions == nil {
 		return LocalAuthentication{}, ErrUnauthenticated
 	}
-	token, expiresAt, err := a.Sessions.CreateForUser(ctx, userID, "local", credential.ForceRotation)
+	token, expiresAt, err := a.Sessions.CreateForUser(ctx, verification.UserID, "local", forceRotation)
 	if err != nil {
 		return LocalAuthentication{}, ErrUnauthenticated
 	}
-	if err := a.Store.ClearLoginFailures(ctx, accountKey, sourceKey); err != nil {
+	if err := a.Store.ClearLoginFailures(ctx, verification.accountKey, verification.sourceKey); err != nil {
 		_ = a.Sessions.Revoke(ctx, token)
 		return LocalAuthentication{}, ErrUnauthenticated
 	}
-	return LocalAuthentication{Token: token, ExpiresAt: expiresAt, ForceRotation: credential.ForceRotation}, nil
+	return LocalAuthentication{UserID: verification.UserID, Token: token, ExpiresAt: expiresAt, ForceRotation: forceRotation}, nil
 }
 
 func (a LocalAuthenticator) consume(ctx context.Context, key [32]byte, now time.Time) (bool, time.Time, error) {
