@@ -245,6 +245,33 @@ func TestServiceMapsStoreErrors(t *testing.T) {
 	}
 }
 
+type failingSCIMAudit struct{ events []audit.Event }
+
+func (recorder *failingSCIMAudit) Record(_ context.Context, event audit.Event) error {
+	recorder.events = append(recorder.events, event)
+	return errors.New("audit unavailable")
+}
+
+func TestServiceAuditsFinalAdministratorDenialAndPreservesConflict(t *testing.T) {
+	recorder := &failingSCIMAudit{}
+	service := &Service{
+		Store: &fakeStore{userErr: ErrFinalAdministrator}, Audit: recorder,
+		BaseURL: "https://grepnest.example", MaxResults: 100,
+	}
+	ctx := audit.WithRequestID(t.Context(), "request-42")
+	_, err := service.ReplaceGroup(ctx, 9, Group{
+		Schemas: []string{GroupSchema}, DisplayName: "Administrators",
+	})
+	var scimError Error
+	if !errors.As(err, &scimError) || scimError.Status != 409 {
+		t.Fatalf("error=%#v", err)
+	}
+	if len(recorder.events) != 1 || recorder.events[0].TargetType != "group" ||
+		recorder.events[0].TargetID != "9" || recorder.events[0].RequestID != "request-42" {
+		t.Fatalf("events=%#v", recorder.events)
+	}
+}
+
 func TestServiceProjectsAndBoundsLists(t *testing.T) {
 	active := true
 	store := &fakeStore{users: []User{{

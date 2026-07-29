@@ -19,8 +19,8 @@ import (
 const localAuthMaxBodyBytes = 16 << 10
 
 type passwordCredentialSetter interface {
-	CreatePasswordSession(context.Context, int64, authn.PasswordCredential, authn.SessionRecord) error
-	RotatePasswordCredential(context.Context, int64, authn.PasswordCredential, authn.PasswordCredential, authn.SessionRecord, audit.Event) error
+	CreatePasswordSession(context.Context, int64, authn.PasswordCredential, authn.SessionRecord, [32]byte, [32]byte) error
+	RotatePasswordCredential(context.Context, int64, authn.PasswordCredential, authn.PasswordCredential, authn.SessionRecord, [32]byte, [32]byte, audit.Event) error
 }
 
 func RegisterLocalAuth(mux *http.ServeMux, publicOrigin string, authenticator *authn.LocalAuthenticator, credentials passwordCredentialSetter) {
@@ -53,7 +53,8 @@ func RegisterLocalAuth(mux *http.ServeMux, publicOrigin string, authenticator *a
 			writeLocalUnauthenticated(writer)
 			return
 		}
-		if err := credentials.CreatePasswordSession(request.Context(), verification.UserID, verification.Credential, prepared.Record); err != nil {
+		accountKey, sourceKey := verification.ThrottleKeys()
+		if err := credentials.CreatePasswordSession(request.Context(), verification.UserID, verification.Credential, prepared.Record, accountKey, sourceKey); err != nil {
 			writeLocalUnauthenticated(writer)
 			return
 		}
@@ -106,9 +107,11 @@ func RegisterLocalAuth(mux *http.ServeMux, publicOrigin string, authenticator *a
 			return
 		}
 		userID := strconv.FormatInt(verification.UserID, 10)
-		if err := credentials.RotatePasswordCredential(request.Context(), verification.UserID, verification.Credential, credential, prepared.Record, audit.Event{
+		accountKey, sourceKey := verification.ThrottleKeys()
+		if err := credentials.RotatePasswordCredential(request.Context(), verification.UserID, verification.Credential, credential, prepared.Record, accountKey, sourceKey, audit.Event{
 			ActorType: "user", ActorID: userID, TargetType: "user", TargetID: userID,
 			AuthenticationMethod: "local", Operation: "password_rotated", Outcome: "success",
+			RequestID: audit.RequestID(request.Context()),
 		}); err != nil {
 			if errors.Is(err, authn.ErrUnauthenticated) {
 				writeLocalUnauthenticated(writer)

@@ -80,7 +80,8 @@ func (service *Service) SuspendUser(ctx context.Context, principal authn.Princip
 	if suspended {
 		operation = audit.OperationUserSuspended
 	}
-	return service.Store.SuspendAdminUserAudited(ctx, actorID, id, suspended, identityAudit(principal, "user", id, operation))
+	err := service.Store.SuspendAdminUserAudited(ctx, actorID, id, suspended, identityAudit(ctx, principal, "user", id, operation))
+	return service.auditFinalAdministrator(ctx, principal, "user", id, err)
 }
 
 func (service *Service) ReplaceUserAccess(ctx context.Context, principal authn.Principal, id int64, administrator bool, repositoryIDs []int64) error {
@@ -89,8 +90,9 @@ func (service *Service) ReplaceUserAccess(ctx context.Context, principal authn.P
 		return err
 	}
 	actorID := principalUserID(principal)
-	return service.Store.ReplaceAdminUserAccessAudited(ctx, actorID, id, administrator, repositoryIDs,
-		identityAudit(principal, "user", id, audit.OperationUserRoleChanged))
+	err := service.Store.ReplaceAdminUserAccessAudited(ctx, actorID, id, administrator, repositoryIDs,
+		identityAudit(ctx, principal, "user", id, audit.OperationUserRoleChanged))
+	return service.auditFinalAdministrator(ctx, principal, "user", id, err)
 }
 
 func (service *Service) ReplaceGroupAccess(ctx context.Context, principal authn.Principal, id int64, administrator bool, repositoryIDs []int64) error {
@@ -98,8 +100,9 @@ func (service *Service) ReplaceGroupAccess(ctx context.Context, principal authn.
 		service.recordDenied(ctx, principal, "group", id)
 		return err
 	}
-	return service.Store.ReplaceAdminGroupAccessAudited(ctx, principalUserID(principal), id, administrator, repositoryIDs,
-		identityAudit(principal, "group", id, audit.OperationGroupRoleChanged))
+	err := service.Store.ReplaceAdminGroupAccessAudited(ctx, principalUserID(principal), id, administrator, repositoryIDs,
+		identityAudit(ctx, principal, "group", id, audit.OperationGroupRoleChanged))
+	return service.auditFinalAdministrator(ctx, principal, "group", id, err)
 }
 
 func (service *Service) RevokeUserCredentials(ctx context.Context, principal authn.Principal, id int64) error {
@@ -108,7 +111,14 @@ func (service *Service) RevokeUserCredentials(ctx context.Context, principal aut
 		return err
 	}
 	return service.Store.RevokeAdminUserCredentialsAudited(ctx, id,
-		identityAudit(principal, "user", id, audit.OperationUserCredentialsRevoked))
+		identityAudit(ctx, principal, "user", id, audit.OperationUserCredentialsRevoked))
+}
+
+func (service *Service) auditFinalAdministrator(ctx context.Context, principal authn.Principal, targetType string, targetID int64, err error) error {
+	if errors.Is(err, ErrFinalAdministrator) {
+		service.recordDenied(ctx, principal, targetType, targetID)
+	}
+	return err
 }
 
 func (service *Service) recordDenied(ctx context.Context, principal authn.Principal, targetType string, targetID int64) {
@@ -131,6 +141,7 @@ func (service *Service) recordDenied(ctx context.Context, principal authn.Princi
 		ActorType: "user", ActorID: actorID, TargetType: targetType,
 		TargetID: target, AuthenticationMethod: method,
 		Operation: audit.OperationAdminMutationDenied, Outcome: "denied",
+		RequestID: audit.RequestID(ctx),
 	})
 }
 
@@ -145,11 +156,12 @@ type auditedIdentityStore interface {
 	RevokeAdminUserCredentialsAudited(context.Context, int64, audit.Event) error
 }
 
-func identityAudit(principal authn.Principal, targetType string, targetID int64, operation string) audit.Event {
+func identityAudit(ctx context.Context, principal authn.Principal, targetType string, targetID int64, operation string) audit.Event {
 	return audit.Event{
 		ActorType: "user", ActorID: principal.Subject, TargetType: targetType,
 		TargetID: strconv.FormatInt(targetID, 10), AuthenticationMethod: principal.Method,
 		Operation: operation, Outcome: "success",
+		RequestID: audit.RequestID(ctx),
 	}
 }
 

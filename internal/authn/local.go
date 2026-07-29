@@ -38,6 +38,10 @@ type LocalVerification struct {
 	sourceKey     [32]byte
 }
 
+func (verification LocalVerification) ThrottleKeys() ([32]byte, [32]byte) {
+	return verification.accountKey, verification.sourceKey
+}
+
 type LoginThrottleError struct{ RetryAfter time.Duration }
 
 func (e *LoginThrottleError) Error() string { return "login throttled" }
@@ -130,7 +134,7 @@ func (a LocalAuthenticator) denied(ctx context.Context, outcome string) {
 		_ = a.Audit.Record(ctx, audit.Event{
 			ActorType: "anonymous", TargetType: "authentication",
 			AuthenticationMethod: "local", Operation: audit.OperationLocalLoginDenied,
-			Outcome: outcome,
+			Outcome: outcome, RequestID: audit.RequestID(ctx),
 		})
 	}
 }
@@ -153,10 +157,6 @@ func (a LocalAuthenticator) completePrepared(ctx context.Context, verification L
 	if prepared.Record.UserID != verification.UserID || prepared.Record.Provider != "local" || prepared.Record.ForceRotation {
 		return LocalAuthentication{}, ErrUnauthenticated
 	}
-	if err := a.Store.ClearLoginFailures(ctx, verification.accountKey, verification.sourceKey); err != nil {
-		_ = a.Sessions.Revoke(ctx, prepared.Token)
-		return LocalAuthentication{}, ErrUnauthenticated
-	}
 	return LocalAuthentication{
 		UserID: verification.UserID, Token: prepared.Token,
 		ExpiresAt: prepared.ExpiresAt, ForceRotation: false,
@@ -167,15 +167,20 @@ func (a LocalAuthenticator) complete(ctx context.Context, verification LocalVeri
 	if a.Sessions == nil {
 		return LocalAuthentication{}, ErrUnauthenticated
 	}
-	token, expiresAt, err := a.Sessions.CreateForUser(ctx, verification.UserID, "local", forceRotation)
+	prepared, err := a.Sessions.PrepareForUser(verification.UserID, "local", forceRotation)
 	if err != nil {
 		return LocalAuthentication{}, ErrUnauthenticated
 	}
-	if err := a.Store.ClearLoginFailures(ctx, verification.accountKey, verification.sourceKey); err != nil {
-		_ = a.Sessions.Revoke(ctx, token)
+	creator, ok := a.Store.(interface {
+		CreatePasswordSession(context.Context, int64, PasswordCredential, SessionRecord, [32]byte, [32]byte) error
+	})
+	if !ok {
 		return LocalAuthentication{}, ErrUnauthenticated
 	}
-	return LocalAuthentication{UserID: verification.UserID, Token: token, ExpiresAt: expiresAt, ForceRotation: forceRotation}, nil
+	if err := creator.CreatePasswordSession(ctx, verification.UserID, verification.Credential, prepared.Record, verification.accountKey, verification.sourceKey); err != nil {
+		return LocalAuthentication{}, ErrUnauthenticated
+	}
+	return LocalAuthentication{UserID: verification.UserID, Token: prepared.Token, ExpiresAt: prepared.ExpiresAt, ForceRotation: forceRotation}, nil
 }
 
 func (a LocalAuthenticator) consume(ctx context.Context, key [32]byte, now time.Time) (bool, time.Time, error) {

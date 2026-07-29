@@ -105,11 +105,16 @@ func (s *Service) RevokeToken(ctx context.Context, principal authn.Principal, id
 	if err != nil || id < 1 || s.Manager.Store == nil {
 		return ErrForbidden
 	}
-	return s.Manager.Store.RevokeAPITokenAudited(ctx, userID, id, audit.Event{
+	err = s.Manager.Store.RevokeAPITokenAudited(ctx, userID, id, audit.Event{
 		ActorType: "user", ActorID: principal.Subject, TargetType: "api_token",
 		TargetID: strconv.FormatInt(id, 10), AuthenticationMethod: principal.Method,
 		Operation: audit.OperationAPITokenRevoked, Outcome: "success",
+		RequestID: audit.RequestID(ctx),
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrForbidden
+	}
+	return err
 }
 
 func userID(principal authn.Principal) (int64, error) {

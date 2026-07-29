@@ -52,8 +52,8 @@ func (s *Store) SetPasswordCredential(ctx context.Context, userID int64, credent
 	return tx.Commit(ctx)
 }
 
-func (s *Store) CreatePasswordSession(ctx context.Context, userID int64, expected authn.PasswordCredential, session authn.SessionRecord) error {
-	if expected.Validate() != nil || expected.ForceRotation || !validStandardLocalSession(userID, session) {
+func (s *Store) CreatePasswordSession(ctx context.Context, userID int64, expected authn.PasswordCredential, session authn.SessionRecord, accountKey, sourceKey [32]byte) error {
+	if expected.Validate() != nil || expected.ForceRotation != session.ForceRotation || !validLocalSession(userID, session) {
 		return authn.ErrInvalidIdentity
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -75,14 +75,18 @@ func (s *Store) CreatePasswordSession(ctx context.Context, userID int64, expecte
 	if !matches {
 		return authn.ErrUnauthenticated
 	}
+	if err := clearLoginFailures(ctx, tx, accountKey, sourceKey); err != nil {
+		return err
+	}
 	if err := createSession(ctx, tx, session); err != nil {
 		return err
 	}
 	for _, operation := range []string{audit.OperationLocalLoginSucceeded, audit.OperationSessionCreated} {
 		if err := appendAudit(ctx, tx, audit.Event{
 			ActorType: "user", ActorID: strconv.FormatInt(userID, 10),
-			TargetType: "session", AuthenticationMethod: "local",
+			TargetType: "session", TargetID: session.AuditID, AuthenticationMethod: "local",
 			Operation: operation, Outcome: "success",
+			RequestID: audit.RequestID(ctx),
 		}); err != nil {
 			return err
 		}
@@ -90,7 +94,7 @@ func (s *Store) CreatePasswordSession(ctx context.Context, userID int64, expecte
 	return tx.Commit(ctx)
 }
 
-func (s *Store) RotatePasswordCredential(ctx context.Context, userID int64, expected, replacement authn.PasswordCredential, session authn.SessionRecord, event audit.Event) error {
+func (s *Store) RotatePasswordCredential(ctx context.Context, userID int64, expected, replacement authn.PasswordCredential, session authn.SessionRecord, accountKey, sourceKey [32]byte, event audit.Event) error {
 	if expected.Validate() != nil || replacement.Validate() != nil || !expected.ForceRotation || replacement.ForceRotation {
 		return authn.ErrInvalidPasswordCredential
 	}
@@ -128,12 +132,15 @@ func (s *Store) RotatePasswordCredential(ctx context.Context, userID int64, expe
 	if err := createSession(ctx, tx, session); err != nil {
 		return err
 	}
+	if err := clearLoginFailures(ctx, tx, accountKey, sourceKey); err != nil {
+		return err
+	}
 	if err := appendAudit(ctx, tx, event); err != nil {
 		return err
 	}
 	if err := appendAudit(ctx, tx, audit.Event{
 		ActorType: event.ActorType, ActorID: event.ActorID, TargetType: "session",
-		AuthenticationMethod: "local", Operation: audit.OperationSessionCreated,
+		TargetID: session.AuditID, AuthenticationMethod: "local", Operation: audit.OperationSessionCreated,
 		Outcome: "success", RequestID: event.RequestID,
 	}); err != nil {
 		return err
@@ -142,7 +149,11 @@ func (s *Store) RotatePasswordCredential(ctx context.Context, userID int64, expe
 }
 
 func validStandardLocalSession(userID int64, session authn.SessionRecord) bool {
-	return session.UserID == userID && session.Provider == "local" && !session.ForceRotation &&
+	return validLocalSession(userID, session) && !session.ForceRotation
+}
+
+func validLocalSession(userID int64, session authn.SessionRecord) bool {
+	return session.UserID == userID && session.Provider == "local" &&
 		!session.CreatedAt.IsZero() && session.LastSeenAt == session.CreatedAt &&
 		session.IdleExpiresAt.After(session.CreatedAt) && !session.ExpiresAt.Before(session.IdleExpiresAt)
 }
@@ -278,7 +289,11 @@ func consumeLoginAttempt(ctx context.Context, query rowQuerier, key [32]byte, no
 }
 
 func (s *Store) ClearLoginFailures(ctx context.Context, accountKey, sourceKey [32]byte) error {
-	_, err := s.pool.Exec(ctx, `delete from login_throttles where key_hash=$1 or key_hash=$2`, accountKey[:], sourceKey[:])
+	return clearLoginFailures(ctx, s.pool, accountKey, sourceKey)
+}
+
+func clearLoginFailures(ctx context.Context, executor auditExecutor, accountKey, sourceKey [32]byte) error {
+	_, err := executor.Exec(ctx, `delete from login_throttles where key_hash=$1 or key_hash=$2`, accountKey[:], sourceKey[:])
 	return err
 }
 
