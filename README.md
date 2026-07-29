@@ -207,6 +207,8 @@ indexer-only setting. It requires these server settings:
   `GREPNEST_GITHUB_WEBHOOK_SECRET_FILE`;
 - OIDC configuration: `GREPNEST_PUBLIC_URL`, `GREPNEST_OIDC_ISSUER_URL`,
   `GREPNEST_OIDC_CLIENT_ID`, and `GREPNEST_OIDC_CLIENT_SECRET_FILE`.
+- Optional SCIM configuration: `GREPNEST_SCIM_TOKEN_FILE`; SCIM also uses the
+  HTTPS public URL and durable PostgreSQL directory.
 
 `GREPNEST_GITHUB_API_VERSION` defaults to `2022-11-28` and
 `GREPNEST_GITHUB_CA_FILE` optionally extends system trust. Startup pings and
@@ -253,6 +255,7 @@ GREPNEST_PUBLIC_URL=https://grepnest.example \
 GREPNEST_OIDC_ISSUER_URL=https://id.example \
 GREPNEST_OIDC_CLIENT_ID=grepnest \
 GREPNEST_OIDC_CLIENT_SECRET_FILE=$PWD/oidc-client-secret \
+GREPNEST_SCIM_TOKEN_FILE=$PWD/scim-token \
 docker compose \
   -f deploy/compose/compose.yml \
   -f deploy/compose/durable.yml \
@@ -277,6 +280,27 @@ settings are `GREPNEST_OIDC_CA_FILE`, `GREPNEST_OIDC_SCOPES`,
 `https://<public-host>/auth/oidc/callback` as the Authorization Code + PKCE
 redirect URI. The client secret and optional CA are readable files, never
 environment values or ConfigMap data.
+
+### Optional SCIM 2.0 provisioning
+
+Set `GREPNEST_SCIM_TOKEN_FILE` to a readable file containing a dedicated,
+high-entropy bearer token and expose
+`https://<public-host>/scim/v2`. SCIM is default-off, durable-mode only, and
+every discovery and resource request requires that token. The OIDC
+`GREPNEST_OIDC_LINK_CLAIM` value must exactly match the SCIM user's
+`externalId`; directory attributes are not authorization claims.
+
+Users support `eq` filters on `id`, `userName`, and `externalId`; groups
+support `id`, `displayName`, and `externalId`. PATCH supports user `active`,
+`userName`, `displayName`, `name`, and `emails`, plus group `members` and
+`members[value eq "USER_ID"]`. Requests are limited to 1 MiB bodies, 8 KiB
+queries, 16 KiB URLs, 100 PATCH operations, and `GREPNEST_MAX_RESULTS`.
+Replacing the secret file does not hot-reload it: restart server replicas to
+rotate the token. Deactivation or deletion denies existing browser sessions
+and API tokens on their next request.
+
+Bulk, sorting, ETags, passwords, `/Me`, `/.search`, root search, enterprise
+extensions, custom schemas/resources, roles, and entitlements are unsupported.
 
 | Variable | Default | Maximum |
 | --- | ---: | ---: |

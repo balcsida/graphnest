@@ -24,6 +24,7 @@ corresponding values. The key names below are the defaults.
 | `secrets.customCA.name` | `ca.crt` | Optional GitHub CA bundle; set the key with `secrets.customCA.key` |
 | `secrets.oidc.name` | `client-secret` | OIDC client secret; set `secrets.oidc.clientSecretKey` to override |
 | `secrets.oidcCA.name` | `ca.crt` | Optional IdP CA bundle; set `secrets.oidcCA.key` to override |
+| `secrets.scim.name` | `token` | Optional SCIM bearer token; set `secrets.scim.tokenKey` to override |
 | `images.pullSecrets[]` | Kubernetes pull-secret contract | Optional private-registry credentials |
 | `ingress.tls[].secretName` | Ingress-controller TLS contract | Optional existing TLS Secret for the listed hosts |
 
@@ -122,6 +123,13 @@ Enable OIDC with `server.sso.oidc.enabled=true`, `server.sso.publicURL`,
 when needed, `secrets.oidcCA`; never put their values in values files. With
 external egress enabled, configure the IdP CIDRs and HTTPS port in
 `networkPolicy.externalEgress.identityProvider`.
+
+Enable SCIM with `server.scim.enabled=true`, the same HTTPS
+`server.sso.publicURL`, and an existing `secrets.scim` Secret. The token is
+mounted read-only at `/var/run/secrets/grepnest/scim/token`; it is never
+rendered into a ConfigMap or environment value. Replace the Secret and restart
+the server pods to rotate it. See the repository README for supported filters,
+PATCH paths, limits, unsupported features, and the OIDC link-claim requirement.
 
 ## Scheduling, storage, and capacity
 

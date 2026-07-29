@@ -97,6 +97,10 @@ expect_failure "$tmp/scanner-image.err" helm template bad "$chart" -f "$minimal"
   --set-string=images.scanner.repository= \
   --set-string=images.scanner.digest=
 require "/images/scanner/(repository|digest)" "$tmp/scanner-image.err"
+helm template scim "$chart" -n grepnest -f "$minimal" \
+  --set=server.scim.enabled=true \
+  --set-string=server.sso.publicURL=https://grepnest.example.invalid \
+  --set-string=secrets.scim.name=grepnest-scim >"$tmp/scim.yaml"
 long_release=abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzx
 helm template "$long_release" "$chart" -n grepnest -f "$minimal" >"$tmp/long-release.yaml"
 
@@ -345,7 +349,21 @@ require 'protocol: TCP, port: 443' "$tmp/allow-identity-provider-egress-spec.yam
 require 'mountPath: /var/run/secrets/grepnest/oidc/client-secret' "$tmp/optional.yaml"
 require 'secretName: grepnest-oidc' "$tmp/optional.yaml"
 reject 'GREPNEST_OIDC_CLIENT_SECRET: ' "$tmp/optional.yaml"
+require 'GREPNEST_SCIM_TOKEN_FILE: /var/run/secrets/grepnest/scim/token' "$tmp/optional.yaml"
+require 'mountPath: /var/run/secrets/grepnest/scim/token' "$tmp/optional.yaml"
+require 'secretName: grepnest-scim' "$tmp/optional.yaml"
+reject 'GREPNEST_SCIM_TOKEN:|GREPNEST_SCIM_TOKEN_FILE:' "$tmp/minimal.yaml"
+reject '^kind: Secret$|GREPNEST_SCIM_TOKEN: ' "$tmp/optional.yaml"
+require 'GREPNEST_PUBLIC_URL: "https://grepnest.example.invalid"' "$tmp/scim.yaml"
+require 'GREPNEST_SCIM_TOKEN_FILE: /var/run/secrets/grepnest/scim/token' "$tmp/scim.yaml"
+reject 'GREPNEST_OIDC_' "$tmp/scim.yaml"
 reject 'GREPNEST_(USER|ADMIN)_(TOKEN|INSTALLATION_ID|REPOSITORY_IDS)' "$tmp/minimal.yaml"
+
+expect_failure "$tmp/scim-secret.err" helm template bad "$chart" -f "$minimal" \
+  --set=server.scim.enabled=true
+expect_failure "$tmp/scim-public-url.err" helm template bad "$chart" -f "$minimal" \
+  --set=server.scim.enabled=true --set-string=secrets.scim.name=grepnest-scim \
+  --set-string=server.sso.publicURL=http://grepnest.example.invalid
 
 reject '^ *- \{\}|^ *from: *\[?\]?$|^ *to: *\[?\]?$|^ *- (podSelector|namespaceSelector): *\{\}$' "$tmp/optional.yaml"
 reject 'cidr: "?(0\.0\.0\.0/0|::/0)"?' "$tmp/optional.yaml"

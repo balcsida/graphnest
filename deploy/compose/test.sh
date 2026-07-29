@@ -47,6 +47,7 @@ render_files() {
     GREPNEST_OIDC_SCOPES= \
     GREPNEST_OIDC_LINK_CLAIM= \
     GREPNEST_OIDC_DISPLAY_NAME_CLAIM= \
+    GREPNEST_SCIM_TOKEN_FILE= \
     GREPNEST_GITHUB_PRIVATE_KEY_FILE=/tmp/private-key.pem \
     GREPNEST_GITHUB_WEBHOOK_SECRET_FILE=/tmp/webhook-secret \
     GREPNEST_GITHUB_WEB_URL=https://github.example \
@@ -147,7 +148,8 @@ config=$(render \
   GREPNEST_OIDC_CA_FILE=/tmp/oidc-ca.pem \
   GREPNEST_OIDC_SCOPES=openid,profile,email \
   GREPNEST_OIDC_LINK_CLAIM=sub \
-  GREPNEST_OIDC_DISPLAY_NAME_CLAIM=name)
+  GREPNEST_OIDC_DISPLAY_NAME_CLAIM=name \
+  GREPNEST_SCIM_TOKEN_FILE=/tmp/scim-token)
 
 printf '%s' "$config" | jq -e '
   .services["grepnest-server"] as $server
@@ -160,7 +162,7 @@ printf '%s' "$config" | jq -e '
   and ($server.environment | keys | sort) == [
     "GREPNEST_DATABASE_URL", "GREPNEST_GITHUB_API_URL", "GREPNEST_GITHUB_APP_ID",
     "GREPNEST_GITHUB_CA_FILE", "GREPNEST_GITHUB_GIT_URL", "GREPNEST_GITHUB_PRIVATE_KEY_FILE", "GREPNEST_GITHUB_UPLOAD_URL",
-    "GREPNEST_GITHUB_WEBHOOK_SECRET_FILE", "GREPNEST_GITHUB_WEB_URL", "GREPNEST_OIDC_CA_FILE", "GREPNEST_OIDC_CLIENT_ID", "GREPNEST_OIDC_CLIENT_SECRET_FILE", "GREPNEST_OIDC_DISPLAY_NAME_CLAIM", "GREPNEST_OIDC_ISSUER_URL", "GREPNEST_OIDC_LINK_CLAIM", "GREPNEST_OIDC_SCOPES", "GREPNEST_PUBLIC_URL", "GREPNEST_SCIP_MAX_UPLOAD_BYTES", "GREPNEST_SSO_LOGIN_FLOW_TTL", "GREPNEST_SSO_SESSION_IDLE", "GREPNEST_SSO_SESSION_TTL",
+    "GREPNEST_GITHUB_WEBHOOK_SECRET_FILE", "GREPNEST_GITHUB_WEB_URL", "GREPNEST_OIDC_CA_FILE", "GREPNEST_OIDC_CLIENT_ID", "GREPNEST_OIDC_CLIENT_SECRET_FILE", "GREPNEST_OIDC_DISPLAY_NAME_CLAIM", "GREPNEST_OIDC_ISSUER_URL", "GREPNEST_OIDC_LINK_CLAIM", "GREPNEST_OIDC_SCOPES", "GREPNEST_PUBLIC_URL", "GREPNEST_SCIM_TOKEN_FILE", "GREPNEST_SCIP_MAX_UPLOAD_BYTES", "GREPNEST_SSO_LOGIN_FLOW_TTL", "GREPNEST_SSO_SESSION_IDLE", "GREPNEST_SSO_SESSION_TTL",
     "GREPNEST_ZOEKT_URL"
   ]
   and ($server.ports | any(.host_ip == "127.0.0.1" and .target == 8080 and .published == "8080"))
@@ -173,6 +175,8 @@ printf '%s' "$config" | jq -e '
   and $server.environment.GREPNEST_OIDC_CA_FILE == "/run/secrets/grepnest/oidc-ca.pem"
   and ($server.volumes | any(.source == "/tmp/oidc-client-secret" and .target == "/run/secrets/grepnest/oidc-client-secret" and .read_only))
   and ($server.volumes | any(.source == "/tmp/oidc-ca.pem" and .target == "/run/secrets/grepnest/oidc-ca.pem" and .read_only))
+  and $server.environment.GREPNEST_SCIM_TOKEN_FILE == "/run/secrets/grepnest/scim/token"
+  and ($server.volumes | any(.source == "/tmp/scim-token" and .target == "/run/secrets/grepnest/scim/token" and .read_only))
   and $server.healthcheck.test == ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/readyz"]
   end
 ' >/dev/null
@@ -184,6 +188,7 @@ printf '%s' "${without_ca:?missing Compose config without private CA}" |
     .services["grepnest-server"] as $server
     | $server.image == "registry.example/grepnest/application:test"
     and $server.environment.GREPNEST_GITHUB_CA_FILE == ""
+    and $server.environment.GREPNEST_SCIM_TOKEN_FILE == ""
     and ($server.volumes | any(.source == "/dev/null" and .target == "/run/secrets/grepnest/github-ca.pem" and .read_only and (.bind.create_host_path // false) == false))
   ' >/dev/null
 

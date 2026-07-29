@@ -7,6 +7,7 @@
 - authorization scopes and server-selected Zoekt repository IDs;
 - service and index availability.
 - OIDC login transactions and browser sessions.
+- the dedicated SCIM provisioning token and directory mutations.
 
 ## Milestones 0-1 controls
 
@@ -61,9 +62,20 @@
 
 ## Known limits
 
+SCIM is optional, durable-only, and isolated at `/scim/v2` behind a dedicated
+bearer token loaded from a regular secret file. That token cannot authenticate
+to REST, MCP, account, or admin APIs and is never accepted as a plaintext
+setting. Bounded URLs, queries, bodies, pagination, and PATCH operation counts
+limit work. Transactional writes validate members and read-only fields,
+preserve the final effective administrator, and make committed deprovisioning
+effective for sessions and API tokens on their next request.
+
 OIDC session cookies can be replayed until logout or expiry, and database write
 access can forge a chosen session hash. HttpOnly cookies, exact Origin checks,
 bounded TTLs, and server-side revocation limit but do not eliminate that risk.
+The SCIM token remains valid until every server replica restarts after secret
+replacement; protect the public endpoint with HTTPS and restrict token
+distribution.
 
 This remains a local development slice, not a production security boundary.
 Git pack expansion and Zoekt shards require container and volume quotas.
