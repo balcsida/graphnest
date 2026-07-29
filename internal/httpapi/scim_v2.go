@@ -23,7 +23,8 @@ const (
 func GuardSCIMV2(next http.Handler, authenticator authn.ProvisioningAuthenticator, service *scim.Service) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		escapedPath := request.URL.EscapedPath()
-		if escapedPath != "/scim/v2" && !strings.HasPrefix(escapedPath, "/scim/v2/") && !strings.HasPrefix(escapedPath, "/scim/v2%") {
+		decodedPath := request.URL.Path
+		if decodedPath != "/scim/v2" && !strings.HasPrefix(decodedPath, "/scim/v2/") {
 			next.ServeHTTP(writer, request)
 			return
 		}

@@ -153,7 +153,10 @@ func TestSCIMGuardAuthenticatesBeforeCanonicalRouting(t *testing.T) {
 		&provisioning, &scimapi.Service{BaseURL: "https://grepnest.example", MaxResults: 10})
 	withoutSCIM := newAPIHandler(settings, observability.New(), rest, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
-	for _, path := range []string{"/scim/v2//Users", "/scim/v2/../v1/auth/session", "/scim/v2/%2e%2e/v1/auth/session"} {
+	for _, path := range []string{
+		"/scim/v2//Users", "/scim/v2/../v1/auth/session", "/scim/v2/%2e%2e/v1/auth/session",
+		"/scim%2Fv2/Users", "/scim/%76%32/Users",
+	} {
 		for _, authenticated := range []bool{false, true} {
 			request := httptest.NewRequest(http.MethodGet, path, nil)
 			if authenticated {
@@ -172,12 +175,29 @@ func TestSCIMGuardAuthenticatesBeforeCanonicalRouting(t *testing.T) {
 		}
 	}
 
-	path := "/v1//auth/session"
-	withResponse, withoutResponse := httptest.NewRecorder(), httptest.NewRecorder()
-	withSCIM.ServeHTTP(withResponse, httptest.NewRequest(http.MethodGet, path, nil))
-	withoutSCIM.ServeHTTP(withoutResponse, httptest.NewRequest(http.MethodGet, path, nil))
-	if withResponse.Code != withoutResponse.Code || withResponse.Header().Get("Location") != withoutResponse.Header().Get("Location") {
-		t.Fatalf("ordinary route changed: with=%d %q without=%d %q", withResponse.Code, withResponse.Header().Get("Location"), withoutResponse.Code, withoutResponse.Header().Get("Location"))
+	for _, path := range []string{"/v1//auth/session", "/SCIM/v2/Users", "/scim/v20/Users", "/scim/v2evil"} {
+		withResponse, withoutResponse := httptest.NewRecorder(), httptest.NewRecorder()
+		withSCIM.ServeHTTP(withResponse, httptest.NewRequest(http.MethodGet, path, nil))
+		withoutSCIM.ServeHTTP(withoutResponse, httptest.NewRequest(http.MethodGet, path, nil))
+		if withResponse.Code != withoutResponse.Code || withResponse.Header().Get("Location") != withoutResponse.Header().Get("Location") {
+			t.Fatalf("%s ordinary route changed: with=%d %q without=%d %q", path, withResponse.Code, withResponse.Header().Get("Location"), withoutResponse.Code, withoutResponse.Header().Get("Location"))
+		}
+	}
+
+	for _, authenticated := range []bool{false, true} {
+		request := httptest.NewRequest(http.MethodGet, "/scim/v2/ServiceProviderConfig", nil)
+		if authenticated {
+			request.Header.Set("Authorization", "Bearer "+scimToken)
+		}
+		response := httptest.NewRecorder()
+		withSCIM.ServeHTTP(response, request)
+		want := http.StatusUnauthorized
+		if authenticated {
+			want = http.StatusOK
+		}
+		if response.Code != want {
+			t.Fatalf("normal SCIM authenticated=%t status=%d", authenticated, response.Code)
+		}
 	}
 }
 
