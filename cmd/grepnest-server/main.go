@@ -230,6 +230,9 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	loopCtx, cancel := context.WithCancel(ctx)
 	done, err := startPeriodic(loopCtx, reconcileInterval, reconciler.All, func(ctx context.Context) error {
 		return refreshQueueDepths(ctx, store, metrics)
+	}, func(ctx context.Context) error {
+		_, _, err := store.DeleteExpiredAuth(ctx, time.Now())
+		return err
 	}, func(error) { logger.Error("durable background refresh failed") })
 	if err != nil {
 		cancel()
@@ -379,11 +382,14 @@ func readBoundedRegularFile(path string, maxBytes int64) ([]byte, error) {
 	return data, nil
 }
 
-func startPeriodic(ctx context.Context, interval time.Duration, reconcile, refresh func(context.Context) error, onError func(error)) (<-chan struct{}, error) {
+func startPeriodic(ctx context.Context, interval time.Duration, reconcile, refresh, cleanup func(context.Context) error, onError func(error)) (<-chan struct{}, error) {
 	if err := reconcile(ctx); err != nil {
 		return nil, err
 	}
 	if err := refresh(ctx); err != nil {
+		return nil, err
+	}
+	if err := cleanup(ctx); err != nil {
 		return nil, err
 	}
 	done := make(chan struct{})
@@ -396,7 +402,7 @@ func startPeriodic(ctx context.Context, interval time.Duration, reconcile, refre
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				for _, operation := range []func(context.Context) error{reconcile, refresh} {
+				for _, operation := range []func(context.Context) error{reconcile, refresh, cleanup} {
 					if err := operation(ctx); err != nil && onError != nil {
 						onError(err)
 					}

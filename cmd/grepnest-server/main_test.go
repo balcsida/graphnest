@@ -416,7 +416,7 @@ func TestDurableSecretReadsAreBounded(t *testing.T) {
 
 func TestDurableReconciliationStartsSynchronouslyAndStops(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	var reconciles, refreshes, failures atomic.Int64
+	var reconciles, refreshes, cleanups, failures atomic.Int64
 	done, err := startPeriodic(ctx, time.Millisecond, func(context.Context) error {
 		if reconciles.Add(1) == 2 {
 			return context.DeadlineExceeded
@@ -425,19 +425,22 @@ func TestDurableReconciliationStartsSynchronouslyAndStops(t *testing.T) {
 	}, func(context.Context) error {
 		refreshes.Add(1)
 		return nil
+	}, func(context.Context) error {
+		cleanups.Add(1)
+		return nil
 	}, func(error) { failures.Add(1) })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reconciles.Load() != 1 || refreshes.Load() != 1 {
-		t.Fatalf("startup reconciles=%d refreshes=%d", reconciles.Load(), refreshes.Load())
+	if reconciles.Load() != 1 || refreshes.Load() != 1 || cleanups.Load() != 1 {
+		t.Fatalf("startup reconciles=%d refreshes=%d cleanups=%d", reconciles.Load(), refreshes.Load(), cleanups.Load())
 	}
 	deadline := time.Now().Add(time.Second)
 	for reconciles.Load() < 3 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	if failures.Load() != 1 || reconciles.Load() < 3 {
-		t.Fatalf("periodic retries=%d failures=%d", reconciles.Load(), failures.Load())
+	if failures.Load() != 1 || reconciles.Load() < 3 || cleanups.Load() < 3 {
+		t.Fatalf("periodic retries=%d cleanups=%d failures=%d", reconciles.Load(), cleanups.Load(), failures.Load())
 	}
 	cancel()
 	select {

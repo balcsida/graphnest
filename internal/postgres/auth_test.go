@@ -126,6 +126,41 @@ func TestSessionPrincipalRejectsInvalidState(t *testing.T) {
 	}
 }
 
+func TestDeleteExpiredAuthRemovesIdleExpiredSessions(t *testing.T) {
+	store := migratedStore(t)
+	userID := insertIdentityUser(t, store, "directory-42", "ada")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if err := store.CreateLoginFlow(t.Context(), authn.LoginFlow{
+		StateHash: [32]byte{1}, BrowserHash: [32]byte{2}, Provider: "oidc",
+		Nonce: "nonce", CodeVerifier: "verifier", ReturnTo: "/",
+		CreatedAt: now.Add(-time.Minute), ExpiresAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, session := range []authn.SessionRecord{
+		{TokenHash: [32]byte{3}, UserID: userID, Provider: "oidc", CreatedAt: now.Add(-2 * time.Hour), LastSeenAt: now.Add(-time.Hour), IdleExpiresAt: now, ExpiresAt: now.Add(time.Hour)},
+		{TokenHash: [32]byte{4}, UserID: userID, Provider: "oidc", CreatedAt: now.Add(-2 * time.Hour), LastSeenAt: now.Add(-time.Hour), IdleExpiresAt: now.Add(-time.Minute), ExpiresAt: now},
+		{TokenHash: [32]byte{5}, UserID: userID, Provider: "oidc", CreatedAt: now.Add(-time.Hour), LastSeenAt: now.Add(-time.Minute), IdleExpiresAt: now.Add(time.Minute), ExpiresAt: now.Add(time.Hour)},
+		{TokenHash: [32]byte{6}, UserID: userID, Provider: "oidc", CreatedAt: now.Add(-time.Hour), LastSeenAt: now.Add(-time.Minute), IdleExpiresAt: now.Add(time.Minute), ExpiresAt: now.Add(time.Hour)},
+	} {
+		if err := store.CreateSession(t.Context(), session); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.RevokeSession(t.Context(), [32]byte{5}); err != nil {
+		t.Fatal(err)
+	}
+
+	flows, sessions, err := store.DeleteExpiredAuth(t.Context(), now)
+	if err != nil || flows != 1 || sessions != 3 {
+		t.Fatalf("flows=%d sessions=%d err=%v", flows, sessions, err)
+	}
+	var remaining int
+	if err := store.pool.QueryRow(t.Context(), `select count(*) from auth_sessions`).Scan(&remaining); err != nil || remaining != 1 {
+		t.Fatalf("remaining=%d err=%v", remaining, err)
+	}
+}
+
 func insertIdentityUser(t *testing.T, store *Store, externalID, userName string) int64 {
 	t.Helper()
 	var userID int64
