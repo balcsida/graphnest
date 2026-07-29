@@ -56,6 +56,8 @@ func (s *Store) SessionPrincipal(ctx context.Context, tokenHash [32]byte, now, i
             where session.token_hash=$1 and session.user_id=user_record.id
               and session.revoked_at is null and session.expires_at>$2 and session.idle_expires_at>$2
               and user_record.scim_active and user_record.suspended_at is null and user_record.deleted_at is null
+              and (session.provider<>'local' or (user_record.source='local'
+                and exists(select 1 from user_roles where user_id=user_record.id)))
             returning session.user_id,session.provider,session.force_rotation
 	        ) select user_id,provider,force_rotation from live_session`, tokenHash[:], now, idleUntil).Scan(&userID, &provider, &forceRotation)
 	if err != nil {

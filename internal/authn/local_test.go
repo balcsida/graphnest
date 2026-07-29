@@ -18,7 +18,9 @@ type localStoreStub struct {
 	clearErr   error
 	blocked    map[[32]byte]time.Time
 	consumed   [][32]byte
-	cleared    [][32]byte
+	cleared    [][2][32]byte
+	events     []string
+	sessions   *sessionStoreStub
 }
 
 func (s *localStoreStub) PasswordCredential(_ context.Context, _ string) (int64, PasswordCredential, error) {
@@ -36,10 +38,11 @@ func (s *localStoreStub) ConsumeLoginAttempt(_ context.Context, key [32]byte, _ 
 	return !blocked, retryAt, nil
 }
 
-func (s *localStoreStub) ClearLoginFailures(_ context.Context, key [32]byte) error {
+func (s *localStoreStub) ClearLoginFailures(_ context.Context, accountKey, sourceKey [32]byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.cleared = append(s.cleared, key)
+	s.events = append(s.events, "clear")
+	s.cleared = append(s.cleared, [2][32]byte{accountKey, sourceKey})
 	return s.clearErr
 }
 
@@ -56,6 +59,12 @@ func localCredential(t *testing.T, forceRotation bool) PasswordCredential {
 func localAuthenticator(t *testing.T, store *localStoreStub) LocalAuthenticator {
 	t.Helper()
 	sessionStore := &sessionStoreStub{}
+	store.sessions = sessionStore
+	sessionStore.onCreate = func() {
+		store.mu.Lock()
+		defer store.mu.Unlock()
+		store.events = append(store.events, "session")
+	}
 	return LocalAuthenticator{
 		Store: store,
 		Sessions: &SessionManager{
@@ -82,21 +91,32 @@ func TestLocalAuthenticateConsumesAccountAndCanonicalSourceThenCreatesSession(t 
 	if len(store.consumed) != 2 || store.consumed[0] != accountKey || store.consumed[1] != sourceKey {
 		t.Fatalf("consumed = %#v", store.consumed)
 	}
-	if len(store.cleared) != 2 || store.cleared[0] != accountKey || store.cleared[1] != sourceKey {
+	if len(store.cleared) != 1 || store.cleared[0] != [2][32]byte{accountKey, sourceKey} {
 		t.Fatalf("cleared = %#v", store.cleared)
+	}
+	if len(store.events) != 2 || store.events[0] != "session" || store.events[1] != "clear" {
+		t.Fatalf("events = %v", store.events)
 	}
 }
 
-func TestLocalAuthenticateConsumesBothKeysWhenOneIsBlocked(t *testing.T) {
+func TestLocalAuthenticateReturnsFixedThrottleDelayForEitherKey(t *testing.T) {
 	accountKey, sourceKey := localThrottleKeys("recovery-admin", "192.0.2.1")
-	for _, blockedKey := range [][32]byte{accountKey, sourceKey} {
-		store := &localStoreStub{userID: 42, credential: localCredential(t, false), blocked: map[[32]byte]time.Time{blockedKey: time.Unix(160, 0)}}
+	var delays []time.Duration
+	for _, blocked := range []map[[32]byte]time.Time{
+		{accountKey: time.Unix(160, 0)},
+		{sourceKey: time.Unix(700, 0)},
+	} {
+		store := &localStoreStub{userID: 42, credential: localCredential(t, false), blocked: blocked}
 		authenticator := localAuthenticator(t, store)
 		_, err := authenticator.Authenticate(t.Context(), "recovery-admin", []byte("wrong-password"), "192.0.2.1:1234")
 		var throttled *LoginThrottleError
-		if !errors.As(err, &throttled) || throttled.RetryAfter != time.Minute || len(store.consumed) != 2 {
+		if !errors.As(err, &throttled) || len(store.consumed) != 2 {
 			t.Fatalf("error=%v consumed=%d", err, len(store.consumed))
 		}
+		delays = append(delays, throttled.RetryAfter)
+	}
+	if delays[0] != maxLoginRetryAfter || delays[1] != delays[0] {
+		t.Fatalf("public delays = %v", delays)
 	}
 }
 
@@ -157,9 +177,12 @@ func TestLocalAuthenticateReturnsGenericErrorForWrongOrIneligibleAccount(t *test
 func TestLocalAuthenticateFailsClosedOnSessionError(t *testing.T) {
 	store := &localStoreStub{userID: 42, credential: localCredential(t, false)}
 	authenticator := localAuthenticator(t, store)
-	authenticator.Sessions.Store = nil
+	store.sessions.createErr = errors.New("session failed")
 	if _, err := authenticator.Authenticate(t.Context(), "recovery-admin", []byte("sixteen-byte-secret"), "192.0.2.1"); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("error = %v", err)
+	}
+	if len(store.cleared) != 0 {
+		t.Fatalf("cleared after failed session = %#v", store.cleared)
 	}
 }
 
@@ -168,9 +191,15 @@ func TestLocalAuthenticateFailsClosedOnThrottleStoreErrors(t *testing.T) {
 		{userID: 42, credential: localCredential(t, false), consumeErr: errors.New("consume failed")},
 		{userID: 42, credential: localCredential(t, false), clearErr: errors.New("clear failed")},
 	} {
-		_, err := localAuthenticator(t, store).Authenticate(t.Context(), "recovery-admin", []byte("sixteen-byte-secret"), "192.0.2.1")
+		result, err := localAuthenticator(t, store).Authenticate(t.Context(), "recovery-admin", []byte("sixteen-byte-secret"), "192.0.2.1")
 		if !errors.Is(err, ErrUnauthenticated) {
 			t.Fatalf("error = %v", err)
+		}
+		if result.Token != "" {
+			t.Fatal("plaintext token returned after store failure")
+		}
+		if store.clearErr != nil && store.sessions.revoked == ([32]byte{}) {
+			t.Fatal("orphan session was not revoked after atomic clear failure")
 		}
 	}
 }

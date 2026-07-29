@@ -264,11 +264,20 @@ func TestSecurityLoginAttemptConsumptionIsConcurrentAndResettable(t *testing.T) 
 	if allowed != loginFailureLimit || blocked != 1 {
 		t.Fatalf("allowed=%d blocked=%d", allowed, blocked)
 	}
-	if err := store.ClearLoginFailures(t.Context(), key); err != nil {
+	sourceKey := [32]byte{2}
+	for range loginFailureLimit {
+		if _, _, err := store.ConsumeLoginAttempt(t.Context(), sourceKey, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.ClearLoginFailures(t.Context(), key, sourceKey); err != nil {
 		t.Fatal(err)
 	}
 	if allowed, _, err := store.ConsumeLoginAttempt(t.Context(), key, now); err != nil || !allowed {
 		t.Fatalf("allowed after clear=%v err=%v", allowed, err)
+	}
+	if allowed, _, err := store.ConsumeLoginAttempt(t.Context(), sourceKey, now); err != nil || !allowed {
+		t.Fatalf("source allowed after clear=%v err=%v", allowed, err)
 	}
 	for range loginFailureLimit {
 		if _, _, err := store.ConsumeLoginAttempt(t.Context(), key, now); err != nil {

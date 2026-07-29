@@ -181,8 +181,8 @@ func consumeLoginAttempt(ctx context.Context, query rowQuerier, key [32]byte, no
 	return allowed, retryAt, err
 }
 
-func (s *Store) ClearLoginFailures(ctx context.Context, key [32]byte) error {
-	_, err := s.pool.Exec(ctx, `delete from login_throttles where key_hash=$1`, key[:])
+func (s *Store) ClearLoginFailures(ctx context.Context, accountKey, sourceKey [32]byte) error {
+	_, err := s.pool.Exec(ctx, `delete from login_throttles where key_hash=$1 or key_hash=$2`, accountKey[:], sourceKey[:])
 	return err
 }
 
