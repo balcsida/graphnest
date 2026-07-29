@@ -4,185 +4,356 @@ package e2e
 
 import (
 	"bytes"
+	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/grepnest/grepnest/internal/admin"
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/config"
-	"github.com/grepnest/grepnest/internal/httpapi"
-	"github.com/grepnest/grepnest/internal/sso"
-	oidcclient "github.com/grepnest/grepnest/internal/sso/oidc"
 )
 
-func TestBreakGlassRecoveryAcrossReplicas(t *testing.T) {
+const (
+	recoveryUser      = "recovery-e2e"
+	initialPassword   = "initial-sentinel-password"
+	rotatedPassword   = "rotated-sentinel-password"
+	resetPassword     = "reset-sentinel-password"
+	finalPassword     = "final-sentinel-password"
+	oidcClaimSentinel = "oidc-claim-sentinel-never-audit"
+	scimBodySentinel  = "scim-body-sentinel-never-audit"
+	adminFailSentinel = "admin-failure-sentinel-password"
+	scimE2EToken      = "break-glass-scim-token-32-bytes!"
+	oidcClientSecret  = "break-glass-oidc-client-secret"
+	webhookTestSecret = "break-glass-webhook-secret"
+)
+
+func TestBreakGlassRecoveryAcrossRealReplicas(t *testing.T) {
 	database := newMilestoneDatabase(t)
-	seedOIDCAuthorization(t, database)
+	databaseURL := databaseURLForSchema(t, database)
+	root := t.TempDir()
+	serverBinary := buildE2EBinary(t, root, "grepnest-server", "../../cmd/grepnest-server")
+	adminBinary := buildE2EBinary(t, root, "grepnest-admin", "../../cmd/grepnest-admin")
 	idp := newOIDCTestProvider(t)
-	public := newOIDCPublicServer(t)
-	a := newBreakGlassReplica(t, database, idp, public.URL, true)
-	b := newBreakGlassReplica(t, database, idp, public.URL, true)
-	public.Config.Handler = replicaHandler(a, b)
+	idp.displayName = oidcClaimSentinel
+	zoekt := newHealthyZoekt(t)
+	files := writeServerSecrets(t, root, idp)
 
-	const (
-		user        = "recovery-e2e"
-		initial     = "initial-sentinel-password"
-		rotated     = "rotated-sentinel-password"
-		reset       = "reset-sentinel-password"
-		final       = "final-sentinel-password"
-		auditMarker = "sentinel-claims-and-body-text"
-	)
-	runBreakGlassCommand(t, database, user, initial)
-	client := cookieClient(t, public)
+	addressA, addressB, addressDisabled := freeDualAddress(t), freeDualAddress(t), freeDualAddress(t)
+	proxyA := newReplicaProxy(t, addressA, "tcp4")
+	proxyB := newReplicaProxy(t, addressB, "tcp4")
+	proxyBIPv6 := newReplicaProxy(t, addressB, "tcp6")
+	proxyDisabled := newReplicaProxy(t, addressDisabled, "tcp4")
+	publicOrigin := proxyA.URL
 
-	if response := localRequest(t, client, public.URL, "A", "/auth/local", map[string]string{"user_name": user, "password": initial}); response.StatusCode != http.StatusUnauthorized {
-		response.Body.Close()
-		t.Fatalf("forced login status = %d", response.StatusCode)
-	} else {
-		response.Body.Close()
-	}
-	rotate := localRequest(t, client, public.URL, "A", "/auth/local/rotate", map[string]string{"user_name": user, "current_password": initial, "new_password": rotated})
-	rotate.Body.Close()
-	if rotate.StatusCode != http.StatusNoContent {
-		t.Fatalf("initial rotation status = %d", rotate.StatusCode)
-	}
-
-	loginClient := cookieClient(t, public)
-	login := localRequest(t, loginClient, public.URL, "A", "/auth/local", map[string]string{"user_name": user, "password": rotated})
-	login.Body.Close()
-	if login.StatusCode != http.StatusNoContent {
-		t.Fatalf("normal login status = %d", login.StatusCode)
-	}
-	assertSessionStatus(t, loginClient, public.URL, "B", http.StatusOK)
-
-	runBreakGlassCommand(t, database, user, reset)
-	assertSessionStatus(t, loginClient, public.URL, "B", http.StatusUnauthorized)
-
-	recovered := cookieClient(t, public)
-	response := localRequest(t, recovered, public.URL, "B", "/auth/local/rotate", map[string]string{"user_name": user, "current_password": reset, "new_password": final})
-	response.Body.Close()
-	if response.StatusCode != http.StatusNoContent {
-		t.Fatalf("reset rotation status = %d", response.StatusCode)
-	}
-	assertOIDCLogin(t, public, "A")
-
-	for attempt := 1; attempt <= 6; attempt++ {
-		response := localRequest(t, cookieClient(t, public), public.URL, []string{"A", "B"}[(attempt-1)%2], "/auth/local", map[string]string{"user_name": "isolated-throttle-user", "password": "wrong-password-value"})
-		response.Body.Close()
-		want := http.StatusUnauthorized
-		if attempt == 6 {
-			want = http.StatusTooManyRequests
-		}
-		if response.StatusCode != want {
-			t.Fatalf("throttle attempt %d status = %d, want %d", attempt, response.StatusCode, want)
-		}
-		if attempt == 6 && response.Header.Get("Retry-After") != "900" {
-			t.Fatalf("Retry-After = %q", response.Header.Get("Retry-After"))
-		}
-	}
-	assertAudit(t, recovered, public.URL, auditMarker, initial, rotated, reset, final)
-
-	disabled := httptest.NewServer(newBreakGlassReplica(t, database, idp, "http://"+auditMarker+".invalid", false))
-	defer disabled.Close()
-	idp.server.Close()
-	if response := localRequest(t, disabled.Client(), disabled.URL, "", "/auth/local", map[string]string{"user_name": user, "password": final}); response.StatusCode != http.StatusNotFound {
-		response.Body.Close()
-		t.Fatalf("disabled local route status = %d", response.StatusCode)
-	} else {
-		response.Body.Close()
-	}
-}
-
-func newBreakGlassReplica(t *testing.T, database milestoneDatabase, idp *oidcTestProvider, publicURL string, enabled bool) http.Handler {
-	t.Helper()
-	public, err := url.Parse(publicURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	client, err := oidcclient.New(t.Context(), config.OIDC{
-		IssuerURL: idp.server.URL, ClientID: "grepnest-e2e", Scopes: []string{"openid"},
-		LinkClaim: "directory_id", DisplayNameClaim: "name",
-	}, public, []byte("oidc-e2e-secret"), idp.caPEM())
-	if err != nil {
-		t.Fatal(err)
-	}
-	sessions := &authn.SessionManager{Store: database.store, IdleTTL: time.Hour, TTL: 2 * time.Hour, Audit: database.store}
-	requestAuth := authn.RequestAuthenticator{Session: sessions, PublicOrigin: publicURL}
-	mux := http.NewServeMux()
-	httpapi.RegisterAuth(mux, false, enabled, []sso.Provider{&oidcclient.Provider{Client: client, Store: database.store, Sessions: sessions, LoginTTL: time.Minute}}, requestAuth, sessions, nil)
-	httpapi.RegisterAdmin(mux, requestAuth, &admin.Service{Store: database.store}, 100, 64<<10, 256<<10)
-	if enabled {
-		local, err := authn.NewLocalAuthenticator(database.store, sessions, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		local.Audit = database.store
-		httpapi.RegisterLocalAuth(mux, publicURL, &local, database.store)
-	}
-	return mux
-}
-
-func replicaHandler(a, b http.Handler) http.Handler {
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Header.Get("X-Replica") == "A" {
-			a.ServeHTTP(writer, request)
-			return
-		}
-		b.ServeHTTP(writer, request)
+	replicaA := startRealServer(t, serverBinary, addressA, databaseURL, publicOrigin, idp.server.URL, zoekt.URL, files, true)
+	replicaB := startRealServer(t, serverBinary, addressB, databaseURL, publicOrigin, idp.server.URL, zoekt.URL, files, true)
+	disabled := startRealServer(t, serverBinary, addressDisabled, databaseURL, publicOrigin, idp.server.URL, zoekt.URL, files, false)
+	t.Cleanup(func() {
+		disabled.stop(t)
+		replicaB.stop(t)
+		replicaA.stop(t)
 	})
+	waitServerReady(t, proxyA.Client(), proxyA.URL, replicaA)
+	waitServerReady(t, proxyB.Client(), proxyB.URL, replicaB)
+	waitServerReady(t, proxyDisabled.Client(), proxyDisabled.URL, disabled)
+
+	assertAccountThrottle(t, proxyA, proxyBIPv6, publicOrigin)
+	adminOutput := runAdmin(t, adminBinary, databaseURL, recoveryUser, initialPassword, initialPassword, true)
+	failedAdminOutput := runAdmin(t, adminBinary, databaseURL, recoveryUser, adminFailSentinel, "confirmation-does-not-match", false)
+
+	forced := boundCookieClient(t, proxyA, "127.0.0.1")
+	assertLocalStatus(t, forced, proxyA.URL, publicOrigin, "/auth/local", map[string]string{
+		"user_name": recoveryUser, "password": initialPassword,
+	}, http.StatusUnauthorized)
+	assertLocalStatus(t, forced, proxyA.URL, publicOrigin, "/auth/local/rotate", map[string]string{
+		"user_name": recoveryUser, "current_password": initialPassword, "new_password": rotatedPassword,
+	}, http.StatusNoContent)
+
+	local := boundCookieClient(t, proxyA, "127.0.0.1")
+	assertLocalStatus(t, local, proxyA.URL, publicOrigin, "/auth/local", map[string]string{
+		"user_name": recoveryUser, "password": rotatedPassword,
+	}, http.StatusNoContent)
+	sessionToken := sessionCookieToken(t, local, proxyA.URL)
+	assertSessionStatus(t, local, proxyB.URL, http.StatusOK)
+
+	runAdmin(t, adminBinary, databaseURL, recoveryUser, resetPassword, resetPassword, true)
+	assertSessionStatus(t, local, proxyB.URL, http.StatusUnauthorized)
+
+	recovered := boundCookieClient(t, proxyA, "127.0.0.1")
+	assertLocalStatus(t, recovered, proxyB.URL, publicOrigin, "/auth/local/rotate", map[string]string{
+		"user_name": recoveryUser, "current_password": resetPassword, "new_password": finalPassword,
+	}, http.StatusNoContent)
+	finalSessionToken := sessionCookieToken(t, recovered, proxyA.URL)
+
+	createSCIMUser(t, proxyB.Client(), proxyB.URL)
+	oidc := loginRealOIDC(t, proxyA)
+	assertSessionStatus(t, oidc, proxyB.URL, http.StatusOK)
+	oidcSessionToken := sessionCookieToken(t, oidc, proxyA.URL)
+	apiToken := createAPIToken(t, oidc, proxyA.URL, publicOrigin)
+
+	assertSourceThrottle(t, proxyA, proxyB, publicOrigin)
+
+	idp.server.Close()
+	assertLocalStatus(t, proxyDisabled.Client(), proxyDisabled.URL, publicOrigin, "/auth/local", map[string]string{
+		"user_name": recoveryUser, "password": finalPassword,
+	}, http.StatusNotFound)
+
+	auditBody, events := readAudit(t, recovered, proxyB.URL)
+	forbidden := []string{
+		initialPassword, rotatedPassword, resetPassword, finalPassword,
+		oidcClaimSentinel, scimBodySentinel, adminFailSentinel,
+		sessionToken, finalSessionToken, oidcSessionToken, apiToken, scimE2EToken,
+	}
+	assertNoSentinels(t, auditBody, forbidden)
+	assertNoSentinels(t, []byte(adminOutput), forbidden)
+	assertNoSentinels(t, []byte(failedAdminOutput), forbidden)
+	assertNoSentinels(t, []byte(replicaA.logs.String()), forbidden)
+	assertNoSentinels(t, []byte(replicaB.logs.String()), forbidden)
+	assertNoSentinels(t, []byte(disabled.logs.String()), forbidden)
+	assertAuditEvents(t, events)
 }
 
-func runBreakGlassCommand(t *testing.T, database milestoneDatabase, userName, password string) {
+type serverSecretFiles struct {
+	privateKey, webhook, oidcSecret, oidcCA, scimToken string
+}
+
+func writeServerSecrets(t *testing.T, root string, idp *oidcTestProvider) serverSecretFiles {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateKey := filepath.Join(root, "github-private-key.pem")
+	writeE2EFile(t, privateKey, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
+	webhook := filepath.Join(root, "webhook-secret")
+	writeE2EFile(t, webhook, []byte(webhookTestSecret))
+	oidcSecret := filepath.Join(root, "oidc-secret")
+	writeE2EFile(t, oidcSecret, []byte(oidcClientSecret))
+	oidcCA := filepath.Join(root, "oidc-ca.pem")
+	writeE2EFile(t, oidcCA, idp.caPEM())
+	scimToken := filepath.Join(root, "scim-token")
+	writeE2EFile(t, scimToken, []byte(scimE2EToken))
+	return serverSecretFiles{privateKey, webhook, oidcSecret, oidcCA, scimToken}
+}
+
+func writeE2EFile(t *testing.T, path string, value []byte) {
+	t.Helper()
+	if err := os.WriteFile(path, value, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func buildE2EBinary(t *testing.T, root, name, source string) string {
+	t.Helper()
+	path := filepath.Join(root, name)
+	command := exec.CommandContext(t.Context(), "go", "build", "-o", path, source)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("build %s: %v\n%s", name, err, output)
+	}
+	return path
+}
+
+func databaseURLForSchema(t *testing.T, database milestoneDatabase) string {
 	t.Helper()
 	var schema string
 	if err := database.pool.QueryRow(t.Context(), "select current_schema()").Scan(&schema); err != nil {
 		t.Fatal(err)
 	}
-	command := exec.CommandContext(t.Context(), "go", "run", "../../cmd/grepnest-admin", "break-glass", "set-password", userName)
-	command.Env = append(os.Environ(), "GREPNEST_DATABASE_URL="+os.Getenv("GREPNEST_TEST_POSTGRES_DSN"), "PGOPTIONS=-c search_path="+schema)
-	command.Stdin = strings.NewReader(password + "\n" + password + "\n")
-	var output bytes.Buffer
-	command.Stdout, command.Stderr = &output, &output
-	if err := command.Run(); err != nil {
-		t.Fatalf("grepnest-admin failed: %v", err)
+	parsed, err := url.Parse(os.Getenv("GREPNEST_TEST_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := parsed.Query()
+	query.Set("options", "-csearch_path="+schema)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
+func newHealthyZoekt(t *testing.T) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/api/search" {
+			http.NotFound(writer, request)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(writer, `{"Result":{"Files":[]}}`)
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func newReplicaProxy(t *testing.T, targetAddress, network string) *httptest.Server {
+	t.Helper()
+	_, port, err := net.SplitHostPort(targetAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, source := "127.0.0.1", "127.0.0.1"
+	if network == "tcp6" {
+		host, source = "::1", "::1"
+	}
+	target, err := url.Parse("http://" + net.JoinHostPort(host, port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = (&net.Dialer{LocalAddr: &net.TCPAddr{IP: net.ParseIP(source)}}).DialContext
+	proxy.Transport = transport
+	proxy.ErrorHandler = func(writer http.ResponseWriter, _ *http.Request, _ error) {
+		writer.WriteHeader(http.StatusBadGateway)
+	}
+	server := httptest.NewTLSServer(proxy)
+	t.Cleanup(server.Close)
+	return server
+}
+
+func freeDualAddress(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "[::]:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return address
+}
+
+func startRealServer(t *testing.T, binary, address, databaseURL, publicOrigin, issuerURL, zoektURL string, files serverSecretFiles, breakGlass bool) *managedProcess {
+	t.Helper()
+	command := exec.CommandContext(t.Context(), binary)
+	command.Env = append(os.Environ(),
+		"GREPNEST_LISTEN_ADDRESS="+address,
+		"GREPNEST_DATABASE_URL="+databaseURL,
+		"GREPNEST_ZOEKT_URL="+zoektURL,
+		"GREPNEST_GITHUB_WEB_URL="+issuerURL,
+		"GREPNEST_GITHUB_API_URL="+issuerURL,
+		"GREPNEST_GITHUB_UPLOAD_URL="+issuerURL,
+		"GREPNEST_GITHUB_GIT_URL="+issuerURL,
+		"GREPNEST_GITHUB_APP_ID=1",
+		"GREPNEST_GITHUB_PRIVATE_KEY_FILE="+files.privateKey,
+		"GREPNEST_GITHUB_WEBHOOK_SECRET_FILE="+files.webhook,
+		"GREPNEST_GITHUB_CA_FILE="+files.oidcCA,
+		"GREPNEST_PUBLIC_URL="+publicOrigin,
+		"GREPNEST_OIDC_ISSUER_URL="+issuerURL,
+		"GREPNEST_OIDC_CLIENT_ID=grepnest-e2e",
+		"GREPNEST_OIDC_CLIENT_SECRET_FILE="+files.oidcSecret,
+		"GREPNEST_OIDC_CA_FILE="+files.oidcCA,
+		"GREPNEST_OIDC_SCOPES=openid",
+		"GREPNEST_OIDC_LINK_CLAIM=directory_id",
+		"GREPNEST_OIDC_DISPLAY_NAME_CLAIM=name",
+		"GREPNEST_SCIM_TOKEN_FILE="+files.scimToken,
+		fmt.Sprintf("GREPNEST_BREAK_GLASS_ENABLED=%t", breakGlass),
+	)
+	return startProcess(t, command)
+}
+
+func waitServerReady(t *testing.T, client *http.Client, endpoint string, process *managedProcess) {
+	t.Helper()
+	ctx, cancel := contextWithTimeout(t, 15*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		response, err := client.Get(endpoint + "/readyz")
+		if err == nil {
+			response.Body.Close()
+			if response.StatusCode == http.StatusOK {
+				return
+			}
+		}
+		select {
+		case <-process.done:
+			t.Fatalf("server exited before readiness: %v\n%s", process.err, process.logs.String())
+		case <-ctx.Done():
+			t.Fatalf("server readiness: %v", ctx.Err())
+		case <-ticker.C:
+		}
 	}
 }
 
-func cookieClient(t *testing.T, server *httptest.Server) *http.Client {
+func contextWithTimeout(t *testing.T, timeout time.Duration) (context.Context, context.CancelFunc) {
+	t.Helper()
+	return context.WithTimeout(t.Context(), timeout)
+}
+
+func runAdmin(t *testing.T, binary, databaseURL, userName, first, second string, success bool) string {
+	t.Helper()
+	command := exec.CommandContext(t.Context(), binary, "break-glass", "set-password", userName)
+	command.Env = append(os.Environ(), "GREPNEST_DATABASE_URL="+databaseURL)
+	command.Stdin = strings.NewReader(first + "\n" + second + "\n")
+	var output bytes.Buffer
+	command.Stdout, command.Stderr = &output, &output
+	err := command.Run()
+	if success && err != nil {
+		t.Fatalf("grepnest-admin failed: %v", err)
+	}
+	if !success && err == nil {
+		t.Fatal("grepnest-admin mismatch unexpectedly succeeded")
+	}
+	return output.String()
+}
+
+func boundCookieClient(t *testing.T, server *httptest.Server, sourceIP string) *http.Client {
 	t.Helper()
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	client := *server.Client()
-	client.Jar = jar
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &client
+	transport := server.Client().Transport.(*http.Transport).Clone()
+	transport.DialContext = (&net.Dialer{LocalAddr: &net.TCPAddr{IP: net.ParseIP(sourceIP)}}).DialContext
+	return &http.Client{
+		Transport: transport,
+		Jar:       jar,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 }
 
-func localRequest(t *testing.T, client *http.Client, baseURL, replica, path string, body any) *http.Response {
+func assertLocalStatus(t *testing.T, client *http.Client, endpoint, origin, path string, body any, want int) {
+	t.Helper()
+	response := jsonRequest(t, client, http.MethodPost, endpoint+path, origin, body)
+	defer response.Body.Close()
+	if response.StatusCode != want {
+		t.Fatalf("%s status = %d, want %d", path, response.StatusCode, want)
+	}
+}
+
+func jsonRequest(t *testing.T, client *http.Client, method, endpoint, origin string, body any) *http.Response {
 	t.Helper()
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, baseURL+path, bytes.NewReader(encoded))
+	request, err := http.NewRequestWithContext(t.Context(), method, endpoint, bytes.NewReader(encoded))
 	if err != nil {
 		t.Fatal(err)
 	}
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Origin", baseURL)
-	request.Header.Set("Sec-Fetch-Site", "same-origin")
-	request.Header.Set("X-Replica", replica)
+	if origin != "" {
+		request.Header.Set("Origin", origin)
+		request.Header.Set("Sec-Fetch-Site", "same-origin")
+	}
 	response, err := client.Do(request)
 	if err != nil {
 		t.Fatal(err)
@@ -190,11 +361,24 @@ func localRequest(t *testing.T, client *http.Client, baseURL, replica, path stri
 	return response
 }
 
-func assertSessionStatus(t *testing.T, client *http.Client, baseURL, replica string, want int) {
+func sessionCookieToken(t *testing.T, client *http.Client, endpoint string) string {
 	t.Helper()
-	request, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, baseURL+"/v1/auth/session", nil)
-	request.Header.Set("X-Replica", replica)
-	response, err := client.Do(request)
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cookie := range client.Jar.Cookies(parsed) {
+		if cookie.Name == "__Host-grepnest_session" && cookie.Value != "" {
+			return cookie.Value
+		}
+	}
+	t.Fatal("session cookie was not issued")
+	return ""
+}
+
+func assertSessionStatus(t *testing.T, client *http.Client, endpoint string, want int) {
+	t.Helper()
+	response, err := client.Get(endpoint + "/v1/auth/session")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,38 +388,137 @@ func assertSessionStatus(t *testing.T, client *http.Client, baseURL, replica str
 	}
 }
 
-func assertOIDCLogin(t *testing.T, public *httptest.Server, replica string) {
+func createAPIToken(t *testing.T, client *http.Client, endpoint, origin string) string {
 	t.Helper()
-	client := cookieClient(t, public)
-	request, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, public.URL+"/auth/oidc/login", nil)
-	request.Header.Set("X-Replica", replica)
+	response := jsonRequest(t, client, http.MethodPost, endpoint+"/v1/account/api-tokens", origin, map[string]any{"repository_ids": []int64{}})
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("create API token status = %d", response.StatusCode)
+	}
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil || body.Token == "" {
+		t.Fatalf("decode API token: %v", err)
+	}
+	return body.Token
+}
+
+func createSCIMUser(t *testing.T, client *http.Client, endpoint string) {
+	t.Helper()
+	body := map[string]any{
+		"schemas":     []string{"urn:ietf:params:scim:schemas:core:2.0:User"},
+		"externalId":  oidcDirectoryID,
+		"userName":    "oidc-break-glass@example.test",
+		"displayName": scimBodySentinel,
+		"active":      true,
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, endpoint+"/scim/v2/Users", bytes.NewReader(encoded))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+scimE2EToken)
+	request.Header.Set("Content-Type", "application/scim+json")
 	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("SCIM create status = %d", response.StatusCode)
+	}
+}
+
+func loginRealOIDC(t *testing.T, proxy *httptest.Server) *http.Client {
+	t.Helper()
+	client := boundCookieClient(t, proxy, "127.0.0.1")
+	response, err := client.Get(proxy.URL + "/auth/oidc/login")
 	if err != nil {
 		t.Fatal(err)
 	}
 	location := response.Header.Get("Location")
 	response.Body.Close()
-	response, err = client.Get(location)
-	if err != nil {
-		t.Fatal(err)
+	for step := 0; step < 2; step++ {
+		response, err = client.Get(location)
+		if err != nil {
+			t.Fatal(err)
+		}
+		location = response.Header.Get("Location")
+		response.Body.Close()
 	}
-	location = response.Header.Get("Location")
-	response.Body.Close()
-	response, err = client.Get(location)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response.Body.Close()
-	if response.StatusCode != http.StatusSeeOther {
+	if response.StatusCode != http.StatusSeeOther || sessionCookieToken(t, client, proxy.URL) == "" {
 		t.Fatalf("OIDC callback status = %d", response.StatusCode)
+	}
+	return client
+}
+
+func assertAccountThrottle(t *testing.T, a, b *httptest.Server, origin string) {
+	t.Helper()
+	clients := []*http.Client{
+		boundCookieClient(t, a, "127.0.0.1"),
+		boundCookieClient(t, b, "127.0.0.1"),
+	}
+	for attempt := 1; attempt <= 6; attempt++ {
+		response := jsonRequest(t, clients[(attempt-1)%2], http.MethodPost, []*httptest.Server{a, b}[(attempt-1)%2].URL+"/auth/local", origin, map[string]string{
+			"user_name": "account-throttle-e2e", "password": "wrong-password-value",
+		})
+		assertThrottleResponse(t, response, attempt)
 	}
 }
 
-func assertAudit(t *testing.T, client *http.Client, baseURL string, sentinels ...string) {
+func assertSourceThrottle(t *testing.T, a, b *httptest.Server, origin string) {
 	t.Helper()
-	request, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, baseURL+"/v1/admin/audit-events", nil)
-	request.Header.Set("X-Replica", "A")
-	response, err := client.Do(request)
+	clients := []*http.Client{
+		boundCookieClient(t, a, "127.0.0.1"),
+		boundCookieClient(t, b, "127.0.0.1"),
+	}
+	for attempt := 1; attempt <= 6; attempt++ {
+		response := jsonRequest(t, clients[(attempt-1)%2], http.MethodPost, []*httptest.Server{a, b}[(attempt-1)%2].URL+"/auth/local", origin, map[string]string{
+			"user_name": fmt.Sprintf("source-throttle-e2e-%d", attempt), "password": "wrong-password-value",
+		})
+		assertThrottleResponse(t, response, attempt)
+	}
+}
+
+func assertThrottleResponse(t *testing.T, response *http.Response, attempt int) {
+	t.Helper()
+	defer response.Body.Close()
+	want := http.StatusUnauthorized
+	if attempt == 6 {
+		want = http.StatusTooManyRequests
+	}
+	if response.StatusCode != want {
+		t.Fatalf("throttle attempt %d status = %d, want %d", attempt, response.StatusCode, want)
+	}
+	if attempt == 6 && response.Header.Get("Retry-After") != "900" {
+		t.Fatalf("Retry-After = %q", response.Header.Get("Retry-After"))
+	}
+}
+
+type auditResponse struct {
+	Events    []auditEvent `json:"events"`
+	Truncated bool         `json:"truncated"`
+}
+
+type auditEvent struct {
+	ActorType            string `json:"actor_type"`
+	ActorID              string `json:"actor_id"`
+	TargetType           string `json:"target_type"`
+	TargetID             string `json:"target_id"`
+	AuthenticationMethod string `json:"authentication_method"`
+	Operation            string `json:"operation"`
+	Outcome              string `json:"outcome"`
+	RequestID            string `json:"request_id"`
+	CreatedAt            string `json:"created_at"`
+}
+
+func readAudit(t *testing.T, client *http.Client, endpoint string) ([]byte, []auditEvent) {
+	t.Helper()
+	response, err := client.Get(endpoint + "/v1/admin/audit-events")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,15 +530,105 @@ func assertAudit(t *testing.T, client *http.Client, baseURL string, sentinels ..
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("audit status = %d", response.StatusCode)
 	}
-	text := string(body)
-	for _, operation := range []string{"break_glass_password_set", "password_rotated", "local_login_succeeded", "local_login_denied", "session_created", "oidc_login_succeeded"} {
-		if !strings.Contains(text, operation) {
-			t.Fatalf("audit missing operation %q", operation)
+	var decoded auditResponse
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Events) == 0 {
+		t.Fatal("audit response was empty")
+	}
+	return body, decoded.Events
+}
+
+func assertAuditEvents(t *testing.T, events []auditEvent) {
+	t.Helper()
+	expected := map[string]struct {
+		actor, target, method, outcome string
+	}{
+		"break_glass_password_set": {"operator", "user", "operator", "success"},
+		"password_rotated":         {"user", "user", "local", "success"},
+		"local_login_succeeded":    {"user", "session", "local", "success"},
+		"local_login_denied":       {"anonymous", "authentication", "local", "denied"},
+		"session_created":          {"user", "session", "", "success"},
+		"oidc_login_succeeded":     {"user", "session", "oidc", "success"},
+		"scim_user_created":        {"scim", "user", "scim_token", "success"},
+		"api_token_created":        {"user", "api_token", "oidc", "success"},
+	}
+	seen := make(map[string]bool, len(expected))
+	for _, event := range events {
+		shape, ok := expected[event.Operation]
+		if !ok {
+			continue
+		}
+		if event.ActorType != shape.actor || event.TargetType != shape.target ||
+			(shape.method != "" && event.AuthenticationMethod != shape.method) ||
+			event.Outcome != shape.outcome || !validAuditIDs(event) ||
+			!validAuditRequestID(event) || !validAuditTimestamp(event.CreatedAt) {
+			t.Fatalf("invalid audit shape for expected operation %q", event.Operation)
+		}
+		if event.Operation == "session_created" && event.AuthenticationMethod != "local" && event.AuthenticationMethod != "oidc" {
+			t.Fatal("invalid audit session authentication method")
+		}
+		seen[event.Operation] = true
+	}
+	missing := make([]string, 0)
+	for operation := range expected {
+		if !seen[operation] {
+			missing = append(missing, operation)
 		}
 	}
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		t.Fatalf("missing exact audit operations: %v", missing)
+	}
+}
+
+func validAuditIDs(event auditEvent) bool {
+	switch event.Operation {
+	case "break_glass_password_set":
+		return event.ActorID == "grepnest-admin" && event.TargetID == recoveryUser
+	case "password_rotated":
+		return positiveDecimal(event.ActorID) && event.TargetID == event.ActorID
+	case "local_login_succeeded", "session_created", "oidc_login_succeeded":
+		return positiveDecimal(event.ActorID) && auditSessionID(event.TargetID)
+	case "local_login_denied":
+		return event.ActorID == "" && event.TargetID == ""
+	case "scim_user_created":
+		return event.ActorID == "provisioning" && positiveDecimal(event.TargetID)
+	case "api_token_created":
+		return positiveDecimal(event.ActorID) && positiveDecimal(event.TargetID)
+	default:
+		return false
+	}
+}
+
+func validAuditRequestID(event auditEvent) bool {
+	if event.Operation == "break_glass_password_set" {
+		return event.RequestID == ""
+	}
+	return event.RequestID != "" && len(event.RequestID) <= 128
+}
+
+func validAuditTimestamp(value string) bool {
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	return err == nil && !parsed.IsZero()
+}
+
+func positiveDecimal(value string) bool {
+	number, err := strconv.ParseInt(value, 10, 64)
+	return err == nil && number > 0
+}
+
+func auditSessionID(value string) bool {
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == 16
+}
+
+func assertNoSentinels(t *testing.T, output []byte, sentinels []string) {
+	t.Helper()
 	for _, sentinel := range sentinels {
-		if strings.Contains(text, sentinel) {
-			t.Fatal("audit contained sentinel secret or body text")
+		if sentinel != "" && bytes.Contains(output, []byte(sentinel)) {
+			t.Fatal("captured audit or process output contained forbidden sentinel")
 		}
 	}
 }
