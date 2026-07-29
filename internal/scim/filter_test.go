@@ -14,8 +14,11 @@ func TestParseFilter(t *testing.T) {
 	}{
 		{"user names are case insensitive", `UsErNaMe EQ "ada@example.test"`, "userName", "ada@example.test", ResourceUsers, ""},
 		{"escaped value", `externalId eq "directory\u002d42"`, "externalId", "directory-42", ResourceUsers, ""},
+		{"user value with spaces", `externalId eq "Directory User 42"`, "externalId", "Directory User 42", ResourceUsers, ""},
 		{"group display name", `DISPLAYNAME eq "Engineering"`, "displayName", "Engineering", ResourceGroups, ""},
+		{"group display name with spaces", `displayName eq "Engineering Team"`, "displayName", "Engineering Team", ResourceGroups, ""},
 		{"logical expression", `userName eq "ada" and active eq true`, "", "", ResourceUsers, "invalidFilter"},
+		{"trailing junk", `userName eq "ada" junk`, "", "", ResourceUsers, "invalidFilter"},
 		{"unapproved attribute", `active eq "true"`, "", "", ResourceUsers, "invalidFilter"},
 		{"oversized", strings.Repeat("a", 4097), "", "", ResourceUsers, "invalidFilter"},
 	} {
