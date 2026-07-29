@@ -19,13 +19,8 @@ func (s *Store) BindOIDCUser(ctx context.Context, issuer, subject, externalID st
 		return 0, err
 	}
 	defer tx.Rollback(ctx)
-	var userID int64
-	if err := tx.QueryRow(ctx, `select id from users where external_id=$1 and scim_active and suspended_at is null and deleted_at is null`, externalID).Scan(&userID); err != nil {
-		return 0, err
-	}
-	if err := tx.QueryRow(ctx, `insert into user_identities (user_id, issuer, subject) values ($1, $2, $3)
-        on conflict (issuer, subject) do update set user_id=excluded.user_id
-        where user_identities.user_id=excluded.user_id returning user_id`, userID, issuer, subject).Scan(&userID); err != nil {
+	userID, err := bindOIDCUser(ctx, tx, issuer, subject, externalID)
+	if err != nil {
 		return 0, err
 	}
 	return userID, tx.Commit(ctx)
@@ -37,16 +32,8 @@ func (s *Store) CreateOIDCSessionAudited(ctx context.Context, identity authn.Ide
 		return err
 	}
 	defer tx.Rollback(ctx)
-	var userID int64
-	if err := tx.QueryRow(ctx, `select id from users where external_id=$1
-		and scim_active and suspended_at is null and deleted_at is null for update`,
-		identity.LinkID).Scan(&userID); err != nil {
-		return err
-	}
-	if err := tx.QueryRow(ctx, `insert into user_identities (user_id,issuer,subject)
-		values ($1,$2,$3) on conflict (issuer,subject) do update set user_id=excluded.user_id
-		where user_identities.user_id=excluded.user_id returning user_id`,
-		userID, identity.Issuer, identity.Subject).Scan(&userID); err != nil {
+	userID, err := bindOIDCUser(ctx, tx, identity.Issuer, identity.Subject, identity.LinkID)
+	if err != nil {
 		return err
 	}
 	session.UserID = userID
@@ -64,6 +51,36 @@ func (s *Store) CreateOIDCSessionAudited(ctx context.Context, identity authn.Ide
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+func bindOIDCUser(ctx context.Context, tx pgx.Tx, issuer, subject, externalID string) (int64, error) {
+	var userID int64
+	err := tx.QueryRow(ctx, `select users.id from user_identities
+		join users on users.id=user_identities.user_id
+		where issuer=$1 and subject=$2 and users.source='scim'
+			and users.scim_active and users.suspended_at is null and users.deleted_at is null`,
+		issuer, subject).Scan(&userID)
+	if err == nil {
+		return userID, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return 0, err
+	}
+	if err := tx.QueryRow(ctx, `select id from users where external_id=$1 and source='scim'
+		and scim_active and suspended_at is null and deleted_at is null for update`,
+		externalID).Scan(&userID); err != nil {
+		return 0, err
+	}
+	err = tx.QueryRow(ctx, `insert into user_identities (user_id,issuer,subject) values ($1,$2,$3)
+		on conflict (issuer,subject) do nothing returning user_id`, userID, issuer, subject).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = tx.QueryRow(ctx, `select users.id from user_identities
+			join users on users.id=user_identities.user_id
+			where issuer=$1 and subject=$2 and users.source='scim'
+				and users.scim_active and users.suspended_at is null and users.deleted_at is null`,
+			issuer, subject).Scan(&userID)
+	}
+	return userID, err
 }
 
 func (s *Store) CreateLoginFlow(ctx context.Context, flow authn.LoginFlow) error {
