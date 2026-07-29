@@ -92,7 +92,7 @@ func TestMigrateIsConcurrentAndIdempotent(t *testing.T) {
 		}
 	}
 	var count int
-	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != 11 {
+	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != 12 {
 		t.Fatalf("migrations=%d err=%v", count, err)
 	}
 	var repositoryIDNullable string
@@ -107,6 +107,7 @@ func TestMigrateIsConcurrentAndIdempotent(t *testing.T) {
 		"scip_relationships_source_lookup", "scip_relationships_target_lookup",
 		"scip_relationships_source_global_symbol_key", "scip_relationships_target_global_symbol_key",
 		"repository_packages_lookup",
+		"groups_external_id_active",
 	} {
 		var found bool
 		if err := pool.QueryRow(t.Context(), `select exists(
