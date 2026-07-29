@@ -15,6 +15,7 @@ type LoginFlow struct {
 
 type SessionRecord struct {
 	TokenHash                                       [32]byte
+	AuditID                                         string
 	UserID                                          int64
 	Provider                                        string
 	ForceRotation                                   bool

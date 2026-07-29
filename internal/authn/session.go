@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"io"
 	"strconv"
 	"time"
@@ -13,12 +14,13 @@ import (
 )
 
 type SessionManager struct {
-	Store   SessionStore
-	IdleTTL time.Duration
-	TTL     time.Duration
-	Now     func() time.Time
-	Rand    io.Reader
-	Audit   audit.Recorder
+	Store     SessionStore
+	IdleTTL   time.Duration
+	TTL       time.Duration
+	Now       func() time.Time
+	Rand      io.Reader
+	AuditRand io.Reader
+	Audit     audit.Recorder
 }
 
 type PreparedSession struct {
@@ -49,8 +51,9 @@ func (m SessionManager) CreateForUser(ctx context.Context, userID int64, provide
 	}
 	event := audit.Event{
 		ActorType: "user", ActorID: strconv.FormatInt(userID, 10),
-		TargetType: "session", AuthenticationMethod: provider,
+		TargetType: "session", TargetID: prepared.Record.AuditID, AuthenticationMethod: provider,
 		Operation: audit.OperationSessionCreated, Outcome: "success",
+		RequestID: audit.RequestID(ctx),
 	}
 	if err := m.Store.CreateSessionAudited(ctx, prepared.Record, event); err != nil {
 		return "", time.Time{}, err
@@ -70,13 +73,21 @@ func (m SessionManager) PrepareForUser(userID int64, provider string, forceRotat
 	if _, err := io.ReadFull(reader, random); err != nil {
 		return PreparedSession{}, err
 	}
+	auditRandom := make([]byte, 16)
+	auditReader := m.AuditRand
+	if auditReader == nil {
+		auditReader = rand.Reader
+	}
+	if _, err := io.ReadFull(auditReader, auditRandom); err != nil {
+		return PreparedSession{}, err
+	}
 	now := time.Now()
 	if m.Now != nil {
 		now = m.Now()
 	}
 	expiresAt := now.Add(m.TTL)
 	record := SessionRecord{
-		TokenHash: sha256.Sum256(random), UserID: userID, Provider: provider,
+		TokenHash: sha256.Sum256(random), AuditID: hex.EncodeToString(auditRandom), UserID: userID, Provider: provider,
 		ForceRotation: forceRotation,
 		CreatedAt:     now, LastSeenAt: now, IdleExpiresAt: now.Add(m.IdleTTL), ExpiresAt: expiresAt,
 	}
@@ -121,6 +132,7 @@ func (m SessionManager) rejectedLogout(ctx context.Context) {
 		_ = m.Audit.Record(ctx, audit.Event{
 			ActorType: "anonymous", TargetType: "session",
 			Operation: audit.OperationLogout, Outcome: "invalid",
+			RequestID: audit.RequestID(ctx),
 		})
 	}
 }

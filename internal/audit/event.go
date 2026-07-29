@@ -15,6 +15,23 @@ type Recorder interface {
 	Record(context.Context, Event) error
 }
 
+type requestIDKey struct{}
+
+func WithRequestID(ctx context.Context, requestID string) context.Context {
+	if !bounded(requestID, 128) {
+		requestID = ""
+	}
+	return context.WithValue(ctx, requestIDKey{}, requestID)
+}
+
+func RequestID(ctx context.Context) string {
+	requestID, _ := ctx.Value(requestIDKey{}).(string)
+	if !bounded(requestID, 128) {
+		return ""
+	}
+	return requestID
+}
+
 const (
 	OperationOIDCLoginSucceeded     = "oidc_login_succeeded"
 	OperationOIDCLoginDenied        = "oidc_login_denied"
