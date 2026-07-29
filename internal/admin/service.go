@@ -123,6 +123,14 @@ type IndexRequest struct {
 }
 
 type Store interface {
+	AdminUsers(context.Context, int) ([]User, bool, error)
+	AdminUser(context.Context, int64) (User, error)
+	AdminGroups(context.Context, int) ([]Group, bool, error)
+	AdminGroup(context.Context, int64) (Group, error)
+	SuspendAdminUser(context.Context, int64, int64, bool) error
+	ReplaceAdminUserAccess(context.Context, int64, int64, bool, []int64) error
+	ReplaceAdminGroupAccess(context.Context, int64, int64, bool, []int64) error
+	RevokeAdminUserCredentials(context.Context, int64) error
 	AdminOverview(context.Context, int64, []int64) (Overview, error)
 	AdminRepositories(context.Context, int64, []int64, int) ([]Repository, bool, error)
 	AdminJobs(context.Context, int64, []int64, int) ([]Job, bool, error)

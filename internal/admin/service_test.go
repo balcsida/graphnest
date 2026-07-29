@@ -108,6 +108,30 @@ type fakeStore struct {
 func (*fakeStore) AdminOverview(context.Context, int64, []int64) (Overview, error) {
 	return Overview{}, nil
 }
+func (*fakeStore) AdminUsers(context.Context, int) ([]User, bool, error) {
+	return nil, false, nil
+}
+func (*fakeStore) AdminUser(context.Context, int64) (User, error) {
+	return User{}, nil
+}
+func (*fakeStore) AdminGroups(context.Context, int) ([]Group, bool, error) {
+	return nil, false, nil
+}
+func (*fakeStore) AdminGroup(context.Context, int64) (Group, error) {
+	return Group{}, nil
+}
+func (*fakeStore) SuspendAdminUser(context.Context, int64, int64, bool) error {
+	return nil
+}
+func (*fakeStore) ReplaceAdminUserAccess(context.Context, int64, int64, bool, []int64) error {
+	return nil
+}
+func (*fakeStore) ReplaceAdminGroupAccess(context.Context, int64, int64, bool, []int64) error {
+	return nil
+}
+func (*fakeStore) RevokeAdminUserCredentials(context.Context, int64) error {
+	return nil
+}
 func (*fakeStore) AdminRepositories(context.Context, int64, []int64, int) ([]Repository, bool, error) {
 	return nil, false, nil
 }
