@@ -100,6 +100,27 @@ func TestIdentityServiceRequiresAdministrator(t *testing.T) {
 	}
 }
 
+func TestIdentityServiceRejectsAdministratorAPITokens(t *testing.T) {
+	service := &Service{Store: &identityStore{}}
+	principal := authn.Principal{Subject: "7", Method: "api_token", Administrator: true, RepositoryIDs: []int64{101}}
+	for name, call := range map[string]func() error{
+		"users":        func() error { _, _, err := service.Users(t.Context(), principal); return err },
+		"user":         func() error { _, err := service.User(t.Context(), principal, 1); return err },
+		"groups":       func() error { _, _, err := service.Groups(t.Context(), principal); return err },
+		"group":        func() error { _, err := service.Group(t.Context(), principal, 1); return err },
+		"suspend":      func() error { return service.SuspendUser(t.Context(), principal, 1, true) },
+		"user access":  func() error { return service.ReplaceUserAccess(t.Context(), principal, 1, true, nil) },
+		"group access": func() error { return service.ReplaceGroupAccess(t.Context(), principal, 1, true, nil) },
+		"revoke":       func() error { return service.RevokeUserCredentials(t.Context(), principal, 1) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := call(); !errors.Is(err, ErrForbidden) {
+				t.Fatalf("error=%v", err)
+			}
+		})
+	}
+}
+
 type identityStore struct {
 	users         []User
 	user          User

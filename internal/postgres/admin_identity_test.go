@@ -20,14 +20,21 @@ func TestAdminIdentityListsEffectiveUserAndGroupAccess(t *testing.T) {
 	otherID := insertIdentityUser(t, store, "directory-2", "grace")
 	seedReadyRepository(t, store, 101, testSHA('a'))
 	seedReadyRepository(t, store, 102, testSHA('b'))
+	seedReadyRepository(t, store, 103, testSHA('c'))
 	groupID := insertIdentityGroup(t, store, "engineering", "Engineering")
-	if _, err := store.pool.Exec(t.Context(), `
-		insert into user_repository_grants (user_id, repository_id) values ($1, 101);
-		insert into group_memberships (group_id, user_id) values ($2, $1), ($2, $3);
-		insert into group_roles (group_id, administrator) values ($2, true);
-		insert into group_repository_grants (group_id, repository_id) values ($2, 102)`,
-		userID, groupID, otherID); err != nil {
-		t.Fatal(err)
+	for _, statement := range []struct {
+		sql  string
+		args []any
+	}{
+		{`insert into user_repository_grants (user_id, repository_id) values ($1, 101), ($1, 103)`, []any{userID}},
+		{`insert into group_memberships (group_id, user_id) values ($1, $2), ($1, $3)`, []any{groupID, userID, otherID}},
+		{`insert into group_roles (group_id, administrator) values ($1, true)`, []any{groupID}},
+		{`insert into group_repository_grants (group_id, repository_id) values ($1, 102)`, []any{groupID}},
+		{`update repositories set enabled=false where github_id=103`, nil},
+	} {
+		if _, err := store.pool.Exec(t.Context(), statement.sql, statement.args...); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	users, truncated, err := store.AdminUsers(t.Context(), 1)
@@ -60,10 +67,10 @@ func TestAdminIdentityReplacesOnlyAccessForEligibleRepositories(t *testing.T) {
 	groupID := insertIdentityGroup(t, store, "engineering", "Engineering")
 	seedReadyRepository(t, store, 101, testSHA('a'))
 	seedReadyRepository(t, store, 102, testSHA('b'))
-	if _, err := store.pool.Exec(t.Context(), `
-		insert into user_roles (user_id, administrator) values ($1, true);
-		insert into group_memberships (group_id, user_id) values ($2, $3)`,
-		actorID, groupID, userID); err != nil {
+	if _, err := store.pool.Exec(t.Context(), `insert into user_roles (user_id, administrator) values ($1, true)`, actorID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into group_memberships (group_id, user_id) values ($1, $2)`, groupID, userID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -134,11 +141,13 @@ func TestAdminIdentityProtectsSelfAndFinalEffectiveAdministrator(t *testing.T) {
 	actorID := insertIdentityUser(t, store, "directory-1", "ada")
 	otherID := insertIdentityUser(t, store, "directory-2", "grace")
 	groupID := insertIdentityGroup(t, store, "engineering", "Engineering")
-	if _, err := store.pool.Exec(t.Context(), `
-		insert into group_memberships (group_id, user_id) values ($1, $2);
-		insert into group_roles (group_id, administrator) values ($1, true);
-		insert into user_roles (user_id, administrator) values ($3, true)`,
-		groupID, actorID, otherID); err != nil {
+	if _, err := store.pool.Exec(t.Context(), `insert into group_memberships (group_id, user_id) values ($1, $2)`, groupID, actorID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into group_roles (group_id, administrator) values ($1, true)`, groupID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into user_roles (user_id, administrator) values ($1, true)`, otherID); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ReplaceAdminGroupAccess(t.Context(), actorID, groupID, false, nil); !errors.Is(err, admin.ErrSelfAdministration) {
@@ -149,6 +158,25 @@ func TestAdminIdentityProtectsSelfAndFinalEffectiveAdministrator(t *testing.T) {
 	}
 	if err := store.ReplaceAdminGroupAccess(t.Context(), 0, groupID, false, nil); !errors.Is(err, admin.ErrFinalAdministrator) {
 		t.Fatalf("final group removal error=%v", err)
+	}
+}
+
+func TestAdminIdentityReportsNoEffectiveAccessForInactiveUser(t *testing.T) {
+	store := migratedStore(t)
+	userID := insertIdentityUser(t, store, "directory-1", "ada")
+	seedReadyRepository(t, store, 101, testSHA('a'))
+	if _, err := store.pool.Exec(t.Context(), `insert into user_roles (user_id, administrator) values ($1, true)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into user_repository_grants (user_id, repository_id) values ($1, 101)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `update users set suspended_at=now() where id=$1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	user, err := store.AdminUser(t.Context(), userID)
+	if err != nil || user.Administrator || len(user.RepositoryIDs) != 0 {
+		t.Fatalf("inactive user=%#v err=%v", user, err)
 	}
 }
 
