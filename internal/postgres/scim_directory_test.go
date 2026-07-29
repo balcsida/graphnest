@@ -123,6 +123,15 @@ func TestSCIMGroupLifecycleRollsBackInvalidMembersAndPreservesGrants(t *testing.
 	if err != nil || len(group.Members) != 1 || group.Members[0].Value != second.ID {
 		t.Fatalf("rollback group=%#v err=%v", group, err)
 	}
+	if _, err := store.PatchGroup(t.Context(), groupID, scim.GroupMutation{
+		AddMembers: []int64{firstID}, RemoveMembers: []int64{999999},
+	}); !errors.Is(err, scim.ErrNoTarget) {
+		t.Fatalf("missing removal err=%v", err)
+	}
+	group, err = store.Group(t.Context(), groupID)
+	if err != nil || len(group.Members) != 1 || group.Members[0].Value != second.ID {
+		t.Fatalf("no-target rollback group=%#v err=%v", group, err)
+	}
 	if err := store.DeleteGroup(t.Context(), groupID); err != nil {
 		t.Fatal(err)
 	}
