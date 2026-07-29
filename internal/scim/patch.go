@@ -1,7 +1,10 @@
 package scim
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"strconv"
 	"strings"
 )
@@ -46,7 +49,7 @@ func applyUserOperation(mutation *UserMutation, operation PatchOperation) error 
 			return parseError("invalidPath")
 		}
 		var value map[string]json.RawMessage
-		if json.Unmarshal(operation.Value, &value) != nil {
+		if strictDecode(operation.Value, &value) != nil {
 			return parseError("invalidValue")
 		}
 		for path, field := range value {
@@ -100,7 +103,7 @@ func stringField(op string, value json.RawMessage, target *Optional[string]) err
 
 func decode[T any](value json.RawMessage, target *Optional[T]) error {
 	var decoded T
-	if json.Unmarshal(value, &decoded) != nil {
+	if strictDecode(value, &decoded) != nil {
 		return parseError("invalidValue")
 	}
 	*target = Optional[T]{Set: true, Value: decoded}
@@ -130,7 +133,7 @@ func applyGroupOperation(mutation *GroupMutation, operation PatchOperation) erro
 			return parseError("invalidPath")
 		}
 		var value map[string]json.RawMessage
-		if json.Unmarshal(operation.Value, &value) != nil {
+		if strictDecode(operation.Value, &value) != nil {
 			return parseError("invalidValue")
 		}
 		members, ok := value["members"]
@@ -227,7 +230,7 @@ func memberIDs(value json.RawMessage) ([]int64, error) {
 	var members []struct {
 		Value string `json:"value"`
 	}
-	if json.Unmarshal(value, &members) != nil {
+	if strictDecode(value, &members) != nil {
 		return nil, parseError("invalidValue")
 	}
 	ids := make([]int64, len(members))
@@ -239,6 +242,18 @@ func memberIDs(value json.RawMessage) ([]int64, error) {
 		ids[i] = id
 	}
 	return ids, nil
+}
+
+func strictDecode(value []byte, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(value))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return errors.New("trailing JSON")
+	}
+	return nil
 }
 
 func parseCanonicalID(value string) (int64, error) {

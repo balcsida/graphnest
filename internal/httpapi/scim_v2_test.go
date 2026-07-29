@@ -133,8 +133,7 @@ func scimTestHandler(t *testing.T, store scim.Store) http.Handler {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	RegisterSCIMV2(mux, authenticator, &scim.Service{Store: store, BaseURL: "https://grepnest.example", MaxResults: 100})
-	return mux
+	return GuardSCIMV2(mux, authenticator, &scim.Service{Store: store, BaseURL: "https://grepnest.example", MaxResults: 100})
 }
 
 func scimRequest(handler http.Handler, method, path, body, token string) *httptest.ResponseRecorder {

@@ -107,3 +107,33 @@ func TestParsePatchRejectsTooManyOperations(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestParsePatchRejectsUnknownAndTrailingNestedJSON(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		run  func() error
+	}{
+		{"user unknown name field", func() error {
+			_, err := ParseUserPatch(NewPatchRequest([]PatchOperation{{Op: "replace", Path: "name", Value: json.RawMessage(`{"givenName":"Ada","unknown":true}`)}}))
+			return err
+		}},
+		{"user trailing name value", func() error {
+			_, err := ParseUserPatch(NewPatchRequest([]PatchOperation{{Op: "replace", Path: "name", Value: json.RawMessage(`{"givenName":"Ada"} {}`)}}))
+			return err
+		}},
+		{"group unknown member field", func() error {
+			_, err := ParseGroupPatch(NewPatchRequest([]PatchOperation{{Op: "replace", Path: "members", Value: json.RawMessage(`[{"value":"1","unknown":true}]`)}}))
+			return err
+		}},
+		{"group trailing member value", func() error {
+			_, err := ParseGroupPatch(NewPatchRequest([]PatchOperation{{Op: "replace", Path: "members", Value: json.RawMessage(`[{"value":"1"}] {}`)}}))
+			return err
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.run(); err == nil {
+				t.Fatal("invalid nested JSON accepted")
+			}
+		})
+	}
+}

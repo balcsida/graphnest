@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 
@@ -19,18 +20,25 @@ const (
 	scimMaxURLBytes   = 16 << 10
 )
 
-func RegisterSCIMV2(mux *http.ServeMux, authenticator authn.ProvisioningAuthenticator, service *scim.Service) {
-	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+func GuardSCIMV2(next http.Handler, authenticator authn.ProvisioningAuthenticator, service *scim.Service) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		escapedPath := request.URL.EscapedPath()
+		if escapedPath != "/scim/v2" && !strings.HasPrefix(escapedPath, "/scim/v2/") && !strings.HasPrefix(escapedPath, "/scim/v2%") {
+			next.ServeHTTP(writer, request)
+			return
+		}
 		writer.Header().Set("Content-Type", "application/scim+json")
 		if err := authenticator.Authenticate(request.Header.Values("Authorization")); err != nil {
 			writer.Header().Set("WWW-Authenticate", "Bearer")
 			writeSCIMError(writer, scim.Error{Status: http.StatusUnauthorized, Detail: "authentication required"})
 			return
 		}
+		if strings.Contains(escapedPath, "%") || escapedPath != request.URL.Path || path.Clean(escapedPath) != escapedPath {
+			writeSCIMError(writer, scim.Error{Status: http.StatusNotFound, Detail: "resource not found"})
+			return
+		}
 		serveSCIMV2(writer, request, service)
 	})
-	mux.Handle("/scim/v2", handler)
-	mux.Handle("/scim/v2/", handler)
 }
 
 func serveSCIMV2(writer http.ResponseWriter, request *http.Request, service *scim.Service) {

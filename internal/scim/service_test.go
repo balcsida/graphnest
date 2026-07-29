@@ -102,6 +102,35 @@ func TestServiceUsesPatchParserAndValidatesMutation(t *testing.T) {
 	}
 }
 
+func TestServiceRejectsUnknownPatchFieldsBeforeStore(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		run  func(*Service) error
+	}{
+		{"user name", func(service *Service) error {
+			_, err := service.PatchUser(t.Context(), 1, NewPatchRequest([]PatchOperation{{
+				Op: "replace", Path: "name", Value: []byte(`{"givenName":"Ada","unknown":true}`),
+			}}))
+			return err
+		}},
+		{"group member", func(service *Service) error {
+			_, err := service.PatchGroup(t.Context(), 1, NewPatchRequest([]PatchOperation{{
+				Op: "replace", Path: "members", Value: []byte(`[{"value":"1","unknown":true}]`),
+			}}))
+			return err
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := &fakeStore{}
+			err := test.run(&Service{Store: store, BaseURL: "https://grepnest.example", MaxResults: 100})
+			var scimError Error
+			if !errors.As(err, &scimError) || scimError.Status != 400 || store.calls != 0 {
+				t.Fatalf("err=%v calls=%d", err, store.calls)
+			}
+		})
+	}
+}
+
 func TestServiceRequiresExactRequestSchemaBeforeStore(t *testing.T) {
 	for _, operation := range []struct {
 		name   string
