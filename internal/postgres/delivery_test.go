@@ -54,3 +54,29 @@ func TestAdminDeliveriesOnlyIncludeAllowedRepositories(t *testing.T) {
 		t.Fatalf("delivery overview=%#v err=%v", overview.Deliveries, err)
 	}
 }
+
+func TestAdministratorAPITokenDeliveriesExcludeUnscopedRepositories(t *testing.T) {
+	store := migratedStore(t)
+	queueRepository(t, store)
+	if _, err := store.UpsertRepository(t.Context(), RepositoryUpdate{
+		GitHubID: 102, InstallationID: 10, Owner: "acme", Name: "unscoped",
+		CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	installationID := int64(10)
+	for _, item := range []struct {
+		id           string
+		repositoryID int64
+	}{{"scoped", 101}, {"unscoped", 102}} {
+		delivery := Delivery{ID: item.id, Event: "push", State: "accepted", InstallationID: &installationID, RepositoryID: &item.repositoryID}
+		if inserted, err := store.ApplyDelivery(t.Context(), delivery, nil); err != nil || !inserted {
+			t.Fatalf("apply %d: inserted=%v err=%v", item.repositoryID, inserted, err)
+		}
+	}
+
+	deliveries, _, err := store.AdminDeliveries(t.Context(), 0, []int64{101}, 10)
+	if err != nil || len(deliveries) != 1 || deliveries[0].DeliveryID != "scoped" {
+		t.Fatalf("deliveries=%#v err=%v", deliveries, err)
+	}
+}

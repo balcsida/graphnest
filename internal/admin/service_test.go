@@ -55,6 +55,21 @@ func TestServiceDurableAdministratorReindexesGloballyAuthorizedRepository(t *tes
 	}
 }
 
+func TestServiceAdministratorAPITokenReindexesOnlyCeilingRepository(t *testing.T) {
+	store := &fakeStore{repository: repository.Repository{
+		ID: 7, InstallationID: 20, GitHubID: 201, Name: "other/two", Branch: "main", Enabled: true,
+	}}
+	service := &Service{Store: store, GitHub: fakeGitHub{sha: testSHA}}
+	principal := authn.Principal{Method: "api_token", Administrator: true, RepositoryIDs: []int64{201}}
+
+	if err := service.Reindex(t.Context(), principal, 201); err != nil {
+		t.Fatal(err)
+	}
+	if store.globalLookups != 0 || store.enqueued.RepositoryID != 7 {
+		t.Fatalf("global lookups=%d request=%#v", store.globalLookups, store.enqueued)
+	}
+}
+
 func TestServiceDurableAdministratorReconcilesAllInstallations(t *testing.T) {
 	called := false
 	service := &Service{
@@ -151,7 +166,7 @@ func (*fakeStore) AdminGitHub(context.Context, int64, []int64, GitHubConfig, int
 	return GitHub{}, nil
 }
 func (store *fakeStore) AdminRepository(_ context.Context, installationID int64, repositoryIDs []int64, githubID int64) (repository.Repository, error) {
-	if installationID != store.repository.InstallationID || len(repositoryIDs) != 1 ||
+	if installationID != 0 && installationID != store.repository.InstallationID || len(repositoryIDs) != 1 ||
 		repositoryIDs[0] != githubID || store.repository.GitHubID != githubID {
 		return repository.Repository{}, errors.New("missing")
 	}
