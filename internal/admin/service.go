@@ -240,6 +240,9 @@ func (service *Service) Reconcile(ctx context.Context, principal authn.Principal
 	if err := requireAdmin(principal); err != nil {
 		return err
 	}
+	if principal.Method == "api_token" {
+		return ErrForbidden
+	}
 	if durableAdministrator(principal) {
 		return service.ReconcileAll(ctx)
 	}

@@ -88,6 +88,16 @@ func TestServiceDurableAdministratorReconcilesAllInstallations(t *testing.T) {
 	}
 }
 
+func TestServiceRejectsAdministratorAPITokenReconcile(t *testing.T) {
+	service := &Service{Store: &fakeStore{}, GitHub: fakeGitHub{}}
+	err := service.Reconcile(t.Context(), authn.Principal{
+		Method: "api_token", Administrator: true, RepositoryIDs: []int64{101},
+	})
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("error=%v", err)
+	}
+}
+
 func TestServiceScopesReconcileAndRetry(t *testing.T) {
 	store := &fakeStore{}
 	service := &Service{Store: store, GitHub: fakeGitHub{repositories: []githubapp.Repository{
