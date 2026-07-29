@@ -2,9 +2,21 @@ package authn
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 )
+
+type retainingErrorReader struct {
+	buffer []byte
+}
+
+func (reader *retainingErrorReader) Read(buffer []byte) (int, error) {
+	reader.buffer = buffer
+	copy(buffer, bytes.Repeat([]byte{7}, 8))
+	return 8, io.ErrUnexpectedEOF
+}
 
 func TestPasswordCredentialValidate(t *testing.T) {
 	valid := PasswordCredential{
@@ -77,6 +89,20 @@ func TestPasswordHashingRejectsOversizeBeforeWork(t *testing.T) {
 	}
 	if VerifyPassword(bytes.Repeat([]byte{'x'}, maxPasswordBytes+1), credential) {
 		t.Fatal("oversize password verified")
+	}
+}
+
+func TestHashPasswordClearsSaltAfterEntropyFailure(t *testing.T) {
+	random := &retainingErrorReader{}
+	password := []byte("sixteen-byte-secret")
+	if _, err := HashPassword(password, random); !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("error=%v", err)
+	}
+	if !bytes.Equal(random.buffer, make([]byte, 16)) {
+		t.Fatalf("salt buffer not cleared: %x", random.buffer)
+	}
+	if !bytes.Equal(password, make([]byte, len(password))) {
+		t.Fatal("password was not cleared")
 	}
 }
 

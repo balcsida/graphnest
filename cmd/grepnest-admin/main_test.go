@@ -25,7 +25,7 @@ func testCommand(apply func(context.Context, string, string, authn.PasswordCrede
 		openTTY: func() (terminal, error) { return nil, errors.New("no tty") },
 		hashPassword: func([]byte, io.Reader) (authn.PasswordCredential, error) {
 			return authn.PasswordCredential{
-				Salt: make([]byte, 16), Hash: make([]byte, 32),
+				Salt: bytes.Repeat([]byte{7}, 16), Hash: bytes.Repeat([]byte{8}, 32),
 				MemoryKiB: 65536, Iterations: 3, Parallelism: 2,
 			}, nil
 		},
@@ -80,6 +80,13 @@ func TestCommandPrefersTTYAndClearsBothPasswords(t *testing.T) {
 		password := passwords[0]
 		passwords = passwords[1:]
 		return password, nil
+	}
+	hashPassword := runtime.hashPassword
+	runtime.hashPassword = func(password []byte, random io.Reader) (authn.PasswordCredential, error) {
+		if !bytes.Equal(second, make([]byte, len(second))) {
+			t.Fatalf("confirmation password remained live during hashing: %q", second)
+		}
+		return hashPassword(password, random)
 	}
 	var stdout, stderr bytes.Buffer
 	if code := runtime.run(t.Context(), []string{"break-glass", "set-password", "recovery-admin"},
@@ -159,10 +166,16 @@ func TestCommandSetsForcedRotationAndBoundedAuditEvent(t *testing.T) {
 	if stdout.String() != "Break-glass password updated.\n" {
 		t.Fatalf("stdout=%q", stdout.String())
 	}
+	if !bytes.Equal(gotCredential.Salt, make([]byte, 16)) ||
+		!bytes.Equal(gotCredential.Hash, make([]byte, 32)) {
+		t.Fatalf("credential buffers not cleared: %#v", gotCredential)
+	}
 }
 
 func TestCommandReportsSafeErrors(t *testing.T) {
-	runtime := testCommand(func(context.Context, string, string, authn.PasswordCredential, audit.Event) error {
+	var gotCredential authn.PasswordCredential
+	runtime := testCommand(func(_ context.Context, _, _ string, credential authn.PasswordCredential, _ audit.Event) error {
+		gotCredential = credential
 		return errors.New("postgres://user:secret@db/internal SQL secret")
 	})
 	var stdout, stderr bytes.Buffer
@@ -175,5 +188,9 @@ func TestCommandReportsSafeErrors(t *testing.T) {
 		if strings.Contains(stderr.String(), secret) {
 			t.Fatalf("stderr disclosed %q: %q", secret, stderr.String())
 		}
+	}
+	if !bytes.Equal(gotCredential.Salt, make([]byte, 16)) ||
+		!bytes.Equal(gotCredential.Hash, make([]byte, 32)) {
+		t.Fatalf("credential buffers not cleared: %#v", gotCredential)
 	}
 }
