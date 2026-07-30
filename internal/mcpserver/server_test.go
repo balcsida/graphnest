@@ -453,6 +453,9 @@ type mcpSCIPStore struct {
 func (store *mcpSCIPStore) AuthorizedRepository(_ context.Context, _ int64, _ []int64, _ int64) (repository.Repository, error) {
 	return store.repository, nil
 }
+func (store *mcpSCIPStore) AnyAuthorizedRepository(_ context.Context, _ int64) (repository.Repository, error) {
+	return store.repository, nil
+}
 func (*mcpSCIPStore) ReplaceSCIP(context.Context, int64, string, scipgraph.Upload) error { return nil }
 func (store *mcpSCIPStore) OccurrenceAt(context.Context, int64, string, string, int, scipgraph.OccurrencePosition) (scipgraph.StoredOccurrence, error) {
 	return scipgraph.StoredOccurrence{}, store.occurrenceErr

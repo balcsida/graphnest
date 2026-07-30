@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/admin"
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/config"
 	"github.com/grepnest/grepnest/internal/githubapp"
@@ -31,6 +32,7 @@ import (
 	"github.com/grepnest/grepnest/internal/graphservice"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/repository"
+	scimapi "github.com/grepnest/grepnest/internal/scim"
 	"github.com/grepnest/grepnest/internal/scipgraph"
 	"github.com/grepnest/grepnest/internal/webhook"
 	"github.com/scip-code/scip/bindings/go/scip"
@@ -40,7 +42,7 @@ import (
 func TestAdminRoutesRegisterOnlyWithDurableService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"admin": {Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}}})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}}
-	static := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	static := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	request := httptest.NewRequest(http.MethodGet, "/v1/admin/overview", nil)
 	request.Header.Set("Authorization", "Bearer admin")
 	response := httptest.NewRecorder()
@@ -49,13 +51,224 @@ func TestAdminRoutesRegisterOnlyWithDurableService(t *testing.T) {
 		t.Fatalf("static status=%d", response.Code)
 	}
 
-	durable := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil,
-		&admin.Service{Store: mainAdminStore{}}, nil)
+	durable := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil,
+		&admin.Service{Store: mainAdminStore{}}, nil, nil, nil, nil, nil)
 	response = httptest.NewRecorder()
 	durable.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("durable status=%d body=%q", response.Code, response.Body.String())
 	}
+}
+
+func TestStaticHandlerHasNoBreakGlassSurface(t *testing.T) {
+	handler := newAPIHandler(
+		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}},
+		observability.New(), authn.RequestAuthenticator{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	login := httptest.NewRecorder()
+	handler.ServeHTTP(login, httptest.NewRequest(http.MethodPost, "/auth/local", nil))
+	if login.Code != http.StatusNotFound {
+		t.Fatalf("login status=%d", login.Code)
+	}
+	page := httptest.NewRecorder()
+	handler.ServeHTTP(page, httptest.NewRequest(http.MethodGet, "/", nil))
+	if strings.Contains(page.Body.String(), `id="local-auth"`) {
+		t.Fatal("static page exposes administrator recovery")
+	}
+}
+
+func TestAuthRuntimeWithoutOIDCUsesBearerOnly(t *testing.T) {
+	bearer := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
+	runtime, err := newAuthRuntime(t.Context(), config.Config{}, nil, bearer, observability.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.requestAuth.Bearer != bearer || runtime.requestAuth.Session != nil || runtime.sessions != nil || len(runtime.providers) != 0 {
+		t.Fatalf("runtime=%#v", runtime)
+	}
+}
+
+func TestAPITokensAuthenticateRESTAndMCPBearerOnly(t *testing.T) {
+	// Break caught: durable API tokens bypassing the shared bearer boundary.
+	store := &mainTokenStore{principal: authn.Principal{Subject: "11", Method: "api_token"}}
+	manager := authn.TokenManager{Store: store, Rand: strings.NewReader(strings.Repeat("x", 32))}
+	_, token, err := manager.Create(t.Context(), 11, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}}, observability.New(), testRequestAuthenticator(manager), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	for _, test := range []struct {
+		name, path string
+		bearer     bool
+		cookie     bool
+		want       int
+	}{
+		{"REST bearer", "/v1/auth/session", true, false, http.StatusOK},
+		{"MCP bearer", "/mcp", true, false, http.StatusUnsupportedMediaType},
+		{"MCP session", "/mcp", false, true, http.StatusUnauthorized},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, test.path, nil)
+			if test.path == "/v1/auth/session" {
+				request.Method = http.MethodGet
+			}
+			if test.bearer {
+				request.Header.Set("Authorization", "Bearer "+token)
+			}
+			if test.cookie {
+				request.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: "session"})
+			}
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.want {
+				t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestSCIMBearerIsIsolatedFromApplicationSurfaces(t *testing.T) {
+	scimToken := strings.Repeat("s", 32)
+	provisioning, err := authn.NewProvisioningAuthenticator([]byte(scimToken))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rest := authn.NewStatic(map[string]authn.Principal{"rest": {Subject: "user"}})
+	handler := newAPIHandler(
+		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}},
+		observability.New(), testRequestAuthenticator(rest), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		&provisioning, &scimapi.Service{BaseURL: "https://grepnest.example", MaxResults: 10},
+	)
+	for _, test := range []struct {
+		path, token string
+		want        int
+	}{
+		{"/scim/v2/ServiceProviderConfig", scimToken, 200},
+		{"/scim/v2/ServiceProviderConfig", "rest", 401},
+		{"/v1/auth/session", scimToken, 401},
+		{"/v1/auth/session", "rest", 200},
+		{"/mcp", scimToken, 401},
+	} {
+		request := httptest.NewRequest(http.MethodGet, test.path, nil)
+		request.Header.Set("Authorization", "Bearer "+test.token)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != test.want {
+			t.Fatalf("%s token=%q status=%d body=%q", test.path, test.token, response.Code, response.Body.String())
+		}
+	}
+}
+
+func TestSCIMGuardAuthenticatesBeforeCanonicalRouting(t *testing.T) {
+	scimToken := strings.Repeat("s", 32)
+	provisioning, err := authn.NewProvisioningAuthenticator([]byte(scimToken))
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}}
+	rest := testRequestAuthenticator(authn.NewStatic(map[string]authn.Principal{"rest": {Subject: "user"}}))
+	withSCIM := newAPIHandler(settings, observability.New(), rest, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		&provisioning, &scimapi.Service{BaseURL: "https://grepnest.example", MaxResults: 10})
+	withoutSCIM := newAPIHandler(settings, observability.New(), rest, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	for _, path := range []string{
+		"/scim/v2//Users", "/scim/v2/../v1/auth/session", "/scim/v2/%2e%2e/v1/auth/session",
+		"/scim%2Fv2/Users", "/scim/%76%32/Users",
+	} {
+		for _, authenticated := range []bool{false, true} {
+			request := httptest.NewRequest(http.MethodGet, path, nil)
+			if authenticated {
+				request.Header.Set("Authorization", "Bearer "+scimToken)
+			}
+			response := httptest.NewRecorder()
+			withSCIM.ServeHTTP(response, request)
+			want := http.StatusUnauthorized
+			if authenticated {
+				want = http.StatusNotFound
+			}
+			if response.Code != want || response.Header().Get("Content-Type") != "application/scim+json" ||
+				response.Header().Get("Location") != "" {
+				t.Fatalf("%s authenticated=%t status=%d headers=%v", path, authenticated, response.Code, response.Header())
+			}
+		}
+	}
+
+	for _, path := range []string{"/v1//auth/session", "/SCIM/v2/Users", "/scim/v20/Users", "/scim/v2evil"} {
+		withResponse, withoutResponse := httptest.NewRecorder(), httptest.NewRecorder()
+		withSCIM.ServeHTTP(withResponse, httptest.NewRequest(http.MethodGet, path, nil))
+		withoutSCIM.ServeHTTP(withoutResponse, httptest.NewRequest(http.MethodGet, path, nil))
+		if withResponse.Code != withoutResponse.Code || withResponse.Header().Get("Location") != withoutResponse.Header().Get("Location") {
+			t.Fatalf("%s ordinary route changed: with=%d %q without=%d %q", path, withResponse.Code, withResponse.Header().Get("Location"), withoutResponse.Code, withoutResponse.Header().Get("Location"))
+		}
+	}
+
+	for _, authenticated := range []bool{false, true} {
+		request := httptest.NewRequest(http.MethodGet, "/scim/v2/ServiceProviderConfig", nil)
+		if authenticated {
+			request.Header.Set("Authorization", "Bearer "+scimToken)
+		}
+		response := httptest.NewRecorder()
+		withSCIM.ServeHTTP(response, request)
+		want := http.StatusUnauthorized
+		if authenticated {
+			want = http.StatusOK
+		}
+		if response.Code != want {
+			t.Fatalf("normal SCIM authenticated=%t status=%d", authenticated, response.Code)
+		}
+	}
+}
+
+func TestNewProvisioningRuntimeReadsBoundedSecret(t *testing.T) {
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenFile, []byte(strings.Repeat("s", 32)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings := config.Config{SCIM: config.SCIM{Enabled: true, TokenFile: tokenFile, PublicURL: &url.URL{Scheme: "https", Host: "grepnest.example", Path: "/"}}}
+	authenticator, service, err := newProvisioningRuntime(settings, nil)
+	if err != nil || authenticator == nil || service == nil || service.BaseURL != "https://grepnest.example" {
+		t.Fatalf("authenticator=%v service=%#v err=%v", authenticator, service, err)
+	}
+	if err := os.WriteFile(tokenFile, []byte(strings.Repeat("s", 31)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := newProvisioningRuntime(settings, nil); err == nil {
+		t.Fatal("short SCIM secret accepted")
+	}
+}
+
+func TestDurableAuthenticatorRejectsStaticTokens(t *testing.T) {
+	// Break caught: durable runtime retaining GREPNEST_USER_TOKEN authentication.
+	store := &mainTokenStore{principal: authn.Principal{Subject: "11", Method: "api_token"}}
+	manager := durableAuthenticator(store)
+	if _, err := manager.Authenticate(t.Context(), "user-token"); !errors.Is(err, authn.ErrUnauthenticated) {
+		t.Fatalf("static token err=%v", err)
+	}
+}
+
+type mainTokenStore struct {
+	record    authn.APITokenRecord
+	principal authn.Principal
+}
+
+func (s *mainTokenStore) CreateAPIToken(_ context.Context, record authn.APITokenRecord) (int64, error) {
+	s.record = record
+	return 1, nil
+}
+func (s *mainTokenStore) CreateAPITokenAudited(ctx context.Context, record authn.APITokenRecord, _ audit.Event) (int64, error) {
+	return s.CreateAPIToken(ctx, record)
+}
+
+func (s *mainTokenStore) APIPrincipal(_ context.Context, hash [32]byte, _ time.Time) (authn.Principal, error) {
+	if hash != s.record.TokenHash {
+		return authn.Principal{}, errors.New("unknown token")
+	}
+	return s.principal, nil
+}
+
+func (*mainTokenStore) RevokeAPIToken(context.Context, int64, int64) error { return nil }
+func (s *mainTokenStore) RevokeAPITokenAudited(ctx context.Context, userID, tokenID int64, _ audit.Event) error {
+	return s.RevokeAPIToken(ctx, userID, tokenID)
 }
 
 type mainAdminStore struct{ admin.Store }
@@ -159,7 +372,7 @@ func TestServerDeadlinesIsolateSCIPUploads(t *testing.T) {
 		"admin": {Subject: "admin", Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}},
 	})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, SCIPMaxUploadBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}
-	handler := newAPIHandler(settings, observability.New(), authenticator, nil, nil, &scipgraph.Service{Store: store}, nil, nil, nil, nil, nil, nil)
+	handler := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, &scipgraph.Service{Store: store}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	server := newHTTPServer("127.0.0.1:0", handler)
 	if server.ReadTimeout != 10*time.Second || server.WriteTimeout != 10*time.Second || server.ReadHeaderTimeout != 5*time.Second || server.IdleTimeout != time.Minute {
 		t.Fatalf("deadlines = read %s, write %s, header %s, idle %s", server.ReadTimeout, server.WriteTimeout, server.ReadHeaderTimeout, server.IdleTimeout)
@@ -330,6 +543,9 @@ func (store *deadlineSCIPStore) AuthorizedRepository(_ context.Context, _ int64,
 	}
 	return repository.Repository{}, errors.New("not found")
 }
+func (store *deadlineSCIPStore) AnyAuthorizedRepository(_ context.Context, id int64) (repository.Repository, error) {
+	return store.AuthorizedRepository(context.Background(), 0, nil, id)
+}
 func (store *deadlineSCIPStore) ReplaceSCIP(context.Context, int64, string, scipgraph.Upload) error {
 	if store.writeDeadlineSet != nil && store.writeDeadlineSet.Load() {
 		store.writeDeadlineSetDuringReplace.Store(true)
@@ -402,7 +618,7 @@ func TestDurableSecretReadsAreBounded(t *testing.T) {
 
 func TestDurableReconciliationStartsSynchronouslyAndStops(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	var reconciles, refreshes, failures atomic.Int64
+	var reconciles, refreshes, cleanups, failures atomic.Int64
 	done, err := startPeriodic(ctx, time.Millisecond, func(context.Context) error {
 		if reconciles.Add(1) == 2 {
 			return context.DeadlineExceeded
@@ -411,19 +627,22 @@ func TestDurableReconciliationStartsSynchronouslyAndStops(t *testing.T) {
 	}, func(context.Context) error {
 		refreshes.Add(1)
 		return nil
+	}, func(context.Context) error {
+		cleanups.Add(1)
+		return nil
 	}, func(error) { failures.Add(1) })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reconciles.Load() != 1 || refreshes.Load() != 1 {
-		t.Fatalf("startup reconciles=%d refreshes=%d", reconciles.Load(), refreshes.Load())
+	if reconciles.Load() != 1 || refreshes.Load() != 1 || cleanups.Load() != 1 {
+		t.Fatalf("startup reconciles=%d refreshes=%d cleanups=%d", reconciles.Load(), refreshes.Load(), cleanups.Load())
 	}
 	deadline := time.Now().Add(time.Second)
 	for reconciles.Load() < 3 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	if failures.Load() != 1 || reconciles.Load() < 3 {
-		t.Fatalf("periodic retries=%d failures=%d", reconciles.Load(), failures.Load())
+	if failures.Load() != 1 || reconciles.Load() < 3 || cleanups.Load() < 3 {
+		t.Fatalf("periodic retries=%d cleanups=%d failures=%d", reconciles.Load(), cleanups.Load(), failures.Load())
 	}
 	cancel()
 	select {
@@ -496,7 +715,7 @@ func (stub *healthStub) Health(context.Context) error {
 
 func TestDurableRoutesKeepWebhookOutsideBearerAuthentication(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
-	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), authenticator, nil, &repository.Service{Store: repositoryStoreStub{}}, nil, nil, nil, []byte("secret"), webhookProcessorStub{}, nil, nil)
+	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), testRequestAuthenticator(authenticator), nil, &repository.Service{Store: repositoryStoreStub{}}, nil, nil, nil, []byte("secret"), webhookProcessorStub{}, nil, nil, nil, nil, nil, nil)
 
 	webhookResponse := httptest.NewRecorder()
 	handler.ServeHTTP(webhookResponse, httptest.NewRequest(http.MethodPost, "/webhooks/github", nil))
@@ -573,8 +792,8 @@ func TestStaticHandlerRegistersSystemRoutes(t *testing.T) {
 func TestSCIPRoutesRegisterOnlyWithDurableService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, SCIPMaxUploadBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}
-	without := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	with := newAPIHandler(settings, observability.New(), authenticator, nil, nil, &scipgraph.Service{}, nil, nil, nil, nil, nil, nil)
+	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, &scipgraph.Service{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/scip/navigation", nil))
@@ -591,8 +810,8 @@ func TestSCIPRoutesRegisterOnlyWithDurableService(t *testing.T) {
 func TestGraphRoutesRegisterOnlyWithDurableService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	settings := config.Config{Limits: config.Limits{GraphMaxUploadBytes: 1024, MaxResponseBytes: 1024}}
-	without := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	with := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, &graphingest.Service{}, nil, nil, nil, nil, nil)
+	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, &graphingest.Service{}, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/graph/repositories/101/status", nil))
@@ -609,8 +828,8 @@ func TestGraphRoutesRegisterOnlyWithDurableService(t *testing.T) {
 func TestGraphQueryRoutesRegisterOnlyWithService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024}}
-	without := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	with := newAPIHandler(settings, observability.New(), authenticator, nil, nil, nil, nil, &graphservice.Service{}, nil, nil, nil, nil)
+	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, &graphservice.Service{}, nil, nil, nil, nil, nil, nil, nil, nil)
 	for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/graph/context", nil))
@@ -628,7 +847,7 @@ func TestAPIHandlerMountsWebUIWithoutFallback(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	handler := newAPIHandler(
 		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}},
-		observability.New(), authenticator, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	for _, path := range []string{"/", "/index.html", "/admin"} {
 		response := httptest.NewRecorder()
@@ -644,6 +863,10 @@ func TestAPIHandlerMountsWebUIWithoutFallback(t *testing.T) {
 			t.Fatalf("%s status=%d", path, response.Code)
 		}
 	}
+}
+
+func testRequestAuthenticator(bearer authn.Authenticator) authn.RequestAuthenticator {
+	return authn.RequestAuthenticator{Bearer: bearer}
 }
 
 func TestStaticHandlerProtectsMCPRoute(t *testing.T) {

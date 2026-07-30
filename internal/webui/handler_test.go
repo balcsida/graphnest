@@ -53,6 +53,36 @@ func TestRegisterServesBoundedConsoleAtExactPaths(t *testing.T) {
 				t.Fatalf("%s contains forbidden %q", path, forbidden)
 			}
 		}
+		if bytes.Contains(body, []byte(`id="local-auth"`)) {
+			t.Fatal("default console exposes local authentication")
+		}
+	}
+}
+
+func TestRegisterWithBreakGlassServesOIDCFirstRecovery(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterWithBreakGlass(mux, true)
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := response.Body.String()
+	for _, marker := range []string{
+		`id="provider-options"`, `id="local-auth"`, `<details`, `Administrator recovery`,
+		`autocomplete="username"`, `autocomplete="current-password"`, `autocomplete="new-password"`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Fatalf("missing %q", marker)
+		}
+	}
+	if strings.Index(body, `id="provider-options"`) > strings.Index(body, `id="local-auth"`) {
+		t.Fatal("administrator recovery appears before SSO")
+	}
+	for _, forbidden := range []string{"localStorage", "sessionStorage", "innerHTML"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("contains forbidden %q", forbidden)
+		}
+	}
+	if len(body) >= 44<<10 {
+		t.Fatalf("document bytes=%d", len(body))
 	}
 }
 

@@ -1,6 +1,7 @@
 package authn
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
@@ -12,13 +13,14 @@ type Principal struct {
 	Subject         string
 	Method          string
 	Administrator   bool
+	ForceRotation   bool
 	InstallationID  int64
 	RepositoryIDs   []int64
 	RepositoryNames []string
 }
 
 type Authenticator interface {
-	Authenticate(string) (Principal, error)
+	Authenticate(context.Context, string) (Principal, error)
 }
 
 type Static struct{ principals map[string]Principal }
@@ -33,7 +35,7 @@ func NewStatic(principals map[string]Principal) *Static {
 	return &Static{principals: copy}
 }
 
-func (auth *Static) Authenticate(token string) (Principal, error) {
+func (auth *Static) Authenticate(_ context.Context, token string) (Principal, error) {
 	presented := sha256.Sum256([]byte(token))
 	var principal Principal
 	matched := 0
@@ -48,7 +50,11 @@ func (auth *Static) Authenticate(token string) (Principal, error) {
 	if matched != 1 {
 		return Principal{}, ErrUnauthenticated
 	}
+	return clonePrincipal(principal), nil
+}
+
+func clonePrincipal(principal Principal) Principal {
 	principal.RepositoryIDs = append([]int64(nil), principal.RepositoryIDs...)
 	principal.RepositoryNames = append([]string(nil), principal.RepositoryNames...)
-	return principal, nil
+	return principal
 }

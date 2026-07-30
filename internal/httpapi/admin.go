@@ -11,10 +11,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func RegisterAdmin(mux *http.ServeMux, authenticator authn.Authenticator, service *admin.Service, maxItems int, maxResponseBytes int64) {
+func RegisterAdmin(mux *http.ServeMux, authenticator authn.RequestAuthenticator, service *admin.Service, maxItems int, maxRequestBytes, maxResponseBytes int64) {
 	service.MaxItems = maxItems
 	get := func(load func(*http.Request) (any, error)) http.Handler {
-		return exactMethod(http.MethodGet, AuthenticateBearer(authenticator, administratorOnly(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		return exactMethod(http.MethodGet, AuthenticateRequest(authenticator, administratorOnly(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			value, err := load(request)
 			if err != nil {
 				writeAdminError(writer, err)
@@ -66,7 +66,7 @@ func RegisterAdmin(mux *http.ServeMux, authenticator authn.Authenticator, servic
 	}))
 
 	action := func(parse func(string) (int64, bool), call func(*http.Request, int64) error) http.Handler {
-		return exactMethod(http.MethodPost, AuthenticateBearer(authenticator, administratorOnly(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		return exactMethod(http.MethodPost, AuthenticateRequest(authenticator, administratorOnly(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			id, ok := parse(request.URL.Path)
 			if !ok {
 				writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
@@ -97,6 +97,7 @@ func RegisterAdmin(mux *http.ServeMux, authenticator authn.Authenticator, servic
 			return service.Reconcile(request.Context(), PrincipalFromContext(request.Context()))
 		},
 	))
+	registerAdminIdentity(mux, authenticator, service, maxRequestBytes, maxResponseBytes)
 }
 
 func adminPathID(path, prefix, suffix string) (int64, bool) {
@@ -110,6 +111,10 @@ func adminPathID(path, prefix, suffix string) (int64, bool) {
 
 func writeAdminError(writer http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, admin.ErrInvalid):
+		writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
+	case errors.Is(err, admin.ErrSelfAdministration), errors.Is(err, admin.ErrFinalAdministrator):
+		writeError(writer, http.StatusConflict, "conflict", "administrator change conflicts with the active account", false)
 	case errors.Is(err, admin.ErrForbidden):
 		writeError(writer, http.StatusForbidden, "forbidden", "administrator access required", false)
 	case errors.Is(err, pgx.ErrNoRows):

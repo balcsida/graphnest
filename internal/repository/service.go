@@ -131,14 +131,14 @@ func (service *Service) ReadFile(ctx context.Context, principal authn.Principal,
 }
 
 func (service *Service) authorizedRepositories(ctx context.Context, principal authn.Principal) ([]Repository, error) {
-	if principal.Administrator {
+	if principal.Administrator && principal.Method != "api_token" {
 		return service.Store.AllAuthorizedRepositories(ctx, principal.RepositoryNames)
 	}
 	return service.Store.AuthorizedRepositories(ctx, principal.InstallationID, principal.RepositoryIDs, principal.RepositoryNames)
 }
 
 func (service *Service) authorizedRepository(ctx context.Context, principal authn.Principal, repositoryID int64) (Repository, error) {
-	if principal.Administrator {
+	if principal.Administrator && principal.Method != "api_token" {
 		return service.Store.AnyAuthorizedRepository(ctx, repositoryID)
 	}
 	return service.Store.AuthorizedRepository(ctx, principal.InstallationID, principal.RepositoryIDs, repositoryID)

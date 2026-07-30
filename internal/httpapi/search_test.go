@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/authz"
 	"github.com/grepnest/grepnest/internal/repository"
@@ -72,6 +73,26 @@ func TestSearchHTTP(t *testing.T) {
 	}
 }
 
+func TestSearchErrorUsesRequestContextID(t *testing.T) {
+	handler := RequestIDs(nil, testHandler(t, &stubBackend{err: context.DeadlineExceeded}, 1024))
+	request := httptest.NewRequest(http.MethodPost, "/v1/search", strings.NewReader(`{"query":"needle"}`))
+	request.Header.Set("Authorization", "Bearer secret")
+	request.Header.Set("Content-Type", "application/json")
+	request = request.WithContext(audit.WithRequestID(request.Context(), "trusted-request"))
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	var envelope struct {
+		Error struct {
+			RequestID string `json:"request_id"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil || envelope.Error.RequestID != "trusted-request" {
+		t.Fatalf("request ID=%q err=%v body=%s", envelope.Error.RequestID, err, response.Body.String())
+	}
+}
+
 func TestSearchResponseRespectsWireBudgetIncludingNewline(t *testing.T) {
 	backend := &stubBackend{response: api.SearchResponse{Matches: []api.SearchMatch{{Path: "main.go", SHA: strings.Repeat("a", 40), Branches: []string{"main"}, ZoektID: 7, LineNumber: 1, Preview: "needle"}}}}
 	registry, err := repository.NewStatic([]repository.Repository{{ID: 1, ZoektID: 7, Name: "acme/one", Branch: "main", IndexedSHA: strings.Repeat("a", 40)}})
@@ -90,7 +111,7 @@ func TestSearchResponseRespectsWireBudgetIncludingNewline(t *testing.T) {
 	}
 	service := search.NewService(backend, authz.NewStatic(registry), search.Limits{MaxResults: 100, MaxResponseBytes: int64(len(payload))})
 	mux := http.NewServeMux()
-	RegisterSearch(mux, authn.NewStatic(map[string]authn.Principal{"secret": principal}), service, 1024, int64(len(payload)))
+	RegisterSearch(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{"secret": principal})), service, 1024, int64(len(payload)))
 
 	request := httptest.NewRequest(http.MethodPost, "/v1/search", strings.NewReader(`{"query":"needle"}`))
 	request.Header.Set("Authorization", "Bearer secret")
@@ -146,7 +167,7 @@ func testHandler(t *testing.T, backend *stubBackend, maxBytes int64) http.Handle
 	}
 	service := search.NewService(backend, authz.NewStatic(registry), search.Limits{MaxResults: 100})
 	mux := http.NewServeMux()
-	RegisterSearch(mux, authn.NewStatic(map[string]authn.Principal{"secret": {Subject: "user", RepositoryNames: []string{"acme/one"}}}), service, maxBytes, 256<<10)
+	RegisterSearch(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{"secret": {Subject: "user", RepositoryNames: []string{"acme/one"}}})), service, maxBytes, 256<<10)
 	return mux
 }
 

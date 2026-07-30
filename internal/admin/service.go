@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/repository"
@@ -123,6 +124,16 @@ type IndexRequest struct {
 }
 
 type Store interface {
+	auditedIdentityStore
+	AuditEvents(context.Context, int) ([]audit.Event, bool, error)
+	AdminUsers(context.Context, int) ([]User, bool, error)
+	AdminUser(context.Context, int64) (User, error)
+	AdminGroups(context.Context, int) ([]Group, bool, error)
+	AdminGroup(context.Context, int64) (Group, error)
+	SuspendAdminUser(context.Context, int64, int64, bool) error
+	ReplaceAdminUserAccess(context.Context, int64, int64, bool, []int64) error
+	ReplaceAdminGroupAccess(context.Context, int64, int64, bool, []int64) error
+	RevokeAdminUserCredentials(context.Context, int64) error
 	AdminOverview(context.Context, int64, []int64) (Overview, error)
 	AdminRepositories(context.Context, int64, []int64, int) ([]Repository, bool, error)
 	AdminJobs(context.Context, int64, []int64, int) ([]Job, bool, error)
@@ -131,6 +142,7 @@ type Store interface {
 	AdminDeliveries(context.Context, int64, []int64, int) ([]Delivery, bool, error)
 	AdminGitHub(context.Context, int64, []int64, GitHubConfig, int) (GitHub, error)
 	AdminRepository(context.Context, int64, []int64, int64) (repository.Repository, error)
+	AnyAuthorizedRepository(context.Context, int64) (repository.Repository, error)
 	EnqueueAdminIndex(context.Context, IndexRequest) error
 	RetryAdminJob(context.Context, int64, []int64, int64) error
 	ReconcileAdminRepositories(context.Context, int64, []int64, []githubapp.Repository) error
@@ -142,10 +154,12 @@ type GitHubClient interface {
 }
 
 type Service struct {
-	Store    Store
-	GitHub   GitHubClient
-	Config   GitHubConfig
-	MaxItems int
+	Store        Store
+	Audit        audit.Recorder
+	GitHub       GitHubClient
+	ReconcileAll func(context.Context) error
+	Config       GitHubConfig
+	MaxItems     int
 }
 
 func (service *Service) Overview(ctx context.Context, principal authn.Principal) (Overview, error) {
@@ -201,7 +215,15 @@ func (service *Service) Reindex(ctx context.Context, principal authn.Principal, 
 	if err := requireAdmin(principal); err != nil {
 		return err
 	}
-	repo, err := service.Store.AdminRepository(ctx, principal.InstallationID, principal.RepositoryIDs, githubID)
+	var (
+		repo repository.Repository
+		err  error
+	)
+	if durableAdministrator(principal) {
+		repo, err = service.Store.AnyAuthorizedRepository(ctx, githubID)
+	} else {
+		repo, err = service.Store.AdminRepository(ctx, principal.InstallationID, principal.RepositoryIDs, githubID)
+	}
 	if err != nil {
 		return err
 	}
@@ -221,6 +243,12 @@ func (service *Service) Reindex(ctx context.Context, principal authn.Principal, 
 func (service *Service) Reconcile(ctx context.Context, principal authn.Principal) error {
 	if err := requireAdmin(principal); err != nil {
 		return err
+	}
+	if principal.Method == "api_token" {
+		return ErrForbidden
+	}
+	if durableAdministrator(principal) {
+		return service.ReconcileAll(ctx)
 	}
 	upstream, err := service.GitHub.InstallationRepositories(ctx, principal.InstallationID)
 	if err != nil {
@@ -256,6 +284,11 @@ func requireAdmin(principal authn.Principal) error {
 		return ErrForbidden
 	}
 	return nil
+}
+
+func durableAdministrator(principal authn.Principal) bool {
+	return principal.Administrator && (principal.Method == "oidc" || principal.Method == "local") &&
+		principal.InstallationID == 0 && len(principal.RepositoryIDs) == 0
 }
 
 func (service *Service) limit() int {

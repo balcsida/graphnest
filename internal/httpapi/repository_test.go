@@ -51,7 +51,7 @@ func TestRepositoryRoutesAllowAdministratorsAcrossInstallations(t *testing.T) {
 	store.globalRepositories = []repository.Repository{store.repository, second}
 	store.globalRepositoriesByID = map[int64]repository.Repository{101: store.repository, 202: second}
 	mux := http.NewServeMux()
-	RegisterRepositories(mux, authn.NewStatic(map[string]authn.Principal{"admin": {Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}}}), service, 128, 100, 256<<10)
+	RegisterRepositories(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{"admin": {Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}}})), service, 128, 100, 256<<10)
 
 	response := repositoryRequest(t, mux, http.MethodGet, "/v1/repositories", "", "admin", "")
 	var list struct {
@@ -90,7 +90,7 @@ func TestRepositoryListBoundsWireResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	RegisterRepositories(mux, authn.NewStatic(map[string]authn.Principal{"secret": {InstallationID: 10, RepositoryIDs: []int64{101, 102, 103}}}), service, 128, 2, int64(len(budgetBody)+1))
+	RegisterRepositories(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{"secret": {InstallationID: 10, RepositoryIDs: []int64{101, 102, 103}}})), service, 128, 2, int64(len(budgetBody)+1))
 
 	response := repositoryRequest(t, mux, http.MethodGet, "/v1/repositories", "", "secret", "")
 	var output struct {
@@ -103,7 +103,7 @@ func TestRepositoryListBoundsWireResponse(t *testing.T) {
 	}
 
 	mux = http.NewServeMux()
-	RegisterRepositories(mux, authn.NewStatic(map[string]authn.Principal{"secret": {InstallationID: 10, RepositoryIDs: []int64{101, 102, 103}}}), service, 128, 1, 256<<10)
+	RegisterRepositories(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{"secret": {InstallationID: 10, RepositoryIDs: []int64{101, 102, 103}}})), service, 128, 1, 256<<10)
 	response = repositoryRequest(t, mux, http.MethodGet, "/v1/repositories", "", "secret", "")
 	decodeRepositoryResponse(t, response, &output)
 	if response.Code != http.StatusOK || len(output.Repositories) != 1 || !output.Truncated {
@@ -269,8 +269,8 @@ func repositoryHTTPService() *repository.Service {
 	}
 }
 
-func repositoryAuthenticator() authn.Authenticator {
-	return authn.NewStatic(map[string]authn.Principal{"secret": {InstallationID: 10, RepositoryIDs: []int64{101}}})
+func repositoryAuthenticator() authn.RequestAuthenticator {
+	return requestAuthenticator(authn.NewStatic(map[string]authn.Principal{"secret": {InstallationID: 10, RepositoryIDs: []int64{101}}}))
 }
 
 type repositoryHTTPStore struct {

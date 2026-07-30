@@ -205,8 +205,16 @@ indexer-only setting. It requires these server settings:
   `GREPNEST_GITHUB_UPLOAD_URL`, and `GREPNEST_GITHUB_GIT_URL` as HTTPS URLs;
 - `GREPNEST_GITHUB_APP_ID`, `GREPNEST_GITHUB_PRIVATE_KEY_FILE`, and
   `GREPNEST_GITHUB_WEBHOOK_SECRET_FILE`;
-- `GREPNEST_USER_INSTALLATION_ID`, `GREPNEST_USER_REPOSITORY_IDS`,
-  `GREPNEST_ADMIN_INSTALLATION_ID`, and `GREPNEST_ADMIN_REPOSITORY_IDS`.
+- OIDC configuration: `GREPNEST_PUBLIC_URL`, `GREPNEST_OIDC_ISSUER_URL`,
+  `GREPNEST_OIDC_CLIENT_ID`, and `GREPNEST_OIDC_CLIENT_SECRET_FILE`.
+- Optional SCIM configuration: `GREPNEST_SCIM_TOKEN_FILE`; SCIM also uses the
+  HTTPS public URL and durable PostgreSQL directory.
+
+The shipped application image includes `grepnest-admin` for last-resort
+administrator recovery. Run that exact image and follow the
+[break-glass runbook](docs/operations.md#break-glass-administrator-recovery).
+The offline command only creates or rotates a local credential in PostgreSQL;
+it does not enable a server login route or replace SSO.
 
 `GREPNEST_GITHUB_API_VERSION` defaults to `2022-11-28` and
 `GREPNEST_GITHUB_CA_FILE` optionally extends system trust. Startup pings and
@@ -219,8 +227,8 @@ search, repository, file-read, and MCP routes require bearer authentication.
 
 The durable Compose overlay runs the server, indexer, scalable scanners,
 PostgreSQL, and Zoekt. Set `GREPNEST_APPLICATION_IMAGE`, `GREPNEST_NODE_IMAGE`,
-and `GREPNEST_SCANNER_IMAGE` to existing images plus the GitHub and
-token/repository-scope variables listed above. The image must provide
+and `GREPNEST_SCANNER_IMAGE` to existing images plus the GitHub, graph, and
+OIDC variables listed above. The image must provide
 `grepnest-server` and `wget` on `PATH`; the node image must provide
 `grepnest-indexer`, `grepnest-graph`, `git`, and `zoekt-git-index`; the scanner
 image must provide `grepnest-scanner` and `git`. The overlay also requires
@@ -249,12 +257,11 @@ GREPNEST_GITHUB_API_URL=https://github.example/api/v3 \
 GREPNEST_GITHUB_UPLOAD_URL=https://github.example/api/uploads \
 GREPNEST_GITHUB_GIT_URL=https://github.example \
 GREPNEST_GITHUB_APP_ID=123 \
-GREPNEST_USER_TOKEN=replace-user-token \
-GREPNEST_USER_INSTALLATION_ID=456 \
-GREPNEST_USER_REPOSITORY_IDS=789 \
-GREPNEST_ADMIN_TOKEN=replace-admin-token \
-GREPNEST_ADMIN_INSTALLATION_ID=456 \
-GREPNEST_ADMIN_REPOSITORY_IDS=789 \
+GREPNEST_PUBLIC_URL=https://grepnest.example \
+GREPNEST_OIDC_ISSUER_URL=https://id.example \
+GREPNEST_OIDC_CLIENT_ID=grepnest \
+GREPNEST_OIDC_CLIENT_SECRET_FILE=$PWD/oidc-client-secret \
+GREPNEST_SCIM_TOKEN_FILE=$PWD/scim-token \
 docker compose \
   -f deploy/compose/compose.yml \
   -f deploy/compose/durable.yml \
@@ -267,6 +274,39 @@ Replace `graph-embedded.yml` with `graph-separate.yml` for standalone graph
 ownership.
 
 Optional limits are positive and cannot exceed their server caps:
+
+### Optional OIDC browser sign-in
+
+OIDC requires durable mode and an HTTPS `GREPNEST_PUBLIC_URL`. Configure
+`GREPNEST_OIDC_ISSUER_URL`, `GREPNEST_OIDC_CLIENT_ID`,
+`GREPNEST_OIDC_CLIENT_SECRET_FILE`, and `GREPNEST_OIDC_LINK_CLAIM`; optional
+settings are `GREPNEST_OIDC_CA_FILE`, `GREPNEST_OIDC_SCOPES`,
+`GREPNEST_OIDC_DISPLAY_NAME_CLAIM`, `GREPNEST_SSO_SESSION_IDLE`,
+`GREPNEST_SSO_SESSION_TTL`, and `GREPNEST_SSO_LOGIN_FLOW_TTL`. Register
+`https://<public-host>/auth/oidc/callback` as the Authorization Code + PKCE
+redirect URI. The client secret and optional CA are readable files, never
+environment values or ConfigMap data.
+
+### Optional SCIM 2.0 provisioning
+
+Set `GREPNEST_SCIM_TOKEN_FILE` to a readable file containing a dedicated,
+high-entropy bearer token and expose
+`https://<public-host>/scim/v2`. SCIM is default-off, durable-mode only, and
+every discovery and resource request requires that token. The OIDC
+`GREPNEST_OIDC_LINK_CLAIM` value must exactly match the SCIM user's
+`externalId`; directory attributes are not authorization claims.
+
+Users support `eq` filters on `id`, `userName`, and `externalId`; groups
+support `id`, `displayName`, and `externalId`. PATCH supports user `active`,
+`userName`, `displayName`, `name`, and `emails`, plus group `members` and
+`members[value eq "USER_ID"]`. Requests are limited to 1 MiB bodies, 8 KiB
+queries, 16 KiB URLs, 100 PATCH operations, and `GREPNEST_MAX_RESULTS`.
+Replacing the secret file does not hot-reload it: restart server replicas to
+rotate the token. Deactivation or deletion denies existing browser sessions
+and API tokens on their next request.
+
+Bulk, sorting, ETags, passwords, `/Me`, `/.search`, root search, enterprise
+extensions, custom schemas/resources, roles, and entitlements are unsupported.
 
 | Variable | Default | Maximum |
 | --- | ---: | ---: |

@@ -97,6 +97,13 @@ expect_failure "$tmp/scanner-image.err" helm template bad "$chart" -f "$minimal"
   --set-string=images.scanner.repository= \
   --set-string=images.scanner.digest=
 require "/images/scanner/(repository|digest)" "$tmp/scanner-image.err"
+helm template scim "$chart" -n grepnest -f "$minimal" \
+  --set=server.scim.enabled=true \
+  --set-string=server.sso.publicURL=https://grepnest.example.invalid \
+  --set-string=secrets.scim.name=grepnest-scim >"$tmp/scim.yaml"
+helm template break-glass "$chart" -n grepnest -f "$minimal" \
+  -f "$optional" --set=breakGlass.enabled=true \
+  --api-versions monitoring.coreos.com/v1/ServiceMonitor >"$tmp/break-glass.yaml"
 long_release=abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzx
 helm template "$long_release" "$chart" -n grepnest -f "$minimal" >"$tmp/long-release.yaml"
 
@@ -276,7 +283,7 @@ require '^kind: Ingress$' "$tmp/optional-ingress.yaml"
 reject 'pilot-grepnest-zoekt|name: .*zoekt|backend:.*zoekt' "$tmp/optional-ingress.yaml"
 reject 'host: "?\*|path: /\*|host: "?default([.]|"|$)' "$tmp/optional-ingress.yaml"
 
-policies='deny-ingress allow-server-ingress allow-zoekt-ingress allow-indexer-metrics-ingress deny-egress allow-zoekt-egress allow-graph-egress allow-dns-egress allow-postgresql-egress allow-github-egress'
+policies='deny-ingress allow-server-ingress allow-zoekt-ingress allow-indexer-metrics-ingress deny-egress allow-zoekt-egress allow-graph-egress allow-dns-egress allow-postgresql-egress allow-github-egress allow-identity-provider-egress'
 for policy in $policies; do
   sed -n "/^  name: pilot-grepnest-$policy\$/,/^---\$/p" \
     "$tmp/optional.yaml" >"$tmp/$policy.yaml"
@@ -339,6 +346,34 @@ require 'policyTypes: \[Egress\]' "$tmp/allow-github-egress-spec.yaml"
 require 'cidr: "198\.51\.100\.0/24"' "$tmp/allow-github-egress-spec.yaml"
 require 'cidr: "2001:db8:1234::/48"' "$tmp/allow-github-egress-spec.yaml"
 require 'protocol: TCP, port: 443' "$tmp/allow-github-egress-spec.yaml"
+require 'app.kubernetes.io/component: server' "$tmp/allow-identity-provider-egress-spec.yaml"
+require 'cidr: "203\.0\.113\.10/32"' "$tmp/allow-identity-provider-egress-spec.yaml"
+require 'protocol: TCP, port: 443' "$tmp/allow-identity-provider-egress-spec.yaml"
+require 'mountPath: /var/run/secrets/grepnest/oidc/client-secret' "$tmp/optional.yaml"
+require 'secretName: grepnest-oidc' "$tmp/optional.yaml"
+reject 'GREPNEST_OIDC_CLIENT_SECRET: ' "$tmp/optional.yaml"
+require 'GREPNEST_SCIM_TOKEN_FILE: /var/run/secrets/grepnest/scim/token' "$tmp/optional.yaml"
+require 'mountPath: /var/run/secrets/grepnest/scim/token' "$tmp/optional.yaml"
+require 'secretName: grepnest-scim' "$tmp/optional.yaml"
+reject 'GREPNEST_SCIM_TOKEN:|GREPNEST_SCIM_TOKEN_FILE:' "$tmp/minimal.yaml"
+reject '^kind: Secret$|GREPNEST_SCIM_TOKEN: ' "$tmp/optional.yaml"
+require 'GREPNEST_PUBLIC_URL: "https://grepnest.example.invalid"' "$tmp/scim.yaml"
+require 'GREPNEST_SCIM_TOKEN_FILE: /var/run/secrets/grepnest/scim/token' "$tmp/scim.yaml"
+reject 'GREPNEST_OIDC_' "$tmp/scim.yaml"
+reject 'GREPNEST_(USER|ADMIN)_(TOKEN|INSTALLATION_ID|REPOSITORY_IDS)' "$tmp/minimal.yaml"
+reject 'GREPNEST_BREAK_GLASS_ENABLED|BREAK_GLASS.*(PASSWORD|HASH|SALT)' "$tmp/minimal.yaml"
+require 'GREPNEST_BREAK_GLASS_ENABLED: "true"' "$tmp/break-glass.yaml"
+reject 'BREAK_GLASS.*(PASSWORD|HASH|SALT)|^kind: Secret$' "$tmp/break-glass.yaml"
+expect_failure "$tmp/break-glass-type.err" helm template bad "$chart" -f "$minimal" \
+  --set-string=breakGlass.enabled=true
+expect_failure "$tmp/break-glass-without-oidc.err" helm template bad "$chart" -f "$minimal" \
+  --set=breakGlass.enabled=true
+
+expect_failure "$tmp/scim-secret.err" helm template bad "$chart" -f "$minimal" \
+  --set=server.scim.enabled=true
+expect_failure "$tmp/scim-public-url.err" helm template bad "$chart" -f "$minimal" \
+  --set=server.scim.enabled=true --set-string=secrets.scim.name=grepnest-scim \
+  --set-string=server.sso.publicURL=http://grepnest.example.invalid
 
 reject '^ *- \{\}|^ *from: *\[?\]?$|^ *to: *\[?\]?$|^ *- (podSelector|namespaceSelector): *\{\}$' "$tmp/optional.yaml"
 reject 'cidr: "?(0\.0\.0\.0/0|::/0)"?' "$tmp/optional.yaml"

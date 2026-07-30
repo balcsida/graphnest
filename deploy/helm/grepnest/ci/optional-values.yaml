@@ -15,7 +15,14 @@ monitoring:
     labels: {monitoring: pilot}
 secrets:
   customCA: {name: grepnest-existing-ca, key: ca.crt}
+  oidc: {name: grepnest-oidc, clientSecretKey: client-secret}
+  oidcCA: {name: grepnest-oidc-ca, key: ca.crt}
+  scim: {name: grepnest-scim, tokenKey: token}
 server:
+  scim: {enabled: true}
+  sso:
+    publicURL: https://grepnest.example.invalid
+    oidc: {enabled: true, issuerURL: https://id.example.invalid, clientID: grepnest, scopes: [openid, profile, email], linkClaim: sub, displayNameClaim: name}
   nodeSelector: {grepnest.example.invalid/pool: server}
   affinity:
     nodeAffinity:
@@ -74,4 +81,7 @@ networkPolicy:
       port: 5432
     github:
       cidrs: [{address: 198.51.100.0, prefix: 24}, {address: "2001:db8:1234::", prefix: 48}]
+      ports: [443]
+    identityProvider:
+      cidrs: [{address: 203.0.113.10, prefix: 32}]
       ports: [443]

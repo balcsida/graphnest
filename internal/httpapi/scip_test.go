@@ -184,9 +184,9 @@ func TestSCIPNavigationResponseIsBounded(t *testing.T) {
 		RepositoryID: 101, RepositoryName: "acme/one", Commit: scipTestSHA, Path: "target.go",
 	}}}
 	mux := http.NewServeMux()
-	RegisterSCIP(mux, authn.NewStatic(map[string]authn.Principal{"user": {
+	RegisterSCIP(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{"user": {
 		InstallationID: 10, RepositoryIDs: []int64{101},
-	}}), &scipgraph.Service{Store: store}, 1024, 1024, 1)
+	}})), &scipgraph.Service{Store: store}, 1024, 1024, 1)
 	response := scipRequest(mux, http.MethodPost, "/v1/scip/navigation", []byte(`{"repository_id":101,"path":"main.go","line":1,"character":0,"operation":"definitions"}`), "user", "application/json")
 	if response.Code != http.StatusInternalServerError || response.Body.Len() != 0 {
 		t.Fatalf("status = %d, body = %q", response.Code, response.Body.String())
@@ -227,10 +227,10 @@ func scipHandler(store *scipStoreStub, maxUpload int64) http.Handler {
 
 func newSCIPHandler(store *scipStoreStub, reader *scipDependencyReader, maxJSON, maxUpload int64) http.Handler {
 	mux := http.NewServeMux()
-	RegisterSCIP(mux, authn.NewStatic(map[string]authn.Principal{
+	RegisterSCIP(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{
 		"user":  {InstallationID: 10, RepositoryIDs: []int64{101}},
 		"admin": {InstallationID: 10, RepositoryIDs: []int64{101}, Administrator: true},
-	}), &scipgraph.Service{Store: store, GitHub: reader}, maxJSON, maxUpload, 1024)
+	})), &scipgraph.Service{Store: store, GitHub: reader}, maxJSON, maxUpload, 1024)
 	return mux
 }
 
@@ -270,6 +270,12 @@ type scipStoreStub struct {
 
 func (store *scipStoreStub) AuthorizedRepository(_ context.Context, _ int64, ids []int64, id int64) (repository.Repository, error) {
 	if id == store.repository.GitHubID && len(ids) == 1 && ids[0] == id {
+		return store.repository, nil
+	}
+	return repository.Repository{}, pgx.ErrNoRows
+}
+func (store *scipStoreStub) AnyAuthorizedRepository(_ context.Context, id int64) (repository.Repository, error) {
+	if id == store.repository.GitHubID {
 		return store.repository, nil
 	}
 	return repository.Repository{}, pgx.ErrNoRows

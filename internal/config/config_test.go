@@ -188,7 +188,8 @@ func TestLoadReadsDurableConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" || got.GitHub.WebURL != "https://ghe.example.com" || got.GitHub.APIURL != "https://ghe.example.com/api/v3" || got.GitHub.UploadURL != "https://ghe.example.com/uploads" || got.GitHub.GitURL != "https://ghe.example.com" || got.GitHub.AppID != 123 || got.GitHub.PrivateKeyFile != "/run/secrets/key.pem" || got.GitHub.WebhookSecretFile != "/run/secrets/webhook" || got.GitHub.CAFile != "/run/secrets/ca.pem" || got.GitHub.APIVersion != "2022-11-28" || got.UserInstallationID != 10 || !reflect.DeepEqual(got.UserRepositoryIDs, []int64{101, 102}) || got.AdminInstallationID != 10 || !reflect.DeepEqual(got.AdminRepositoryIDs, []int64{101, 102, 103}) || !reflect.DeepEqual(got.Indexer, Indexer{}) || got.Graph.URL != "http://127.0.0.1:8081" || string(got.Graph.InternalSecret) != "graph-secret" || got.Graph.MaxRequestBytes != 64<<10 || got.Graph.MaxResponseBytes != 256<<10 {
+	// Break caught: a durable server still loading static bearer credentials.
+	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" || got.GitHub.WebURL != "https://ghe.example.com" || got.GitHub.APIURL != "https://ghe.example.com/api/v3" || got.GitHub.UploadURL != "https://ghe.example.com/uploads" || got.GitHub.GitURL != "https://ghe.example.com" || got.GitHub.AppID != 123 || got.GitHub.PrivateKeyFile != "/run/secrets/key.pem" || got.GitHub.WebhookSecretFile != "/run/secrets/webhook" || got.GitHub.CAFile != "/run/secrets/ca.pem" || got.GitHub.APIVersion != "2022-11-28" || got.UserToken != "" || got.AdminToken != "" || got.UserInstallationID != 0 || len(got.UserRepositoryIDs) != 0 || got.AdminInstallationID != 0 || len(got.AdminRepositoryIDs) != 0 || !reflect.DeepEqual(got.Indexer, Indexer{}) || got.Graph.URL != "http://127.0.0.1:8081" || string(got.Graph.InternalSecret) != "graph-secret" || got.Graph.MaxRequestBytes != 64<<10 || got.Graph.MaxResponseBytes != 256<<10 {
 		t.Fatalf("configuration = %#v", got)
 	}
 }
@@ -235,6 +236,60 @@ func TestLoadDurableServerDoesNotRequireStaticOrIndexerConfiguration(t *testing.
 	}
 	if got.DatabaseURL == "" || got.RepositoriesFile != "" || !reflect.DeepEqual(got.Indexer, Indexer{}) {
 		t.Fatalf("configuration = %#v", got)
+	}
+}
+
+func TestLoadSCIMConfiguration(t *testing.T) {
+	setValidEnvironment(t)
+	setDurableEnvironment(t)
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenFile, []byte(strings.Repeat("s", 32)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GREPNEST_SCIM_TOKEN_FILE", tokenFile)
+	t.Setenv("GREPNEST_PUBLIC_URL", "https://grepnest.example")
+
+	got, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.SCIM.Enabled || got.SCIM.TokenFile != tokenFile || got.SCIM.PublicURL.String() != "https://grepnest.example/" {
+		t.Fatalf("SCIM = %#v", got.SCIM)
+	}
+}
+
+func TestLoadRejectsInvalidSCIMConfiguration(t *testing.T) {
+	for _, test := range []struct {
+		name, database, tokenFile, tokenValue, publicURL string
+	}{
+		{"static mode", "", "token", "", "https://grepnest.example"},
+		{"token value environment", "durable", "", strings.Repeat("s", 32), ""},
+		{"directory token file", "durable", "directory", "", "https://grepnest.example"},
+		{"missing public origin", "durable", "token", "", ""},
+		{"HTTP public origin", "durable", "token", "", "http://grepnest.example"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			setValidEnvironment(t)
+			if test.database != "" {
+				setDurableEnvironment(t)
+			}
+			tokenFile := ""
+			switch test.tokenFile {
+			case "token":
+				tokenFile = filepath.Join(t.TempDir(), "token")
+				if err := os.WriteFile(tokenFile, []byte(strings.Repeat("s", 32)), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			case "directory":
+				tokenFile = t.TempDir()
+			}
+			t.Setenv("GREPNEST_SCIM_TOKEN_FILE", tokenFile)
+			t.Setenv("GREPNEST_SCIM_TOKEN", test.tokenValue)
+			t.Setenv("GREPNEST_PUBLIC_URL", test.publicURL)
+			if _, err := Load(); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("Load() error = %v", err)
+			}
+		})
 	}
 }
 

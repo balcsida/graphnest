@@ -51,7 +51,7 @@ func TestSCIPCrossRepository(t *testing.T) {
 		"reference-only": {Subject: "reference-only", InstallationID: milestoneInstallationID, RepositoryIDs: []int64{referenceID}},
 	})
 	mux := http.NewServeMux()
-	httpapi.RegisterSCIP(mux, authenticator, &scipgraph.Service{Store: database.store}, 64<<10, 64<<20, 256<<10)
+	httpapi.RegisterSCIP(mux, authn.RequestAuthenticator{Bearer: authenticator}, &scipgraph.Service{Store: database.store}, 64<<10, 64<<20, 256<<10)
 	server := httptest.NewServer(mux)
 	defer server.Close()
 

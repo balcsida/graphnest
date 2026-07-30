@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 
+process.env.TZ = "UTC";
+
 class FakeNode {
   constructor(tag = "") {
     this.tagName = tag.toUpperCase();
@@ -79,11 +81,15 @@ for (const id of [
   "ready-dot", "ready-text", "token-form", "logout", "theme", "repo-filter", "select-all",
   "reconcile", "github-reconcile", "reindex-selected", "scip-upload", "scip-file", "scip-repo",
   "scip-commit", "dependency-refresh", "dependency-repo", "inventory-notices",
+  "user-rows", "user-empty", "group-rows", "group-empty", "user-access", "user-id", "user-admin",
+  "user-repositories", "group-access", "group-id", "group-admin", "group-repositories",
+  "token-rows", "token-empty", "token-create", "token-expires", "token-repositories", "token-reveal",
+  "audit-rows", "audit-empty",
 ]) {
   const node = document.createElement(id.includes("form") || id.includes("upload") || id.includes("refresh") ? "form" : "div");
   ids.set(id, node);
 }
-for (const name of ["overview", "repositories", "queue", "scip", "webhooks", "github"]) {
+for (const name of ["overview", "repositories", "queue", "users", "groups", "tokens", "audit", "scip", "webhooks", "github"]) {
   const screen = document.createElement("section"); screen.dataset.screen = name;
   const nav = document.createElement("button"); nav.dataset.nav = name;
 }
@@ -95,6 +101,9 @@ const responses = {
     {github_id:8,name:"acme/failed",default_branch:"main",status:"failed",error_code:"clone_failed"},
   ],truncated:true},
   "/v1/admin/jobs": {jobs:["queued","running","succeeded","failed","superseded"].map((state,id)=>({id:id+1,repository:"acme/repo",target_ref:id === 0 ? "refs/heads/main" : "",target_sha:"a".repeat(40),state,error_code:id === 3 ? "index_failed" : "",attempt:1,max_attempts:3,updated_at:"2026-01-01T00:00:00Z"})),truncated:true},
+  "/v1/admin/users": {users:[{id:7,user_name:"ada",display_name:"Ada",scim_active:true,suspended:false,administrator:true,repository_ids:[101,102],direct_administrator:false,direct_repository_ids:[101]}],truncated:true},
+  "/v1/admin/groups": {groups:[{id:9,display_name:"Engineering",administrator:true,repository_ids:[101,102],member_count:2}],truncated:true},
+  "/v1/account/api-tokens": {tokens:[{id:3,prefix:"gnp_visible",repository_ids:[101],created_at:"2026-01-01T00:00:00Z",expires_at:"2026-08-29T00:00:00Z"}]},
   "/v1/admin/scip/uploads": {uploads:[],truncated:true},
   "/v1/admin/scip/dependencies": {dependencies:[],truncated:true},
   "/v1/admin/webhook-deliveries": {deliveries:[
@@ -102,14 +111,20 @@ const responses = {
     {delivery_id:"delivery-2",event:"push",state:"queued",installation_id:1,error_code:"",received_at:"2026-01-03T00:00:00Z",processed_at:null},
   ],truncated:true},
   "/v1/admin/github": {app_id:1,web_url:"https://example",api_url:"https://example/api",upload_url:"https://example/upload",git_url:"https://example",api_version:"1",private_key_configured:true,webhook_secret_configured:true,ca_configured:false,installations:[],truncated:true},
+  "/v1/admin/audit-events": {events:[],truncated:true},
 };
 const requests = [];
 let mutationDenial = 0;
 let allowMutation = false;
 let delayedOverview;
+let accountTokenDenied = false;
 globalThis.fetch = async (path, options = {}) => {
   requests.push({path, options});
+  if (path === "/auth/logout") return {ok:true,status:204};
   if (path === "/healthz" || path === "/readyz") return {ok:true,status:200};
+  if (path === "/v1/account/api-tokens" && accountTokenDenied && !options.method) return {ok:false,status:403,json:async()=>({})};
+  if (path === "/v1/account/api-tokens" && options.method === "POST") return {ok:true,status:201,json:async()=>({id:4,prefix:"gnp_new",repository_ids:[101],created_at:"2026-01-01T00:00:00Z",expires_at:"2026-08-29T00:00:00Z",token:"gnp_reveal_once"})};
+  if (path === "/v1/account/api-tokens/3" && options.method === "DELETE") return {ok:true,status:204};
   if (path === "/v1/admin/overview" && delayedOverview) return delayedOverview;
   if (mutationDenial && options.method === "POST") return {ok:false,status:mutationDenial,json:async()=>({})};
   if (allowMutation && options.method === "POST") return {ok:true,status:200,json:async()=>({})};
@@ -151,6 +166,47 @@ assert.equal(requests.at(-1).path, "/v1/admin/repositories/8/reindex");
 assert.equal(ids.get("admin-shell").hidden, false, "action 404 must not lock the console");
 assert.equal(ids.get("access-panel").hidden, true, "action 404 must not report static mode");
 assert.equal(storageRemovals, 0, "action 404 must not remove the token");
+
+const userRow = ids.get("user-rows").children[0];
+assert.match(text(userRow), /ada.*Administrator.*101/);
+const userActions = userRow.children.at(-1).children[0];
+const suspendUser = userActions.children.find(node => node.textContent === "Suspend user");
+await suspendUser.dispatch("click");
+assert.equal(requests.findLast(request => request.path === "/v1/admin/users/7/suspend").options.method, "POST");
+const revokeCredentials = userActions.children.find(node => node.textContent === "Revoke credentials");
+await revokeCredentials.dispatch("click");
+assert.equal(requests.findLast(request => request.path === "/v1/admin/users/7/revoke-credentials").options.method, "POST");
+const editUser = userActions.children.find(node => node.textContent === "Edit access");
+await editUser.dispatch("click");
+assert.equal(ids.get("user-id").value, 7);
+assert.equal(ids.get("user-repositories").value, "101");
+await ids.get("user-access").dispatch("submit");
+const userAccess = requests.findLast(request => request.path === "/v1/admin/users/7/access");
+assert.equal(userAccess.options.method, "PUT");
+assert.deepEqual(JSON.parse(userAccess.options.body), {direct_administrator:false,direct_repository_ids:[101]});
+const groupRow = ids.get("group-rows").children[0];
+assert.match(text(groupRow), /Engineering.*2.*Administrator/);
+
+const tokenRow = ids.get("token-rows").children[0];
+assert.match(text(tokenRow), /gnp_visible.*101/);
+const revokeToken = tokenRow.children.at(-1).children[0];
+await revokeToken.dispatch("click");
+assert.equal(requests.findLast(request => request.path === "/v1/account/api-tokens/3").options.method, "DELETE");
+ids.get("token-expires").value = "2026-08-29T00:00";
+ids.get("token-repositories").value = "101";
+await ids.get("token-create").dispatch("submit");
+const createdToken = requests.findLast(request => request.path === "/v1/account/api-tokens" && request.options.method === "POST");
+assert.deepEqual(JSON.parse(createdToken.options.body), {expires_at:"2026-08-29T00:00:00Z",repository_ids:[101]});
+assert.match(text(ids.get("token-reveal")), /gnp_reveal_once/);
+
+accountTokenDenied = true;
+ids.get("token").value = "admin";
+await ids.get("token-form").dispatch("submit");
+await new Promise(resolve => setTimeout(resolve, 10));
+assert.equal(ids.get("admin-shell").hidden, false, "static-admin token denial must not lock the console");
+assert.equal(ids.get("token-rows").children.length, 0, "static-admin token list must stay empty");
+assert.equal(ids.get("token-create").hidden, true, "static-admin token management must stay unavailable");
+accountTokenDenied = false;
 
 ids.get("dependency-repo").value = "7";
 await ids.get("dependency-refresh").dispatch("submit");
