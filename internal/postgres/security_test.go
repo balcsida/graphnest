@@ -3,6 +3,7 @@
 package postgres
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"sync"
@@ -267,37 +268,50 @@ func TestSecurityLoginAttemptConsumptionIsConcurrentAndResettable(t *testing.T) 
 	if err := Migrate(t.Context(), store.pool); err != nil {
 		t.Fatal(err)
 	}
+	config := store.pool.Config()
+	config.MaxConns = 5
+	pool, err := pgxpool.NewWithConfig(t.Context(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	store = New(pool)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
 	key := sha256.Sum256([]byte("account"))
 	now := time.Now().UTC()
-	var group sync.WaitGroup
 	start := make(chan struct{})
+	ready := make(chan struct{}, 6)
 	type result struct {
 		allowed bool
 		retryAt time.Time
 		err     error
 	}
 	results := make(chan result, 6)
-	connections := make([]*pgxpool.Conn, 0, 6)
 	for range 6 {
-		connection, err := store.pool.Acquire(t.Context())
-		if err != nil {
-			t.Fatal(err)
-		}
-		connections = append(connections, connection)
-		t.Cleanup(connection.Release)
-		group.Add(1)
-		go func(connection *pgxpool.Conn) {
-			defer group.Done()
+		go func() {
+			ready <- struct{}{}
 			<-start
-			allowed, retryAt, err := consumeLoginAttempt(t.Context(), connection, key, now)
+			allowed, retryAt, err := store.ConsumeLoginAttempt(ctx, key, now)
 			results <- result{allowed: allowed, retryAt: retryAt, err: err}
-		}(connection)
+		}()
+	}
+	for range 6 {
+		select {
+		case <-ready:
+		case <-ctx.Done():
+			t.Fatal("concurrent login attempts did not become ready")
+		}
 	}
 	close(start)
-	group.Wait()
-	close(results)
 	var allowed, blocked int
-	for result := range results {
+	for range 6 {
+		var result result
+		select {
+		case result = <-results:
+		case <-ctx.Done():
+			t.Fatal("concurrent login attempts did not finish")
+		}
 		if result.err != nil {
 			t.Fatal(result.err)
 		}
