@@ -1,21 +1,34 @@
 FROM golang:1.26.5-bookworm@sha256:1ecb7edf62a0408027bd5729dfd6b1b8766e578e8df93995b225dfd0944eb651 AS builder
 
 ARG ZOEKT_VERSION
-RUN test -n "$ZOEKT_VERSION"
+ARG TARGETARCH
+RUN test -n "$ZOEKT_VERSION" \
+ && case "$TARGETARCH" in \
+      amd64) archive_arch=x86_64; checksum=1fa1297620cd7bb05975ced5e41be751b236dae91244979d3502d39295655d70 ;; \
+      arm64) archive_arch=aarch64; checksum=b2f41815b55c7e5b06bbbec8375b4bbd39567b767a2ee77c7dfa729c814737a7 ;; \
+      *) exit 1 ;; \
+    esac \
+ && mkdir -p /opt/ladybug \
+ && curl -fsSL "https://github.com/LadybugDB/ladybug/releases/download/v0.18.3/liblbug-linux-$archive_arch.tar.gz" \
+      -o /tmp/ladybug.tar.gz \
+ && echo "$checksum  /tmp/ladybug.tar.gz" | sha256sum -c - \
+ && tar xzf /tmp/ladybug.tar.gz -C /opt/ladybug \
+ && rm /tmp/ladybug.tar.gz
 
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
+ENV CGO_ENABLED=1 CGO_CFLAGS="-I/opt/ladybug" CGO_LDFLAGS="-L/opt/ladybug"
+RUN go build -tags=system_ladybug -trimpath -ldflags="-s -w -extldflags=-Wl,-rpath,/usr/lib" \
     -o /out/grepnest-server ./cmd/grepnest-server \
- && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
+ && go build -tags=system_ladybug -trimpath -ldflags="-s -w -extldflags=-Wl,-rpath,/usr/lib" \
     -o /out/grepnest-admin ./cmd/grepnest-admin \
- && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
+ && go build -tags=system_ladybug -trimpath -ldflags="-s -w -extldflags=-Wl,-rpath,/usr/lib" \
     -o /out/grepnest-migrate ./cmd/grepnest-migrate \
- && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
+ && go build -tags=system_ladybug -trimpath -ldflags="-s -w -extldflags=-Wl,-rpath,/usr/lib" \
     -o /out/grepnest-mcp ./cmd/grepnest-mcp \
- && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
+ && go build -tags=system_ladybug -trimpath -ldflags="-s -w -extldflags=-Wl,-rpath,/usr/lib" \
     -o /out/grepnest-indexer ./cmd/grepnest-indexer
 RUN CGO_ENABLED=0 GOBIN=/out go install \
       github.com/sourcegraph/zoekt/cmd/zoekt-git-index@"$ZOEKT_VERSION" \
@@ -38,12 +51,13 @@ CMD ["grepnest-server"]
 FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818 AS node
 
 RUN apt-get update \
- && apt-get install --no-install-recommends -y ca-certificates git \
+ && apt-get install --no-install-recommends -y ca-certificates git libstdc++6 \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p /data /tmp /var/run/grepnest \
  && chgrp -R 0 /data /tmp /var/run/grepnest \
  && chmod -R g=u /data /tmp /var/run/grepnest
 COPY --from=builder /out/grepnest-indexer /out/zoekt-git-index /out/zoekt-webserver /usr/local/bin/
+COPY --from=builder /opt/ladybug/liblbug.so* /usr/lib/
 USER 65532:0
 EXPOSE 6070 9090
 CMD ["grepnest-indexer"]
