@@ -26,6 +26,7 @@ var (
 
 type ServiceStore interface {
 	AuthorizedRepository(context.Context, int64, []int64, int64) (repository.Repository, error)
+	AnyAuthorizedRepository(context.Context, int64) (repository.Repository, error)
 	ReplaceSCIP(context.Context, int64, string, Upload) error
 	OccurrenceAt(context.Context, int64, string, string, int, OccurrencePosition) (StoredOccurrence, error)
 	Locations(context.Context, authn.Principal, StoredOccurrence, string, int) ([]Location, bool, error)
@@ -203,6 +204,10 @@ func (service *Service) SetDependencies(ctx context.Context, principal authn.Pri
 }
 
 func (service *Service) authorizedRepository(ctx context.Context, principal authn.Principal, repositoryID int64) (repository.Repository, error) {
+	if principal.Administrator && (principal.Method == "oidc" || principal.Method == "local") &&
+		principal.InstallationID == 0 && len(principal.RepositoryIDs) == 0 {
+		return service.Store.AnyAuthorizedRepository(ctx, repositoryID)
+	}
 	return service.Store.AuthorizedRepository(ctx, principal.InstallationID, principal.RepositoryIDs, repositoryID)
 }
 

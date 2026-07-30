@@ -73,6 +73,27 @@ func TestGraphMetricsRecordFixedLabels(t *testing.T) {
 	}
 }
 
+func TestAuthMetricsUseOnlyFixedLabels(t *testing.T) {
+	metrics := New()
+	metrics.ObserveAuth("oidc", "callback", "denied")
+	metrics.ObserveAuth("subject-ada", "issuer=https://idp.example.test", "reason=token-secret")
+
+	body := scrape(t, metrics)
+	for _, want := range []string{
+		`grepnest_auth_events_total{event="callback",provider="oidc",result="denied"} 1`,
+		`grepnest_auth_events_total{event="unknown",provider="unknown",result="error"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics missing %q:\n%s", want, body)
+		}
+	}
+	for _, forbidden := range []string{"subject-ada", "idp.example.test", "token-secret", "issuer=", "reason="} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("metrics expose identity detail %q:\n%s", forbidden, body)
+		}
+	}
+}
+
 func TestGraphMetricsIgnoreInvalidLabels(t *testing.T) {
 	metrics := New()
 	metrics.SetGraphQueueDepth("repository-secret", 7)

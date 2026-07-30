@@ -12,6 +12,7 @@ docker run --rm --read-only --tmpfs /tmp --tmpfs /var/run/grepnest \
     test "$(id -u)" -ne 0
     id -G | tr " " "\n" | grep -qx 0
     command -v grepnest-server
+    command -v grepnest-admin
     command -v grepnest-migrate
     command -v grepnest-mcp
     command -v wget

@@ -40,8 +40,8 @@ func (number *optionalPositiveInt) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func RegisterRepositories(mux *http.ServeMux, authenticator authn.Authenticator, service *repository.Service, maxRequestBytes int64, maxResults int, maxResponseBytes int64) {
-	mux.Handle("/v1/repositories", exactMethod(http.MethodGet, AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+func RegisterRepositories(mux *http.ServeMux, authenticator authn.RequestAuthenticator, service *repository.Service, maxRequestBytes int64, maxResults int, maxResponseBytes int64) {
+	mux.Handle("/v1/repositories", exactMethod(http.MethodGet, AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		repositories, err := service.List(request.Context(), PrincipalFromContext(request.Context()))
 		if err != nil {
 			writeRepositoryError(writer, err)
@@ -50,7 +50,7 @@ func RegisterRepositories(mux *http.ServeMux, authenticator authn.Authenticator,
 		response := limitRepositoryList(repositories, maxResults, maxResponseBytes)
 		writeBoundedJSON(writer, response, maxResponseBytes)
 	}))))
-	mux.Handle("/v1/repositories/", exactMethod(http.MethodGet, AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	mux.Handle("/v1/repositories/", exactMethod(http.MethodGet, AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		id, ok := repositoryID(request.URL.Path)
 		if !ok {
 			writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
@@ -63,7 +63,7 @@ func RegisterRepositories(mux *http.ServeMux, authenticator authn.Authenticator,
 		}
 		writeBoundedJSON(writer, response, maxResponseBytes)
 	}))))
-	mux.Handle("/v1/files/read", exactMethod(http.MethodPost, AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	mux.Handle("/v1/files/read", exactMethod(http.MethodPost, AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Header.Get("Content-Type") != "application/json" {
 			writeError(writer, http.StatusUnsupportedMediaType, "invalid_request", "request is invalid", false)
 			return
@@ -140,12 +140,17 @@ func repositoryID(requestPath string) (int64, bool) {
 }
 
 func writeBoundedJSON(writer http.ResponseWriter, value any, maxBytes int64) {
+	writeBoundedJSONStatus(writer, http.StatusOK, value, maxBytes)
+}
+
+func writeBoundedJSONStatus(writer http.ResponseWriter, status int, value any, maxBytes int64) {
 	data, err := json.Marshal(value)
 	if err != nil || int64(len(data)+1) > maxBytes {
 		writer.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(status)
 	_, _ = writer.Write(append(data, '\n'))
 }
 

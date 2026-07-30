@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/grepnest/grepnest/internal/admin"
+	"github.com/grepnest/grepnest/internal/audit"
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/repository"
@@ -16,10 +17,10 @@ import (
 
 func TestAdminRoutesRequireAdministrator(t *testing.T) {
 	mux := http.NewServeMux()
-	RegisterAdmin(mux, authn.NewStatic(map[string]authn.Principal{
+	RegisterAdmin(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{
 		"user":  {Subject: "user"},
 		"admin": {Subject: "admin", Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}},
-	}), &admin.Service{Store: &adminHTTPStore{}, GitHub: adminHTTPGitHub{}}, 2, 4096)
+	})), &admin.Service{Store: &adminHTTPStore{}, GitHub: adminHTTPGitHub{}}, 2, 1024, 4096)
 
 	for _, token := range []string{"", "user"} {
 		request := httptest.NewRequest(http.MethodGet, "/v1/admin/overview", nil)
@@ -38,13 +39,39 @@ func TestAdminRoutesRequireAdministrator(t *testing.T) {
 	}
 }
 
+func TestAdminRouteAcceptsAdministratorSession(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterAdmin(mux, authn.RequestAuthenticator{Session: httpSession{principal: authn.Principal{Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}}}}, &admin.Service{Store: &adminHTTPStore{}, GitHub: adminHTTPGitHub{}}, 2, 1024, 4096)
+	request := httptest.NewRequest(http.MethodGet, "/v1/admin/overview", nil)
+	request.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: "session"})
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestAdminReconcileRejectsAdministratorAPIToken(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterAdmin(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{
+		"token": {Method: "api_token", Administrator: true, RepositoryIDs: []int64{101}},
+	})), &admin.Service{Store: &adminHTTPStore{}, GitHub: adminHTTPGitHub{}}, 2, 1024, 4096)
+	request := httptest.NewRequest(http.MethodPost, "/v1/admin/reconcile", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+}
+
 func TestAdminRoutesExposeBoundedDataAndActions(t *testing.T) {
 	store := &adminHTTPStore{}
 	service := &admin.Service{Store: store, GitHub: adminHTTPGitHub{}}
 	mux := http.NewServeMux()
-	RegisterAdmin(mux, authn.NewStatic(map[string]authn.Principal{
+	RegisterAdmin(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{
 		"admin": {Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}},
-	}), service, 2, 4096)
+	})), service, 2, 1024, 4096)
 
 	for _, path := range []string{
 		"/v1/admin/overview", "/v1/admin/repositories", "/v1/admin/jobs",
@@ -101,8 +128,21 @@ func TestAdminRoutesExposeBoundedDataAndActions(t *testing.T) {
 }
 
 type adminHTTPStore struct {
-	reindexed int64
-	retried   int64
+	reindexed       int64
+	retried         int64
+	identityErr     error
+	identityActorID int64
+	identityUserID  int64
+	identityGroupID int64
+	administrator   bool
+	suspended       bool
+	repositoryIDs   []int64
+	revokedUserID   int64
+	auditEvents     []audit.Event
+}
+
+func (store *adminHTTPStore) AuditEvents(context.Context, int) ([]audit.Event, bool, error) {
+	return store.auditEvents, true, store.identityErr
 }
 
 func (adminHTTPStore) AdminOverview(context.Context, int64, []int64) (admin.Overview, error) {
@@ -131,6 +171,9 @@ func (adminHTTPStore) AdminRepository(_ context.Context, installationID int64, r
 		return repository.Repository{}, pgx.ErrNoRows
 	}
 	return repository.Repository{ID: 7, InstallationID: 10, GitHubID: 101, Name: "acme/one", Branch: "main", Enabled: true}, nil
+}
+func (adminHTTPStore) AnyAuthorizedRepository(_ context.Context, githubID int64) (repository.Repository, error) {
+	return repository.Repository{ID: 7, InstallationID: 10, GitHubID: githubID, Name: "acme/one", Branch: "main", Enabled: true}, nil
 }
 func (store *adminHTTPStore) EnqueueAdminIndex(_ context.Context, request admin.IndexRequest) error {
 	store.reindexed = request.RepositoryID

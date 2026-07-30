@@ -19,7 +19,7 @@ func TestConsoleProvidesBearerTokenSignInWithoutUnsupportedProviders(t *testing.
 	}
 	for _, want := range []string{
 		`id="token-gate"`,
-		`id="token-form" class="token-panel"`,
+		`id="token-form"`,
 		`<label for="token">Bearer token</label>`,
 		`<button class="connect" type="submit">Connect</button>`,
 		`#token-gate{display:grid;min-height:100vh;place-items:center`,
@@ -27,6 +27,30 @@ func TestConsoleProvidesBearerTokenSignInWithoutUnsupportedProviders(t *testing.
 	} {
 		if !bytes.Contains(document, []byte(want)) {
 			t.Fatalf("console is missing usable bearer-token gate %q", want)
+		}
+	}
+}
+
+func TestConsolePrefersSameOriginOIDCSessionBeforeBearerFallback(t *testing.T) {
+	for _, want := range []string{
+		`/v1/auth/config`, `/v1/auth/session`, `Sign in with SSO`,
+		`credentials:"same-origin"`, `/auth/logout`, `await logout()`, `enterBearer`,
+	} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Errorf("console is missing OIDC session behavior %q", want)
+		}
+	}
+	for _, forbidden := range []string{`localStorage`, `sessionStorage.setItem("grepnest_session`} {
+		if bytes.Contains(document, []byte(forbidden)) {
+			t.Errorf("console stores a session credential %q", forbidden)
+		}
+	}
+}
+
+func TestConsoleRequiresSuccessfulLogoutBeforeBearerFallback(t *testing.T) {
+	for _, want := range []string{`status!==204`, `await logout();enterBearer(t)`, `reportValidity()`} {
+		if !bytes.Contains(document, []byte(want)) {
+			t.Errorf("console does not gate bearer fallback on logout: %q", want)
 		}
 	}
 }

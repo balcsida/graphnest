@@ -15,7 +15,8 @@ func (s *Store) AdminJobs(ctx context.Context, installationID int64, repositoryI
 		jobs.target_sha,jobs.target_ref,jobs.reason,jobs.state,coalesce(jobs.error_code,''),jobs.attempt,jobs.max_attempts,
 		jobs.priority,jobs.run_after,jobs.created_at,jobs.updated_at from index_jobs jobs
 		join repositories on repositories.id=jobs.repository_id join installations on installations.id=repositories.installation_id
-		where installations.github_id=$1 and repositories.github_id=any($2)
+		where ($1=0 and coalesce(cardinality($2::bigint[]),0)=0 and installations.status='active' and repositories.enabled and not repositories.archived
+			or ($1=0 or installations.github_id=$1) and repositories.github_id=any($2))
 		order by jobs.updated_at desc,jobs.id desc limit $3`, installationID, repositoryIDs, limit+1)
 	if err != nil {
 		return nil, false, err
@@ -49,7 +50,8 @@ func (s *Store) RetryAdminJob(ctx context.Context, installationID int64, reposit
 		join installations on installations.id=repositories.installation_id where jobs.id=$1
 		and jobs.repository_id=repositories.id and jobs.state='failed' and jobs.target_sha=repositories.desired_sha
 		and repositories.enabled and not repositories.archived and installations.status='active'
-		and installations.github_id=$2 and repositories.github_id=any($3)`, id, installationID, repositoryIDs)
+		and ($2=0 and coalesce(cardinality($3::bigint[]),0)=0
+			or ($2=0 or installations.github_id=$2) and repositories.github_id=any($3))`, id, installationID, repositoryIDs)
 	if err != nil {
 		return err
 	}

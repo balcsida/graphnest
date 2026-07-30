@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"embed"
 	"encoding/base64"
@@ -12,15 +13,47 @@ import (
 //go:embed index.html admin.html
 var assets embed.FS
 
-var document = mustReadDocument()
+var breakGlassDocument = mustReadDocument()
+var document = withoutMarked(withoutMarked(breakGlassDocument, "<!-- break-glass -->", "<!-- /break-glass -->"), "/* break-glass */", "/* /break-glass */")
 var contentSecurityPolicy = policyFor(document)
 var adminDocument = mustRead("admin.html")
 var adminContentSecurityPolicy = policyFor(adminDocument)
 
 func Register(mux *http.ServeMux) {
-	mux.Handle("GET /{$}", handler(document, contentSecurityPolicy))
-	mux.Handle("GET /index.html", handler(document, contentSecurityPolicy))
+	RegisterWithBreakGlass(mux, false)
+}
+
+func RegisterWithBreakGlass(mux *http.ServeMux, breakGlass bool) {
+	index := document
+	policy := contentSecurityPolicy
+	if breakGlass {
+		index = breakGlassDocument
+		policy = policyFor(index)
+	}
+	mux.Handle("GET /{$}", handler(index, policy))
+	mux.Handle("GET /index.html", handler(index, policy))
 	mux.Handle("GET /admin", handler(adminDocument, adminContentSecurityPolicy))
+}
+
+func withoutMarked(document []byte, opening, closing string) []byte {
+	found := false
+	for {
+		start := bytes.Index(document, []byte(opening))
+		if start < 0 {
+			break
+		}
+		end := bytes.Index(document[start+len(opening):], []byte(closing))
+		if end < 0 {
+			panic("embedded index.html has unmatched break-glass markers")
+		}
+		end += start + len(opening)
+		document = bytes.Join([][]byte{document[:start], document[end+len(closing):]}, nil)
+		found = true
+	}
+	if !found {
+		panic("embedded index.html must contain break-glass markers")
+	}
+	return document
 }
 
 func handler(body []byte, policy string) http.Handler {

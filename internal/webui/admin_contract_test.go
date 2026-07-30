@@ -44,6 +44,26 @@ func TestAdminDocumentContract(t *testing.T) {
 	}
 }
 
+func TestAdminIdentityManagementContract(t *testing.T) {
+	for _, want := range []string{
+		`data-screen="users"`, `data-screen="groups"`, `Users`, `Groups`,
+		`Effective access`, `Direct access`, `Suspend user`, `Revoke credentials`,
+		`/v1/admin/users`, `/v1/admin/groups`, `/access`, `/suspend`, `/restore`, `/revoke-credentials`,
+		`API tokens`, `Create API token`, `Revoke token`, `/v1/account/api-tokens`,
+		`data-screen="audit"`, `Audit events`, `/v1/admin/audit-events`,
+		`window.confirm`, `credentials:"same-origin"`,
+	} {
+		if !bytes.Contains(adminDocument, []byte(want)) {
+			t.Errorf("admin identity management missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{`/scim/`, `SCIM profile`, `Manage membership`} {
+		if bytes.Contains(adminDocument, []byte(forbidden)) {
+			t.Errorf("admin identity management contains forbidden %q", forbidden)
+		}
+	}
+}
+
 func TestAdminDOMContract(t *testing.T) {
 	command := exec.Command(requireNode(t), "admin_dom_test.mjs")
 	output, err := command.CombinedOutput()
@@ -64,4 +84,29 @@ func TestAdminDocumentHidesContentUntilAuthorization(t *testing.T) {
 			t.Errorf("admin lifecycle missing %q", want)
 		}
 	}
+}
+
+func TestAdminPrefersSameOriginOIDCSessionBeforeBearerFallback(t *testing.T) {
+	for _, want := range []string{
+		`/v1/auth/config`, `/v1/auth/session`, `Sign in with SSO`,
+		`credentials:"same-origin"`, `/auth/logout`, `await logout()`, `enterBearer`,
+	} {
+		if !bytes.Contains(adminDocument, []byte(want)) {
+			t.Errorf("admin document missing OIDC session behavior %q", want)
+		}
+	}
+	for _, forbidden := range []string{`localStorage`, `sessionStorage.setItem("grepnest_session`} {
+		if bytes.Contains(adminDocument, []byte(forbidden)) {
+			t.Errorf("admin stores a session credential %q", forbidden)
+		}
+	}
+}
+
+func TestAdminRequiresSuccessfulLogoutBeforeBearerFallback(t *testing.T) {
+	for _, want := range []string{`response.status!==204`, `await logout();mode="bearer"`, `showAccess("Unable to sign out.")`} {
+		if !bytes.Contains(adminDocument, []byte(want)) {
+			t.Errorf("admin does not gate bearer fallback on logout: %q", want)
+		}
+	}
+
 }

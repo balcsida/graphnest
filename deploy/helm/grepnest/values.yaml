@@ -6,9 +6,13 @@ images:
   scanner: {repository: "", digest: "", tag: "", pullPolicy: IfNotPresent}
   pullSecrets: []
 secrets:
-  runtime: {name: "", databaseURLKey: database-url, userTokenKey: user-token, adminTokenKey: admin-token, graphSecretKey: graph-secret}
+  runtime: {name: "", databaseURLKey: database-url, graphSecretKey: graph-secret}
   githubApp: {name: "", privateKeyKey: private-key.pem, webhookSecretKey: webhook-secret}
   customCA: {name: "", key: ca.crt}
+  oidc: {name: "", clientSecretKey: client-secret}
+  oidcCA: {name: "", key: ca.crt}
+  scim: {name: "", tokenKey: token}
+breakGlass: {enabled: false}
 server:
   replicas: 2
   port: 8080
@@ -20,10 +24,6 @@ server:
     githubGitURL: https://github.example.invalid
     githubAPIVersion: "2022-11-28"
     githubAppID: ""
-    userInstallationID: ""
-    adminInstallationID: ""
-    userRepositoryIDs: ""
-    adminRepositoryIDs: ""
     defaultResults: 25
     maxResults: 100
     defaultContextLines: 3
@@ -33,6 +33,19 @@ server:
     maxRequestBytes: 65536
     maxResponseBytes: 262144
     scipMaxUploadBytes: 67108864
+  sso:
+    publicURL: ""
+    sessionIdle: 30m
+    sessionTTL: 8h
+    loginFlowTTL: 10m
+    oidc:
+      enabled: false
+      issuerURL: ""
+      clientID: ""
+      scopes: [openid, profile, email]
+      linkClaim: ""
+      displayNameClaim: name
+  scim: {enabled: false}
   resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
   nodeSelector: {}
   affinity: {}
@@ -111,3 +124,4 @@ networkPolicy:
       ports: [53]
     postgresql: {cidrs: [], port: 5432}
     github: {cidrs: [], ports: [443]}
+    identityProvider: {cidrs: [], ports: [443]}

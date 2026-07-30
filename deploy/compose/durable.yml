@@ -99,13 +99,20 @@ services:
       GREPNEST_GITHUB_CA_FILE: ${GREPNEST_GITHUB_CA_FILE:+/run/secrets/grepnest/github-ca.pem}
       GREPNEST_GITHUB_PRIVATE_KEY_FILE: /run/secrets/grepnest/private-key.pem
       GREPNEST_GITHUB_WEBHOOK_SECRET_FILE: /run/secrets/grepnest/webhook-secret
-      GREPNEST_USER_TOKEN: ${GREPNEST_USER_TOKEN:?GREPNEST_USER_TOKEN is required}
-      GREPNEST_USER_INSTALLATION_ID: ${GREPNEST_USER_INSTALLATION_ID:?GREPNEST_USER_INSTALLATION_ID is required}
-      GREPNEST_USER_REPOSITORY_IDS: ${GREPNEST_USER_REPOSITORY_IDS:?GREPNEST_USER_REPOSITORY_IDS is required}
-      GREPNEST_ADMIN_TOKEN: ${GREPNEST_ADMIN_TOKEN:?GREPNEST_ADMIN_TOKEN is required}
-      GREPNEST_ADMIN_INSTALLATION_ID: ${GREPNEST_ADMIN_INSTALLATION_ID:?GREPNEST_ADMIN_INSTALLATION_ID is required}
-      GREPNEST_ADMIN_REPOSITORY_IDS: ${GREPNEST_ADMIN_REPOSITORY_IDS:?GREPNEST_ADMIN_REPOSITORY_IDS is required}
       GREPNEST_SCIP_MAX_UPLOAD_BYTES: ${GREPNEST_SCIP_MAX_UPLOAD_BYTES:-67108864}
+      GREPNEST_PUBLIC_URL: ${GREPNEST_PUBLIC_URL:-}
+      GREPNEST_SSO_SESSION_IDLE: ${GREPNEST_SSO_SESSION_IDLE:-}
+      GREPNEST_SSO_SESSION_TTL: ${GREPNEST_SSO_SESSION_TTL:-}
+      GREPNEST_SSO_LOGIN_FLOW_TTL: ${GREPNEST_SSO_LOGIN_FLOW_TTL:-}
+      GREPNEST_OIDC_ISSUER_URL: ${GREPNEST_OIDC_ISSUER_URL:-}
+      GREPNEST_OIDC_CLIENT_ID: ${GREPNEST_OIDC_CLIENT_ID:-}
+      GREPNEST_OIDC_CLIENT_SECRET_FILE: ${GREPNEST_OIDC_CLIENT_SECRET_FILE:+/run/secrets/grepnest/oidc-client-secret}
+      GREPNEST_OIDC_CA_FILE: ${GREPNEST_OIDC_CA_FILE:+/run/secrets/grepnest/oidc-ca.pem}
+      GREPNEST_OIDC_SCOPES: ${GREPNEST_OIDC_SCOPES:-}
+      GREPNEST_OIDC_LINK_CLAIM: ${GREPNEST_OIDC_LINK_CLAIM:-}
+      GREPNEST_OIDC_DISPLAY_NAME_CLAIM: ${GREPNEST_OIDC_DISPLAY_NAME_CLAIM:-}
+      GREPNEST_SCIM_TOKEN_FILE: ${GREPNEST_SCIM_TOKEN_FILE:+/run/secrets/grepnest/scim/token}
+      GREPNEST_BREAK_GLASS_ENABLED: ${GREPNEST_BREAK_GLASS_ENABLED:-false}
     volumes:
       - type: bind
         source: ${GREPNEST_GITHUB_PRIVATE_KEY_FILE:?GREPNEST_GITHUB_PRIVATE_KEY_FILE is required}
@@ -122,6 +129,24 @@ services:
       - type: bind
         source: ${GREPNEST_GITHUB_CA_FILE:-/dev/null}
         target: /run/secrets/grepnest/github-ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${GREPNEST_OIDC_CLIENT_SECRET_FILE:-/dev/null}
+        target: /run/secrets/grepnest/oidc-client-secret
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${GREPNEST_OIDC_CA_FILE:-/dev/null}
+        target: /run/secrets/grepnest/oidc-ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${GREPNEST_SCIM_TOKEN_FILE:-/dev/null}
+        target: /run/secrets/grepnest/scim/token
         read_only: true
         bind:
           create_host_path: false

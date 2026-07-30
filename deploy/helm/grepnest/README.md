@@ -19,14 +19,17 @@ corresponding values. The key names below are the defaults.
 
 | Values | Required keys | Purpose |
 | --- | --- | --- |
-| `secrets.runtime.name` | `database-url`, `user-token`, `admin-token`, `graph-secret` | PostgreSQL DSN, user/admin tokens, and the internal graph bearer token |
+| `secrets.runtime.name` | `database-url`, `graph-secret` | PostgreSQL DSN and the internal graph bearer token |
 | `secrets.githubApp.name` | `private-key.pem`, `webhook-secret` | GitHub App private key and webhook secret |
 | `secrets.customCA.name` | `ca.crt` | Optional GitHub CA bundle; set the key with `secrets.customCA.key` |
+| `secrets.oidc.name` | `client-secret` | OIDC client secret; set `secrets.oidc.clientSecretKey` to override |
+| `secrets.oidcCA.name` | `ca.crt` | Optional IdP CA bundle; set `secrets.oidcCA.key` to override |
+| `secrets.scim.name` | `token` | Optional SCIM bearer token; set `secrets.scim.tokenKey` to override |
 | `images.pullSecrets[]` | Kubernetes pull-secret contract | Optional private-registry credentials |
 | `ingress.tls[].secretName` | Ingress-controller TLS contract | Optional existing TLS Secret for the listed hosts |
 
-Override the runtime key names with `databaseURLKey`, `userTokenKey`,
-`adminTokenKey`, and `graphSecretKey`, and the GitHub App key names with `privateKeyKey` and
+Override the runtime key names with `databaseURLKey` and `graphSecretKey`, and
+the GitHub App key names with `privateKeyKey` and
 `webhookSecretKey`. The chart never accepts plaintext credentials in values.
 Referenced object names must be Kubernetes DNS subdomains. Secret data keys
 may contain letters, digits, `-`, `_`, and `.`.
@@ -112,6 +115,29 @@ optional because portable NetworkPolicy cannot select DNS names. Before
 enabling `networkPolicy.externalEgress.enabled`, ensure its DNS selectors and
 ports reach cluster DNS and its GitHub and PostgreSQL CIDRs cover every endpoint
 the deployment resolves. CIDR changes and DNS answers must remain aligned.
+
+Enable OIDC with `server.sso.oidc.enabled=true`, `server.sso.publicURL`,
+`sessionIdle`, `sessionTTL`, `loginFlowTTL`, and OIDC `issuerURL`, `clientID`,
+`scopes`, `linkClaim`, and `displayNameClaim`. Register
+`<publicURL>/auth/oidc/callback` at the IdP. Reference `secrets.oidc` and,
+when needed, `secrets.oidcCA`; never put their values in values files. With
+external egress enabled, configure the IdP CIDRs and HTTPS port in
+`networkPolicy.externalEgress.identityProvider`.
+
+Enable SCIM with `server.scim.enabled=true`, the same HTTPS
+`server.sso.publicURL`, and an existing `secrets.scim` Secret. The token is
+mounted read-only at `/var/run/secrets/grepnest/scim/token`; it is never
+rendered into a ConfigMap or environment value. Replace the Secret and restart
+the server pods to rotate it. See the repository README for supported filters,
+PATCH paths, limits, unsupported features, and the OIDC link-claim requirement.
+
+`breakGlass.enabled=true` exposes only the disabled-by-default local recovery
+routes. It provisions no user name, password, hash, salt, or Secret and never
+activates because OIDC is unavailable. Provision and rotate the operator
+password offline with `grepnest-admin` from the same digest-pinned application
+image configured in `images.application`, then follow the repository
+break-glass runbook. The chart requires OIDC to be enabled when break-glass is
+enabled.
 
 ## Scheduling, storage, and capacity
 

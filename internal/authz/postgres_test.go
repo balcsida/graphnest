@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/authz"
@@ -18,7 +19,7 @@ import (
 )
 
 func TestAuthorizedRepositoriesUseDurableIDs(t *testing.T) {
-	store := testStore(t)
+	store, _ := testStore(t)
 	seedRepository(t, store, 10, 101, "acme/old", true)
 	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}
 	got, err := authz.NewPostgres(store).AuthorizedRepositories(t.Context(), principal, authz.RepositorySelection{})
@@ -38,7 +39,7 @@ func TestAuthorizedRepositoriesUseDurableIDs(t *testing.T) {
 }
 
 func TestAdministratorsAuthorizeActiveRepositoriesAcrossInstallations(t *testing.T) {
-	store := testStore(t)
+	store, _ := testStore(t)
 	for _, installation := range []postgres.InstallationUpdate{
 		{GitHubID: 10, AccountLogin: "acme", AccountType: "Organization", Status: "active"},
 		{GitHubID: 20, AccountLogin: "other", AccountType: "Organization", Status: "active"},
@@ -79,7 +80,54 @@ func TestAdministratorsAuthorizeActiveRepositoriesAcrossInstallations(t *testing
 	}
 }
 
-func testStore(t *testing.T) *postgres.Store {
+func TestAdministratorAPITokenStaysCeilingScoped(t *testing.T) {
+	store, pool := testStore(t)
+	for _, installation := range []postgres.InstallationUpdate{
+		{GitHubID: 10, AccountLogin: "acme", AccountType: "Organization", Status: "active"},
+		{GitHubID: 20, AccountLogin: "other", AccountType: "Organization", Status: "active"},
+	} {
+		if err := store.UpsertInstallation(t.Context(), installation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, repository := range []postgres.RepositoryUpdate{
+		{GitHubID: 101, InstallationID: 10, Owner: "acme", Name: "one", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true},
+		{GitHubID: 102, InstallationID: 20, Owner: "other", Name: "two", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true},
+	} {
+		if _, err := store.UpsertRepository(t.Context(), repository); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var userID int64
+	if err := pool.QueryRow(t.Context(), `insert into users (external_id, user_name, source) values ('directory-admin', 'admin', 'scim') returning id`).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), `insert into user_roles (user_id, administrator) values ($1, true)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{TokenHash: [32]byte{1}, Prefix: "gn_test", UserID: userID, RepositoryIDs: []int64{102}, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	principal, err := store.APIPrincipal(t.Context(), [32]byte{1}, now)
+	if err != nil || !principal.Administrator || principal.Method != "api_token" || len(principal.RepositoryIDs) != 1 || principal.RepositoryIDs[0] != 102 {
+		t.Fatalf("principal=%#v err=%v", principal, err)
+	}
+	authorizer := authz.NewPostgres(store)
+	repositories, err := authorizer.AuthorizedRepositories(t.Context(), principal, authz.RepositorySelection{})
+	if err != nil || len(repositories) != 1 || repositories[0].GitHubID != 102 {
+		t.Fatalf("repositories=%#v err=%v", repositories, err)
+	}
+	if _, err := authorizer.AuthorizedRepository(t.Context(), principal, 101); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("token accessed repo 101: %v", err)
+	}
+	repository, err := authorizer.AuthorizedRepository(t.Context(), principal, 102)
+	if err != nil || repository.GitHubID != 102 {
+		t.Fatalf("repository=%#v err=%v", repository, err)
+	}
+}
+
+func testStore(t *testing.T) (*postgres.Store, *pgxpool.Pool) {
 	t.Helper()
 	admin, err := pgxpool.New(t.Context(), testDSN(t))
 	if err != nil {
@@ -111,7 +159,7 @@ func testStore(t *testing.T) *postgres.Store {
 	if err := postgres.Migrate(t.Context(), pool); err != nil {
 		t.Fatal(err)
 	}
-	return postgres.New(pool)
+	return postgres.New(pool), pool
 }
 
 func testDSN(t *testing.T) string {

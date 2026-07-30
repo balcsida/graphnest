@@ -61,7 +61,7 @@ GREPNEST_METRICS_LISTEN_ADDRESS=127.0.0.1:9090 \
 
 The indexer rejects repositories whose GHES-reported size exceeds the configured
 cap before minting credentials or fetching Git data. It never reads the webhook
-secret or user/admin bearer configuration.
+secret or OIDC credentials.
 It runs migrations, records search node `primary`, reaps expired leases, prunes
 retention and abandoned worktrees, then processes one leased job at a time.
 SIGINT or SIGTERM cancels child process groups and waits for lease renewal and
@@ -234,6 +234,83 @@ go build -o /tmp/grepnest-mcp ./cmd/grepnest-mcp
 This creates or updates GrepNest-owned skills under `.claude/skills/` and,
 only when `.agents/` already exists, `.agents/skills/`. It refuses symlink or
 unowned destinations.
+
+## Break-glass administrator recovery
+
+SSO remains the primary sign-in method. Use the offline command only when an
+authorized operator has direct access to the same PostgreSQL database used by
+every server replica:
+
+```sh
+export GREPNEST_DATABASE_URL='postgres://...'
+docker run --rm -it --network <database-network> \
+  --env GREPNEST_DATABASE_URL \
+  "$GREPNEST_APPLICATION_IMAGE" \
+  grepnest-admin break-glass set-password recovery-admin
+```
+
+Use the same digest-pinned application image deployed by the server and a
+network path to its PostgreSQL database. The command reads and confirms the
+password from `/dev/tty`; without a usable TTY it accepts exactly two
+newline-delimited standard-input values. Do not put the password in arguments,
+environment variables, files, shell history, or logs. It creates only a local
+administrator, or rotates that same eligible account, forces password
+rotation, revokes its sessions and API tokens, and records
+`break_glass_password_set`.
+
+Creating the credential does not expose local login. An OIDC outage never
+enables it automatically. Set `GREPNEST_BREAK_GLASS_ENABLED=true` (Compose) or
+`breakGlass.enabled=true` (Helm) only for the recovery window, apply the
+configuration, and wait for every replica to restart. All replicas must share
+the same PostgreSQL database, which holds throttles and sessions. The first
+sign-in must use `/auth/local/rotate`; it replaces the operator password,
+clears forced rotation, revokes older sessions and API tokens, and issues a
+new session.
+
+After SSO is restored, first verify an OIDC sign-in. If the recovery account
+must remain, rerun `grepnest-admin` to replace its password and revoke its
+credentials; otherwise suspend it through identity administration and revoke
+its credentials. Set the Compose switch to `false` or Helm
+`breakGlass.enabled=false`, apply the configuration, and verify
+`/v1/auth/config` reports `break_glass:false` on every replica before closing
+the incident. Configuration is read only at process startup, so a partial
+rollout can temporarily leave different route availability across replicas.
+
+Security audit events record bounded actor, target, authentication method,
+operation, outcome, request ID, and creation time fields. They never store
+passwords, session tokens, request bodies, or OIDC claims. The API returns a
+bounded newest-first page and reports truncation; this release has no automatic
+audit-retention or deletion mechanism, and the database trigger rejects updates
+deletes, and truncation. Operators must account for that growth in PostgreSQL
+retention and backup policy.
+
+## Optional OIDC operations
+
+Permit server egress only to the configured IdP discovery, JWKS, and token
+endpoints. The callback is `/auth/oidc/callback`; `GREPNEST_PUBLIC_URL` is the
+authoritative HTTPS origin. Browser clients send same-origin credentials. Unsafe
+session requests require that exact Origin, and GrepNest persists no refresh
+tokens.
+
+## Optional SCIM operations
+
+Publish only the HTTPS `<GREPNEST_PUBLIC_URL>/scim/v2` endpoint and configure
+`GREPNEST_SCIM_TOKEN_FILE` from a read-only secret mount. Use a dedicated
+high-entropy token; it cannot access REST, MCP, or admin APIs. The OIDC link
+claim must exactly equal each SCIM user's `externalId`.
+
+Supported reconciliation filters are Users `id`, `userName`, or `externalId`
+and Groups `id`, `displayName`, or `externalId`, all with `eq`. PATCH accepts
+user `active`, `userName`, `displayName`, `name`, and `emails`; group PATCH
+accepts `members` and `members[value eq "USER_ID"]`. Limits are 1 MiB per
+body, 8 KiB per query, 16 KiB per URL, 100 PATCH operations, and the configured
+maximum result count.
+
+Rotate the token by replacing the mounted secret and restarting every server
+replica; the process reads it only at startup. Deactivation and deletion deny
+existing sessions and API tokens on their next request. Bulk, sorting, ETags,
+passwords, `/Me`, `/.search`, root search, enterprise extensions, custom
+schemas/resources, roles, and entitlements are unsupported.
 
 ## Kubernetes chart boundary
 
