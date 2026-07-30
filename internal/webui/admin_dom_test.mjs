@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 
+process.env.TZ = "UTC";
+
 class FakeNode {
   constructor(tag = "") {
     this.tagName = tag.toUpperCase();
@@ -194,7 +196,7 @@ ids.get("token-expires").value = "2026-08-29T00:00";
 ids.get("token-repositories").value = "101";
 await ids.get("token-create").dispatch("submit");
 const createdToken = requests.findLast(request => request.path === "/v1/account/api-tokens" && request.options.method === "POST");
-assert.deepEqual(JSON.parse(createdToken.options.body), {expires_at:"2026-08-28T22:00:00Z",repository_ids:[101]});
+assert.deepEqual(JSON.parse(createdToken.options.body), {expires_at:"2026-08-29T00:00:00Z",repository_ids:[101]});
 assert.match(text(ids.get("token-reveal")), /gnp_reveal_once/);
 
 accountTokenDenied = true;
