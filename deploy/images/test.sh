@@ -47,6 +47,7 @@ docker run --rm --read-only --tmpfs /tmp --tmpfs /var/run/grepnest \
     command -v zoekt-git-index
     command -v zoekt-webserver
     git --version
+    ldd /usr/local/bin/grepnest-indexer | grep -q "liblbug.so.0 => /usr/lib/"
   '
 
 echo "image smoke tests passed"
