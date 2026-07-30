@@ -44,7 +44,7 @@ func (s *Store) ListUsers(ctx context.Context, filter scim.Filter, page scim.Pag
 		return nil, 0, err
 	}
 	defer rows.Close()
-	users := make([]scim.User, 0, page.Count)
+	var users []scim.User
 	for rows.Next() {
 		user, err := scanSCIMUser(rows)
 		if err != nil {
@@ -251,7 +251,7 @@ func (s *Store) ListGroups(ctx context.Context, filter scim.Filter, page scim.Pa
 		return nil, 0, err
 	}
 	defer rows.Close()
-	groups := make([]scim.Group, 0, page.Count)
+	var groups []scim.Group
 	for rows.Next() {
 		group, err := scanSCIMGroup(ctx, s.pool, rows)
 		if err != nil {
