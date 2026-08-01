@@ -26,6 +26,26 @@ printf '%s' "${base_config:?missing fixture Compose config}" |
     and (.services | has("zoekt-index"))
   ' >/dev/null
 
+fixture=$(mktemp -d "${TMPDIR:-/tmp}/grepnest-fixture.XXXXXX")
+case "$fixture" in
+  "${TMPDIR:-/tmp}"/grepnest-fixture.*) ;;
+  *) echo "unexpected temporary directory: $fixture" >&2; exit 1 ;;
+esac
+trap 'rm -rf "$fixture"' EXIT
+cp -R test/fixtures/repository/. "$fixture"
+git init --initial-branch=main "$fixture" >/dev/null
+git -C "$fixture" config user.name "GrepNest Test"
+git -C "$fixture" config user.email test@grepnest.invalid
+git -C "$fixture" config commit.gpgsign false
+git -C "$fixture" config zoekt.repoid 7
+git -C "$fixture" config zoekt.name fixture/repository
+git -C "$fixture" add .
+GIT_AUTHOR_DATE=2000-01-01T00:00:00Z \
+  GIT_COMMITTER_DATE=2000-01-01T00:00:00Z \
+  git -C "$fixture" commit -m fixture >/dev/null
+test "$(git -C "$fixture" rev-parse HEAD)" = \
+  "$(jq -r '.[] | select(.name=="fixture/repository") | .indexed_sha' deploy/compose/repositories.json)"
+
 render_files() {
   overlay=$1
   shift
