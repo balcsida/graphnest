@@ -57,7 +57,7 @@ func TestRegisterAuthConfigExposesOnlyEnabledMetadata(t *testing.T) {
 	if !body.TokenLogin || !body.BreakGlass || body.FileReads || len(body.Providers) != 1 || body.Providers[0] != provider.metadata {
 		t.Fatalf("body = %#v", body)
 	}
-	for _, secret := range []string{"issuer", "client_id", "groups", "client_secret_file", "ca_file"} {
+	for _, secret := range []string{"secret", "issuer", "client_id", "groups", "client_secret_file", "ca_file"} {
 		if strings.Contains(recorder.Body.String(), secret) {
 			t.Fatalf("config leaked %q: %s", secret, recorder.Body.String())
 		}
