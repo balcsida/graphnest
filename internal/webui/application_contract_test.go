@@ -47,6 +47,31 @@ func TestConsolePrefersSameOriginOIDCSessionBeforeBearerFallback(t *testing.T) {
 	}
 }
 
+func TestConsoleReadsStaticFileCapabilityFromAuthConfig(t *testing.T) {
+	script, err := elementBody(string(document), "script")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start, err := functionBody(script, "start")
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness := `
+const elements={"token-form":{hidden:false}},$=id=>elements[id],state={fileReads:false};
+const providers=()=>{},session=()=>{},auth=()=>{};
+let calls,payload;
+const api=async()=>++calls===1?{ok:true,json:async()=>({providers:[],token_login:true,file_reads:payload})}:{ok:false};
+async ` + start + `
+for(const [value,want] of [[false,false],[true,true],["yes",false]]){
+  payload=value;calls=0;await start();
+  if(state.fileReads!==want)throw new Error(typeof value+" auth config mapped to "+state.fileReads);
+}
+`
+	if output, err := exec.Command(requireNode(t), "--input-type=module", "-e", harness).CombinedOutput(); err != nil {
+		t.Fatalf("auth file-read capability failed: %v\n%s", err, output)
+	}
+}
+
 func TestConsoleRequiresSuccessfulLogoutBeforeBearerFallback(t *testing.T) {
 	for _, want := range []string{`status!==204`, `await logout();enterBearer(t)`, `reportValidity()`} {
 		if !bytes.Contains(document, []byte(want)) {
