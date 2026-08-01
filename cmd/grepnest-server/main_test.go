@@ -764,12 +764,12 @@ func (repositoryStoreStub) AnyAuthorizedRepository(context.Context, int64) (repo
 
 func TestStaticHandlerRegistersSystemRoutes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "repositories.json")
-	if err := os.WriteFile(path, []byte(`[{"id":1,"zoekt_id":7,"name":"acme/one"}]`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`[{"id":1,"github_id":101,"zoekt_id":7,"name":"acme/one"},{"id":2,"github_id":102,"zoekt_id":8,"name":"acme/two"}]`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	handler, err := newHandler(config.Config{
 		ZoektURL: "http://zoekt.invalid", RepositoriesFile: path,
-		UserToken: "user", AdminToken: "admin",
+		UserToken: "user", AdminToken: "admin", UserRepositories: []string{"acme/one"}, AdminRepositories: []string{"acme/one"},
 		Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100, MaxContextLines: 20},
 	})
 	if err != nil {
@@ -780,7 +780,32 @@ func TestStaticHandlerRegistersSystemRoutes(t *testing.T) {
 	if response.Code != http.StatusOK || response.Body.String() != "ok\n" {
 		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
 	}
-	for _, route := range []string{"/v1/repositories", "/v1/scip/navigation", "/v1/graph/repositories/101/status", "/v1/graph/context", "/webhooks/github"} {
+	request := httptest.NewRequest(http.MethodGet, "/v1/repositories", nil)
+	request.Header.Set("Authorization", "Bearer user")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"id":101`) {
+		t.Fatalf("repositories status=%d body=%q", response.Code, response.Body.String())
+	}
+	for route, want := range map[string]int{"/v1/repositories/101/status": http.StatusOK, "/v1/repositories/1/status": http.StatusNotFound} {
+		request = httptest.NewRequest(http.MethodGet, route, nil)
+		request.Header.Set("Authorization", "Bearer user")
+		response = httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != want {
+			t.Fatalf("static %s status=%d body=%q", route, response.Code, response.Body.String())
+		}
+	}
+	for route, want := range map[string]int{"/v1/repositories/101/status": http.StatusOK, "/v1/repositories/102/status": http.StatusNotFound} {
+		request = httptest.NewRequest(http.MethodGet, route, nil)
+		request.Header.Set("Authorization", "Bearer admin")
+		response = httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != want {
+			t.Fatalf("static admin %s status=%d body=%q", route, response.Code, response.Body.String())
+		}
+	}
+	for _, route := range []string{"/v1/files/read", "/v1/scip/navigation", "/v1/graph/repositories/101/status", "/v1/graph/context", "/webhooks/github"} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, route, nil))
 		if response.Code != http.StatusNotFound {
