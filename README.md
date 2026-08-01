@@ -66,9 +66,8 @@ go run ./cmd/grepnest-server
 
 Open `http://127.0.0.1:8080/` and enter the development user token
 `grepnest-dev-user-token`. The console keeps the bearer token only for the
-current browser session. Static fixture mode supports normal searches, but it
-does not expose repository-picker metadata, so the console searches all
-repositories authorized for that token.
+current browser session. Static fixture mode exposes the repository inventory
+and links search results to the exact indexed external source revision.
 
 For an explicit local index instead of Compose, create a temporary Git
 repository from `test/fixtures/repository`, configure `zoekt.repoid` to `7` and
