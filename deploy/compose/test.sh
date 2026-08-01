@@ -53,7 +53,6 @@ render_files() {
   [ -z "$overlay" ] || overlay_args="-f $overlay"
   env \
     GREPNEST_NODE_IMAGE=registry.example/grepnest/node:test \
-    GREPNEST_SCANNER_IMAGE=registry.example/grepnest/scanner:test \
     GREPNEST_APPLICATION_IMAGE= \
     GREPNEST_GITHUB_CA_FILE= \
     GREPNEST_PUBLIC_URL= \
@@ -121,7 +120,7 @@ assert_graph_mode() {
     and ([ $graph_owner.volumes[] | select(.target == "/run/secrets/grepnest/graph-secret") | .read_only ] == [true])
     and ($indexer.image == "registry.example/grepnest/node:test")
     and ($indexer.entrypoint == ["grepnest-indexer"])
-    and ($scanner.image == "registry.example/grepnest/scanner:test")
+    and ($scanner.image == "registry.example/grepnest/node:test")
     and ($scanner.entrypoint == ["/bin/sh", "-ec"])
     and ($scanner.command == ["GREPNEST_WORKER_ID=$$(hostname) exec grepnest-scanner"])
     and ($scanner.deploy.replicas >= 1)
