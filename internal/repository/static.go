@@ -1,13 +1,17 @@
 package repository
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"os"
+	"slices"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 var ErrInvalid = errors.New("invalid repository registry")
@@ -71,6 +75,70 @@ func (registry *Static) Repositories() []Repository {
 	return copyRepositories(registry.repositories)
 }
 
+func (registry *Static) AuthorizedRepositories(ctx context.Context, _ int64, ids []int64, _ []string) ([]Repository, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	var result []Repository
+	for _, candidate := range registry.Repositories() {
+		candidate = staticServiceRepository(candidate)
+		if slices.Contains(ids, candidate.GitHubID) {
+			result = append(result, candidate)
+		}
+	}
+	return result, nil
+}
+
+func (registry *Static) AuthorizedRepository(ctx context.Context, _ int64, ids []int64, id int64) (Repository, error) {
+	if err := ctx.Err(); err != nil {
+		return Repository{}, err
+	}
+	if slices.Contains(ids, id) {
+		return registry.repository(id)
+	}
+	return Repository{}, pgx.ErrNoRows
+}
+
+func (registry *Static) AllAuthorizedRepositories(ctx context.Context, names []string) ([]Repository, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	var result []Repository
+	for _, candidate := range registry.Repositories() {
+		if slices.Contains(names, candidate.Name) {
+			result = append(result, staticServiceRepository(candidate))
+		}
+	}
+	return result, nil
+}
+
+func (registry *Static) AnyAuthorizedRepository(ctx context.Context, id int64) (Repository, error) {
+	if err := ctx.Err(); err != nil {
+		return Repository{}, err
+	}
+	return registry.repository(id)
+}
+
+func (registry *Static) repository(id int64) (Repository, error) {
+	for _, candidate := range registry.Repositories() {
+		candidate = staticServiceRepository(candidate)
+		if candidate.GitHubID == id {
+			return candidate, nil
+		}
+	}
+	return Repository{}, pgx.ErrNoRows
+}
+
+func staticServiceRepository(repository Repository) Repository {
+	if repository.GitHubID == 0 {
+		repository.GitHubID = repository.ID
+	}
+	if repository.SearchNode == "" {
+		repository.SearchNode = "static"
+	}
+	return repository
+}
+
 func copyRepositories(repositories []Repository) []Repository {
 	copy := append([]Repository(nil), repositories...)
 	for index := range copy {
@@ -84,6 +152,7 @@ func copyRepositories(repositories []Repository) []Repository {
 
 func validate(repositories []Repository) error {
 	ids := make(map[int64]struct{}, len(repositories))
+	publicIDs := make(map[int64]struct{}, len(repositories))
 	zoektIDs := make(map[uint32]struct{}, len(repositories))
 	names := make(map[string]struct{}, len(repositories))
 	for _, repository := range repositories {
@@ -93,6 +162,13 @@ func validate(repositories []Repository) error {
 		if _, exists := ids[repository.ID]; exists {
 			return fmt.Errorf("%w: duplicate repository id", ErrInvalid)
 		}
+		publicID := repository.GitHubID
+		if publicID == 0 {
+			publicID = repository.ID
+		}
+		if _, exists := publicIDs[publicID]; exists {
+			return fmt.Errorf("%w: duplicate public repository id", ErrInvalid)
+		}
 		if _, exists := zoektIDs[repository.ZoektID]; exists {
 			return fmt.Errorf("%w: duplicate zoekt id", ErrInvalid)
 		}
@@ -100,6 +176,7 @@ func validate(repositories []Repository) error {
 			return fmt.Errorf("%w: duplicate repository name", ErrInvalid)
 		}
 		ids[repository.ID] = struct{}{}
+		publicIDs[publicID] = struct{}{}
 		zoektIDs[repository.ZoektID] = struct{}{}
 		names[repository.Name] = struct{}{}
 	}

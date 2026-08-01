@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 	"math"
 	"os"
@@ -67,5 +68,26 @@ func TestNewStaticRejectsDuplicateRepositoryIdentifiers(t *testing.T) {
 	_, err := NewStatic([]Repository{{ID: 1, ZoektID: 7, Name: "acme/one"}, {ID: 1, ZoektID: 8, Name: "acme/two"}})
 	if !errors.Is(err, ErrInvalid) {
 		t.Fatalf("NewStatic() error = %v", err)
+	}
+}
+
+func TestNewStaticRejectsDuplicatePublicRepositoryIdentifiers(t *testing.T) {
+	_, err := NewStatic([]Repository{
+		{ID: 1, ZoektID: 7, Name: "acme/one"},
+		{ID: 2, GitHubID: 1, ZoektID: 8, Name: "acme/two"},
+	})
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("NewStatic() error = %v", err)
+	}
+}
+
+func TestStaticServiceStoreUsesLegacyIDAsPublicID(t *testing.T) {
+	registry, err := NewStatic([]Repository{{ID: 1, ZoektID: 7, Name: "acme/one"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := registry.AuthorizedRepository(context.Background(), 0, []int64{1}, 1)
+	if err != nil || got.GitHubID != 1 || got.SearchNode != "static" {
+		t.Fatalf("AuthorizedRepository() = %#v, %v", got, err)
 	}
 }
