@@ -225,12 +225,12 @@ search, repository, file-read, and MCP routes require bearer authentication.
 ### Durable Compose
 
 The durable Compose overlay runs the server, indexer, scalable scanners,
-PostgreSQL, and Zoekt. Set `GREPNEST_APPLICATION_IMAGE`, `GREPNEST_NODE_IMAGE`,
-and `GREPNEST_SCANNER_IMAGE` to existing images plus the GitHub, graph, and
-OIDC variables listed above. The image must provide
-`grepnest-server` and `wget` on `PATH`; the node image must provide
-`grepnest-indexer`, `grepnest-graph`, `git`, and `zoekt-git-index`; the scanner
-image must provide `grepnest-scanner` and `git`. The overlay also requires
+PostgreSQL, and Zoekt. Set `GREPNEST_APPLICATION_IMAGE` and
+`GREPNEST_NODE_IMAGE` to existing images plus the GitHub, graph, and OIDC
+variables listed above. The application image must provide `grepnest-server`
+and `wget` on `PATH`; the node image must provide `grepnest-indexer`,
+`grepnest-scanner`, `grepnest-graph`, `git`, and `zoekt-git-index`. The overlay
+also requires
 `GREPNEST_GITHUB_PRIVATE_KEY_FILE` and `GREPNEST_GITHUB_WEBHOOK_SECRET_FILE`
 to be readable host-file paths; Compose mounts both read-only into the server.
 Set `GREPNEST_GITHUB_CA_FILE` to an optional private-CA host file; Compose mounts
@@ -246,7 +246,6 @@ publishes a graph port. Set `GREPNEST_SCANNER_REPLICAS` to scale scanners
 ```sh
 GREPNEST_APPLICATION_IMAGE=registry.example/grepnest/application:2026-07-22 \
 GREPNEST_NODE_IMAGE=registry.example/grepnest/node:2026-07-28 \
-GREPNEST_SCANNER_IMAGE=registry.example/grepnest/scanner:2026-07-28 \
 GREPNEST_GITHUB_PRIVATE_KEY_FILE=$PWD/github-app-private-key.pem \
 GREPNEST_GITHUB_WEBHOOK_SECRET_FILE=$PWD/github-webhook-secret \
 GREPNEST_GITHUB_CA_FILE=$PWD/github-ca.pem \
