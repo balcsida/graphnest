@@ -3,6 +3,7 @@ package ladybug
 import (
 	"context"
 	"errors"
+	"math/rand/v2"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -257,6 +258,28 @@ func TestOptionsApplyReaderDefaultsAndCap(t *testing.T) {
 				t.Fatalf("ReadConnections = %d, want %d", options.ReadConnections, test.want)
 			}
 		})
+	}
+}
+
+func TestUpdateRollsBackBeginRacedByCancellation(t *testing.T) {
+	// BEGIN can land natively while the cancellation that raced it is what gets
+	// reported. Returning that connection to the pool with its transaction still
+	// open makes the next writer fail with "already has an active transaction".
+	db := testDatabase(t, Options{})
+	for i := range 200 {
+		ctx, cancel := context.WithCancel(t.Context())
+		time.AfterFunc(time.Duration(rand.N(300_000)), cancel)
+		_ = db.Update(ctx, func(session *Session) error {
+			_, err := session.Execute(ctx, `RETURN 1`, nil, QueryLimits{})
+			return err
+		})
+		cancel()
+		if err := db.Update(t.Context(), func(session *Session) error {
+			_, err := session.Execute(t.Context(), `RETURN 1`, nil, QueryLimits{})
+			return err
+		}); err != nil {
+			t.Fatalf("iteration %d: Update() after canceled update = %v", i, err)
+		}
 	}
 }
 

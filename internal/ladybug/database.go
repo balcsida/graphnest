@@ -156,6 +156,14 @@ func (db *Database) View(ctx context.Context, fn func(*Session) error) (err erro
 	}
 	session := db.session(connection, db.readers)
 	if err := executeStatement(ctx, session, `BEGIN TRANSACTION READ ONLY`); err != nil {
+		// BEGIN can land natively and still report the context cancellation that
+		// raced it, which would put a connection holding an open transaction back
+		// into the pool. Rolling back unconditionally closes that window: with no
+		// transaction open the statement fails harmlessly and the connection stays
+		// usable, and a quarantined session skips it as unhealthy.
+		cleanupCtx, cancelCleanup := transactionCleanupContext(ctx, session.timeout)
+		_ = executeStatement(cleanupCtx, session, `ROLLBACK`)
+		cancelCleanup()
 		session.invalidate()
 		if session.reusable.Load() {
 			db.readers <- connection
@@ -217,6 +225,14 @@ func (db *Database) update(ctx context.Context, timeout time.Duration, fn func(*
 	session := db.session(connection, db.writers)
 	session.timeout = timeout
 	if err := executeStatement(ctx, session, `BEGIN TRANSACTION`); err != nil {
+		// BEGIN can land natively and still report the context cancellation that
+		// raced it, which would put a connection holding an open transaction back
+		// into the pool. Rolling back unconditionally closes that window: with no
+		// transaction open the statement fails harmlessly and the connection stays
+		// usable, and a quarantined session skips it as unhealthy.
+		cleanupCtx, cancelCleanup := transactionCleanupContext(ctx, session.timeout)
+		_ = executeStatement(cleanupCtx, session, `ROLLBACK`)
+		cancelCleanup()
 		session.invalidate()
 		if session.reusable.Load() {
 			db.writers <- connection
