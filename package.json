@@ -1,0 +1,10 @@
+{
+  "name": "grepnest-ui-smoke",
+  "private": true,
+  "scripts": {
+    "test:ui-smoke": "playwright test test/smoke/public-ui.spec.mjs --workers=1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  }
+}
