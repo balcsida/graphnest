@@ -25,7 +25,7 @@ trap cleanup 0 HUP INT TERM
 fetch_repository() {
   url=$1 sha=$2 branch=$3 id=$4 name=$5 path=$6
   git init -q "$path"
-  git -C "$path" -c core.hooksPath=/dev/null fetch -q --depth=1 "$url" "$sha"
+  git -C "$path" -c credential.helper= -c core.askPass= -c core.hooksPath=/dev/null fetch -q --depth=1 "$url" "$sha"
   git -C "$path" -c core.hooksPath=/dev/null checkout -q -b "$branch" FETCH_HEAD
   test "$(git -C "$path" rev-parse HEAD)" = "$sha"
   git -C "$path" config zoekt.repoid "$id"
@@ -54,7 +54,7 @@ wait_zoekt() {
 
 cd "$root"
 export GIT_TERMINAL_PROMPT=0
-unset GH_TOKEN GITHUB_TOKEN
+unset GH_TOKEN GITHUB_TOKEN GIT_ASKPASS
 test -x ./node_modules/.bin/playwright
 test -x .cache/bin/zoekt-git-index
 test -x .cache/bin/zoekt-webserver
