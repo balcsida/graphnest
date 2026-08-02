@@ -3,7 +3,6 @@ package graphscan
 import (
 	"context"
 	"errors"
-	"sync/atomic"
 
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
@@ -17,22 +16,15 @@ func ParseTree(ctx context.Context, language *tree_sitter.Language, source []byt
 		parser.Close()
 		return nil, err
 	}
-	var canceled uintptr
-	parser.SetCancellationFlag(&canceled)
-	stop := make(chan struct{})
-	stopped := make(chan struct{})
-	go func() {
-		defer close(stopped)
-		select {
-		case <-ctx.Done():
-			atomic.StoreUintptr(&canceled, 1)
-		case <-stop:
+	length := len(source)
+	tree := parser.ParseWithOptions(func(i int, _ tree_sitter.Point) []byte {
+		if i < length {
+			return source[i:]
 		}
-	}()
-	tree := parser.Parse(source, nil)
-	close(stop)
-	<-stopped
-	parser.SetCancellationFlag(nil)
+		return nil
+	}, nil, &tree_sitter.ParseOptions{
+		ProgressCallback: func(tree_sitter.ParseState) bool { return ctx.Err() != nil },
+	})
 	parser.Close()
 	if err := ctx.Err(); err != nil {
 		if tree != nil {
