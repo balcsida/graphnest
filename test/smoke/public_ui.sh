@@ -25,7 +25,8 @@ trap cleanup 0 HUP INT TERM
 fetch_repository() {
   url=$1 sha=$2 branch=$3 id=$4 name=$5 path=$6
   git init -q "$path"
-  git -C "$path" -c credential.helper= -c core.askPass= -c core.hooksPath=/dev/null fetch -q --depth=1 "$url" "$sha"
+  HOME="$tmp/git-home" XDG_CONFIG_HOME="$tmp/git-home" \
+    git -C "$path" -c credential.helper= -c core.askPass= -c core.hooksPath=/dev/null fetch -q --depth=1 "$url" "$sha"
   git -C "$path" -c core.hooksPath=/dev/null checkout -q -b "$branch" FETCH_HEAD
   test "$(git -C "$path" rev-parse HEAD)" = "$sha"
   git -C "$path" config zoekt.repoid "$id"
@@ -59,6 +60,7 @@ test -x ./node_modules/.bin/playwright
 test -x .cache/bin/zoekt-git-index
 test -x .cache/bin/zoekt-webserver
 
+mkdir "$tmp/git-home"
 fetch_repository https://github.com/octocat/Hello-World.git "$hello_sha" master 101 octocat/Hello-World "$tmp/hello"
 fetch_repository https://github.com/octocat/Spoon-Knife.git "$spoon_sha" main 102 octocat/Spoon-Knife "$tmp/spoon"
 mkdir "$tmp/index"
