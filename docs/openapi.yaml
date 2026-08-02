@@ -666,10 +666,11 @@ components:
     AuthConfig:
       type: object
       additionalProperties: false
-      required: [token_login, break_glass, providers]
+      required: [token_login, break_glass, file_reads, providers]
       properties:
         token_login: {type: boolean}
         break_glass: {type: boolean}
+        file_reads: {type: boolean}
         providers: {type: array, items: {type: object, additionalProperties: false, required: [id, label, login_url], properties: {id: {type: string}, label: {type: string}, login_url: {type: string}}}}
     AuthSession:
       type: object

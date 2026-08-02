@@ -28,7 +28,7 @@ services:
         git -C /tmp/repository config zoekt.repoid 7
         git -C /tmp/repository config zoekt.name fixture/repository
         git -C /tmp/repository add .
-        git -C /tmp/repository commit -m fixture
+        GIT_AUTHOR_DATE=2000-01-01T00:00:00Z GIT_COMMITTER_DATE=2000-01-01T00:00:00Z git -C /tmp/repository commit -m fixture
         zoekt-git-index -index /data/index -branches main -submodules=false -incremental=false /tmp/repository
     volumes:
       - ../../test/fixtures/repository:/fixture:ro

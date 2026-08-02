@@ -33,9 +33,13 @@ type Session struct {
 	timeout        time.Duration
 	interruptGrace time.Duration
 	database       *Database
-	reusable       atomic.Bool
-	executeMu      sync.Mutex
-	active         bool
+	// pool is the slot this session's connection came from and must be
+	// returned to, so a reclaimer can replenish the right one.
+	pool        chan *lbug.Connection
+	reusable    atomic.Bool
+	quarantined atomic.Bool
+	executeMu   sync.Mutex
+	active      bool
 }
 
 func (session *Session) Execute(ctx context.Context, query string, parameters map[string]any, limits QueryLimits) (Result, error) {
@@ -92,8 +96,13 @@ func (session *Session) executeNativeWithTimeout(ctx context.Context, timeout ti
 	case <-done:
 		return ctx.Err()
 	case <-timer.C:
+		// The statement ignored the interrupt for longer than the grace period.
+		// It will still finish eventually, so hand the connection to a reclaimer
+		// that waits for it and swaps in a replacement, rather than declaring
+		// the whole database dead.
 		session.reusable.Store(false)
-		session.database.unhealthy.Store(true)
+		session.quarantined.Store(true)
+		session.database.replaceConnection(session.connection, session.pool, done)
 		return fmt.Errorf("%w: interrupt grace elapsed", ctx.Err())
 	}
 }

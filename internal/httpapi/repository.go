@@ -41,6 +41,11 @@ func (number *optionalPositiveInt) UnmarshalJSON(data []byte) error {
 }
 
 func RegisterRepositories(mux *http.ServeMux, authenticator authn.RequestAuthenticator, service *repository.Service, maxRequestBytes int64, maxResults int, maxResponseBytes int64) {
+	RegisterRepositoryInventory(mux, authenticator, service, maxResults, maxResponseBytes)
+	RegisterFileReads(mux, authenticator, service, maxRequestBytes, maxResponseBytes)
+}
+
+func RegisterRepositoryInventory(mux *http.ServeMux, authenticator authn.RequestAuthenticator, service *repository.Service, maxResults int, maxResponseBytes int64) {
 	mux.Handle("/v1/repositories", exactMethod(http.MethodGet, AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		repositories, err := service.List(request.Context(), PrincipalFromContext(request.Context()))
 		if err != nil {
@@ -63,6 +68,9 @@ func RegisterRepositories(mux *http.ServeMux, authenticator authn.RequestAuthent
 		}
 		writeBoundedJSON(writer, response, maxResponseBytes)
 	}))))
+}
+
+func RegisterFileReads(mux *http.ServeMux, authenticator authn.RequestAuthenticator, service *repository.Service, maxRequestBytes int64, maxResponseBytes int64) {
 	mux.Handle("/v1/files/read", exactMethod(http.MethodPost, AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Header.Get("Content-Type") != "application/json" {
 			writeError(writer, http.StatusUnsupportedMediaType, "invalid_request", "request is invalid", false)

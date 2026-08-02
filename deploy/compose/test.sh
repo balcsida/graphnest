@@ -26,6 +26,31 @@ printf '%s' "${base_config:?missing fixture Compose config}" |
     and (.services | has("zoekt-index"))
   ' >/dev/null
 
+fixture=$(mktemp -d "${TMPDIR:-/tmp}/grepnest-fixture.XXXXXX")
+case "$fixture" in
+  "${TMPDIR:-/tmp}"/grepnest-fixture.*) ;;
+  *) echo "unexpected temporary directory: $fixture" >&2; exit 1 ;;
+esac
+trap 'rm -rf "$fixture"' EXIT
+cp -R test/fixtures/repository/. "$fixture"
+git init --initial-branch=main "$fixture" >/dev/null
+git -C "$fixture" config user.name "GrepNest Test"
+git -C "$fixture" config user.email test@grepnest.invalid
+git -C "$fixture" config commit.gpgsign false
+git -C "$fixture" config zoekt.repoid 7
+git -C "$fixture" config zoekt.name fixture/repository
+git -C "$fixture" add .
+GIT_AUTHOR_DATE=2000-01-01T00:00:00Z \
+  GIT_COMMITTER_DATE=2000-01-01T00:00:00Z \
+  git -C "$fixture" commit -m fixture >/dev/null
+fixture_sha=$(git -C "$fixture" rev-parse HEAD)
+pinned_sha=$(jq -r '.[] | select(.name=="fixture/repository") | .indexed_sha' deploy/compose/repositories.json)
+if [ "$fixture_sha" != "$pinned_sha" ]; then
+  echo "fixture commit $fixture_sha drifted from indexed_sha $pinned_sha in deploy/compose/repositories.json" >&2
+  echo "update repositories.json after changing test/fixtures/repository" >&2
+  exit 1
+fi
+
 render_files() {
   overlay=$1
   shift
@@ -33,7 +58,6 @@ render_files() {
   [ -z "$overlay" ] || overlay_args="-f $overlay"
   env \
     GREPNEST_NODE_IMAGE=registry.example/grepnest/node:test \
-    GREPNEST_SCANNER_IMAGE=registry.example/grepnest/scanner:test \
     GREPNEST_APPLICATION_IMAGE= \
     GREPNEST_GITHUB_CA_FILE= \
     GREPNEST_PUBLIC_URL= \
@@ -101,7 +125,7 @@ assert_graph_mode() {
     and ([ $graph_owner.volumes[] | select(.target == "/run/secrets/grepnest/graph-secret") | .read_only ] == [true])
     and ($indexer.image == "registry.example/grepnest/node:test")
     and ($indexer.entrypoint == ["grepnest-indexer"])
-    and ($scanner.image == "registry.example/grepnest/scanner:test")
+    and ($scanner.image == "registry.example/grepnest/node:test")
     and ($scanner.entrypoint == ["/bin/sh", "-ec"])
     and ($scanner.command == ["GREPNEST_WORKER_ID=$$(hostname) exec grepnest-scanner"])
     and ($scanner.deploy.replicas >= 1)

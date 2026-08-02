@@ -96,6 +96,9 @@ end
 raise OpenAPIError, "graph cypher forbidden response is missing" unless graph_queries.fetch("cypher").dig("responses", "403").is_a?(Hash)
 
 schemas = document.fetch("components").fetch("schemas")
+auth_config = schemas.fetch("AuthConfig")
+raise OpenAPIError, "AuthConfig must require file_reads" unless auth_config.fetch("required").include?("file_reads")
+require_value(auth_config.dig("properties", "file_reads", "type"), "boolean", "AuthConfig.file_reads type")
 candidate = schemas.fetch("GraphCandidate")
 raise OpenAPIError, "GraphCandidate must require repository_id" unless candidate.fetch("required").include?("repository_id")
 require_value(candidate.dig("properties", "repository_id", "minimum"), 1, "GraphCandidate.repository_id minimum")

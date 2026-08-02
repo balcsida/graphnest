@@ -32,7 +32,7 @@ LADYBUG_TAGS := -tags=system_ladybug
 LADYBUG_RPATH := -ldflags=-extldflags=-Wl,-rpath,$(LADYBUG_LIB_DIR)
 NATIVE_BIN_DIR := $(CURDIR)/.cache/native
 
-.PHONY: fmt lint staticcheck govulncheck test test-race makefile-test scanner-test abi-test ladybug-test native-link-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test
+.PHONY: fmt lint staticcheck govulncheck test test-race makefile-test scanner-test abi-test ladybug-test native-link-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test ui-smoke
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
@@ -168,3 +168,6 @@ release-chart-test:
 
 compose-test:
 	sh deploy/compose/test.sh
+
+ui-smoke: tools
+	sh test/smoke/public_ui.sh

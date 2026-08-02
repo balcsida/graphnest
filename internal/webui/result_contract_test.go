@@ -33,6 +33,54 @@ func TestConsoleRendersGroupedCodeResults(t *testing.T) {
 	}
 }
 
+func TestConsoleHidesStaticFileControls(t *testing.T) {
+	script, err := elementBody(string(document), "script")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderResults, err := functionBody(script, "renderResults")
+	if err != nil {
+		t.Fatal(err)
+	}
+	groupMatches, err := functionBody(script, "groupMatches")
+	if err != nil {
+		t.Fatal(err)
+	}
+	blobURL, err := functionBody(script, "blobURL")
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness := `
+class Node {
+  constructor(tag){this.tag=tag;this.children=[];this.listeners={};this.textContent=""}
+  append(...children){this.children.push(...children)}
+  replaceChildren(...children){this.children=children}
+  addEventListener(name,listener){this.listeners[name]=listener}
+  click(){(this.listeners.click||this.onclick)()}
+}
+const roots=new Map(),$=id=>{if(!roots.has(id))roots.set(id,new Node(id));return roots.get(id)},document={
+  createDocumentFragment:()=>new Node("fragment"),
+  createElement:tag=>new Node(tag)
+},state={fileReads:false},opened=[],openFile=match=>opened.push(match),countLabel=(n,s)=>n+" "+(n===1?s:s==="match"?"matches":"repositories");
+const nodes=(root,tag)=>[root,...root.children.flatMap(node=>nodes(node,tag))].filter(node=>node.tag===tag);
+` + blobURL + groupMatches + renderResults + `
+const sha="0123456789abcdef0123456789abcdef01234567",repository={id:1,name:"acme/one",branch:"main",web_url:"https://github.example/acme/one"},base={repository,sha,path:"main.go",line_number:1,preview:"x"};
+renderResults({matches:[base]});
+if(nodes($("results"),"button").length!==0)throw new Error("static result opened in-app");
+const staticLinks=nodes($("results"),"a");
+if(staticLinks.length!==1||staticLinks[0].href!=="https://github.example/acme/one/blob/"+sha+"/main.go#L1")throw new Error("indexed source link missing");
+state.fileReads=true;
+renderResults({matches:[base]});
+const buttons=nodes($("results"),"button");
+if(buttons.length!==1)throw new Error("readable result lacks in-app control");
+buttons[0].click();
+if(opened[0]!==base)throw new Error("in-app control opened the wrong file");
+`
+	if output, err := exec.Command(requireNode(t), "-e", harness).CombinedOutput(); err != nil {
+		t.Fatalf("static file control behavior failed: %v\n%s", err, output)
+	}
+}
+
 func TestConsoleRendersRepositoryGroupMetadata(t *testing.T) {
 	script, err := elementBody(string(document), "script")
 	if err != nil {

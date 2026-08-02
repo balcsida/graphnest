@@ -4,7 +4,7 @@
     "zoekt_id": 7,
     "name": "fixture/repository",
     "branch": "main",
-    "indexed_sha": "",
+    "indexed_sha": "7bdbed7fc3e756be3a9c5ec30beeb4e65295b25c",
     "web_url": "https://example.invalid/fixture/repository"
   }
 ]

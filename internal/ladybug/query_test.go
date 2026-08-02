@@ -105,7 +105,7 @@ func TestQueryLimitsApplyDefaultsAndCaps(t *testing.T) {
 	}
 }
 
-func TestInterruptGraceMarksDatabaseUnhealthy(t *testing.T) {
+func TestInterruptGraceRecyclesConnection(t *testing.T) {
 	db := testDatabase(t, Options{InterruptGrace: time.Nanosecond})
 	ctx, cancel := context.WithCancel(t.Context())
 	time.AfterFunc(time.Millisecond, cancel)
@@ -116,7 +116,15 @@ func TestInterruptGraceMarksDatabaseUnhealthy(t *testing.T) {
 	if err == nil {
 		t.Fatal("query unexpectedly succeeded")
 	}
-	if err := db.Health(t.Context()); err == nil {
-		t.Fatal("database remained healthy after interrupt grace")
+	// The statement outliving its grace costs one connection, not the database:
+	// a slow runner must not be able to brick the process.
+	if err := db.Health(t.Context()); err != nil {
+		t.Fatalf("Health() after interrupt grace = %v, want nil", err)
+	}
+	if err := db.View(t.Context(), func(session *Session) error {
+		_, err := session.Execute(t.Context(), `RETURN 1`, nil, QueryLimits{})
+		return err
+	}); err != nil {
+		t.Fatalf("View() after interrupt grace = %v", err)
 	}
 }
