@@ -236,6 +236,14 @@ to be readable host-file paths; Compose mounts both read-only into the server.
 Set `GREPNEST_GITHUB_CA_FILE` to an optional private-CA host file; Compose mounts
 it read-only.
 
+> **Upgrading from v0.2.0.** `GREPNEST_SCANNER_IMAGE` was removed. Scanners now
+> run from `GREPNEST_NODE_IMAGE`, which carries `grepnest-scanner` alongside
+> `grepnest-indexer` and `grepnest-graph`. Drop `GREPNEST_SCANNER_IMAGE` from your
+> environment and make sure `GREPNEST_NODE_IMAGE` points at an image built from
+> the current `Dockerfile`; a node image built before this change will not have
+> `grepnest-scanner` on `PATH`. Compose fails fast with
+> `GREPNEST_NODE_IMAGE is required` if the variable is unset.
+
 Choose one graph overlay. Both modes keep the server URL at the internal
 `http://grepnest-graph:8081` and require a read-only
 `GREPNEST_GRAPH_INTERNAL_SECRET_FILE`. Embedded mode runs the graph owner in
