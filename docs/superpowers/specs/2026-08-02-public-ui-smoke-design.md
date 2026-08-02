@@ -17,7 +17,7 @@ The Playwright spec will sign in with a development-only token, verify both inve
 
 ## CI and developer entry points
 
-`make ui-smoke` will install no dependencies; it will require Node modules and Playwright Chromium to be present, then run the harness. A separate `ui-smoke` job in the existing CI workflow will use pinned Node setup, run `npm ci`, install Playwright Chromium with its system dependencies, install the pinned Zoekt tools through the existing Make target, and invoke `make ui-smoke`. The separate job keeps failures visible and runs on every pull request through the existing workflow triggers.
+`make ui-smoke` will install no dependencies; it will require Node modules and Playwright Chromium to be present, then run the harness. A separate `ui-smoke` job in the existing CI workflow will use the SHA-pinned Node setup Action with its native `lts/*` selector, run `npm ci`, install Playwright Chromium with its system dependencies, install the pinned Zoekt tools through the existing Make target, and invoke `make ui-smoke`. The separate job keeps failures visible and runs on every pull request through the existing workflow triggers.
 
 ## Boundaries
 
