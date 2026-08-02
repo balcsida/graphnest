@@ -23,12 +23,24 @@ cleanup() {
 trap cleanup 0 HUP INT TERM
 
 fetch_repository() {
-  url=$1 sha=$2 branch=$3 id=$4 name=$5 path=$6
+  url=$1 sha=$2 branch=$3 id=$4 name=$5 path=$6 attempt=1
   git init -q "$path"
-  HOME="$tmp/git-home" XDG_CONFIG_HOME="$tmp/git-home" \
-    git -C "$path" -c credential.helper= -c core.askPass= -c core.hooksPath=/dev/null fetch -q --depth=1 "$url" "$sha"
+  # Retry: this is the only step that leaves the machine, so a transient
+  # github.com failure here would otherwise red an unrelated pull request.
+  until HOME="$tmp/git-home" XDG_CONFIG_HOME="$tmp/git-home" \
+    git -C "$path" -c credential.helper= -c core.askPass= -c core.hooksPath=/dev/null fetch -q --depth=1 "$url" "$sha"; do
+    if [ "$attempt" -ge 3 ]; then
+      echo "fetch of $url at $sha failed after $attempt attempts" >&2
+      return 1
+    fi
+    attempt=$((attempt + 1))
+    sleep $((attempt * 3))
+  done
   git -C "$path" -c core.hooksPath=/dev/null checkout -q -b "$branch" FETCH_HEAD
-  test "$(git -C "$path" rev-parse HEAD)" = "$sha"
+  if [ "$(git -C "$path" rev-parse HEAD)" != "$sha" ]; then
+    echo "$url resolved to $(git -C "$path" rev-parse HEAD), want pinned $sha" >&2
+    return 1
+  fi
   git -C "$path" config zoekt.repoid "$id"
   git -C "$path" config zoekt.name "$name"
 }
@@ -60,6 +72,10 @@ test -x ./node_modules/.bin/playwright
 test -x .cache/bin/zoekt-git-index
 test -x .cache/bin/zoekt-webserver
 
+# Build rather than `go run`: `go run` does not reliably reap the compiled
+# child, which would leave 127.0.0.1:18080 bound after a failed local run.
+go build -o "$tmp/grepnest-server" ./cmd/grepnest-server
+
 mkdir "$tmp/git-home"
 fetch_repository https://github.com/octocat/Hello-World.git "$hello_sha" master 101 octocat/Hello-World "$tmp/hello"
 fetch_repository https://github.com/octocat/Spoon-Knife.git "$spoon_sha" main 102 octocat/Spoon-Knife "$tmp/spoon"
@@ -85,7 +101,7 @@ GREPNEST_USER_TOKEN=grepnest-public-user \
 GREPNEST_ADMIN_TOKEN=grepnest-public-admin \
 GREPNEST_USER_REPOSITORIES=octocat/Hello-World,octocat/Spoon-Knife \
 GREPNEST_ADMIN_REPOSITORIES=octocat/Hello-World,octocat/Spoon-Knife \
-  go run ./cmd/grepnest-server >"$tmp/server.log" 2>&1 &
+  "$tmp/grepnest-server" >"$tmp/server.log" 2>&1 &
 server_pid=$!
 wait_http http://127.0.0.1:18080/healthz
 
