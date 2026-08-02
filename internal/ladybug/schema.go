@@ -55,7 +55,7 @@ func (db *Database) Compatible(ctx context.Context) (bool, error) {
 
 func EnsureSchema(ctx context.Context, connection *lbug.Connection) error {
 	db := &Database{options: normalizeOptions(Options{})}
-	session := db.session(connection)
+	session := db.session(connection, nil)
 	defer session.invalidate()
 	err := ensureSchema(ctx, session)
 	db.queries.Wait()
