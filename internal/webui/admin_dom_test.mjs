@@ -45,6 +45,7 @@ const document = {
     if (selector === "[data-screen]") return all.filter(node => node.dataset.screen);
     if (selector === "[data-nav]") return all.filter(node => node.dataset.nav);
     if (selector === "[data-identity]") return all.filter(node => Object.hasOwn(node.dataset, "identity"));
+    if (selector === "[data-nav][data-identity]") return all.filter(node => node.dataset.nav && Object.hasOwn(node.dataset, "identity"));
     if (selector === "[data-repo]") return all.filter(node => node.dataset.repo);
     if (selector === "[data-repo]:checked") return all.filter(node => node.dataset.repo && node.checked);
     return [];
