@@ -124,6 +124,9 @@ func newHandler(settings config.Config) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Neither principal sets Administrator: an administrator principal routes
+	// reads through Static.AnyAuthorizedRepository, which ignores scope and
+	// would expose every entry in the registry file.
 	authenticator := authn.NewStatic(map[string]authn.Principal{
 		settings.UserToken:  {Subject: "user", Method: "bearer", RepositoryIDs: staticRepositoryIDs(registry, settings.UserRepositories), RepositoryNames: settings.UserRepositories},
 		settings.AdminToken: {Subject: "admin", Method: "bearer", RepositoryIDs: staticRepositoryIDs(registry, settings.AdminRepositories), RepositoryNames: settings.AdminRepositories},
