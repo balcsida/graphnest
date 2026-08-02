@@ -43,11 +43,14 @@ docker run --rm --read-only --tmpfs /tmp --tmpfs /var/run/grepnest \
     test "$(id -u)" -ne 0
     id -G | tr " " "\n" | grep -qx 0
     command -v grepnest-indexer
+    command -v grepnest-scanner
+    command -v grepnest-graph
     command -v git
     command -v zoekt-git-index
     command -v zoekt-webserver
     git --version
     ldd /usr/local/bin/grepnest-indexer | grep -q "liblbug.so.0 => /usr/lib/"
+    ldd /usr/local/bin/grepnest-graph | grep -q "liblbug.so.0 => /usr/lib/"
   '
 
 echo "image smoke tests passed"

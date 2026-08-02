@@ -66,9 +66,8 @@ go run ./cmd/grepnest-server
 
 Open `http://127.0.0.1:8080/` and enter the development user token
 `grepnest-dev-user-token`. The console keeps the bearer token only for the
-current browser session. Static fixture mode supports normal searches, but it
-does not expose repository-picker metadata, so the console searches all
-repositories authorized for that token.
+current browser session. Static fixture mode exposes the repository inventory
+and links search results to the exact indexed external source revision.
 
 For an explicit local index instead of Compose, create a temporary Git
 repository from `test/fixtures/repository`, configure `zoekt.repoid` to `7` and
@@ -226,16 +225,24 @@ search, repository, file-read, and MCP routes require bearer authentication.
 ### Durable Compose
 
 The durable Compose overlay runs the server, indexer, scalable scanners,
-PostgreSQL, and Zoekt. Set `GREPNEST_APPLICATION_IMAGE`, `GREPNEST_NODE_IMAGE`,
-and `GREPNEST_SCANNER_IMAGE` to existing images plus the GitHub, graph, and
-OIDC variables listed above. The image must provide
-`grepnest-server` and `wget` on `PATH`; the node image must provide
-`grepnest-indexer`, `grepnest-graph`, `git`, and `zoekt-git-index`; the scanner
-image must provide `grepnest-scanner` and `git`. The overlay also requires
+PostgreSQL, and Zoekt. Set `GREPNEST_APPLICATION_IMAGE` and
+`GREPNEST_NODE_IMAGE` to existing images plus the GitHub, graph, and OIDC
+variables listed above. The application image must provide `grepnest-server`
+and `wget` on `PATH`; the node image must provide `grepnest-indexer`,
+`grepnest-scanner`, `grepnest-graph`, `git`, and `zoekt-git-index`. The overlay
+also requires
 `GREPNEST_GITHUB_PRIVATE_KEY_FILE` and `GREPNEST_GITHUB_WEBHOOK_SECRET_FILE`
 to be readable host-file paths; Compose mounts both read-only into the server.
 Set `GREPNEST_GITHUB_CA_FILE` to an optional private-CA host file; Compose mounts
 it read-only.
+
+> **Upgrading from v0.2.0.** `GREPNEST_SCANNER_IMAGE` was removed. Scanners now
+> run from `GREPNEST_NODE_IMAGE`, which carries `grepnest-scanner` alongside
+> `grepnest-indexer` and `grepnest-graph`. Drop `GREPNEST_SCANNER_IMAGE` from your
+> environment and make sure `GREPNEST_NODE_IMAGE` points at an image built from
+> the current `Dockerfile`; a node image built before this change will not have
+> `grepnest-scanner` on `PATH`. Compose fails fast with
+> `GREPNEST_NODE_IMAGE is required` if the variable is unset.
 
 Choose one graph overlay. Both modes keep the server URL at the internal
 `http://grepnest-graph:8081` and require a read-only
@@ -247,7 +254,6 @@ publishes a graph port. Set `GREPNEST_SCANNER_REPLICAS` to scale scanners
 ```sh
 GREPNEST_APPLICATION_IMAGE=registry.example/grepnest/application:2026-07-22 \
 GREPNEST_NODE_IMAGE=registry.example/grepnest/node:2026-07-28 \
-GREPNEST_SCANNER_IMAGE=registry.example/grepnest/scanner:2026-07-28 \
 GREPNEST_GITHUB_PRIVATE_KEY_FILE=$PWD/github-app-private-key.pem \
 GREPNEST_GITHUB_WEBHOOK_SECRET_FILE=$PWD/github-webhook-secret \
 GREPNEST_GITHUB_CA_FILE=$PWD/github-ca.pem \

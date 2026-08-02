@@ -43,7 +43,7 @@ services:
 
   grepnest-scanner:
     profiles: [durable]
-    image: ${GREPNEST_SCANNER_IMAGE:?GREPNEST_SCANNER_IMAGE is required}
+    image: ${GREPNEST_NODE_IMAGE:?GREPNEST_NODE_IMAGE is required}
     entrypoint: ["/bin/sh", "-ec"]
     command: ["GREPNEST_WORKER_ID=$(hostname) exec grepnest-scanner"]
     depends_on:

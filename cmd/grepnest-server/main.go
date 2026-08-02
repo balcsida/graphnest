@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 	"time"
 
@@ -123,9 +124,12 @@ func newHandler(settings config.Config) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Neither principal sets Administrator: an administrator principal routes
+	// reads through Static.AnyAuthorizedRepository, which ignores scope and
+	// would expose every entry in the registry file.
 	authenticator := authn.NewStatic(map[string]authn.Principal{
-		settings.UserToken:  {Subject: "user", Method: "bearer", RepositoryNames: settings.UserRepositories},
-		settings.AdminToken: {Subject: "admin", Method: "bearer", Administrator: true, RepositoryNames: settings.AdminRepositories},
+		settings.UserToken:  {Subject: "user", Method: "bearer", RepositoryIDs: staticRepositoryIDs(registry, settings.UserRepositories), RepositoryNames: settings.UserRepositories},
+		settings.AdminToken: {Subject: "admin", Method: "bearer", RepositoryIDs: staticRepositoryIDs(registry, settings.AdminRepositories), RepositoryNames: settings.AdminRepositories},
 	})
 	backend, err := zoekt.New(settings.ZoektURL, http.DefaultClient, settings.Limits.MaxResponseBytes, metrics)
 	if err != nil {
@@ -137,7 +141,21 @@ func newHandler(settings config.Config) (http.Handler, error) {
 		DefaultTimeout: settings.Limits.DefaultTimeout, MaxTimeout: settings.Limits.MaxTimeout,
 		MaxResponseBytes: settings.Limits.MaxResponseBytes,
 	})
-	return newAPIHandler(settings, metrics, authn.RequestAuthenticator{Bearer: authenticator, Metrics: metrics}, service, nil, nil, nil, nil, nil, nil, nil, backend, nil, nil, nil, nil), nil
+	return newAPIHandler(settings, metrics, authn.RequestAuthenticator{Bearer: authenticator, Metrics: metrics}, service, &repository.Service{Store: registry}, nil, nil, nil, nil, nil, nil, backend, nil, nil, nil, nil), nil
+}
+
+func staticRepositoryIDs(registry repository.Registry, names []string) []int64 {
+	var ids []int64
+	for _, candidate := range registry.Repositories() {
+		if slices.Contains(names, candidate.Name) {
+			if candidate.GitHubID != 0 {
+				ids = append(ids, candidate.GitHubID)
+			} else {
+				ids = append(ids, candidate.ID)
+			}
+		}
+	}
+	return ids
 }
 
 type authRuntime struct {
@@ -327,7 +345,8 @@ func durableAuthenticator(store authn.APITokenStore) authn.Authenticator {
 
 func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scipGraph *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker, providers []sso.Provider, sessions *authn.SessionManager, provisioning *authn.ProvisioningAuthenticator, scimService *scim.Service) http.Handler {
 	mux := http.NewServeMux()
-	httpapi.RegisterAuth(mux, true, settings.SSO.BreakGlass, providers, authenticator, sessions, metrics)
+	fileReads := repositories != nil && repositories.GitHub != nil
+	httpapi.RegisterAuth(mux, true, settings.SSO.BreakGlass, fileReads, providers, authenticator, sessions, metrics)
 	webui.RegisterWithBreakGlass(mux, settings.SSO.BreakGlass)
 	httpapi.RegisterSystem(mux, checker, metrics.Handler())
 	httpapi.RegisterSearch(mux, authenticator, service, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
@@ -337,7 +356,10 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 		}
 	}
 	if repositories != nil {
-		httpapi.RegisterRepositories(mux, authenticator, repositories, settings.Limits.MaxRequestBytes, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
+		httpapi.RegisterRepositoryInventory(mux, authenticator, repositories, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
+		if fileReads {
+			httpapi.RegisterFileReads(mux, authenticator, repositories, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
+		}
 	}
 	if scipGraph != nil {
 		httpapi.RegisterSCIP(mux, authenticator, scipGraph, settings.Limits.MaxRequestBytes, settings.Limits.SCIPMaxUploadBytes, settings.Limits.MaxResponseBytes)

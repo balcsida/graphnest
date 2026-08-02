@@ -44,6 +44,8 @@ const document = {
   querySelectorAll(selector) {
     if (selector === "[data-screen]") return all.filter(node => node.dataset.screen);
     if (selector === "[data-nav]") return all.filter(node => node.dataset.nav);
+    if (selector === "[data-identity]") return all.filter(node => Object.hasOwn(node.dataset, "identity"));
+    if (selector === "[data-nav][data-identity]") return all.filter(node => node.dataset.nav && Object.hasOwn(node.dataset, "identity"));
     if (selector === "[data-repo]") return all.filter(node => node.dataset.repo);
     if (selector === "[data-repo]:checked") return all.filter(node => node.dataset.repo && node.checked);
     return [];
@@ -58,6 +60,7 @@ const storage = new Map([["grepnest_admin_token", "admin"]]);
 let storageUnavailable = true;
 let storageRemovals = 0;
 globalThis.sessionStorage = {
+  has: key => storage.has(key),
   getItem: key => {
     if (storageUnavailable) throw new Error("storage unavailable");
     return storage.get(key) || null;
@@ -92,6 +95,10 @@ for (const id of [
 for (const name of ["overview", "repositories", "queue", "users", "groups", "tokens", "audit", "scip", "webhooks", "github"]) {
   const screen = document.createElement("section"); screen.dataset.screen = name;
   const nav = document.createElement("button"); nav.dataset.nav = name;
+  if (["users", "groups", "tokens", "audit"].includes(name)) {
+    screen.dataset.identity = "";
+    nav.dataset.identity = "";
+  }
 }
 
 const responses = {
@@ -118,13 +125,17 @@ let mutationDenial = 0;
 let allowMutation = false;
 let delayedOverview;
 let accountTokenDenied = false;
+let bearerIdentityDenied = false;
+let sessionAuthorized = true;
 globalThis.fetch = async (path, options = {}) => {
   requests.push({path, options});
   if (path === "/auth/logout") return {ok:true,status:204};
+  if (path === "/v1/auth/session") return {ok:sessionAuthorized,status:sessionAuthorized ? 200 : 401};
   if (path === "/healthz" || path === "/readyz") return {ok:true,status:200};
   if (path === "/v1/account/api-tokens" && accountTokenDenied && !options.method) return {ok:false,status:403,json:async()=>({})};
   if (path === "/v1/account/api-tokens" && options.method === "POST") return {ok:true,status:201,json:async()=>({id:4,prefix:"gnp_new",repository_ids:[101],created_at:"2026-01-01T00:00:00Z",expires_at:"2026-08-29T00:00:00Z",token:"gnp_reveal_once"})};
   if (path === "/v1/account/api-tokens/3" && options.method === "DELETE") return {ok:true,status:204};
+  if (bearerIdentityDenied && ["/v1/admin/users", "/v1/admin/groups", "/v1/admin/audit-events"].includes(path)) return {ok:false,status:403,json:async()=>({})};
   if (path === "/v1/admin/overview" && delayedOverview) return delayedOverview;
   if (mutationDenial && options.method === "POST") return {ok:false,status:mutationDenial,json:async()=>({})};
   if (allowMutation && options.method === "POST") return {ok:true,status:200,json:async()=>({})};
@@ -230,15 +241,35 @@ assert.ok(requests.some(request => request.path === "/v1/admin/jobs/4/retry" && 
 mutationDenial = 403;
 await ids.get("github-reconcile").dispatch("click");
 await new Promise(resolve => setTimeout(resolve, 0));
-assert.equal(ids.get("admin-shell").hidden, true);
-assert.equal(ids.get("access-panel").hidden, false);
-assert.equal(storageRemovals, 1);
-assert.equal(ids.get("repo-rows").children.length, 0);
+assert.equal(ids.get("admin-shell").hidden, false);
+assert.equal(ids.get("access-panel").hidden, true);
+assert.equal(storageRemovals, 0);
 
 mutationDenial = 0;
 ids.get("token").value = "admin";
 await ids.get("token-form").dispatch("submit");
 await new Promise(resolve => setTimeout(resolve, 0));
+bearerIdentityDenied = true;
+const bearerRequestStart = requests.length;
+await ids.get("logout").dispatch("click");
+ids.get("token").value = "admin";
+await ids.get("token-form").dispatch("submit");
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(requests.slice(bearerRequestStart).some(({path}) => [
+  "/v1/admin/users", "/v1/admin/groups", "/v1/admin/audit-events"
+].includes(path)), false);
+assert.equal(ids.get("admin-shell").hidden, false);
+assert.equal(ids.get("access-panel").hidden, true);
+assert.ok(ids.get("overview-cards").children.length > 0);
+assert.ok(all.filter(node => Object.hasOwn(node.dataset, "identity")).every(node => node.hidden));
+mutationDenial = 403;
+await ids.get("github-reconcile").dispatch("click");
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(ids.get("admin-shell").hidden, false);
+assert.equal(sessionStorage.has("grepnest_admin_token"), true);
+mutationDenial = 0;
+bearerIdentityDenied = false;
+
 mutationDenial = 401;
 await ids.get("github-reconcile").dispatch("click");
 await new Promise(resolve => setTimeout(resolve, 0));

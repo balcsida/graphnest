@@ -3,6 +3,7 @@ package ladybug
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -30,17 +31,22 @@ type Options struct {
 }
 
 type Database struct {
-	handle      *lbug.Database
-	writer      *lbug.Connection
-	readers     chan *lbug.Connection
-	connections []*lbug.Connection
-	options     Options
-	writeMu     sync.Mutex
-	operations  sync.RWMutex
-	queries     sync.WaitGroup
-	closeOnce   sync.Once
-	closed      atomic.Bool
-	unhealthy   atomic.Bool
+	handle *lbug.Database
+	// writers is a one-slot pool holding the single write connection. It is a
+	// channel rather than a mutex so that ownership can be handed to a
+	// reclaimer goroutine: a statement that outlives its interrupt grace leaves
+	// the connection busy, and nothing may write again until it is clean.
+	writers       chan *lbug.Connection
+	readers       chan *lbug.Connection
+	connections   []*lbug.Connection
+	connectionsMu sync.Mutex
+	options       Options
+	operations    sync.RWMutex
+	queries       sync.WaitGroup
+	reclaims      sync.WaitGroup
+	closeOnce     sync.Once
+	closed        atomic.Bool
+	unhealthy     atomic.Bool
 }
 
 func Open(options Options) (*Database, error) {
@@ -54,22 +60,24 @@ func Open(options Options) (*Database, error) {
 	}
 	db := &Database{
 		handle:  handle,
+		writers: make(chan *lbug.Connection, 1),
 		readers: make(chan *lbug.Connection, options.ReadConnections),
 		options: options,
 	}
-	db.writer, err = lbug.OpenConnection(handle)
+	writer, err := lbug.OpenConnection(handle)
 	if err != nil {
 		handle.Close()
 		return nil, err
 	}
-	db.connections = append(db.connections, db.writer)
+	db.writers <- writer
+	db.connections = append(db.connections, writer)
 	for range options.ReadConnections {
 		connection, openErr := lbug.OpenConnection(handle)
 		if openErr != nil {
 			for len(db.readers) > 0 {
 				(<-db.readers).Close()
 			}
-			db.writer.Close()
+			writer.Close()
 			handle.Close()
 			return nil, openErr
 		}
@@ -99,8 +107,14 @@ func (db *Database) Close() error {
 		db.operations.Lock()
 		defer db.operations.Unlock()
 		db.closed.Store(true)
+		// queries.Wait() first: reclaimers block until their abandoned
+		// statement returns, so they cannot finish before the queries do.
 		db.queries.Wait()
+		db.reclaims.Wait()
 		close(db.readers)
+		close(db.writers)
+		db.connectionsMu.Lock()
+		defer db.connectionsMu.Unlock()
 		for _, connection := range db.connections {
 			connection.Close()
 		}
@@ -140,11 +154,21 @@ func (db *Database) View(ctx context.Context, fn func(*Session) error) (err erro
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	session := db.session(connection)
+	session := db.session(connection, db.readers)
 	if err := executeStatement(ctx, session, `BEGIN TRANSACTION READ ONLY`); err != nil {
+		// BEGIN can land natively and still report the context cancellation that
+		// raced it, which would put a connection holding an open transaction back
+		// into the pool. Rolling back unconditionally closes that window: with no
+		// transaction open the statement fails harmlessly and the connection stays
+		// usable, and a quarantined session skips it as unhealthy.
+		cleanupCtx, cancelCleanup := transactionCleanupContext(ctx, session.timeout)
+		_ = executeStatement(cleanupCtx, session, `ROLLBACK`)
+		cancelCleanup()
 		session.invalidate()
 		if session.reusable.Load() {
 			db.readers <- connection
+		} else if !session.quarantined.Load() {
+			db.replaceConnection(connection, db.readers, nil)
 		}
 		return err
 	}
@@ -163,12 +187,13 @@ func (db *Database) View(ctx context.Context, fn func(*Session) error) (err erro
 			}
 			if rollbackErr != nil {
 				session.reusable.Store(false)
-				db.unhealthy.Store(true)
 			}
 		}
 		session.invalidate()
 		if session.reusable.Load() {
 			db.readers <- connection
+		} else if !session.quarantined.Load() {
+			db.replaceConnection(connection, db.readers, nil)
 		}
 		if panicValue != nil {
 			panic(panicValue)
@@ -188,15 +213,32 @@ func (db *Database) update(ctx context.Context, timeout time.Duration, fn func(*
 	if err := db.Health(ctx); err != nil {
 		return err
 	}
-	db.writeMu.Lock()
-	defer db.writeMu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return err
+	var connection *lbug.Connection
+	select {
+	case connection = <-db.writers:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-	session := db.session(db.writer)
+	if connection == nil {
+		return errClosed
+	}
+	session := db.session(connection, db.writers)
 	session.timeout = timeout
 	if err := executeStatement(ctx, session, `BEGIN TRANSACTION`); err != nil {
+		// BEGIN can land natively and still report the context cancellation that
+		// raced it, which would put a connection holding an open transaction back
+		// into the pool. Rolling back unconditionally closes that window: with no
+		// transaction open the statement fails harmlessly and the connection stays
+		// usable, and a quarantined session skips it as unhealthy.
+		cleanupCtx, cancelCleanup := transactionCleanupContext(ctx, session.timeout)
+		_ = executeStatement(cleanupCtx, session, `ROLLBACK`)
+		cancelCleanup()
 		session.invalidate()
+		if session.reusable.Load() {
+			db.writers <- connection
+		} else if !session.quarantined.Load() {
+			db.replaceConnection(connection, db.writers, nil)
+		}
 		return err
 	}
 	defer func() {
@@ -219,10 +261,17 @@ func (db *Database) update(ctx context.Context, timeout time.Duration, fn func(*
 			}
 			if rollbackErr != nil {
 				session.reusable.Store(false)
-				db.unhealthy.Store(true)
 			}
 		}
 		session.invalidate()
+		// A reusable connection goes straight back into the slot. Otherwise the
+		// reclaimer that quarantined it owns the return, so the slot stays empty
+		// and later writers block instead of touching a dirty connection.
+		if session.reusable.Load() {
+			db.writers <- connection
+		} else if !session.quarantined.Load() {
+			db.replaceConnection(connection, db.writers, nil)
+		}
 		if panicValue != nil {
 			panic(panicValue)
 		}
@@ -231,16 +280,61 @@ func (db *Database) update(ctx context.Context, timeout time.Duration, fn func(*
 	return err
 }
 
-func (db *Database) session(connection *lbug.Connection) *Session {
+func (db *Database) session(connection *lbug.Connection, pool chan *lbug.Connection) *Session {
 	session := &Session{
 		connection:     connection,
 		timeout:        db.options.QueryTimeout,
 		interruptGrace: db.options.InterruptGrace,
 		database:       db,
+		pool:           pool,
 		active:         true,
 	}
 	session.reusable.Store(true)
 	return session
+}
+
+// replaceConnection retires a connection that can no longer be trusted and puts
+// a fresh one back into pool, so a single poisoned connection costs one
+// connection rather than the whole database.
+//
+// When drained is non-nil the connection is still executing an abandoned
+// statement: closing it before that statement returns would free state the
+// native library is using, so the reclaimer waits first. Waiting also rolls the
+// abandoned transaction back, because Ladybug discards a connection's open
+// transaction when the connection closes.
+func (db *Database) replaceConnection(connection *lbug.Connection, pool chan *lbug.Connection, drained <-chan error) {
+	if pool == nil {
+		// The connection belongs to the caller (package-level EnsureSchema),
+		// not to a pool this database owns, so it is not ours to retire.
+		return
+	}
+	db.reclaims.Add(1)
+	go func() {
+		defer db.reclaims.Done()
+		if drained != nil {
+			<-drained
+		}
+		connection.Close()
+		db.connectionsMu.Lock()
+		db.connections = slices.DeleteFunc(db.connections, func(candidate *lbug.Connection) bool {
+			return candidate == connection
+		})
+		db.connectionsMu.Unlock()
+		if db.closed.Load() {
+			return
+		}
+		fresh, err := lbug.OpenConnection(db.handle)
+		if err != nil {
+			// The database itself is refusing connections; this is the one
+			// condition the caller cannot recover from by retrying.
+			db.unhealthy.Store(true)
+			return
+		}
+		db.connectionsMu.Lock()
+		db.connections = append(db.connections, fresh)
+		db.connectionsMu.Unlock()
+		pool <- fresh
+	}()
 }
 
 func transactionCleanupContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
