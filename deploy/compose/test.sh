@@ -43,8 +43,13 @@ git -C "$fixture" add .
 GIT_AUTHOR_DATE=2000-01-01T00:00:00Z \
   GIT_COMMITTER_DATE=2000-01-01T00:00:00Z \
   git -C "$fixture" commit -m fixture >/dev/null
-test "$(git -C "$fixture" rev-parse HEAD)" = \
-  "$(jq -r '.[] | select(.name=="fixture/repository") | .indexed_sha' deploy/compose/repositories.json)"
+fixture_sha=$(git -C "$fixture" rev-parse HEAD)
+pinned_sha=$(jq -r '.[] | select(.name=="fixture/repository") | .indexed_sha' deploy/compose/repositories.json)
+if [ "$fixture_sha" != "$pinned_sha" ]; then
+  echo "fixture commit $fixture_sha drifted from indexed_sha $pinned_sha in deploy/compose/repositories.json" >&2
+  echo "update repositories.json after changing test/fixtures/repository" >&2
+  exit 1
+fi
 
 render_files() {
   overlay=$1
