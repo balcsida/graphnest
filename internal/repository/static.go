@@ -112,6 +112,12 @@ func (registry *Static) AllAuthorizedRepositories(ctx context.Context, names []s
 	return result, nil
 }
 
+// AnyAuthorizedRepository resolves an identifier without applying any scope,
+// matching the ServiceStore contract for administrator sessions. Static mode
+// never mints an administrator principal (see newHandler in cmd/grepnest-server),
+// so this is unreachable there; granting one would silently expose the whole
+// registry regardless of GREPNEST_ADMIN_REPOSITORIES.
+// TestStaticHandlerRegistersSystemRoutes pins that invariant.
 func (registry *Static) AnyAuthorizedRepository(ctx context.Context, id int64) (Repository, error) {
 	if err := ctx.Err(); err != nil {
 		return Repository{}, err
