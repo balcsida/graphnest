@@ -1,57 +1,103 @@
+<div align="center">
+
 # GrepNest
 
-GrepNest is a pre-pilot code-search service. Milestones 0-2 provide a pinned
-Zoekt-backed search path, bearer authorization, REST and MCP, PostgreSQL-backed
-repository state, GitHub App reconciliation, verified webhooks, indexed-SHA
-file reads, and sequential default-branch indexing. The local GHES-compatible
-HTTPS smart-Git-to-Zoekt proof passes.
-It is not production-ready.
+**Self-hosted code search and relationship-aware code intelligence for humans and AI agents.**
 
-## Interface
+[![CI](https://github.com/balcsida/grep-nest/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/balcsida/grep-nest/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/balcsida/grep-nest?display_name=tag&sort=semver)](https://github.com/balcsida/grep-nest/releases/latest)
+[![License](https://img.shields.io/github/license/balcsida/grep-nest)](LICENSE)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-1.25%2B-326CE5)](deploy/helm/grepnest/README.md)
 
-Search indexed code, open the exact indexed revision, and follow SCIP
-definitions, references, and implementations without leaving the console.
+</div>
+
+GrepNest is an experimental, self-hosted code search and context layer for engineering teams and AI agents. Authorized clients can search GitHub repositories, open files at the exact indexed commit, follow symbols across repositories, and inspect dependency and impact relationships without receiving direct access to the underlying search index.
+
+Under the hood, GrepNest combines fast [Zoekt](https://github.com/sourcegraph/zoekt) search, [SCIP](https://github.com/sourcegraph/scip) code navigation, and a rebuildable [LadybugDB](https://github.com/LadybugDB/ladybug) relationship graph behind web, REST, and MCP interfaces.
+
+> [!IMPORTANT]
+> GrepNest is **pre-1.0 pilot software**. It is not production-ready, currently indexes default branches only, and has not yet been validated at production scale or certified against a live GitHub Enterprise Server or OpenShift environment. See [Compatibility](docs/compatibility.md) for the current boundaries.
 
 ![GrepNest code search with SCIP navigation](docs/images/grepnest-ui.png)
 
-Graph analysis is available in durable mode. PostgreSQL remains authoritative;
-LadybugDB is a rebuildable derived store owned by one embedded (default) or
-separate graph runtime. The server is always its internal authenticated client.
-Native scanners cover Go, TypeScript, JavaScript, Java, Kotlin, and Rust.
-The currently exposed graph tools are `context`, `impact`, `trace`, and
-administrator-only read-only Cypher. See [architecture](docs/architecture.md),
-[operations](docs/operations.md), and [compatibility](docs/compatibility.md).
+## What GrepNest provides
 
-The [Helm chart](deploy/helm/grepnest/README.md) supports Kubernetes 1.25 or
-newer. Releases publish multi-architecture images and an OCI chart; the
-released chart embeds immutable image digests.
+| Capability | Description |
+| --- | --- |
+| **Fast, scoped code search** | Search authorized repositories through a server-controlled Zoekt backend. Clients never receive direct Zoekt access or choose raw Zoekt repository IDs. |
+| **Exact indexed revisions** | Open files at the precise indexed commit. Search results are suppressed when Zoekt and PostgreSQL disagree about the current indexed SHA. |
+| **Cross-repository code navigation** | Upload pre-generated SCIP indexes to navigate definitions, references, and implementations without running language indexers inside GrepNest. |
+| **Relationship-aware graph analysis** | Explore context, impact, and dependency paths through a derived LadybugDB graph. Administrators can also run bounded, read-only Cypher queries. |
+| **Human and agent interfaces** | Use the embedded browser console, REST API, hosted Streamable HTTP MCP endpoint, or the `grepnest-mcp` stdio proxy. |
+| **GitHub-native repository management** | Reconcile GitHub App installations, verify webhook signatures, queue default-branch indexing, support private CAs, and retain numeric GitHub repository identity across renames. |
+| **Durable identity and access** | Use OIDC browser sign-in, SCIM 2.0 provisioning, revocable API tokens, user and group repository assignments, administrative controls, and security audit events. |
+| **Pilot deployment tooling** | Run locally with Docker Compose or deploy the single-node pilot with Helm. Releases publish multi-architecture images, an OCI chart, SBOMs, provenance, and GitHub attestations. |
 
-## Local images
+Native graph scanners currently support **Go, JavaScript, TypeScript/TSX, Java, Kotlin, and Rust**. SCIP uploads remain a separate, language-indexer-independent navigation path.
 
-Build and smoke-test the local images with:
+## Architecture
 
-```sh
-make image-test
+```mermaid
+flowchart LR
+    Client[Web UI / REST / MCP] --> Server[grepnest-server]
+
+    Server -->|GitHub App API| GitHub[GitHub.com or GHES]
+    GitHub -->|Signed webhooks| Server
+    Indexer[grepnest-indexer] -->|Fetch default branch| GitHub
+    Scanner[grepnest-scanner] -->|Graph artifacts| Postgres[(PostgreSQL)]
+
+    Server --> Postgres
+    Indexer --> Postgres
+    Postgres --> Indexer
+    Indexer --> Zoekt[(Zoekt index)]
+    Server --> Zoekt
+
+    Postgres --> Graph[Embedded or separate graph runtime]
+    Graph --> Ladybug[(LadybugDB derived store)]
+    Server --> Graph
 ```
 
-The local tags are `grepnest-application:dev` and `grepnest-node:dev`. They
-are for local use only; a released chart uses immutable multi-architecture
-image digests.
+PostgreSQL is authoritative for repository metadata, authorization, queues, indexed-SHA state, and graph artifacts. Zoekt and LadybugDB are private query stores reached only through GrepNest's authenticated services. See [Architecture](docs/architecture.md) and the accepted decisions under [`docs/adr`](docs/adr).
+
+## Interfaces
+
+| Interface | Location | Authentication |
+| --- | --- | --- |
+| Browser console | `/` | Development bearer token or durable OIDC session |
+| REST API | `/v1/...` | Bearer token or, where supported, same-origin browser session |
+| Streamable HTTP MCP | `/mcp` | Bearer token |
+| Stdio MCP proxy | `grepnest-mcp` | Uses `GREPNEST_SERVER_URL` and `GREPNEST_TOKEN` |
+| Health and observability | `/healthz`, `/readyz`, `/metrics` | Intended for deployment health checks and monitoring |
+
+The complete REST contract is available in [`docs/openapi.yaml`](docs/openapi.yaml).
 
 ## Local quick start
 
-Prerequisites: Go 1.26, Git, Docker Compose, `jq`, and an internet connection
-for `make tools` and Docker image pulls. Run the checked-in fixture with
-Compose:
+The fixture profile is the fastest way to try GrepNest. It starts a deterministic test repository and Zoekt index while the server runs on the host.
+
+### Prerequisites
+
+- Go 1.26.5
+- Git
+- Docker with Docker Compose
+- `jq`
+- Internet access for Go tools and container images
+
+### 1. Start the fixture index
 
 ```sh
+git clone https://github.com/balcsida/grep-nest.git
+cd grep-nest
+
 make tools
 docker compose -f deploy/compose/compose.yml --profile fixture up -d --wait
 ```
 
-Compose copies `test/fixtures/repository`, initializes it as a Git repository,
-sets Zoekt repository ID `7`, and indexes it. Start the server in another
-terminal with development-only, distinct tokens:
+The fixture is indexed as repository `fixture/repository` with Zoekt repository ID `7`.
+
+### 2. Start GrepNest
+
+In another terminal:
 
 ```sh
 GREPNEST_LISTEN_ADDRESS=127.0.0.1:8080 \
@@ -64,38 +110,71 @@ GREPNEST_ADMIN_REPOSITORIES=fixture/repository \
 go run ./cmd/grepnest-server
 ```
 
-Open `http://127.0.0.1:8080/` and enter the development user token
-`grepnest-dev-user-token`. The console keeps the bearer token only for the
-current browser session. Static fixture mode exposes the repository inventory
-and links search results to the exact indexed external source revision.
+Open <http://127.0.0.1:8080/> and sign in with:
 
-For an explicit local index instead of Compose, create a temporary Git
-repository from `test/fixtures/repository`, configure `zoekt.repoid` to `7` and
-`zoekt.name` to `fixture/repository`, commit it, then run:
-
-```sh
-.cache/bin/zoekt-git-index -index /tmp/grepnest-index -branches main -submodules=false -incremental=false /tmp/grepnest-fixture
-.cache/bin/zoekt-webserver -index /tmp/grepnest-index -listen 127.0.0.1:6070 -rpc -html=false
+```text
+grepnest-dev-user-token
 ```
 
-Search the fixture:
+The browser keeps this development token only for the current session.
+
+### 3. Search through REST
 
 ```sh
-curl -sS http://127.0.0.1:8080/v1/search \
+curl --fail-with-body http://127.0.0.1:8080/v1/search \
   -H 'Authorization: Bearer grepnest-dev-user-token' \
   -H 'Content-Type: application/json' \
-  --data '{"query":"GrepNestFixtureNeedle","repositories":["fixture/repository"]}'
+  --data '{
+    "query": "GrepNestFixtureNeedle",
+    "repositories": ["fixture/repository"]
+  }'
 ```
+
+Requests for repositories outside the authenticated principal's scope return no matches rather than revealing whether those repositories exist.
+
+### 4. Stop the fixture
+
+```sh
+docker compose -f deploy/compose/compose.yml --profile fixture down
+```
+
+## Connect an MCP client
+
+MCP clients that support Streamable HTTP can connect directly to:
+
+```text
+http://127.0.0.1:8080/mcp
+```
+
+Send the same bearer token in the `Authorization` header. The core tools include code search and file discovery; durable mode additionally exposes symbol navigation and graph-backed analysis.
+
+For a stdio-only MCP client, build the proxy:
+
+```sh
+go build -o /tmp/grepnest-mcp ./cmd/grepnest-mcp
+
+GREPNEST_SERVER_URL=http://127.0.0.1:8080 \
+GREPNEST_TOKEN=grepnest-dev-user-token \
+/tmp/grepnest-mcp
+```
+
+The proxy appends `/mcp` automatically and does not connect to Zoekt directly.
+
+GrepNest also ships optional graph-analysis skills for agent clients. Installation is explicit and does not happen during normal proxy startup:
+
+```sh
+/tmp/grepnest-mcp install-skills --root /path/to/repository
+```
+
+The installer writes GrepNest-owned content under `.claude/skills/` and mirrors it to `.agents/skills/` only when `.agents/` already exists.
 
 ## SCIP code navigation
 
-GrepNest stores pre-generated SCIP indexes; it does not run or manage language
-indexers. Generate a `.scip` file in each repository's CI at the same 40-character
-lowercase commit SHA that GrepNest reports as `indexed_sha`, then upload it with
-an administrator token:
+GrepNest stores SCIP indexes but does not generate them. Produce the `.scip` file in each repository's CI for the same 40-character lowercase commit SHA reported by GrepNest as `indexed_sha`, then upload it with an administrator token:
 
 ```sh
 scip-go
+
 curl --fail-with-body -X POST \
   "https://grepnest.example/v1/scip/uploads?repository_id=101&commit=$GITHUB_SHA" \
   -H "Authorization: Bearer $GREPNEST_ADMIN_TOKEN" \
@@ -103,171 +182,24 @@ curl --fail-with-body -X POST \
   --data-binary @index.scip
 ```
 
-The upload is rejected with `409` when `commit` differs from the repository's
-exact indexed SHA. `GREPNEST_SCIP_MAX_UPLOAD_BYTES` defaults to 67108864 (64
-MiB) and is capped at 268435456 (256 MiB). Indexes may use SCIP UTF-8, UTF-16,
-or UTF-32 code-unit positions; navigation lines are one-based and characters
-are zero-based in the index's declared unit.
+Uploads for any commit other than the repository's exact indexed SHA are rejected. Cross-repository navigation can use manually supplied package URLs or metadata refreshed from GitHub's dependency graph. The exact endpoints, limits, and response schemas are defined in the [OpenAPI contract](docs/openapi.yaml).
 
-Navigate from an indexed occurrence with a token authorized for the origin and
-any returned target repositories:
+## Durable mode
 
-```sh
-curl --fail-with-body https://grepnest.example/v1/scip/navigation \
-  -H "Authorization: Bearer $GREPNEST_TOKEN" \
-  -H 'Content-Type: application/json' \
-  --data '{"repository_id":102,"path":"main.go","line":12,"character":4,"operation":"definitions"}'
-```
+Static fixture mode is intentionally small. Durable mode adds PostgreSQL-backed repository state, GitHub App reconciliation, verified webhook ingestion, queued indexing, exact-SHA file reads, identity management, and graph analysis.
 
-Targets outside the caller's authorized repositories are omitted. Administrative
-upload and metadata requests return `403` for a non-administrator; an unknown or
-unauthorized repository may return `404` without revealing whether it exists.
+A durable deployment consists of:
 
-Cross-repository navigation can use manually supplied package URLs:
+- `grepnest-server` for the web UI, REST, MCP, authentication, authorization, and GitHub reconciliation;
+- one `grepnest-indexer` for leased default-branch indexing and Zoekt publication;
+- zero or more `grepnest-scanner` workers for native graph extraction;
+- one graph owner, embedded in the indexer by default or running as `grepnest-graph`;
+- PostgreSQL as the authoritative state store; and
+- Zoekt plus LadybugDB as private query infrastructure.
+
+The Compose deployment requires application and node images, PostgreSQL, GitHub App credentials, an internal graph secret, and the server settings documented in [Operations](docs/operations.md). Start one graph topology only:
 
 ```sh
-curl --fail-with-body -X PUT https://grepnest.example/v1/scip/dependencies \
-  -H "Authorization: Bearer $GREPNEST_ADMIN_TOKEN" \
-  -H 'Content-Type: application/json' \
-  --data '{"repository_id":101,"provides":["pkg:golang/example.com/acme/lib@v1.0.0"],"depends_on":[]}'
-```
-
-Or refresh package metadata from GitHub's dependency graph:
-
-```sh
-curl --fail-with-body -X POST https://grepnest.example/v1/scip/dependencies/github \
-  -H "Authorization: Bearer $GREPNEST_ADMIN_TOKEN" \
-  -H 'Content-Type: application/json' \
-  --data '{"repository_id":101}'
-```
-
-The GitHub App must have read access to repository metadata and the dependency
-graph. GitHub deployments without dependency-graph data degrade gracefully:
-the refresh reports `available: false`; inaccessible repositories return 403 or
-404 and existing manual metadata remains usable.
-
-An unlisted repository is deliberately not searched; the response is a normal
-empty result:
-
-```sh
-curl -sS http://127.0.0.1:8080/v1/search \
-  -H 'Authorization: Bearer grepnest-dev-user-token' \
-  -H 'Content-Type: application/json' \
-  --data '{"query":"GrepNestFixtureNeedle","repositories":["other/repository"]}'
-```
-
-## MCP
-
-The hosted Streamable HTTP MCP endpoint is `http://127.0.0.1:8080/mcp` and
-requires the same `Authorization: Bearer <token>` header. It offers
-`search_code` (`query`, optional `repositories`, `limit`, `context_lines`, and
-`max_output_bytes`) and `find_files` (`pattern`, optional `repositories`,
-`limit`, and `max_output_bytes`). Durable mode also exposes `navigate_symbol`
-with `repository_id`, `path`, one-based `line`, zero-based `character`, and
-`definitions`, `references`, or `implementations` as the `operation`.
-
-For a stdio MCP client, build the proxy and configure only these two variables:
-
-```sh
-go build -o /tmp/grepnest-mcp ./cmd/grepnest-mcp
-GREPNEST_SERVER_URL=http://127.0.0.1:8080 \
-GREPNEST_TOKEN=grepnest-dev-user-token \
-/tmp/grepnest-mcp
-```
-
-The proxy appends `/mcp`; do not set Zoekt or server configuration on the proxy.
-
-Install GrepNest's graph skills only when wanted; ordinary proxy startup does
-not write to the current repository:
-
-```sh
-/tmp/grepnest-mcp install-skills --root /path/to/repository
-```
-
-The installer writes `.claude/skills/` and mirrors to `.agents/skills/` only
-when `.agents/` already exists. It updates only its marked destinations.
-
-## Server environment
-
-All modes require `GREPNEST_ZOEKT_URL` (HTTP(S)) and distinct non-empty
-`GREPNEST_USER_TOKEN` and `GREPNEST_ADMIN_TOKEN`.
-`GREPNEST_LISTEN_ADDRESS` defaults to `:8080`. Repository lists are
-comma-separated: `GREPNEST_USER_REPOSITORIES` and
-`GREPNEST_ADMIN_REPOSITORIES`.
-
-Static fixture mode additionally requires `GREPNEST_REPOSITORIES_FILE` and uses
-the name-based repository lists above. Durable mode is selected by
-`GREPNEST_DATABASE_URL` and does not read the static repository file or any
-indexer-only setting. It requires these server settings:
-
-- `GREPNEST_GITHUB_WEB_URL`, `GREPNEST_GITHUB_API_URL`,
-  `GREPNEST_GITHUB_UPLOAD_URL`, and `GREPNEST_GITHUB_GIT_URL` as HTTPS URLs;
-- `GREPNEST_GITHUB_APP_ID`, `GREPNEST_GITHUB_PRIVATE_KEY_FILE`, and
-  `GREPNEST_GITHUB_WEBHOOK_SECRET_FILE`;
-- OIDC configuration: `GREPNEST_PUBLIC_URL`, `GREPNEST_OIDC_ISSUER_URL`,
-  `GREPNEST_OIDC_CLIENT_ID`, and `GREPNEST_OIDC_CLIENT_SECRET_FILE`.
-- Optional SCIM configuration: `GREPNEST_SCIM_TOKEN_FILE`; SCIM also uses the
-  HTTPS public URL and durable PostgreSQL directory.
-
-The shipped application image includes `grepnest-admin` for last-resort
-administrator recovery. Run that exact image and follow the
-[break-glass runbook](docs/operations.md#break-glass-administrator-recovery).
-The offline command only creates or rotates a local credential in PostgreSQL;
-it does not enable a server login route or replace SSO.
-
-`GREPNEST_GITHUB_API_VERSION` defaults to `2022-11-28` and
-`GREPNEST_GITHUB_CA_FILE` optionally extends system trust. Startup pings and
-migrates PostgreSQL, records the singleton Zoekt node as `primary`, reconciles
-GitHub synchronously, then refreshes reconciliation and queue metrics every five
-minutes. `POST /webhooks/github` is public but requires a valid GitHub HMAC;
-search, repository, file-read, and MCP routes require bearer authentication.
-
-### Durable Compose
-
-The durable Compose overlay runs the server, indexer, scalable scanners,
-PostgreSQL, and Zoekt. Set `GREPNEST_APPLICATION_IMAGE` and
-`GREPNEST_NODE_IMAGE` to existing images plus the GitHub, graph, and OIDC
-variables listed above. The application image must provide `grepnest-server`
-and `wget` on `PATH`; the node image must provide `grepnest-indexer`,
-`grepnest-scanner`, `grepnest-graph`, `git`, and `zoekt-git-index`. The overlay
-also requires
-`GREPNEST_GITHUB_PRIVATE_KEY_FILE` and `GREPNEST_GITHUB_WEBHOOK_SECRET_FILE`
-to be readable host-file paths; Compose mounts both read-only into the server.
-Set `GREPNEST_GITHUB_CA_FILE` to an optional private-CA host file; Compose mounts
-it read-only.
-
-> **Upgrading from v0.2.0.** `GREPNEST_SCANNER_IMAGE` was removed. Scanners now
-> run from `GREPNEST_NODE_IMAGE`, which carries `grepnest-scanner` alongside
-> `grepnest-indexer` and `grepnest-graph`. Drop `GREPNEST_SCANNER_IMAGE` from your
-> environment and make sure `GREPNEST_NODE_IMAGE` points at an image built from
-> the current `Dockerfile`; a node image built before this change will not have
-> `grepnest-scanner` on `PATH`. Compose fails fast with
-> `GREPNEST_NODE_IMAGE is required` if the variable is unset.
-
-Choose one graph overlay. Both modes keep the server URL at the internal
-`http://grepnest-graph:8081` and require a read-only
-`GREPNEST_GRAPH_INTERNAL_SECRET_FILE`. Embedded mode runs the graph owner in
-the singleton indexer; separate mode runs one `grepnest-graph` service. Neither
-publishes a graph port. Set `GREPNEST_SCANNER_REPLICAS` to scale scanners
-(default `2`).
-
-```sh
-GREPNEST_APPLICATION_IMAGE=registry.example/grepnest/application:2026-07-22 \
-GREPNEST_NODE_IMAGE=registry.example/grepnest/node:2026-07-28 \
-GREPNEST_GITHUB_PRIVATE_KEY_FILE=$PWD/github-app-private-key.pem \
-GREPNEST_GITHUB_WEBHOOK_SECRET_FILE=$PWD/github-webhook-secret \
-GREPNEST_GITHUB_CA_FILE=$PWD/github-ca.pem \
-GREPNEST_GRAPH_INTERNAL_SECRET_FILE=$PWD/graph-internal-secret \
-GREPNEST_GITHUB_WEB_URL=https://github.example \
-GREPNEST_GITHUB_API_URL=https://github.example/api/v3 \
-GREPNEST_GITHUB_UPLOAD_URL=https://github.example/api/uploads \
-GREPNEST_GITHUB_GIT_URL=https://github.example \
-GREPNEST_GITHUB_APP_ID=123 \
-GREPNEST_PUBLIC_URL=https://grepnest.example \
-GREPNEST_OIDC_ISSUER_URL=https://id.example \
-GREPNEST_OIDC_CLIENT_ID=grepnest \
-GREPNEST_OIDC_CLIENT_SECRET_FILE=$PWD/oidc-client-secret \
-GREPNEST_SCIM_TOKEN_FILE=$PWD/scim-token \
 docker compose \
   -f deploy/compose/compose.yml \
   -f deploy/compose/durable.yml \
@@ -276,74 +208,92 @@ docker compose \
   up -d --wait
 ```
 
-Replace `graph-embedded.yml` with `graph-separate.yml` for standalone graph
-ownership.
+Replace `graph-embedded.yml` with `graph-separate.yml` to run a standalone graph owner.
 
-Optional limits are positive and cannot exceed their server caps:
+## Authentication and authorization
 
-### Optional OIDC browser sign-in
+| Purpose | Mechanism |
+| --- | --- |
+| Local fixture access | Distinct development-only user and administrator bearer tokens |
+| Browser sign-in | OIDC Authorization Code flow with PKCE and an opaque, HttpOnly GrepNest session |
+| REST and MCP access | Revocable bearer API tokens; `/mcp` remains bearer-only |
+| Directory provisioning | Optional SCIM 2.0 endpoint protected by a dedicated secret-file token |
+| Emergency administration | Disabled-by-default local recovery flow provisioned offline with `grepnest-admin` |
 
-OIDC requires durable mode and an HTTPS `GREPNEST_PUBLIC_URL`. Configure
-`GREPNEST_OIDC_ISSUER_URL`, `GREPNEST_OIDC_CLIENT_ID`,
-`GREPNEST_OIDC_CLIENT_SECRET_FILE`, and `GREPNEST_OIDC_LINK_CLAIM`; optional
-settings are `GREPNEST_OIDC_CA_FILE`, `GREPNEST_OIDC_SCOPES`,
-`GREPNEST_OIDC_DISPLAY_NAME_CLAIM`, `GREPNEST_SSO_SESSION_IDLE`,
-`GREPNEST_SSO_SESSION_TTL`, and `GREPNEST_SSO_LOGIN_FLOW_TTL`. Register
-`https://<public-host>/auth/oidc/callback` as the Authorization Code + PKCE
-redirect URI. The client secret and optional CA are readable files, never
-environment values or ConfigMap data.
+Authorization is enforced by the server against current repository IDs and directory state. Repository names are selectors, not security identities. Deactivated users and revoked credentials are denied on their next request.
 
-### Optional SCIM 2.0 provisioning
+OIDC, SCIM, API-token administration, audit events, and break-glass recovery require durable mode. See [Operations](docs/operations.md) and the [Threat model](docs/threat-model.md) before exposing the service.
 
-Set `GREPNEST_SCIM_TOKEN_FILE` to a readable file containing a dedicated,
-high-entropy bearer token and expose
-`https://<public-host>/scim/v2`. SCIM is default-off, durable-mode only, and
-every discovery and resource request requires that token. The OIDC
-`GREPNEST_OIDC_LINK_CLAIM` value must exactly match the SCIM user's
-`externalId`; directory attributes are not authorization claims.
+## Kubernetes and Helm
 
-Users support `eq` filters on `id`, `userName`, and `externalId`; groups
-support `id`, `displayName`, and `externalId`. PATCH supports user `active`,
-`userName`, `displayName`, `name`, and `emails`, plus group `members` and
-`members[value eq "USER_ID"]`. Requests are limited to 1 MiB bodies, 8 KiB
-queries, 16 KiB URLs, 100 PATCH operations, and `GREPNEST_MAX_RESULTS`.
-Replacing the secret file does not hot-reload it: restart server replicas to
-rotate the token. Deactivation or deletion denies existing browser sessions
-and API tokens on their next request.
+The chart under [`deploy/helm/grepnest`](deploy/helm/grepnest) targets Kubernetes 1.25 or newer and models a generic single-node pilot. It expects operator-managed PostgreSQL and existing Kubernetes Secrets; it does not install a database or place plaintext credentials in chart values.
 
-Bulk, sorting, ETags, passwords, `/Me`, `/.search`, root search, enterprise
-extensions, custom schemas/resources, roles, and entitlements are unsupported.
+Released OCI charts embed immutable application and node image digests. For the current chart version:
 
-| Variable | Default | Maximum |
-| --- | ---: | ---: |
-| `GREPNEST_DEFAULT_RESULTS` | 25 | `GREPNEST_MAX_RESULTS` (100) |
-| `GREPNEST_MAX_RESULTS` | 100 | 100 |
-| `GREPNEST_DEFAULT_CONTEXT_LINES` | 3 | `GREPNEST_MAX_CONTEXT_LINES` (20) |
-| `GREPNEST_MAX_CONTEXT_LINES` | 20 | 20 |
-| `GREPNEST_DEFAULT_TIMEOUT` | 5s | `GREPNEST_MAX_TIMEOUT` (5s) |
-| `GREPNEST_MAX_TIMEOUT` | 5s | 5s |
-| `GREPNEST_MAX_REQUEST_BYTES` | 65536 | 65536 |
-| `GREPNEST_MAX_RESPONSE_BYTES` | 262144 | 262144 |
-| `GREPNEST_SCIP_MAX_UPLOAD_BYTES` | 67108864 | 268435456 |
+```sh
+helm pull oci://ghcr.io/balcsida/grep-nest/charts/grepnest --version 0.2.0
+helm upgrade --install grepnest grepnest-0.2.0.tgz \
+  --namespace grepnest \
+  --create-namespace \
+  --values my-values.yaml \
+  --wait \
+  --timeout 15m
+```
 
-Run `make fmt lint staticcheck govulncheck test test-race postgres-integration
-integration e2e build compose-test` before proposing a change. `make e2e` starts its pinned
-PostgreSQL dependency and runs real TLS smart-Git and Zoekt processes. `make
-helm-lint helm-test` validates the chart structure without contacting a
-cluster. `make image-test` builds and smoke-tests the two local images.
+Review the [Helm chart documentation](deploy/helm/grepnest/README.md) for required images, Secrets, storage, ingress, network policies, OIDC, SCIM, scanners, graph topology, monitoring, and recovery procedures. Release notes contain immutable artifact references and attestation-verification commands.
 
-## Policies
+## Current limits
 
-- [Architecture](docs/architecture.md)
-- [Operations](docs/operations.md)
-- [Threat model](docs/threat-model.md)
-- [OpenAPI](docs/openapi.yaml)
-- [Benchmarking](docs/benchmarking.md)
-- [Implementation report](docs/implementation-report.md)
-- [Contributing](CONTRIBUTING.md)
-- [Security](SECURITY.md)
-- [Code of conduct](CODE_OF_CONDUCT.md)
-- [Support](SUPPORT.md)
-- [Release process](docs/release-process.md)
-- [Compatibility](docs/compatibility.md)
-- [Dependency pinning](docs/dependency-pinning.md)
+- GrepNest is pre-1.0 pilot software and makes no stable compatibility promise.
+- Only default branches are indexed.
+- The default GHES contract targets GitHub Enterprise Server 3.17 with REST API version `2022-11-28`; this has not been certified against a live GHES deployment.
+- Kubernetes, OpenShift, backup and restore, upgrade and rollback, ingress, and production-scale capacity still require environment-specific validation.
+- Native graph scanning is not equivalent to a full language server or language-specific indexer.
+- GrepNest does not currently provide embedding-based semantic search.
+- LadybugDB is derived and rebuildable; it is not a backup or authorization source.
+
+Read [Compatibility](docs/compatibility.md), [Benchmarking](docs/benchmarking.md), and [Operations](docs/operations.md) before planning a pilot.
+
+## Build and test
+
+Build the commands and local images with:
+
+```sh
+make build
+make image-test
+```
+
+Run the main verification suites with:
+
+```sh
+make fmt lint staticcheck govulncheck
+make test test-race integration e2e
+make openapi-check compose-test helm-lint helm-test
+```
+
+CI additionally exercises native LadybugDB linking, scanner grammar compatibility, UI smoke tests, and release packaging. Some targets download pinned tools or native libraries and require Docker.
+
+## Documentation
+
+| Document | Purpose |
+| --- | --- |
+| [Architecture](docs/architecture.md) | Service boundaries, authorization flow, indexing, and graph ownership |
+| [Operations](docs/operations.md) | Local and durable operation, recovery, identity, and graph runbooks |
+| [OpenAPI](docs/openapi.yaml) | Canonical REST request, response, security, and limit contract |
+| [Helm chart](deploy/helm/grepnest/README.md) | Kubernetes configuration, Secrets, storage, networking, and installation |
+| [Compatibility](docs/compatibility.md) | Supported contracts, platforms, languages, and unverified boundaries |
+| [Threat model](docs/threat-model.md) | Protected assets, security controls, and known limits |
+| [Benchmarking](docs/benchmarking.md) | Measurement guidance for pilot sizing |
+| [Release process](docs/release-process.md) | Signed tags, images, OCI chart, attestations, and release verification |
+| [Implementation report](docs/implementation-report.md) | Delivered milestones, verification evidence, risks, and deferred work |
+| [Dependency pinning](docs/dependency-pinning.md) | Reproducibility and pinned dependency policy |
+
+## Contributing and support
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change. Keep changes within an accepted milestone, include tests for behavior changes, and preserve the boundary that Zoekt is private implementation infrastructure.
+
+Use [GitHub Issues](https://github.com/balcsida/grep-nest/issues) for reproducible bugs and feature discussions, and read [SUPPORT.md](SUPPORT.md) for the project's support boundaries. Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). Report suspected vulnerabilities through the private process in [SECURITY.md](SECURITY.md), not through a public issue.
+
+## License
+
+GrepNest is licensed under the [Apache License 2.0](LICENSE).
