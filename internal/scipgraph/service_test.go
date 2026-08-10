@@ -77,6 +77,22 @@ func TestUploadAllowsLocalAdministratorWithoutLegacyScope(t *testing.T) {
 	}
 }
 
+func TestUploadAllowsOAuthAdministratorWithoutLegacyScope(t *testing.T) {
+	store := &fakeStore{repositories: map[int64]repository.Repository{201: {
+		ID: 2, InstallationID: 20, GitHubID: 201, IndexedSHA: serviceSHA,
+	}}}
+	data := marshalIndex(t, &scip.Index{Metadata: &scip.Metadata{ToolInfo: &scip.ToolInfo{Name: "test"}}})
+
+	if err := (&Service{Store: store}).Upload(t.Context(), authn.Principal{
+		Method: "oauth", Administrator: true,
+	}, 201, serviceSHA, data); err != nil {
+		t.Fatal(err)
+	}
+	if store.globalAuthorizationCalls != 1 || len(store.authorizationCalls) != 0 || store.replacedRepositoryID != 2 {
+		t.Fatalf("global calls=%d scoped calls=%#v replaced=%d", store.globalAuthorizationCalls, store.authorizationCalls, store.replacedRepositoryID)
+	}
+}
+
 func TestUploadMapsStaleReplacementOnly(t *testing.T) {
 	backendError := errors.New("backend unavailable")
 	data := marshalIndex(t, &scip.Index{Metadata: &scip.Metadata{ToolInfo: &scip.ToolInfo{Name: "test"}}})
@@ -146,7 +162,7 @@ func TestNavigateRejectsSuppliedStaleCommit(t *testing.T) {
 		Line:         1,
 		Operation:    "definitions",
 	})
-	if !errors.Is(err, ErrNotIndexed) {
+	if !errors.Is(err, ErrStaleCommit) {
 		t.Fatalf("Navigate() error = %v", err)
 	}
 	if store.occurrenceRepositoryID != 0 {
@@ -205,7 +221,8 @@ func TestNavigateMapsOnlyMissingOccurrence(t *testing.T) {
 		storeErr error
 		wantErr  error
 	}{
-		{name: "missing occurrence", storeErr: ErrOccurrenceNotFound, wantErr: ErrNotIndexed},
+		// This fake reports no SCIP upload, so a missing occurrence means the index is absent.
+		{name: "missing occurrence", storeErr: ErrOccurrenceNotFound, wantErr: ErrSCIPUnavailable},
 		{name: "canceled", storeErr: context.Canceled, wantErr: context.Canceled},
 		{name: "deadline", storeErr: context.DeadlineExceeded, wantErr: context.DeadlineExceeded},
 		{name: "backend failure", storeErr: backendError, wantErr: backendError},
@@ -352,6 +369,8 @@ type fakeStore struct {
 	packagesSource               string
 	packages                     []PackageMapping
 	replaceErr, occurrenceErr    error
+	scipCommit                   string
+	scipCommitErr                error
 	authorizationCalls           []authorizationCall
 	globalAuthorizationCalls     int
 	locationsPrincipal           authn.Principal
@@ -371,6 +390,10 @@ func (store *fakeStore) AuthorizedRepository(_ context.Context, installationID i
 		return repository.Repository{}, errUnauthorizedRepository
 	}
 	return item, nil
+}
+
+func (store *fakeStore) SCIPIndexCommit(_ context.Context, _ int64) (string, error) {
+	return store.scipCommit, store.scipCommitErr
 }
 
 func (store *fakeStore) AnyAuthorizedRepository(_ context.Context, repositoryID int64) (repository.Repository, error) {
@@ -404,4 +427,39 @@ func (store *fakeStore) ReplacePackages(_ context.Context, repositoryID int64, s
 	store.packagesRepositoryID, store.packagesSource = repositoryID, source
 	store.packages = packages
 	return nil
+}
+
+// Navigate used to answer ErrNotIndexed for every one of these, which told the caller a
+// search-indexed repository was unindexed and hid the real cause.
+func TestNavigateDistinguishesMissingOccurrenceCauses(t *testing.T) {
+	staleSHA := strings.Repeat("b", 40)
+	request := api.SCIPNavigationRequest{RepositoryID: 101, Path: "src/schema/getSchema.ts", Line: 29, Character: 16, Operation: "definitions"}
+
+	for _, testCase := range []struct {
+		name       string
+		repository repository.Repository
+		scipCommit string
+		commit     string
+		want       error
+	}{
+		{"no indexed revision", repository.Repository{ID: 1, GitHubID: 101}, "", "", ErrNotIndexed},
+		{"caller asked for another commit", serviceRepository, serviceSHA, staleSHA, ErrStaleCommit},
+		{"no SCIP upload at all", serviceRepository, "", "", ErrSCIPUnavailable},
+		{"SCIP built for an earlier commit", serviceRepository, staleSHA, "", ErrSCIPStale},
+		{"SCIP current, nothing at this position", serviceRepository, serviceSHA, "", ErrSymbolNotFound},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			store := &fakeStore{
+				repositories:  map[int64]repository.Repository{101: testCase.repository},
+				occurrenceErr: ErrOccurrenceNotFound,
+				scipCommit:    testCase.scipCommit,
+			}
+			navigation := request
+			navigation.Commit = testCase.commit
+			_, err := (&Service{Store: store}).Navigate(t.Context(), userPrincipal, navigation)
+			if !errors.Is(err, testCase.want) {
+				t.Fatalf("Navigate() error = %v, want %v", err, testCase.want)
+			}
+		})
+	}
 }
