@@ -232,7 +232,7 @@ func (service *Service) SetDependencies(ctx context.Context, principal authn.Pri
 }
 
 func (service *Service) authorizedRepository(ctx context.Context, principal authn.Principal, repositoryID int64) (repository.Repository, error) {
-	if principal.Administrator && (principal.Method == "oidc" || principal.Method == "local") &&
+	if principal.Administrator && principal.Method != "api_token" &&
 		principal.InstallationID == 0 && len(principal.RepositoryIDs) == 0 {
 		return service.Store.AnyAuthorizedRepository(ctx, repositoryID)
 	}

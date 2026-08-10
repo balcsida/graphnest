@@ -77,6 +77,22 @@ func TestUploadAllowsLocalAdministratorWithoutLegacyScope(t *testing.T) {
 	}
 }
 
+func TestUploadAllowsOAuthAdministratorWithoutLegacyScope(t *testing.T) {
+	store := &fakeStore{repositories: map[int64]repository.Repository{201: {
+		ID: 2, InstallationID: 20, GitHubID: 201, IndexedSHA: serviceSHA,
+	}}}
+	data := marshalIndex(t, &scip.Index{Metadata: &scip.Metadata{ToolInfo: &scip.ToolInfo{Name: "test"}}})
+
+	if err := (&Service{Store: store}).Upload(t.Context(), authn.Principal{
+		Method: "oauth", Administrator: true,
+	}, 201, serviceSHA, data); err != nil {
+		t.Fatal(err)
+	}
+	if store.globalAuthorizationCalls != 1 || len(store.authorizationCalls) != 0 || store.replacedRepositoryID != 2 {
+		t.Fatalf("global calls=%d scoped calls=%#v replaced=%d", store.globalAuthorizationCalls, store.authorizationCalls, store.replacedRepositoryID)
+	}
+}
+
 func TestUploadMapsStaleReplacementOnly(t *testing.T) {
 	backendError := errors.New("backend unavailable")
 	data := marshalIndex(t, &scip.Index{Metadata: &scip.Metadata{ToolInfo: &scip.ToolInfo{Name: "test"}}})

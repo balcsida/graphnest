@@ -103,6 +103,24 @@ func TestServiceDurableAdministratorReconcilesAllInstallations(t *testing.T) {
 	}
 }
 
+func TestServiceOAuthAdministratorReconcilesAllInstallations(t *testing.T) {
+	called := false
+	service := &Service{
+		Store:  &fakeStore{},
+		GitHub: fakeGitHub{},
+		ReconcileAll: func(context.Context) error {
+			called = true
+			return nil
+		},
+	}
+	if err := service.Reconcile(t.Context(), authn.Principal{Method: "oauth", Administrator: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("global reconciliation was not called")
+	}
+}
+
 func TestServiceRejectsAdministratorAPITokenReconcile(t *testing.T) {
 	service := &Service{Store: &fakeStore{}, GitHub: fakeGitHub{}}
 	err := service.Reconcile(t.Context(), authn.Principal{
