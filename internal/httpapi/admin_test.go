@@ -101,6 +101,7 @@ func TestAdminJobsRejectsInvalidCursors(t *testing.T) {
 	validTime := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
 	encode := func(value string) string { return base64.RawURLEncoding.EncodeToString([]byte(value)) }
 	for name, cursor := range map[string]string{
+		"empty":               "",
 		"not base64":          "not-base64",
 		"unsupported version": encode(`{"v":2,"updated_at":"` + validTime + `","id":1}`),
 		"malformed timestamp": encode(`{"v":1,"updated_at":"not-a-timestamp","id":1}`),

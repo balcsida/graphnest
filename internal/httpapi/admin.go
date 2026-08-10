@@ -39,7 +39,11 @@ func RegisterAdmin(mux *http.ServeMux, authenticator authn.RequestAuthenticator,
 		}{items, truncated}, err
 	}))
 	mux.Handle("/v1/admin/jobs", get(func(request *http.Request) (any, error) {
-		cursor, err := decodeAdminJobCursor(request.URL.Query().Get("cursor"))
+		query := request.URL.Query()
+		if query.Has("cursor") && query.Get("cursor") == "" {
+			return nil, admin.ErrInvalid
+		}
+		cursor, err := decodeAdminJobCursor(query.Get("cursor"))
 		if err != nil {
 			return nil, err
 		}
