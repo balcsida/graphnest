@@ -196,6 +196,7 @@ func summarize(repository Repository) (api.RepositorySummary, error) {
 		ID: repository.GitHubID, GitHubID: repository.GitHubID, Name: repository.Name, Branch: repository.Branch,
 		DesiredSHA: repository.DesiredSHA, IndexedSHA: repository.IndexedSHA, WebURL: repository.WebURL, Status: repository.Status,
 		ErrorCode: repository.ErrorCode, SearchNode: repository.SearchNode, LastIndexedAt: repository.LastIndexedAt,
+		SCIPStatus: api.SCIPStatusUnknown,
 	}, nil
 }
 
