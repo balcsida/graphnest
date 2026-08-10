@@ -287,7 +287,7 @@ func requireAdmin(principal authn.Principal) error {
 }
 
 func durableAdministrator(principal authn.Principal) bool {
-	return principal.Administrator && (principal.Method == "oidc" || principal.Method == "local") &&
+	return principal.Administrator && principal.Method != "api_token" &&
 		principal.InstallationID == 0 && len(principal.RepositoryIDs) == 0
 }
 

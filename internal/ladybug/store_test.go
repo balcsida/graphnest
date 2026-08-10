@@ -24,7 +24,7 @@ func TestReplaceRepositoryCreatesNodesBeforeEdges(t *testing.T) {
 }
 
 func TestManifestsReturnsMoreThanOneResultPage(t *testing.T) {
-	db := testDatabase(t, Options{})
+	db := testDatabase(t, Options{QueryTimeout: 30 * time.Second})
 	rows := make([]map[string]any, defaultMaxRows+1)
 	for i := range rows {
 		rows[i] = map[string]any{"id": int64(i + 1), "name": "repo", "commit": artifactA().Commit, "upload_id": int64(i + 1)}

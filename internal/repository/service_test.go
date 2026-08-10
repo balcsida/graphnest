@@ -37,7 +37,7 @@ func TestServiceList(t *testing.T) {
 	}
 	want := []api.RepositorySummary{{
 		ID: 101, GitHubID: 101, Name: "acme/one", Branch: "main", DesiredSHA: strings.Repeat("b", 40),
-		IndexedSHA: strings.Repeat("a", 40), WebURL: "https://github.com/acme/one", Status: "ready", SearchNode: "node-a", LastIndexedAt: &indexedAt,
+		IndexedSHA: strings.Repeat("a", 40), WebURL: "https://github.com/acme/one", Status: "ready", SearchNode: "node-a", LastIndexedAt: &indexedAt, SCIPStatus: api.SCIPStatusUnknown,
 	}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %#v, want %#v", got, want)
