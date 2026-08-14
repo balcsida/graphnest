@@ -3,6 +3,7 @@ package graphscanner
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -231,6 +232,35 @@ func TestRunOnePublishesExactCommit(t *testing.T) {
 	}
 }
 
+func TestRunOneRejectsOversizedRepositoryBeforeCheckout(t *testing.T) {
+	worker, queue, store, _, _ := workerFixture()
+	store.repository.SizeBytes = 101
+	worker.MaxRepositoryBytes = 100
+
+	worked, err := worker.RunOne(t.Context())
+
+	if err != nil || !worked {
+		t.Fatalf("RunOne() = %v, %v", worked, err)
+	}
+	if slices.Contains(queue.events, "prepare") || queue.failedCode != "repository_too_large" || queue.failedRetry {
+		t.Fatalf("events=%v failure=%q retry=%v", queue.events, queue.failedCode, queue.failedRetry)
+	}
+}
+
+func TestRunOneRejectsInsufficientSpaceBeforeCheckout(t *testing.T) {
+	worker, queue, _, _, _ := workerFixture()
+	worker.MinFreeBytes = math.MaxInt64
+
+	worked, err := worker.RunOne(t.Context())
+
+	if err != nil || !worked {
+		t.Fatalf("RunOne() = %v, %v", worked, err)
+	}
+	if slices.Contains(queue.events, "prepare") || queue.failedCode != "insufficient_space" || !queue.failedRetry {
+		t.Fatalf("events=%v failure=%q retry=%v", queue.events, queue.failedCode, queue.failedRetry)
+	}
+}
+
 func TestRunOneRecordsBoundedQueueAndPhaseMetrics(t *testing.T) {
 	worker, queue, _, _, _ := workerFixture()
 	queue.depths = map[string]int64{"queued": 3, "running": 1}
@@ -428,6 +458,37 @@ func TestRunOneTreatsParserTimeoutAsNonRetryableLimit(t *testing.T) {
 		}}, graphscan.Limits{
 			MaxFileBytes: 100, MaxTotalBytes: 100, MaxFiles: 1,
 			MaxNodes: 10, MaxEdges: 10, ParseTimeout: time.Millisecond,
+		})
+	})
+
+	worked, err := worker.RunOne(t.Context())
+
+	if err != nil || !worked {
+		t.Fatalf("RunOne() = %v, %v", worked, err)
+	}
+	if queue.failedCode != "scan_limit" || queue.failedRetry {
+		t.Fatalf("failure=%q retry=%v", queue.failedCode, queue.failedRetry)
+	}
+	if store.publishedCommit != "" || queue.completed != 0 {
+		t.Fatalf("published=%q completed=%d", store.publishedCommit, queue.completed)
+	}
+}
+
+func TestRunOneTreatsAggregateTimeoutAsNonRetryableLimit(t *testing.T) {
+	worker, queue, store, git, _ := workerFixture()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git.root = root
+	worker.ScanTimeout = time.Millisecond
+	worker.Analyzer = analyzerFunc(func(ctx context.Context, request graphscan.Request) (graphartifact.Artifact, error) {
+		return graphscan.Scan(ctx, request, map[string]graphscan.Parser{".go": func(ctx context.Context, _ string, _ []byte) (graphscan.File, error) {
+			<-ctx.Done()
+			return graphscan.File{}, ctx.Err()
+		}}, graphscan.Limits{
+			MaxFileBytes: 100, MaxTotalBytes: 100, MaxFiles: 1,
+			MaxNodes: 10, MaxEdges: 10, ParseTimeout: time.Hour,
 		})
 	})
 

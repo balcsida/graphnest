@@ -154,6 +154,24 @@ func TestWrapHTTPRecordsRequests(t *testing.T) {
 	}
 }
 
+func TestWrapHTTPBoundsUnknownMethods(t *testing.T) {
+	metrics := New()
+	handler := metrics.WrapHTTP(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	for _, method := range []string{"CUSTOM-1", "CUSTOM-2", "CUSTOM-3"} {
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(method, "/healthz", nil))
+	}
+
+	body := scrape(t, metrics)
+	if strings.Count(body, `grepnest_http_requests_total{method="unknown",path="unknown",status="200"} 3`) != 1 {
+		t.Fatalf("metrics missing one unknown-method series:\n%s", body)
+	}
+	for _, method := range []string{"CUSTOM-1", "CUSTOM-2", "CUSTOM-3"} {
+		if strings.Contains(body, method) {
+			t.Fatalf("metrics expose unbounded method %q:\n%s", method, body)
+		}
+	}
+}
+
 func TestWrapHTTPRecordsFirstStatus(t *testing.T) {
 	metrics := New()
 	mux := http.NewServeMux()

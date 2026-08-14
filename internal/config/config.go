@@ -68,6 +68,8 @@ type Scanner struct {
 	DatabaseURL, DataDir, GitPath, WorkerID, MetricsListenAddress string
 	GitHub                                                        GitHub
 	Limits                                                        GraphScanLimits
+	MinFreeBytes, MaxRepositoryBytes                              int64
+	ScanTimeout                                                   time.Duration
 }
 
 type Config struct {
@@ -388,6 +390,7 @@ func LoadScanner() (Scanner, error) {
 		GitPath:              os.Getenv("GREPNEST_GIT_PATH"),
 		WorkerID:             os.Getenv("GREPNEST_WORKER_ID"),
 		MetricsListenAddress: valueOr("GREPNEST_METRICS_LISTEN_ADDRESS", ":9090"),
+		ScanTimeout:          15 * time.Minute,
 		Limits: GraphScanLimits{
 			MaxFileBytes: 2 << 20, MaxTotalBytes: 1 << 30, MaxFiles: 100_000,
 			MaxNodes: 500_000, MaxEdges: 2_000_000, ParseTimeout: 30 * time.Second,
@@ -404,6 +407,15 @@ func LoadScanner() (Scanner, error) {
 	if scanner.DataDir == "" || scanner.GitPath == "" || scanner.WorkerID == "" {
 		return Scanner{}, invalid("scanner paths and worker ID are required")
 	}
+	if err := loadStorageLimits(&scanner.MinFreeBytes, &scanner.MaxRepositoryBytes); err != nil {
+		return Scanner{}, err
+	}
+	if err := durationValue("GREPNEST_GRAPH_SCAN_TIMEOUT", &scanner.ScanTimeout); err != nil {
+		return Scanner{}, err
+	}
+	if scanner.ScanTimeout > 30*time.Minute {
+		return Scanner{}, invalid("GREPNEST_GRAPH_SCAN_TIMEOUT exceeds safety cap")
+	}
 	if err := loadGraphScanLimits(&scanner.Limits); err != nil {
 		return Scanner{}, err
 	}
@@ -411,6 +423,17 @@ func LoadScanner() (Scanner, error) {
 		return Scanner{}, err
 	}
 	return scanner, nil
+}
+
+func loadStorageLimits(minFreeBytes, maxRepositoryBytes *int64) error {
+	var err error
+	if *minFreeBytes, err = strconv.ParseInt(valueOr("GREPNEST_MIN_FREE_BYTES", "1073741824"), 10, 64); err != nil || *minFreeBytes <= 0 {
+		return invalid("GREPNEST_MIN_FREE_BYTES must be a positive integer")
+	}
+	if *maxRepositoryBytes, err = strconv.ParseInt(valueOr("GREPNEST_MAX_REPOSITORY_BYTES", "5368709120"), 10, 64); err != nil || *maxRepositoryBytes <= 0 {
+		return invalid("GREPNEST_MAX_REPOSITORY_BYTES must be a positive integer")
+	}
+	return nil
 }
 
 func loadGraphScanLimits(limits *GraphScanLimits) error {

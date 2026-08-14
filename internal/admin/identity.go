@@ -130,7 +130,7 @@ func (service *Service) recordDenied(ctx context.Context, principal authn.Princi
 		actorID = strconv.FormatInt(id, 10)
 	}
 	method := principal.Method
-	if method != "oidc" && method != "local" && method != "api_token" {
+	if method != "api_token" && !authn.IsInteractiveMethod(method) {
 		method = ""
 	}
 	target := ""
@@ -171,7 +171,7 @@ func principalUserID(principal authn.Principal) int64 {
 }
 
 func requireIdentityAdmin(principal authn.Principal) error {
-	if err := requireAdmin(principal); err != nil || (principal.Method != "oidc" && principal.Method != "local") {
+	if err := requireAdmin(principal); err != nil || !authn.IsInteractiveMethod(principal.Method) {
 		return ErrForbidden
 	}
 	return nil

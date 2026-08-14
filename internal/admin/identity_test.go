@@ -68,6 +68,37 @@ func TestIdentityServiceReplacesAccessAndRevokesCredentials(t *testing.T) {
 	}
 }
 
+func TestIdentityServiceAllowsOAuthAdministrators(t *testing.T) {
+	store := &identityStore{}
+	service := &Service{Store: store}
+	principal := authn.Principal{Subject: "7", Method: "oauth", Administrator: true}
+
+	if _, _, err := service.Users(t.Context(), principal); err != nil {
+		t.Fatalf("users: %v", err)
+	}
+	if _, err := service.User(t.Context(), principal, 8); err != nil {
+		t.Fatalf("user: %v", err)
+	}
+	if _, _, err := service.Groups(t.Context(), principal); err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if _, err := service.Group(t.Context(), principal, 9); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if err := service.SuspendUser(t.Context(), principal, 8, true); err != nil {
+		t.Fatalf("suspend: %v", err)
+	}
+	if err := service.ReplaceUserAccess(t.Context(), principal, 8, true, nil); err != nil {
+		t.Fatalf("user access: %v", err)
+	}
+	if err := service.ReplaceGroupAccess(t.Context(), principal, 9, true, nil); err != nil {
+		t.Fatalf("group access: %v", err)
+	}
+	if err := service.RevokeUserCredentials(t.Context(), principal, 8); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+}
+
 func TestIdentityServiceRejectsSelfSuspensionButForwardsDirectAccess(t *testing.T) {
 	store := &identityStore{}
 	service := &Service{Store: store}
@@ -160,6 +191,15 @@ func TestDeniedMutationIgnoresAuditFailure(t *testing.T) {
 	if !errors.Is(err, ErrForbidden) || len(recorder.events) != 1 ||
 		recorder.events[0].Operation != audit.OperationAdminMutationDenied {
 		t.Fatalf("error=%v events=%#v", err, recorder.events)
+	}
+}
+
+func TestDeniedMutationRecordsOAuthMethod(t *testing.T) {
+	recorder := &deniedAuditRecorder{}
+	service := &Service{Audit: recorder}
+	service.RecordDeniedMutation(t.Context(), authn.Principal{Subject: "7", Method: "oauth"})
+	if len(recorder.events) != 1 || recorder.events[0].AuthenticationMethod != "oauth" {
+		t.Fatalf("events=%#v", recorder.events)
 	}
 }
 

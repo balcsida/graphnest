@@ -285,6 +285,29 @@ audit-retention or deletion mechanism, and the database trigger rejects updates
 deletes, and truncation. Operators must account for that growth in PostgreSQL
 retention and backup policy.
 
+## Production control gates
+
+Treat the following as deployment prerequisites, not settings supplied by this
+repository:
+
+- During every break-glass window, publish `/auth/local` and
+  `/auth/local/rotate` only through a trusted edge. Configure that edge to
+  derive a real client address from its trusted proxy chain and rate-limit both
+  routes by it. Never trust `Forwarded` or `X-Forwarded-*` supplied by an
+  arbitrary peer; GrepNest itself throttles the connection peer address.
+- Before allowing a `v*` release tag, enable GitHub protected-tag rules, or
+  require reviewers on the release environment that publishes the release.
+  Confirm the live repository rule or environment gate; the checked-in release
+  workflow validates signed tags but cannot enforce either GitHub setting.
+- Enable Helm external egress isolation only after a reviewed, current allow
+  list covers PostgreSQL and GitHub CIDRs and the DNS resolver path. When OIDC
+  is enabled, it must also cover the configured identity-provider CIDRs for
+  discovery, JWKS, and token requests. The chart takes PostgreSQL, GitHub, and
+  conditional identity-provider CIDRs plus DNS namespace/pod selectors; record
+  the DNS resolver CIDRs with that review where the cluster policy/CNI requires
+  them. Confirm the installed CNI enforces `NetworkPolicy` and verify the
+  rendered allow list against the live endpoint addresses before rollout.
+
 ## Optional OIDC operations
 
 Permit server egress only to the configured IdP discovery, JWKS, and token
@@ -412,13 +435,14 @@ size, indexing duration, and query concurrency rather than repository count
 alone.
 
 Ingress and ServiceMonitor are optional. ServiceMonitor requires its CRD.
-External egress isolation is also optional; before enabling it, CIDRs and DNS
-selectors must cover DNS, GitHub, and PostgreSQL endpoints. Security defaults
-include non-root containers, read-only root filesystems, dropped capabilities,
-disabled API-token automounting, default-deny ingress, and internal-only Zoekt.
-They do not fix a UID: this permits OpenShift-style arbitrary UIDs, with the
-image/root-group permissions and writable PVC/`emptyDir` mounts supplying
-access. Kubernetes projects the source graph secret as group-readable `0440`;
-an init container validates and atomically stages the bounded secret into an
-`emptyDir` as `0600` before the server or graph owner reads it. Keep that
-staged path private and do not mount the source Secret into those processes.
+The chart renders default-deny ingress and optional external egress isolation,
+but the cluster's CNI and the operator's applied values determine live
+enforcement. Security defaults include non-root containers, read-only root
+filesystems, dropped capabilities, disabled API-token automounting, and
+internal-only Zoekt. They do not fix a UID: this permits OpenShift-style
+arbitrary UIDs, with the image/root-group permissions and writable
+PVC/`emptyDir` mounts supplying access. Kubernetes projects the source graph
+secret as group-readable `0440`; an init container validates and atomically
+stages the bounded secret into an `emptyDir` as `0600` before the server or
+graph owner reads it. Keep that staged path private and do not mount the source
+Secret into those processes.
