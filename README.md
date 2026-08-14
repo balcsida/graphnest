@@ -79,7 +79,7 @@ The fixture profile is the fastest way to try GrepNest. It starts a deterministi
 
 ### Prerequisites
 
-- Go 1.26.5
+- Go 1.26.6
 - Git
 - Docker with Docker Compose
 - `jq`
