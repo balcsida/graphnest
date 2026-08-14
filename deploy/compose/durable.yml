@@ -1,6 +1,9 @@
 services:
   grepnest-indexer:
     profiles: [durable]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     image: ${GREPNEST_NODE_IMAGE:?GREPNEST_NODE_IMAGE is required}
     entrypoint: ["grepnest-indexer"]
     depends_on:
@@ -43,6 +46,9 @@ services:
 
   grepnest-scanner:
     profiles: [durable]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     image: ${GREPNEST_NODE_IMAGE:?GREPNEST_NODE_IMAGE is required}
     entrypoint: ["/bin/sh", "-ec"]
     command: ["GREPNEST_WORKER_ID=$(hostname) exec grepnest-scanner"]
@@ -84,6 +90,9 @@ services:
 
   grepnest-server:
     profiles: [durable]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     image: ${GREPNEST_APPLICATION_IMAGE:?GREPNEST_APPLICATION_IMAGE is required}
     entrypoint: ["grepnest-server"]
     depends_on:
