@@ -236,19 +236,101 @@ func TestWirePreflightRejectsTargetedWrongWireTypes(t *testing.T) {
 	wrong := func(number protowire.Number) []byte {
 		return protowire.AppendVarint(protowire.AppendTag(nil, number, protowire.VarintType), 1)
 	}
+	fixed := func(number protowire.Number) []byte {
+		return protowire.AppendFixed32(protowire.AppendTag(nil, number, protowire.Fixed32Type), 1)
+	}
 	tests := [][]byte{
-		wrong(2), wrong(3),
+		wrong(1), wrong(2), wrong(3),
+		wireBytes(1, wrong(2)), wireBytes(1, wireBytes(2, wrong(3))),
 		wireBytes(2, wrong(1)), wireBytes(2, wrong(2)), wireBytes(2, wrong(3)),
-		wireBytes(2, wireBytes(2, wrong(2))), wireBytes(2, wireBytes(2, wrong(6))),
-		wireBytes(3, wrong(1)), wireBytes(3, wrong(4)), wireBytes(3, wrong(7)), wireBytes(3, wrong(8)),
+		wireBytes(2, wireBytes(2, fixed(1))), wireBytes(2, wireBytes(2, wrong(2))),
+		wireBytes(2, wireBytes(2, wrong(4))), wireBytes(2, wireBytes(2, wrong(6))),
+		wireBytes(2, wireBytes(2, fixed(7))), wireBytes(2, wireBytes(2, wireBytes(6, fixed(5)))),
+		wireBytes(3, wrong(1)), wireBytes(3, wrong(3)), wireBytes(3, wrong(4)), wireBytes(3, wrong(7)), wireBytes(3, wrong(8)),
 		wireBytes(3, wireBytes(4, wrong(1))),
 		wireBytes(3, wireBytes(7, wrong(2))),
+		wireBytes(2, wireBytes(2, wireBytes(1, []byte{0x80}))),
 	}
 	for i, data := range tests {
 		if validWire(data) {
 			t.Fatalf("case %d: validWire() = true, want false", i)
 		}
 	}
+}
+
+func TestWirePreflightRejectsOversizedPackedRange(t *testing.T) {
+	packed := []byte{0, 0, 0, 0, 0}
+	data := wireBytes(2, wireBytes(2, wireBytes(1, packed)))
+	if validWire(data) {
+		t.Fatal("five-element packed range bypassed preflight")
+	}
+}
+
+func TestWirePreflightBoundsRepeatedScalars(t *testing.T) {
+	limits := wireLimits{
+		documents: 2, occurrences: 2, relationships: 2, symbols: 2, diagnostics: 2,
+		scalarElements: 2, pathBytes: 8, symbolBytes: 8,
+	}
+	strings := append(append(wireBytes(3, nil), wireBytes(3, nil)...), wireBytes(3, nil)...)
+	packed := []byte{0, 0, 0}
+	occurrence := func(value []byte) []byte { return wireBytes(2, wireBytes(2, value)) }
+
+	tests := []struct {
+		name string
+		data []byte
+	}{
+		{"tool arguments", wireBytes(1, wireBytes(2, strings))},
+		{"symbol documentation", wireBytes(3, strings)},
+		{"override documentation", occurrence(bytes.ReplaceAll(strings, []byte{0x1a}, []byte{0x22}))},
+		{"packed range", occurrence(wireBytes(1, packed))},
+		{"unpacked enclosing range", occurrence(bytes.Repeat(wireVarint(7, 0), 3))},
+		{"diagnostic tags", occurrence(wireBytes(6, wireBytes(5, packed)))},
+		{"combined fields", append(
+			wireBytes(1, wireBytes(2, wireBytes(3, nil))),
+			wireBytes(2, append(wireBytes(2, wireBytes(4, nil)), wireBytes(3, wireBytes(3, nil))...))...,
+		)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			check := func() {
+				if validWireLimits(test.data, limits) {
+					t.Fatal("validWireLimits() = true, want false")
+				}
+			}
+			check()
+			if testing.AllocsPerRun(1, check) > 1 {
+				t.Fatal("preflight allocated while rejecting repeated scalars")
+			}
+		})
+	}
+}
+
+func TestWirePreflightAggregatesDuplicateRanges(t *testing.T) {
+	limits := wireLimits{documents: 1, occurrences: 1, relationships: 1, symbols: 1, diagnostics: 1, scalarElements: 10, pathBytes: 8, symbolBytes: 8}
+	for _, number := range []protowire.Number{1, 7} {
+		value := append(wireBytes(number, []byte{0, 0}), wireVarint(number, 0)...)
+		value = append(value, wireBytes(number, []byte{0, 0})...)
+		if validWireLimits(wireBytes(2, wireBytes(2, value)), limits) {
+			t.Fatalf("field %d accepted five elements across duplicate encodings", number)
+		}
+	}
+}
+
+func TestWirePreflightAcceptsExactScalarLimits(t *testing.T) {
+	limits := wireLimits{documents: 1, occurrences: 1, relationships: 1, symbols: 1, diagnostics: 1, scalarElements: 12, pathBytes: 8, symbolBytes: 8}
+	tool := wireBytes(1, wireBytes(2, wireBytes(3, nil)))
+	symbol := append(wireBytes(3, nil), wireBytes(4, nil)...)
+	occurrence := append(wireBytes(1, []byte{0, 0, 0, 0}), wireBytes(4, nil)...)
+	occurrence = append(occurrence, wireBytes(7, []byte{0, 0, 0, 0})...)
+	occurrence = append(occurrence, wireBytes(6, wireBytes(5, []byte{0}))...)
+	document := append(wireBytes(2, occurrence), wireBytes(3, symbol)...)
+	if !validWireLimits(append(tool, wireBytes(2, document)...), limits) {
+		t.Fatal("validWireLimits() = false at exact scalar and range limits")
+	}
+}
+
+func wireVarint(number protowire.Number, value uint64) []byte {
+	return protowire.AppendVarint(protowire.AppendTag(nil, number, protowire.VarintType), value)
 }
 
 func wireBytes(number protowire.Number, value []byte) []byte {
