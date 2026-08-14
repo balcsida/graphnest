@@ -130,7 +130,7 @@ func (service *Service) recordDenied(ctx context.Context, principal authn.Princi
 		actorID = strconv.FormatInt(id, 10)
 	}
 	method := principal.Method
-	if method != "oidc" && method != "local" && method != "api_token" {
+	if method != "api_token" && !authn.IsInteractiveMethod(method) {
 		method = ""
 	}
 	target := ""
