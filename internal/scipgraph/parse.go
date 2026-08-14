@@ -7,10 +7,22 @@ import (
 	"strings"
 
 	"github.com/scip-code/scip/bindings/go/scip"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
 var ErrInvalidIndex = errors.New("invalid SCIP index")
+
+const (
+	maxDocuments      = 100_000
+	maxOccurrences    = 2_000_000
+	maxRelationships  = 2_000_000
+	maxSymbols        = 500_000
+	maxDiagnostics    = 2_000_000
+	maxScalarElements = 2_000_000
+	maxPathBytes      = 4_096
+	maxSymbolBytes    = 8_192
+)
 
 type Upload struct {
 	ProjectRoot, IndexerName, IndexerVersion string
@@ -33,6 +45,9 @@ type Relationship struct {
 }
 
 func Parse(data []byte) (Upload, error) {
+	if !validWire(data) {
+		return Upload{}, ErrInvalidIndex
+	}
 	var index scip.Index
 	if err := proto.Unmarshal(data, &index); err != nil || index.Metadata == nil || index.Metadata.ToolInfo == nil {
 		return Upload{}, ErrInvalidIndex
@@ -81,6 +96,196 @@ func Parse(data []byte) (Upload, error) {
 		}
 	}
 	return upload, nil
+}
+
+type wireCounts struct {
+	documents, occurrences, relationships, symbols, diagnostics, scalarElements int
+}
+
+type wireLimits struct {
+	documents, occurrences, relationships, symbols, diagnostics, scalarElements int
+	pathBytes, symbolBytes                                                      int
+}
+
+const (
+	wireNone byte = iota
+	wireIndex
+	wireDocument
+	wireOccurrence
+	wireSymbolInformation
+	wireRelationship
+	wireSignature
+	wireMetadata
+	wireToolInfo
+	wireDiagnostic
+	wirePath
+	wireSymbol
+	wireScalarBytes
+)
+
+func validWire(data []byte) bool {
+	return validWireLimits(data, wireLimits{
+		documents: maxDocuments, occurrences: maxOccurrences, relationships: maxRelationships,
+		symbols: maxSymbols, diagnostics: maxDiagnostics, scalarElements: maxScalarElements,
+		pathBytes: maxPathBytes, symbolBytes: maxSymbolBytes,
+	})
+}
+
+func validWireLimits(data []byte, limits wireLimits) bool {
+	return scanWireLimits(data, wireIndex, &wireCounts{}, limits)
+}
+
+func scanWireLimits(data []byte, message byte, counts *wireCounts, limits wireLimits) bool {
+	var ranges, enclosingRanges int
+	for len(data) > 0 {
+		number, wireType, n := protowire.ConsumeTag(data)
+		if n < 0 {
+			return false
+		}
+		data = data[n:]
+
+		child := wireNone
+		switch message {
+		case wireIndex:
+			if number == 1 {
+				child = wireMetadata
+			} else if number == 2 {
+				counts.documents++
+				child = wireDocument
+			} else if number == 3 {
+				counts.symbols++
+				child = wireSymbolInformation
+			}
+		case wireDocument:
+			if number == 1 {
+				child = wirePath
+			} else if number == 2 {
+				counts.occurrences++
+				child = wireOccurrence
+			} else if number == 3 {
+				counts.symbols++
+				child = wireSymbolInformation
+			}
+		case wireOccurrence:
+			if number == 1 || number == 7 {
+				elements, consumed, ok := consumeWireVarints(data, wireType)
+				if !ok {
+					return false
+				}
+				counts.scalarElements += elements
+				if number == 1 {
+					ranges += elements
+				} else {
+					enclosingRanges += elements
+				}
+				if ranges > 4 || enclosingRanges > 4 || exceedsWireLimits(counts, limits) {
+					return false
+				}
+				data = data[consumed:]
+				continue
+			} else if number == 2 {
+				child = wireSymbol
+			} else if number == 4 {
+				counts.scalarElements++
+				child = wireScalarBytes
+			} else if number == 6 {
+				counts.diagnostics++
+				child = wireDiagnostic
+			}
+		case wireSymbolInformation:
+			if number == 1 || number == 8 {
+				child = wireSymbol
+			} else if number == 3 {
+				counts.scalarElements++
+				child = wireScalarBytes
+			} else if number == 4 {
+				counts.relationships++
+				child = wireRelationship
+			} else if number == 7 {
+				child = wireSignature
+			}
+		case wireRelationship:
+			if number == 1 {
+				child = wireSymbol
+			}
+		case wireSignature:
+			if number == 2 {
+				counts.occurrences++
+				child = wireOccurrence
+			}
+		case wireMetadata:
+			if number == 2 {
+				child = wireToolInfo
+			}
+		case wireToolInfo:
+			if number == 3 {
+				counts.scalarElements++
+				child = wireScalarBytes
+			}
+		case wireDiagnostic:
+			if number == 5 {
+				elements, consumed, ok := consumeWireVarints(data, wireType)
+				if !ok {
+					return false
+				}
+				counts.scalarElements += elements
+				if exceedsWireLimits(counts, limits) {
+					return false
+				}
+				data = data[consumed:]
+				continue
+			}
+		}
+		if exceedsWireLimits(counts, limits) {
+			return false
+		}
+		if child != wireNone {
+			if wireType != protowire.BytesType {
+				return false
+			}
+			value, n := protowire.ConsumeBytes(data)
+			if n < 0 || child == wirePath && len(value) > limits.pathBytes || child == wireSymbol && len(value) > limits.symbolBytes ||
+				child < wirePath && !scanWireLimits(value, child, counts, limits) {
+				return false
+			}
+			data = data[n:]
+			continue
+		}
+		n = protowire.ConsumeFieldValue(number, wireType, data)
+		if n < 0 {
+			return false
+		}
+		data = data[n:]
+	}
+	return true
+}
+
+func exceedsWireLimits(counts *wireCounts, limits wireLimits) bool {
+	return counts.documents > limits.documents || counts.occurrences > limits.occurrences || counts.relationships > limits.relationships ||
+		counts.symbols > limits.symbols || counts.diagnostics > limits.diagnostics || counts.scalarElements > limits.scalarElements
+}
+
+func consumeWireVarints(data []byte, wireType protowire.Type) (elements, consumed int, ok bool) {
+	if wireType == protowire.VarintType {
+		_, consumed = protowire.ConsumeVarint(data)
+		return 1, consumed, consumed >= 0
+	}
+	if wireType != protowire.BytesType {
+		return 0, 0, false
+	}
+	packed, consumed := protowire.ConsumeBytes(data)
+	if consumed < 0 {
+		return 0, 0, false
+	}
+	for len(packed) > 0 {
+		_, n := protowire.ConsumeVarint(packed)
+		if n < 0 {
+			return 0, 0, false
+		}
+		elements++
+		packed = packed[n:]
+	}
+	return elements, consumed, true
 }
 
 func validDocument(document *scip.Document, paths map[string]struct{}) bool {

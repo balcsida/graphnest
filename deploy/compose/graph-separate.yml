@@ -20,6 +20,9 @@ services:
 
   grepnest-graph:
     profiles: [durable]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     image: ${GREPNEST_NODE_IMAGE:?GREPNEST_NODE_IMAGE is required}
     entrypoint: ["grepnest-graph"]
     depends_on:

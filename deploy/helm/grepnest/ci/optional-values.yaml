@@ -47,6 +47,9 @@ node:
 scanner:
   enabled: true
   replicas: 3
+  maxRepositoryBytes: 4294967296
+  minFreeBytes: 2147483648
+  scanTimeout: 20m
   nodeSelector: {grepnest.example.invalid/pool: scanner}
   affinity:
     nodeAffinity:

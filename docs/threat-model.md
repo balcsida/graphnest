@@ -35,6 +35,13 @@ deployment, and checking every replica. Configuration is loaded at process
 startup; partial rollouts can expose different route availability until all
 replicas restart.
 
+During a recovery window, expose `/auth/local` and `/auth/local/rotate` only
+through a trusted edge. That edge must establish the real client address from
+its own trusted proxy chain and rate-limit both routes by that address. Do not
+accept `Forwarded` or `X-Forwarded-*` from arbitrary peers: GrepNest's shared
+throttle uses the transport peer address, so a shared proxy otherwise makes
+all clients appear as one source.
+
 ## Milestones 0-1 controls
 
 - `/v1/search` and `/mcp` require exactly one bearer credential; malformed,
@@ -133,7 +140,9 @@ and external archival remain operator responsibilities.
 
 This remains a local development slice, not a production security boundary.
 Git pack expansion and Zoekt shards require container and volume quotas.
-Container isolation, network policy, secret delivery, backup/restore, and
-production ingress remain Milestone 3 work. Do not claim production readiness
-from local or Compose success. The Helm Ingress is structural support, not
-proof of a production ingress deployment.
+Compose keeps its fixture services on an internal network, and the Helm chart
+renders default-deny ingress plus optional CIDR/selector-based egress policy;
+these are repository controls, not evidence that the running platform enforces
+them. Secret delivery, backup/restore, production ingress, and policy
+enforcement remain operator responsibilities. Do not claim production
+readiness from local, Compose, or chart-render success.
