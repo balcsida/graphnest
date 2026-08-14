@@ -55,6 +55,29 @@ func TestCreateTokenRequiresInteractiveSession(t *testing.T) {
 	}
 }
 
+func TestCredentialManagementRequiresInteractiveSession(t *testing.T) {
+	for _, method := range []string{"oauth", "api_token"} {
+		t.Run(method, func(t *testing.T) {
+			store := &storeStub{tokens: []authn.APITokenMetadata{{ID: 7, Prefix: "gnp_abc"}}}
+			service := &Service{Manager: authn.TokenManager{Store: store, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+			principal := authn.Principal{Subject: "11", Method: method}
+
+			_, _, createErr := service.CreateToken(t.Context(), principal, nil, nil)
+			_, listErr := service.Tokens(t.Context(), principal)
+			revokeErr := service.RevokeToken(t.Context(), principal, 7)
+			if method == "oauth" {
+				if createErr != nil || listErr != nil || revokeErr != nil {
+					t.Fatalf("OAuth credential management errors: create=%v list=%v revoke=%v", createErr, listErr, revokeErr)
+				}
+				return
+			}
+			if !errors.Is(createErr, ErrForbidden) || !errors.Is(listErr, ErrForbidden) || !errors.Is(revokeErr, ErrForbidden) {
+				t.Fatalf("API token credential management errors: create=%v list=%v revoke=%v", createErr, listErr, revokeErr)
+			}
+		})
+	}
+}
+
 func TestCreateTokenRequiresFutureExpiry(t *testing.T) {
 	// Break caught: tokens created already expired or expiring exactly now.
 	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)

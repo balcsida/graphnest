@@ -14,6 +14,10 @@ const (
 	ProviderLocal = "local"
 )
 
+func IsInteractiveMethod(method string) bool {
+	return method == ProviderOIDC || method == ProviderOAuth || method == ProviderLocal
+}
+
 type Identity struct {
 	Provider, Issuer, Subject, LinkID, DisplayName string
 }

@@ -171,7 +171,7 @@ func principalUserID(principal authn.Principal) int64 {
 }
 
 func requireIdentityAdmin(principal authn.Principal) error {
-	if err := requireAdmin(principal); err != nil || (principal.Method != "oidc" && principal.Method != "local") {
+	if err := requireAdmin(principal); err != nil || !authn.IsInteractiveMethod(principal.Method) {
 		return ErrForbidden
 	}
 	return nil
