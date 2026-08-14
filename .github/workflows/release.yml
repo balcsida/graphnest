@@ -90,6 +90,24 @@ jobs:
           APPLICATION_IMAGE="grepnest-application:smoke-$suffix" \
           NODE_IMAGE="grepnest-node:smoke-$suffix" \
             sh deploy/images/test.sh
+      - name: Scan smoke images
+        run: |
+          set -euo pipefail
+          suffix=${{ matrix.platform }}
+          suffix=${suffix#linux/}
+          mkdir -p "$RUNNER_TEMP/trivy-cache"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$RUNNER_TEMP/trivy-cache:/root/.cache/trivy" \
+            aquasec/trivy:0.73.0@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c image \
+            --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 \
+            "grepnest-application:smoke-$suffix"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$RUNNER_TEMP/trivy-cache:/root/.cache/trivy" \
+            aquasec/trivy:0.73.0@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c image \
+            --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 \
+            "grepnest-node:smoke-$suffix"
 
   publish:
     needs: [validate, ci, smoke]
