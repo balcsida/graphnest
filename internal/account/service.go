@@ -38,7 +38,7 @@ type Service struct {
 }
 
 func (s *Service) CreateToken(ctx context.Context, principal authn.Principal, expires *time.Time, repositoryIDs []int64) (Token, string, error) {
-	if principal.Method != "oidc" && principal.Method != "local" {
+	if !authn.IsInteractiveMethod(principal.Method) {
 		return Token{}, "", ErrForbidden
 	}
 	userID, err := userID(principal)
@@ -82,6 +82,9 @@ func (s *Service) now() time.Time {
 }
 
 func (s *Service) Tokens(ctx context.Context, principal authn.Principal) ([]Token, error) {
+	if !authn.IsInteractiveMethod(principal.Method) {
+		return nil, ErrForbidden
+	}
 	userID, err := userID(principal)
 	if err != nil {
 		return nil, ErrForbidden
@@ -104,6 +107,9 @@ func (s *Service) Tokens(ctx context.Context, principal authn.Principal) ([]Toke
 }
 
 func (s *Service) RevokeToken(ctx context.Context, principal authn.Principal, id int64) error {
+	if !authn.IsInteractiveMethod(principal.Method) {
+		return ErrForbidden
+	}
 	userID, err := userID(principal)
 	if err != nil || id < 1 || s.Manager.Store == nil {
 		return ErrForbidden
@@ -121,7 +127,7 @@ func (s *Service) RevokeToken(ctx context.Context, principal authn.Principal, id
 }
 
 func userID(principal authn.Principal) (int64, error) {
-	if principal.Method != "oidc" && principal.Method != "local" && principal.Method != "api_token" {
+	if !authn.IsInteractiveMethod(principal.Method) {
 		return 0, ErrForbidden
 	}
 	id, err := strconv.ParseInt(principal.Subject, 10, 64)
