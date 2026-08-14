@@ -300,11 +300,13 @@ repository:
   Confirm the live repository rule or environment gate; the checked-in release
   workflow validates signed tags but cannot enforce either GitHub setting.
 - Enable Helm external egress isolation only after a reviewed, current allow
-  list covers PostgreSQL and GitHub CIDRs and the DNS resolver path. The chart
-  takes PostgreSQL/GitHub CIDRs and DNS namespace/pod selectors; record the DNS
-  resolver CIDRs with that review where the cluster policy/CNI requires them.
-  Confirm the installed CNI enforces `NetworkPolicy` and verify the rendered
-  allow list against the live endpoint addresses before rollout.
+  list covers PostgreSQL and GitHub CIDRs and the DNS resolver path. When OIDC
+  is enabled, it must also cover the configured identity-provider CIDRs for
+  discovery, JWKS, and token requests. The chart takes PostgreSQL, GitHub, and
+  conditional identity-provider CIDRs plus DNS namespace/pod selectors; record
+  the DNS resolver CIDRs with that review where the cluster policy/CNI requires
+  them. Confirm the installed CNI enforces `NetworkPolicy` and verify the
+  rendered allow list against the live endpoint addresses before rollout.
 
 ## Optional OIDC operations
 
