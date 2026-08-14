@@ -194,6 +194,15 @@ func TestDeniedMutationIgnoresAuditFailure(t *testing.T) {
 	}
 }
 
+func TestDeniedMutationRecordsOAuthMethod(t *testing.T) {
+	recorder := &deniedAuditRecorder{}
+	service := &Service{Audit: recorder}
+	service.RecordDeniedMutation(t.Context(), authn.Principal{Subject: "7", Method: "oauth"})
+	if len(recorder.events) != 1 || recorder.events[0].AuthenticationMethod != "oauth" {
+		t.Fatalf("events=%#v", recorder.events)
+	}
+}
+
 func (*identityStore) AuditEvents(context.Context, int) ([]audit.Event, bool, error) {
 	return nil, false, nil
 }
