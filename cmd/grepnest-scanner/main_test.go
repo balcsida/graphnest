@@ -48,13 +48,16 @@ func TestScannerGitSharesMirrorsButSeparatesGraphWorktrees(t *testing.T) {
 	}
 }
 
-func TestScannerWorkerUsesStorageLimits(t *testing.T) {
+func TestScannerWorkerUsesResourceLimits(t *testing.T) {
 	worker := newScannerWorker(config.Scanner{
-		WorkerID: "scanner-1", MaxRepositoryBytes: 5 << 30, MinFreeBytes: 1 << 30,
+		WorkerID: "scanner-1", MaxRepositoryBytes: 5 << 30, MinFreeBytes: 1 << 30, ScanTimeout: 20 * time.Minute,
 	}, nil, nil, nil, nil, nil, nil)
 
 	if worker.MaxRepositoryBytes != 5<<30 || worker.MinFreeBytes != 1<<30 {
 		t.Fatalf("storage limits = %d, %d", worker.MaxRepositoryBytes, worker.MinFreeBytes)
+	}
+	if worker.ScanTimeout != 20*time.Minute {
+		t.Fatalf("scan timeout = %v", worker.ScanTimeout)
 	}
 }
 

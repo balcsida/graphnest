@@ -474,6 +474,37 @@ func TestRunOneTreatsParserTimeoutAsNonRetryableLimit(t *testing.T) {
 	}
 }
 
+func TestRunOneTreatsAggregateTimeoutAsNonRetryableLimit(t *testing.T) {
+	worker, queue, store, git, _ := workerFixture()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git.root = root
+	worker.ScanTimeout = time.Millisecond
+	worker.Analyzer = analyzerFunc(func(ctx context.Context, request graphscan.Request) (graphartifact.Artifact, error) {
+		return graphscan.Scan(ctx, request, map[string]graphscan.Parser{".go": func(ctx context.Context, _ string, _ []byte) (graphscan.File, error) {
+			<-ctx.Done()
+			return graphscan.File{}, ctx.Err()
+		}}, graphscan.Limits{
+			MaxFileBytes: 100, MaxTotalBytes: 100, MaxFiles: 1,
+			MaxNodes: 10, MaxEdges: 10, ParseTimeout: time.Hour,
+		})
+	})
+
+	worked, err := worker.RunOne(t.Context())
+
+	if err != nil || !worked {
+		t.Fatalf("RunOne() = %v, %v", worked, err)
+	}
+	if queue.failedCode != "scan_limit" || queue.failedRetry {
+		t.Fatalf("failure=%q retry=%v", queue.failedCode, queue.failedRetry)
+	}
+	if store.publishedCommit != "" || queue.completed != 0 {
+		t.Fatalf("published=%q completed=%d", store.publishedCommit, queue.completed)
+	}
+}
+
 func TestRunOneCleansUpAfterCancellation(t *testing.T) {
 	worker, queue, store, git, analyzer := workerFixture()
 	analyzer.block = true

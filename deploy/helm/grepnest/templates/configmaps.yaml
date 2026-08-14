@@ -116,5 +116,6 @@ data:
   GREPNEST_GIT_PATH: {{ .Values.scanner.gitExecutable | quote }}
   GREPNEST_MAX_REPOSITORY_BYTES: {{ printf "%d" (int64 .Values.scanner.maxRepositoryBytes) | quote }}
   GREPNEST_MIN_FREE_BYTES: {{ printf "%d" (int64 .Values.scanner.minFreeBytes) | quote }}
+  GREPNEST_GRAPH_SCAN_TIMEOUT: {{ .Values.scanner.scanTimeout | quote }}
   GREPNEST_METRICS_LISTEN_ADDRESS: {{ printf ":%v" .Values.scanner.metricsPort | quote }}
 {{- end }}

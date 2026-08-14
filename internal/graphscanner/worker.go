@@ -47,6 +47,7 @@ type Worker struct {
 	Analyzer           Analyzer
 	MinFreeBytes       int64
 	MaxRepositoryBytes int64
+	ScanTimeout        time.Duration
 	RenewEvery         time.Duration
 	ReapEvery          time.Duration
 	CleanupTimeout     time.Duration
@@ -150,13 +151,16 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 		return fail("git_failed", true)
 	}
 	started = time.Now()
-	artifact, err := worker.Analyzer.Scan(jobCtx, graphscan.Request{
+	scanCtx, scanCancel := context.WithTimeout(jobCtx, worker.scanTimeout())
+	artifact, err := worker.Analyzer.Scan(scanCtx, graphscan.Request{
 		RepositoryID: job.RepositoryID,
 		Commit:       job.TargetSHA,
 		Root:         root,
 	})
+	scanErr := scanCtx.Err()
+	scanCancel()
 	worker.observePhase("scan", started, err)
-	if errors.Is(err, graphscan.ErrLimitExceeded) {
+	if errors.Is(scanErr, context.DeadlineExceeded) || errors.Is(err, graphscan.ErrLimitExceeded) {
 		return fail("scan_limit", false)
 	}
 	if err != nil || artifact.RepositoryID != job.RepositoryID || artifact.Commit != job.TargetSHA {
@@ -266,6 +270,13 @@ func (worker *Worker) cleanupTimeout() time.Duration {
 		return worker.CleanupTimeout
 	}
 	return 30 * time.Second
+}
+
+func (worker *Worker) scanTimeout() time.Duration {
+	if worker.ScanTimeout > 0 {
+		return worker.ScanTimeout
+	}
+	return 15 * time.Minute
 }
 
 func receive(errors <-chan error) error {
