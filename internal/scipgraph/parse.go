@@ -17,6 +17,8 @@ const (
 	maxDocuments     = 100_000
 	maxOccurrences   = 2_000_000
 	maxRelationships = 2_000_000
+	maxSymbols       = 500_000
+	maxDiagnostics   = 2_000_000
 	maxPathBytes     = 4_096
 	maxSymbolBytes   = 8_192
 )
@@ -96,14 +98,39 @@ func Parse(data []byte) (Upload, error) {
 }
 
 type wireCounts struct {
-	documents, occurrences, relationships int
+	documents, occurrences, relationships, symbols, diagnostics int
 }
+
+type wireLimits struct {
+	documents, occurrences, relationships, symbols, diagnostics int
+	pathBytes, symbolBytes                                      int
+}
+
+const (
+	wireNone byte = iota
+	wireIndex
+	wireDocument
+	wireOccurrence
+	wireSymbolInformation
+	wireRelationship
+	wireSignature
+	wirePath
+	wireSymbol
+	wireOpaque
+)
 
 func validWire(data []byte) bool {
-	return scanWire(data, 0, &wireCounts{})
+	return validWireLimits(data, wireLimits{
+		documents: maxDocuments, occurrences: maxOccurrences, relationships: maxRelationships,
+		symbols: maxSymbols, diagnostics: maxDiagnostics, pathBytes: maxPathBytes, symbolBytes: maxSymbolBytes,
+	})
 }
 
-func scanWire(data []byte, message byte, counts *wireCounts) bool {
+func validWireLimits(data []byte, limits wireLimits) bool {
+	return scanWireLimits(data, wireIndex, &wireCounts{}, limits)
+}
+
+func scanWireLimits(data []byte, message byte, counts *wireCounts, limits wireLimits) bool {
 	for len(data) > 0 {
 		number, wireType, n := protowire.ConsumeTag(data)
 		if n < 0 {
@@ -111,49 +138,63 @@ func scanWire(data []byte, message byte, counts *wireCounts) bool {
 		}
 		data = data[n:]
 
-		child := byte(0)
+		child := wireNone
 		switch message {
-		case 0: // Index
+		case wireIndex:
 			if number == 2 {
 				counts.documents++
-				child = 1
+				child = wireDocument
 			} else if number == 3 {
-				child = 3
+				counts.symbols++
+				child = wireSymbolInformation
 			}
-		case 1: // Document
+		case wireDocument:
 			if number == 1 {
-				child = 5
+				child = wirePath
 			} else if number == 2 {
 				counts.occurrences++
-				child = 2
+				child = wireOccurrence
 			} else if number == 3 {
-				child = 3
+				counts.symbols++
+				child = wireSymbolInformation
 			}
-		case 2: // Occurrence
+		case wireOccurrence:
 			if number == 2 {
-				child = 6
+				child = wireSymbol
+			} else if number == 6 {
+				counts.diagnostics++
+				child = wireOpaque
 			}
-		case 3: // SymbolInformation
+		case wireSymbolInformation:
 			if number == 1 || number == 8 {
-				child = 6
+				child = wireSymbol
 			} else if number == 4 {
 				counts.relationships++
-				child = 4
+				child = wireRelationship
+			} else if number == 7 {
+				child = wireSignature
 			}
-		case 4: // Relationship
+		case wireRelationship:
 			if number == 1 {
-				child = 6
+				child = wireSymbol
+			}
+		case wireSignature:
+			if number == 2 {
+				counts.occurrences++
+				child = wireOccurrence
 			}
 		}
-		if counts.documents > maxDocuments || counts.occurrences > maxOccurrences || counts.relationships > maxRelationships {
+		if counts.documents > limits.documents || counts.occurrences > limits.occurrences || counts.relationships > limits.relationships ||
+			counts.symbols > limits.symbols || counts.diagnostics > limits.diagnostics {
 			return false
 		}
-		if child != 0 {
+		if child != wireNone {
 			if wireType != protowire.BytesType {
 				return false
 			}
 			value, n := protowire.ConsumeBytes(data)
-			if n < 0 || child == 5 && len(value) > maxPathBytes || child == 6 && len(value) > maxSymbolBytes || child < 5 && !scanWire(value, child, counts) {
+			if n < 0 || child == wirePath && len(value) > limits.pathBytes || child == wireSymbol && len(value) > limits.symbolBytes ||
+				child < wirePath && !scanWireLimits(value, child, counts, limits) {
 				return false
 			}
 			data = data[n:]

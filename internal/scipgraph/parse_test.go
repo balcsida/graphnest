@@ -146,6 +146,10 @@ func TestParseRejectsOversizedWireValues(t *testing.T) {
 		{"documents", bytes.Repeat(document(nil), 100_001), true},
 		{"occurrences", document(bytes.Repeat(field(2, nil), 2_000_001)), true},
 		{"relationships", document(symbol(bytes.Repeat(field(4, nil), 2_000_001))), true},
+		{"external symbols", bytes.Repeat(field(3, nil), 500_001), true},
+		{"document symbols", document(bytes.Repeat(field(3, nil), 500_001)), true},
+		{"diagnostics", document(field(2, bytes.Repeat(field(6, nil), 2_000_001))), true},
+		{"signature occurrences", field(3, field(7, bytes.Repeat(field(2, nil), 2_000_001))), true},
 		{"relative path", index(strings.Repeat("a", 4_097), "local 0"), false},
 		{"symbol", index("a.go", "scip-go gomod example.com/a v1 "+strings.Repeat("a", 8_193)+"#"), false},
 		{"enclosing symbol", marshalIndex(t, &scip.Index{
@@ -176,6 +180,79 @@ func TestParseRejectsMalformedWirePreflight(t *testing.T) {
 	if _, err := Parse([]byte{0x12, 0x80}); !errors.Is(err, ErrInvalidIndex) {
 		t.Fatalf("Parse() error = %v, want ErrInvalidIndex", err)
 	}
+}
+
+func TestWirePreflightEnforcesCombinedLimits(t *testing.T) {
+	limits := wireLimits{documents: 1, occurrences: 2, relationships: 2, symbols: 2, diagnostics: 2, pathBytes: 4, symbolBytes: 8}
+	occurrence := wireBytes(2, []byte("local 0"))
+	signature := func(occurrences ...[]byte) []byte {
+		var value []byte
+		for _, occurrence := range occurrences {
+			value = append(value, wireBytes(2, occurrence)...)
+		}
+		return wireBytes(7, value)
+	}
+	relationship := wireBytes(4, wireBytes(1, []byte("local 2")))
+	symbol := func(value ...[]byte) []byte { return wireBytes(3, bytes.Join(value, nil)) }
+	external := func(value ...[]byte) []byte { return wireBytes(3, bytes.Join(value, nil)) }
+	document := func(value ...[]byte) []byte { return wireBytes(2, bytes.Join(value, nil)) }
+
+	tests := []struct {
+		name string
+		data []byte
+	}{
+		{"occurrences", document(wireBytes(2, occurrence), symbol(signature(occurrence, occurrence)))},
+		{"symbols", append(document(symbol(nil), symbol(nil)), external(nil)...)},
+		{"relationships", append(document(symbol(relationship)), external(relationship, relationship)...)},
+		{"diagnostics", document(wireBytes(2, append(occurrence, wireBytes(6, nil)...)), symbol(signature(append(occurrence, wireBytes(6, nil)...), append(occurrence, wireBytes(6, nil)...))))},
+		{"duplicate signature fields", external(signature(occurrence), signature(occurrence), signature(occurrence))},
+		{"signature symbol", external(signature(wireBytes(2, []byte("123456789"))))},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if validWireLimits(test.data, limits) {
+				t.Fatal("validWireLimits() = true, want false")
+			}
+		})
+	}
+}
+
+func TestWirePreflightAcceptsExactLimits(t *testing.T) {
+	limits := wireLimits{documents: 1, occurrences: 2, relationships: 2, symbols: 2, diagnostics: 2, pathBytes: 4, symbolBytes: 8}
+	occurrence := append(wireBytes(2, []byte("local 0")), wireBytes(6, nil)...)
+	relationship := wireBytes(4, wireBytes(1, []byte("local 2")))
+	documentSymbol := append(wireBytes(1, []byte("local 1")), relationship...)
+	documentSymbol = append(documentSymbol, wireBytes(7, wireBytes(2, occurrence))...)
+	document := append(wireBytes(1, []byte("a.go")), wireBytes(2, occurrence)...)
+	document = append(document, wireBytes(3, documentSymbol)...)
+	external := append(wireBytes(1, []byte("local 3")), relationship...)
+	data := append(wireBytes(2, document), wireBytes(3, external)...)
+	if !validWireLimits(data, limits) {
+		t.Fatal("validWireLimits() = false at exact limits")
+	}
+}
+
+func TestWirePreflightRejectsTargetedWrongWireTypes(t *testing.T) {
+	wrong := func(number protowire.Number) []byte {
+		return protowire.AppendVarint(protowire.AppendTag(nil, number, protowire.VarintType), 1)
+	}
+	tests := [][]byte{
+		wrong(2), wrong(3),
+		wireBytes(2, wrong(1)), wireBytes(2, wrong(2)), wireBytes(2, wrong(3)),
+		wireBytes(2, wireBytes(2, wrong(2))), wireBytes(2, wireBytes(2, wrong(6))),
+		wireBytes(3, wrong(1)), wireBytes(3, wrong(4)), wireBytes(3, wrong(7)), wireBytes(3, wrong(8)),
+		wireBytes(3, wireBytes(4, wrong(1))),
+		wireBytes(3, wireBytes(7, wrong(2))),
+	}
+	for i, data := range tests {
+		if validWire(data) {
+			t.Fatalf("case %d: validWire() = true, want false", i)
+		}
+	}
+}
+
+func wireBytes(number protowire.Number, value []byte) []byte {
+	return protowire.AppendBytes(protowire.AppendTag(nil, number, protowire.BytesType), value)
 }
 
 func marshalIndex(t *testing.T, index *scip.Index) []byte {
