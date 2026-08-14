@@ -472,6 +472,8 @@ done
 
 for pattern in 'app.kubernetes.io/component: scanner' '^  replicas: 3$' \
   'command: \["/usr/local/bin/grepnest-scanner"\]' \
+  'GREPNEST_MAX_REPOSITORY_BYTES: "4294967296"' \
+  'GREPNEST_MIN_FREE_BYTES: "2147483648"' \
   'name: worktree, mountPath: /data' 'name: worktree, emptyDir: \{\}' \
   'name: metrics, containerPort: 9090' 'requests:' 'limits:' \
   'automountServiceAccountToken: false' 'readOnlyRootFilesystem: true'; do

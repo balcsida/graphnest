@@ -130,7 +130,7 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 	if err != nil {
 		return fail("repository_failed", true)
 	}
-	if worker.MaxRepositoryBytes > 0 && repo.SizeBytes > worker.MaxRepositoryBytes {
+	if RepositoryTooLarge(repo.SizeBytes, worker.MaxRepositoryBytes) {
 		return fail("repository_too_large", false)
 	}
 	defer func() {
@@ -275,22 +275,30 @@ func (worker *Worker) enoughSpace() (bool, error) {
 	path := "."
 	if git, ok := worker.Git.(*Git); ok && git.WorktreesDir != "" {
 		path = git.WorktreesDir
-		for {
-			if _, err := os.Stat(path); err == nil {
-				break
-			}
-			parent := filepath.Dir(path)
-			if parent == path {
-				break
-			}
-			path = parent
+	}
+	return EnoughFreeSpace(path, worker.MinFreeBytes)
+}
+
+func RepositoryTooLarge(sizeBytes, maxBytes int64) bool {
+	return maxBytes > 0 && sizeBytes > maxBytes
+}
+
+func EnoughFreeSpace(path string, minBytes uint64) (bool, error) {
+	for {
+		if _, err := os.Stat(path); err == nil {
+			break
 		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			break
+		}
+		path = parent
 	}
 	var stats unix.Statfs_t
 	if err := unix.Statfs(path, &stats); err != nil {
 		return false, err
 	}
-	return stats.Bavail*uint64(stats.Bsize) >= worker.MinFreeBytes, nil
+	return stats.Bavail*uint64(stats.Bsize) >= minBytes, nil
 }
 
 func readError(errors <-chan error) error {

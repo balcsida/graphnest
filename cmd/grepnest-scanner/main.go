@@ -165,10 +165,8 @@ func newScannerRuntime(ctx context.Context, settings config.Scanner) (scannerRun
 		MaxFiles: settings.Limits.MaxFiles, MaxNodes: settings.Limits.MaxNodes, MaxEdges: settings.Limits.MaxEdges,
 		ParseTimeout: settings.Limits.ParseTimeout, SkipDirectories: settings.Limits.SkipDirectories,
 	}
-	worker := &graphscanner.Worker{
-		ID: settings.WorkerID, Queue: store, Store: store, Tokens: githubClient, Git: git,
-		Analyzer: scannerAnalyzer{parsers: scannerParsers(), limits: limits}, Metrics: metrics,
-	}
+	worker := newScannerWorker(settings, store, store, githubClient, git,
+		scannerAnalyzer{parsers: scannerParsers(), limits: limits}, metrics)
 	mux := http.NewServeMux()
 	mux.Handle("GET /metrics", metrics.Handler())
 	return scannerRuntime{
@@ -176,6 +174,16 @@ func newScannerRuntime(ctx context.Context, settings config.Scanner) (scannerRun
 		runWorker: worker.Run, runMetrics: func(ctx context.Context) error { return serveMetrics(ctx, listener, mux) },
 		close: func() { _ = listener.Close(); pool.Close() },
 	}, nil
+}
+
+func newScannerWorker(settings config.Scanner, queue graphscanner.Queue, store graphscanner.Store,
+	tokens graphscanner.TokenSource, git graphscanner.GitWorkspace, analyzer graphscanner.Analyzer,
+	metrics *observability.Metrics,
+) *graphscanner.Worker {
+	return &graphscanner.Worker{
+		ID: settings.WorkerID, Queue: queue, Store: store, Tokens: tokens, Git: git, Analyzer: analyzer,
+		MinFreeBytes: settings.MinFreeBytes, MaxRepositoryBytes: settings.MaxRepositoryBytes, Metrics: metrics,
+	}
 }
 
 func scannerGit(settings config.Scanner, executable string) *indexer.Git {

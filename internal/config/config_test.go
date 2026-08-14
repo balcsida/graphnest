@@ -377,7 +377,8 @@ func TestLoadScannerDefaults(t *testing.T) {
 	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" ||
 		got.DataDir != "/var/lib/grepnest/data" || got.GitPath != "/usr/bin/git" ||
 		got.WorkerID != "worker-1" || got.MetricsListenAddress != ":9090" ||
-		got.GitHub.AppID != 123 || got.GitHub.WebhookSecretFile != "" {
+		got.GitHub.AppID != 123 || got.GitHub.WebhookSecretFile != "" ||
+		got.MaxRepositoryBytes != 5<<30 || got.MinFreeBytes != 1<<30 {
 		t.Fatalf("configuration = %#v", got)
 	}
 	wantLimits := GraphScanLimits{
@@ -399,6 +400,8 @@ func TestLoadScannerAcceptsBoundedOverrides(t *testing.T) {
 	t.Setenv("GREPNEST_GRAPH_SCAN_MAX_EDGES", "5")
 	t.Setenv("GREPNEST_GRAPH_SCAN_PARSE_TIMEOUT", "6ms")
 	t.Setenv("GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", " vendor,dist,vendor,.cache ")
+	t.Setenv("GREPNEST_MAX_REPOSITORY_BYTES", "7")
+	t.Setenv("GREPNEST_MIN_FREE_BYTES", "8")
 
 	got, err := LoadScanner()
 	if err != nil {
@@ -411,6 +414,9 @@ func TestLoadScannerAcceptsBoundedOverrides(t *testing.T) {
 	if !reflect.DeepEqual(got.Limits, want) {
 		t.Fatalf("limits = %#v, want %#v", got.Limits, want)
 	}
+	if got.MaxRepositoryBytes != 7 || got.MinFreeBytes != 8 {
+		t.Fatalf("storage limits = %d, %d", got.MaxRepositoryBytes, got.MinFreeBytes)
+	}
 }
 
 func TestLoadScannerRejectsInvalidLimitsAndSkips(t *testing.T) {
@@ -422,6 +428,8 @@ func TestLoadScannerRejectsInvalidLimitsAndSkips(t *testing.T) {
 		{"nodes over cap", "GREPNEST_GRAPH_SCAN_MAX_NODES", "500001"},
 		{"edges over cap", "GREPNEST_GRAPH_SCAN_MAX_EDGES", "2000001"},
 		{"timeout over cap", "GREPNEST_GRAPH_SCAN_PARSE_TIMEOUT", "31s"},
+		{"zero repository bytes", "GREPNEST_MAX_REPOSITORY_BYTES", "0"},
+		{"zero free bytes", "GREPNEST_MIN_FREE_BYTES", "0"},
 		{"empty skip", "GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", "vendor,,dist"},
 		{"slash skip", "GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", "vendor/a"},
 		{"backslash skip", "GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", `vendor\a`},
