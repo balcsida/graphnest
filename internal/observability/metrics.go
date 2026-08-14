@@ -91,7 +91,7 @@ func (metrics *Metrics) WrapHTTP(next http.Handler) http.Handler {
 		started := time.Now()
 		recorded := &responseWriter{ResponseWriter: writer, status: http.StatusOK}
 		next.ServeHTTP(recorded, request)
-		labels := []string{request.Method, routePattern(request), strconv.Itoa(recorded.status)}
+		labels := []string{fixed(request.Method, http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions), routePattern(request), strconv.Itoa(recorded.status)}
 		metrics.httpRequests.WithLabelValues(labels...).Inc()
 		metrics.httpDuration.WithLabelValues(labels...).Observe(time.Since(started).Seconds())
 		metrics.httpResponseSize.WithLabelValues(labels...).Observe(float64(recorded.bytes))
