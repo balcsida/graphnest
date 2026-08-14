@@ -69,6 +69,7 @@ type Scanner struct {
 	GitHub                                                        GitHub
 	Limits                                                        GraphScanLimits
 	MinFreeBytes, MaxRepositoryBytes                              int64
+	ScanTimeout                                                   time.Duration
 }
 
 type Config struct {
@@ -389,6 +390,7 @@ func LoadScanner() (Scanner, error) {
 		GitPath:              os.Getenv("GREPNEST_GIT_PATH"),
 		WorkerID:             os.Getenv("GREPNEST_WORKER_ID"),
 		MetricsListenAddress: valueOr("GREPNEST_METRICS_LISTEN_ADDRESS", ":9090"),
+		ScanTimeout:          15 * time.Minute,
 		Limits: GraphScanLimits{
 			MaxFileBytes: 2 << 20, MaxTotalBytes: 1 << 30, MaxFiles: 100_000,
 			MaxNodes: 500_000, MaxEdges: 2_000_000, ParseTimeout: 30 * time.Second,
@@ -407,6 +409,12 @@ func LoadScanner() (Scanner, error) {
 	}
 	if err := loadStorageLimits(&scanner.MinFreeBytes, &scanner.MaxRepositoryBytes); err != nil {
 		return Scanner{}, err
+	}
+	if err := durationValue("GREPNEST_GRAPH_SCAN_TIMEOUT", &scanner.ScanTimeout); err != nil {
+		return Scanner{}, err
+	}
+	if scanner.ScanTimeout > 30*time.Minute {
+		return Scanner{}, invalid("GREPNEST_GRAPH_SCAN_TIMEOUT exceeds safety cap")
 	}
 	if err := loadGraphScanLimits(&scanner.Limits); err != nil {
 		return Scanner{}, err

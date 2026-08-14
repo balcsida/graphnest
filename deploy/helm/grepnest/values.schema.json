@@ -472,7 +472,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "enabled", "replicas", "maxRepositoryBytes", "minFreeBytes", "executable", "dataPath", "gitExecutable",
+        "enabled", "replicas", "maxRepositoryBytes", "minFreeBytes", "scanTimeout", "executable", "dataPath", "gitExecutable",
         "metricsPort", "resources", "nodeSelector", "affinity", "tolerations",
         "podSecurityContext", "podAnnotations"
       ],
@@ -481,6 +481,7 @@
         "replicas": {"type": "integer", "minimum": 1},
         "maxRepositoryBytes": {"$ref": "#/definitions/positiveInteger"},
         "minFreeBytes": {"$ref": "#/definitions/positiveInteger"},
+        "scanTimeout": {"$ref": "#/definitions/duration"},
         "executable": {"$ref": "#/definitions/path"},
         "dataPath": {"$ref": "#/definitions/path"},
         "gitExecutable": {"$ref": "#/definitions/path"},

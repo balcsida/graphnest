@@ -182,7 +182,8 @@ func newScannerWorker(settings config.Scanner, queue graphscanner.Queue, store g
 ) *graphscanner.Worker {
 	return &graphscanner.Worker{
 		ID: settings.WorkerID, Queue: queue, Store: store, Tokens: tokens, Git: git, Analyzer: analyzer,
-		MinFreeBytes: settings.MinFreeBytes, MaxRepositoryBytes: settings.MaxRepositoryBytes, Metrics: metrics,
+		MinFreeBytes: settings.MinFreeBytes, MaxRepositoryBytes: settings.MaxRepositoryBytes,
+		ScanTimeout: settings.ScanTimeout, Metrics: metrics,
 	}
 }
 

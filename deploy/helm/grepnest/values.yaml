@@ -96,6 +96,7 @@ scanner:
   replicas: 2
   maxRepositoryBytes: 5368709120
   minFreeBytes: 1073741824
+  scanTimeout: 15m
   executable: /usr/local/bin/grepnest-scanner
   dataPath: /data
   gitExecutable: /usr/bin/git

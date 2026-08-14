@@ -64,6 +64,7 @@ services:
       GREPNEST_GIT_PATH: /usr/bin/git
       GREPNEST_MAX_REPOSITORY_BYTES: 5368709120
       GREPNEST_MIN_FREE_BYTES: 1073741824
+      GREPNEST_GRAPH_SCAN_TIMEOUT: 15m
     tmpfs:
       - /var/lib/grepnest
     volumes:

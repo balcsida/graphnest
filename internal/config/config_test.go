@@ -378,7 +378,7 @@ func TestLoadScannerDefaults(t *testing.T) {
 		got.DataDir != "/var/lib/grepnest/data" || got.GitPath != "/usr/bin/git" ||
 		got.WorkerID != "worker-1" || got.MetricsListenAddress != ":9090" ||
 		got.GitHub.AppID != 123 || got.GitHub.WebhookSecretFile != "" ||
-		got.MaxRepositoryBytes != 5<<30 || got.MinFreeBytes != 1<<30 {
+		got.MaxRepositoryBytes != 5<<30 || got.MinFreeBytes != 1<<30 || got.ScanTimeout != 15*time.Minute {
 		t.Fatalf("configuration = %#v", got)
 	}
 	wantLimits := GraphScanLimits{
@@ -402,6 +402,7 @@ func TestLoadScannerAcceptsBoundedOverrides(t *testing.T) {
 	t.Setenv("GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", " vendor,dist,vendor,.cache ")
 	t.Setenv("GREPNEST_MAX_REPOSITORY_BYTES", "7")
 	t.Setenv("GREPNEST_MIN_FREE_BYTES", "8")
+	t.Setenv("GREPNEST_GRAPH_SCAN_TIMEOUT", "20m")
 
 	got, err := LoadScanner()
 	if err != nil {
@@ -417,6 +418,9 @@ func TestLoadScannerAcceptsBoundedOverrides(t *testing.T) {
 	if got.MaxRepositoryBytes != 7 || got.MinFreeBytes != 8 {
 		t.Fatalf("storage limits = %d, %d", got.MaxRepositoryBytes, got.MinFreeBytes)
 	}
+	if got.ScanTimeout != 20*time.Minute {
+		t.Fatalf("scan timeout = %v", got.ScanTimeout)
+	}
 }
 
 func TestLoadScannerRejectsInvalidLimitsAndSkips(t *testing.T) {
@@ -430,6 +434,8 @@ func TestLoadScannerRejectsInvalidLimitsAndSkips(t *testing.T) {
 		{"timeout over cap", "GREPNEST_GRAPH_SCAN_PARSE_TIMEOUT", "31s"},
 		{"zero repository bytes", "GREPNEST_MAX_REPOSITORY_BYTES", "0"},
 		{"zero free bytes", "GREPNEST_MIN_FREE_BYTES", "0"},
+		{"zero scan timeout", "GREPNEST_GRAPH_SCAN_TIMEOUT", "0s"},
+		{"scan timeout over cap", "GREPNEST_GRAPH_SCAN_TIMEOUT", "31m"},
 		{"empty skip", "GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", "vendor,,dist"},
 		{"slash skip", "GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", "vendor/a"},
 		{"backslash skip", "GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", `vendor\a`},

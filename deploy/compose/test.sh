@@ -133,6 +133,7 @@ assert_graph_mode() {
     and ($scanner.deploy.replicas >= 1)
     and ($scanner.environment.GREPNEST_MAX_REPOSITORY_BYTES == "5368709120")
     and ($scanner.environment.GREPNEST_MIN_FREE_BYTES == "1073741824")
+    and ($scanner.environment.GREPNEST_GRAPH_SCAN_TIMEOUT == "15m")
     and ([ $services[] | .ports[]? | select(.target == 8081) ] | length == 0)
     and ([ $services[] | .volumes[]? | select(.target == "/var/lib/grepnest/graph" and (.read_only // false | not)) ] | length == 1)
     and ([ $graph_owner.volumes[] | select(.target == "/var/lib/grepnest/graph" and (.read_only // false | not)) ] | length == 1)
