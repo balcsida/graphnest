@@ -3,6 +3,7 @@ package graphscanner
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -228,6 +229,35 @@ func TestRunOnePublishesExactCommit(t *testing.T) {
 	}
 	if !git.cleaned {
 		t.Fatal("worktree was not cleaned")
+	}
+}
+
+func TestRunOneRejectsOversizedRepositoryBeforeCheckout(t *testing.T) {
+	worker, queue, store, _, _ := workerFixture()
+	store.repository.SizeBytes = 101
+	worker.MaxRepositoryBytes = 100
+
+	worked, err := worker.RunOne(t.Context())
+
+	if err != nil || !worked {
+		t.Fatalf("RunOne() = %v, %v", worked, err)
+	}
+	if slices.Contains(queue.events, "prepare") || queue.failedCode != "repository_too_large" || queue.failedRetry {
+		t.Fatalf("events=%v failure=%q retry=%v", queue.events, queue.failedCode, queue.failedRetry)
+	}
+}
+
+func TestRunOneRejectsInsufficientSpaceBeforeCheckout(t *testing.T) {
+	worker, queue, _, _, _ := workerFixture()
+	worker.MinFreeBytes = math.MaxInt64
+
+	worked, err := worker.RunOne(t.Context())
+
+	if err != nil || !worked {
+		t.Fatalf("RunOne() = %v, %v", worked, err)
+	}
+	if slices.Contains(queue.events, "prepare") || queue.failedCode != "insufficient_space" || !queue.failedRetry {
+		t.Fatalf("events=%v failure=%q retry=%v", queue.events, queue.failedCode, queue.failedRetry)
 	}
 }
 

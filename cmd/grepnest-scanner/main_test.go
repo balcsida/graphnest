@@ -48,6 +48,16 @@ func TestScannerGitSharesMirrorsButSeparatesGraphWorktrees(t *testing.T) {
 	}
 }
 
+func TestScannerWorkerUsesStorageLimits(t *testing.T) {
+	worker := newScannerWorker(config.Scanner{
+		WorkerID: "scanner-1", MaxRepositoryBytes: 5 << 30, MinFreeBytes: 1 << 30,
+	}, nil, nil, nil, nil, nil, nil)
+
+	if worker.MaxRepositoryBytes != 5<<30 || worker.MinFreeBytes != 1<<30 {
+		t.Fatalf("storage limits = %d, %d", worker.MaxRepositoryBytes, worker.MinFreeBytes)
+	}
+}
+
 func TestAskPassMatchesExactGitCredentialPrompts(t *testing.T) {
 	const origin = "https://ghe.example"
 	for _, test := range []struct{ prompt, token, origin, want string }{

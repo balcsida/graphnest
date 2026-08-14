@@ -8,6 +8,7 @@ import (
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/graphartifact"
 	"github.com/grepnest/grepnest/internal/graphscan"
+	"github.com/grepnest/grepnest/internal/indexer"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/grepnest/grepnest/internal/repository"
@@ -38,17 +39,19 @@ type Analyzer interface {
 }
 
 type Worker struct {
-	ID             string
-	Queue          Queue
-	Store          Store
-	Tokens         TokenSource
-	Git            GitWorkspace
-	Analyzer       Analyzer
-	RenewEvery     time.Duration
-	ReapEvery      time.Duration
-	CleanupTimeout time.Duration
-	Metrics        *observability.Metrics
-	lastReap       time.Time
+	ID                 string
+	Queue              Queue
+	Store              Store
+	Tokens             TokenSource
+	Git                GitWorkspace
+	Analyzer           Analyzer
+	MinFreeBytes       int64
+	MaxRepositoryBytes int64
+	RenewEvery         time.Duration
+	ReapEvery          time.Duration
+	CleanupTimeout     time.Duration
+	Metrics            *observability.Metrics
+	lastReap           time.Time
 }
 
 func (worker *Worker) Run(ctx context.Context) error {
@@ -118,6 +121,9 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 	if repo.IndexedSHA != job.TargetSHA {
 		return fail("superseded", false)
 	}
+	if indexer.RepositoryTooLarge(repo.SizeBytes, worker.MaxRepositoryBytes) {
+		return fail("repository_too_large", false)
+	}
 	defer func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), worker.cleanupTimeout())
 		defer cleanupCancel()
@@ -129,6 +135,13 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 	worker.observePhase("token", started, err)
 	if err != nil {
 		return fail("token_failed", true)
+	}
+	worktreesDir := "."
+	if git, ok := worker.Git.(*indexer.Git); ok && git.WorktreesDir != "" {
+		worktreesDir = git.WorktreesDir
+	}
+	if enough, err := indexer.EnoughFreeSpace(worktreesDir, uint64(worker.MinFreeBytes)); err != nil || !enough {
+		return fail("insufficient_space", true)
 	}
 	started = time.Now()
 	_, root, err := worker.Git.PrepareCommit(jobCtx, repo, job.ID, job.TargetSHA, token.Value)
