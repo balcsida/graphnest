@@ -7,10 +7,19 @@ import (
 	"strings"
 
 	"github.com/scip-code/scip/bindings/go/scip"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
 var ErrInvalidIndex = errors.New("invalid SCIP index")
+
+const (
+	maxDocuments     = 100_000
+	maxOccurrences   = 2_000_000
+	maxRelationships = 2_000_000
+	maxPathBytes     = 4_096
+	maxSymbolBytes   = 8_192
+)
 
 type Upload struct {
 	ProjectRoot, IndexerName, IndexerVersion string
@@ -33,6 +42,9 @@ type Relationship struct {
 }
 
 func Parse(data []byte) (Upload, error) {
+	if !validWire(data) {
+		return Upload{}, ErrInvalidIndex
+	}
 	var index scip.Index
 	if err := proto.Unmarshal(data, &index); err != nil || index.Metadata == nil || index.Metadata.ToolInfo == nil {
 		return Upload{}, ErrInvalidIndex
@@ -81,6 +93,79 @@ func Parse(data []byte) (Upload, error) {
 		}
 	}
 	return upload, nil
+}
+
+type wireCounts struct {
+	documents, occurrences, relationships int
+}
+
+func validWire(data []byte) bool {
+	return scanWire(data, 0, &wireCounts{})
+}
+
+func scanWire(data []byte, message byte, counts *wireCounts) bool {
+	for len(data) > 0 {
+		number, wireType, n := protowire.ConsumeTag(data)
+		if n < 0 {
+			return false
+		}
+		data = data[n:]
+
+		child := byte(0)
+		switch message {
+		case 0: // Index
+			if number == 2 {
+				counts.documents++
+				child = 1
+			} else if number == 3 {
+				child = 3
+			}
+		case 1: // Document
+			if number == 1 {
+				child = 5
+			} else if number == 2 {
+				counts.occurrences++
+				child = 2
+			} else if number == 3 {
+				child = 3
+			}
+		case 2: // Occurrence
+			if number == 2 {
+				child = 6
+			}
+		case 3: // SymbolInformation
+			if number == 1 || number == 8 {
+				child = 6
+			} else if number == 4 {
+				counts.relationships++
+				child = 4
+			}
+		case 4: // Relationship
+			if number == 1 {
+				child = 6
+			}
+		}
+		if counts.documents > maxDocuments || counts.occurrences > maxOccurrences || counts.relationships > maxRelationships {
+			return false
+		}
+		if child != 0 {
+			if wireType != protowire.BytesType {
+				return false
+			}
+			value, n := protowire.ConsumeBytes(data)
+			if n < 0 || child == 5 && len(value) > maxPathBytes || child == 6 && len(value) > maxSymbolBytes || child < 5 && !scanWire(value, child, counts) {
+				return false
+			}
+			data = data[n:]
+			continue
+		}
+		n = protowire.ConsumeFieldValue(number, wireType, data)
+		if n < 0 {
+			return false
+		}
+		data = data[n:]
+	}
+	return true
 }
 
 func validDocument(document *scip.Document, paths map[string]struct{}) bool {

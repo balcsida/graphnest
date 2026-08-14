@@ -1,10 +1,13 @@
 package scipgraph
 
 import (
+	"bytes"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/scip-code/scip/bindings/go/scip"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -116,6 +119,62 @@ func TestParseRejectsInvalidIndex(t *testing.T) {
 				t.Fatalf("Parse() error = %v, want ErrInvalidIndex", err)
 			}
 		})
+	}
+}
+
+func TestParseRejectsOversizedWireValues(t *testing.T) {
+	field := func(number protowire.Number, value []byte) []byte {
+		return protowire.AppendBytes(protowire.AppendTag(nil, number, protowire.BytesType), value)
+	}
+	document := func(value []byte) []byte { return field(2, value) }
+	symbol := func(value []byte) []byte { return field(3, value) }
+	index := func(path, symbol string) []byte {
+		return marshalIndex(t, &scip.Index{
+			Metadata: &scip.Metadata{ToolInfo: &scip.ToolInfo{Name: "scip-go"}},
+			Documents: []*scip.Document{{
+				RelativePath: path, PositionEncoding: scip.PositionEncoding_UTF8CodeUnitOffsetFromLineStart,
+				Occurrences: []*scip.Occurrence{{Range: []int32{0, 0, 1}, Symbol: symbol}},
+			}},
+		})
+	}
+
+	tests := []struct {
+		name           string
+		data           []byte
+		checkPreflight bool
+	}{
+		{"documents", bytes.Repeat(document(nil), 100_001), true},
+		{"occurrences", document(bytes.Repeat(field(2, nil), 2_000_001)), true},
+		{"relationships", document(symbol(bytes.Repeat(field(4, nil), 2_000_001))), true},
+		{"relative path", index(strings.Repeat("a", 4_097), "local 0"), false},
+		{"symbol", index("a.go", "scip-go gomod example.com/a v1 "+strings.Repeat("a", 8_193)+"#"), false},
+		{"enclosing symbol", marshalIndex(t, &scip.Index{
+			Metadata: &scip.Metadata{ToolInfo: &scip.ToolInfo{Name: "scip-go"}},
+			Documents: []*scip.Document{{
+				RelativePath: "a.go", PositionEncoding: scip.PositionEncoding_UTF8CodeUnitOffsetFromLineStart,
+				Symbols: []*scip.SymbolInformation{{Symbol: "local 0", EnclosingSymbol: strings.Repeat("a", 8_193)}},
+			}},
+		}), false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			check := func() {
+				if _, err := Parse(test.data); !errors.Is(err, ErrInvalidIndex) {
+					t.Fatalf("Parse() error = %v, want ErrInvalidIndex", err)
+				}
+			}
+			check()
+			if test.checkPreflight && testing.AllocsPerRun(1, check) > 10 {
+				t.Fatal("Parse() materialized an oversized protobuf")
+			}
+		})
+	}
+}
+
+func TestParseRejectsMalformedWirePreflight(t *testing.T) {
+	if _, err := Parse([]byte{0x12, 0x80}); !errors.Is(err, ErrInvalidIndex) {
+		t.Fatalf("Parse() error = %v, want ErrInvalidIndex", err)
 	}
 }
 
