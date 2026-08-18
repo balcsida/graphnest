@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
@@ -342,6 +343,20 @@ func TestSnapshotProviderSelection(t *testing.T) {
 	provider, ok := newSnapshotProvider(settings, client, git, nil).(indexer.ArchiveSnapshotProvider)
 	if !ok || provider.WorkspacesDir != "/data/archives" || provider.Limits != (indexer.ArchiveLimits{MaxDownloadBytes: 1, MaxExtractedBytes: 2, MaxFileBytes: 3, MaxFiles: 4, MaxPathBytes: 5}) {
 		t.Fatalf("archive provider = %#v", provider)
+	}
+}
+
+func TestWarnIgnoredGitSettingsInArchiveMode(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, nil))
+	warnIgnoredGitSettings(logger, config.Indexer{SourceProvider: "archive", GitPath: "/usr/bin/git"})
+	if text := output.String(); !strings.Contains(text, "GREPNEST_GIT_PATH") || !strings.Contains(text, "ignored") {
+		t.Fatalf("warning = %q", text)
+	}
+	output.Reset()
+	warnIgnoredGitSettings(logger, config.Indexer{SourceProvider: "git", GitPath: "/usr/bin/git"})
+	if output.Len() != 0 {
+		t.Fatalf("git mode warning = %q", output.String())
 	}
 }
 

@@ -247,7 +247,7 @@ func LoadIndexer() (Indexer, error) {
 	if indexer.GitHub, err = loadGitHub(false); err != nil {
 		return Indexer{}, err
 	}
-	if indexer.DataDir == "" || indexer.IndexDir == "" || indexer.GitPath == "" || indexer.ZoektGitIndex == "" || indexer.WorkerID == "" {
+	if indexer.DataDir == "" || indexer.IndexDir == "" || indexer.ZoektGitIndex == "" || indexer.WorkerID == "" || (indexer.SourceProvider == "git" && indexer.GitPath == "") {
 		return Indexer{}, invalid("indexer paths and worker ID are required")
 	}
 	if indexer.MinFreeBytes, err = requiredInt64("GREPNEST_MIN_FREE_BYTES"); err != nil {

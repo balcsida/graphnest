@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -81,6 +82,71 @@ func TestDownloadArchiveRejectsNonSHARef(t *testing.T) {
 	client := NewClient(Endpoints{API: &url.URL{Scheme: "https", Host: "api.example.com"}, Archive: &url.URL{Scheme: "https", Host: "archives.example.com"}}, httpClient, nil, "2022-11-28", 1024, nil)
 	if _, err := client.DownloadArchive(t.Context(), "acme", "repo", "main", "secret"); err == nil || called {
 		t.Fatal("DownloadArchive() accepted branch name")
+	}
+}
+
+func TestDownloadArchiveKeepsAuthorizationForExplicitGHESOrigin(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	requests := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests++
+		if request.Header.Get("Authorization") != "Bearer secret" {
+			t.Fatalf("authorization = %q", request.Header.Get("Authorization"))
+		}
+		if requests == 1 {
+			http.Redirect(writer, request, "/archive", http.StatusFound)
+			return
+		}
+		_, _ = io.WriteString(writer, "archive")
+	}))
+	defer server.Close()
+	endpoint, _ := url.Parse(server.URL)
+	client := NewClient(Endpoints{Web: endpoint, API: endpoint, Upload: endpoint, Git: endpoint, Archive: endpoint}, server.Client(), nil, "2022-11-28", 1024, nil)
+	body, err := client.DownloadArchive(t.Context(), "acme", "repo", sha, "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = body.Close()
+	if requests != 2 {
+		t.Fatalf("requests = %d", requests)
+	}
+}
+
+func TestDownloadArchiveCapsRedirectsAndRedactsFailures(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	requests := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests++
+		writer.Header().Set("Location", fmt.Sprintf("/redirect/%d?signature=secret-query", requests))
+		writer.WriteHeader(http.StatusFound)
+	}))
+	defer server.Close()
+	endpoint, _ := url.Parse(server.URL)
+	client := NewClient(Endpoints{Web: endpoint, API: endpoint, Upload: endpoint, Git: endpoint, Archive: endpoint}, server.Client(), nil, "2022-11-28", 1024, nil)
+	_, err := client.DownloadArchive(t.Context(), "acme", "repo", sha, "secret-token")
+	if err == nil || requests != 6 {
+		t.Fatalf("error = %v, requests = %d", err, requests)
+	}
+	for _, secret := range []string{"secret-token", "secret-query", server.URL} {
+		if strings.Contains(err.Error(), secret) {
+			t.Fatalf("error leaked %q: %v", secret, err)
+		}
+	}
+}
+
+func TestDownloadArchiveReturnsRetryableHTTPStatuses(t *testing.T) {
+	for _, status := range []int{http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusServiceUnavailable} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) { writer.WriteHeader(status) }))
+			defer server.Close()
+			endpoint, _ := url.Parse(server.URL)
+			client := NewClient(Endpoints{Web: endpoint, API: endpoint, Upload: endpoint, Git: endpoint, Archive: endpoint}, server.Client(), nil, "2022-11-28", 1024, nil)
+			_, err := client.DownloadArchive(t.Context(), "acme", "repo", strings.Repeat("a", 40), "secret")
+			var statusErr HTTPStatusError
+			if !errors.As(err, &statusErr) || statusErr.StatusCode != status {
+				t.Fatalf("error = %v", err)
+			}
+		})
 	}
 }
 

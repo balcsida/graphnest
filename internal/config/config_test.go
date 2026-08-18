@@ -365,6 +365,20 @@ func TestLoadIndexerDefaultsToGitAndRejectsInvalidArchiveConfiguration(t *testin
 	}
 }
 
+func TestLoadIndexerArchiveModeDoesNotRequireGitRuntime(t *testing.T) {
+	setValidEnvironment(t)
+	setDurableEnvironment(t)
+	t.Setenv("GREPNEST_SOURCE_PROVIDER", "archive")
+	t.Setenv("GREPNEST_GIT_PATH", "")
+	if _, err := LoadIndexer(); err != nil {
+		t.Fatalf("LoadIndexer() error = %v", err)
+	}
+	t.Setenv("GREPNEST_SOURCE_PROVIDER", "git")
+	if _, err := LoadIndexer(); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("git LoadIndexer() error = %v", err)
+	}
+}
+
 func TestLoadIndexerRequiresOnlyIndexerConfiguration(t *testing.T) {
 	setValidEnvironment(t)
 	setDurableEnvironment(t)

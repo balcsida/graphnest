@@ -65,6 +65,7 @@ func main() {
 		logger.Error("configuration failed", "error", err)
 		os.Exit(1)
 	}
+	warnIgnoredGitSettings(logger, settings)
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	runtime, err := newIndexRuntime(ctx, settings)
@@ -74,6 +75,12 @@ func main() {
 	if err != nil {
 		logger.Error("indexer stopped", "error", err)
 		os.Exit(1)
+	}
+}
+
+func warnIgnoredGitSettings(logger *slog.Logger, settings config.Indexer) {
+	if settings.SourceProvider == "archive" && settings.GitPath != "" {
+		logger.Warn("deprecated Git runtime setting ignored in archive mode", "setting", "GREPNEST_GIT_PATH")
 	}
 }
 
