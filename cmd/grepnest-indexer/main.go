@@ -206,7 +206,7 @@ func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime
 		WorktreesDir: filepath.Join(settings.DataDir, "worktrees"), Runner: runner, CommandTimeout: 2 * time.Minute,
 	}
 	worker := &indexer.Worker{
-		ID: settings.WorkerID, Queue: store, Store: store, Tokens: githubClient, Git: git,
+		ID: settings.WorkerID, Queue: store, Store: store, Tokens: githubClient, Snapshots: indexer.GitSnapshotProvider{Git: git},
 		Zoekt:        &indexer.ZoektIndexer{Binary: settings.ZoektGitIndex, IndexDir: settings.IndexDir, Runner: runner, Client: zoektClient, IndexTimeout: 10 * time.Minute, VisibilityTimeout: 2 * time.Minute},
 		MinFreeBytes: uint64(settings.MinFreeBytes), MaxRepositoryBytes: settings.MaxRepositoryBytes, Metrics: metrics,
 	}

@@ -313,7 +313,7 @@ func TestRuntimeTreatsRealWorkerCancellationAsClean(t *testing.T) {
 	queue := &commandQueue{job: job}
 	store := commandStore{repo: repository.Repository{ID: 4, InstallationID: 5, GitHubID: 6, ZoektID: 7, Name: "acme/repo", Branch: "main", WebURL: "https://ghe.example/acme/repo"}, desired: job.TargetSHA}
 	publisher := &commandPublisher{started: make(chan struct{})}
-	worker := &indexer.Worker{ID: "worker", Queue: queue, Store: store, Tokens: commandTokens{}, Git: commandGit{}, Zoekt: publisher}
+	worker := &indexer.Worker{ID: "worker", Queue: queue, Store: store, Tokens: commandTokens{}, Snapshots: commandSnapshots{}, Zoekt: publisher}
 	runtime := indexRuntime{
 		ping: func(context.Context) error { return nil }, migrate: func(context.Context) error { return nil },
 		upsertNode: func(context.Context) error { return nil }, reapExpired: func(context.Context) error { return nil },
@@ -359,13 +359,16 @@ func (commandTokens) InstallationToken(context.Context, int64, []int64) (githuba
 	return githubapp.Token{Value: "token"}, nil
 }
 
-type commandGit struct{}
+type commandSnapshots struct{}
 
-func (commandGit) Prepare(context.Context, repository.Repository, postgres.IndexJob, string) (string, string, error) {
-	return "/mirror", "/worktree", nil
+func (commandSnapshots) Prepare(_ context.Context, request indexer.SnapshotRequest) (indexer.Snapshot, error) {
+	return indexer.Snapshot{Root: "/snapshot", RepositoryID: request.Repository.ID, JobID: request.JobID, CommitSHA: request.CommitSHA}, nil
 }
-func (commandGit) Cleanup(context.Context, int64, int64) error     { return nil }
-func (commandGit) Prune(context.Context, map[int64]struct{}) error { return nil }
+func (commandSnapshots) Cleanup(context.Context, indexer.Snapshot) error { return nil }
+func (commandSnapshots) CleanupStale(context.Context, indexer.ActiveJobs) error {
+	return nil
+}
+func (commandSnapshots) FreeSpacePath() string { return "." }
 
 type commandPublisher struct{ started chan struct{} }
 
