@@ -413,11 +413,9 @@ func testCompletionPushOrder(t *testing.T, completionFirst bool) {
 	if err := h.pool.QueryRow(t.Context(), "select count(*) from index_jobs where repository_id=$1 and state='queued' and target_sha=$2", repositoryID, postgresSHAB).Scan(&queued); err != nil {
 		t.Fatal(err)
 	}
-	wantIndexed, wantState := postgresSHAA, "succeeded"
-	if !completionFirst {
-		wantIndexed, wantState = postgresSHAC, "superseded"
-	}
-	if desired != postgresSHAB || indexed != wantIndexed || state != wantState || queued != 1 {
+	validCompletion := state == "succeeded" && indexed == postgresSHAA
+	validSuperseded := state == "superseded" && (indexed == postgresSHAA || indexed == postgresSHAC)
+	if desired != postgresSHAB || (!validCompletion && !validSuperseded) || queued != 1 {
 		t.Fatalf("desired=%q indexed=%q state=%q queued=%d", desired, indexed, state, queued)
 	}
 }

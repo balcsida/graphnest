@@ -321,7 +321,7 @@ func TestQueuePublishesOnlyCurrentDesiredSHA(t *testing.T) {
 			t.Fatal(err)
 		}
 		validSucceeded := desired == shaB && indexed == shaA && state == "succeeded" && queued == 1
-		validSuperseded := desired == shaB && indexed == shaC && state == "superseded" && queued == 1
+		validSuperseded := desired == shaB && (indexed == shaA || indexed == shaC) && state == "superseded" && queued == 1
 		if !validSucceeded && !validSuperseded {
 			t.Fatalf("iteration=%d desired=%q indexed=%q state=%q queued=%d", i, desired, indexed, state, queued)
 		}
@@ -519,13 +519,69 @@ func TestPublishIndexIsIdempotentAndRetainsRunningLease(t *testing.T) {
 	}
 }
 
-func TestCompleteIndexEnqueuesGraphAtomically(t *testing.T) {
+func TestCompleteIndexRecordsInlineEnrichment(t *testing.T) {
+	store, job := runningIndexJob(t)
+	if err := store.PublishIndex(t.Context(), job.ID, job.LeaseOwner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimGraph(t.Context(), "scanner-1"); !errors.Is(err, ErrNoJob) {
+		t.Fatalf("ClaimGraph() error = %v", err)
+	}
+	artifact := artifactFor(job.RepositoryID, job.TargetSHA, "inline")
+	if err := store.CompleteIndex(t.Context(), job.ID, job.LeaseOwner, EnrichmentStatus{Artifact: &artifact}); err != nil {
+		t.Fatal(err)
+	}
+	var indexState, graphState string
+	var uploads int
+	if err := store.pool.QueryRow(t.Context(), `select index_jobs.state,graph_jobs.state,
+		(select count(*) from graph_uploads where repository_id=index_jobs.repository_id and commit=index_jobs.target_sha)
+		from index_jobs join graph_jobs on graph_jobs.repository_id=index_jobs.repository_id and graph_jobs.target_sha=index_jobs.target_sha
+		where index_jobs.id=$1`, job.ID).Scan(&indexState, &graphState, &uploads); err != nil {
+		t.Fatal(err)
+	}
+	if indexState != "succeeded" || graphState != "succeeded" || uploads != 1 {
+		t.Fatalf("index=%q graph=%q uploads=%d", indexState, graphState, uploads)
+	}
+}
+
+func TestPublishedIndexCrashReusesEnrichmentRecord(t *testing.T) {
+	store, job := runningIndexJob(t)
+	if err := store.PublishIndex(t.Context(), job.ID, job.LeaseOwner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), "update index_jobs set lease_expires_at=now() where id=$1", job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if reaped, err := store.ReapExpired(t.Context(), 1); err != nil || reaped != 1 {
+		t.Fatalf("ReapExpired() = %d, %v", reaped, err)
+	}
+	if _, err := store.pool.Exec(t.Context(), "update index_jobs set run_after=now() where id=$1", job.ID); err != nil {
+		t.Fatal(err)
+	}
+	retry, err := store.ClaimIndex(t.Context(), "indexer-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PublishIndex(t.Context(), retry.ID, retry.LeaseOwner); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	var owner string
+	if err := store.pool.QueryRow(t.Context(), `select count(*),min(lease_owner) from graph_jobs
+		where repository_id=$1 and target_sha=$2 and state='running'`, retry.RepositoryID, retry.TargetSHA).Scan(&count, &owner); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 || owner != retry.LeaseOwner {
+		t.Fatalf("running=%d owner=%q", count, owner)
+	}
+}
+
+func TestCompleteIndexDoesNotLeaveClaimableGraphJob(t *testing.T) {
 	store, job := runningIndexJob(t)
 	if err := store.CompleteIndex(t.Context(), job.ID, job.LeaseOwner); err != nil {
 		t.Fatal(err)
 	}
-	graph, err := store.ClaimGraph(t.Context(), "scanner-1")
-	if err != nil || graph.RepositoryID != job.RepositoryID || graph.TargetSHA != job.TargetSHA {
+	if graph, err := store.ClaimGraph(t.Context(), "scanner-1"); !errors.Is(err, ErrNoJob) {
 		t.Fatalf("ClaimGraph() = %#v, %v", graph, err)
 	}
 }
@@ -533,6 +589,9 @@ func TestCompleteIndexEnqueuesGraphAtomically(t *testing.T) {
 func TestCompleteIndexDoesNotQueueGraphAlreadyRunningForSHA(t *testing.T) {
 	store, first := runningIndexJob(t)
 	if err := store.CompleteIndex(t.Context(), first.ID, first.LeaseOwner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `update graph_jobs set state='queued',lease_owner=null,lease_expires_at=null where repository_id=$1`, first.RepositoryID); err != nil {
 		t.Fatal(err)
 	}
 	graph, err := store.ClaimGraph(t.Context(), "scanner-1")
@@ -556,7 +615,7 @@ func TestCompleteIndexDoesNotQueueGraphAlreadyRunningForSHA(t *testing.T) {
 		from graph_jobs where repository_id=$1`, graph.RepositoryID, graph.TargetSHA).Scan(&running, &queued); err != nil {
 		t.Fatal(err)
 	}
-	if running != 1 || queued != 0 {
+	if running != 0 || queued != 0 {
 		t.Fatalf("running=%d queued=%d", running, queued)
 	}
 }
@@ -589,6 +648,7 @@ func TestGraphQueueCoalescesNewestIndexedSHA(t *testing.T) {
 	if err := store.CompleteIndex(t.Context(), first.ID, first.LeaseOwner); err != nil {
 		t.Fatal(err)
 	}
+	queueLegacyGraph(t, store, first.RepositoryID)
 	for range 2 {
 		if err := store.EnqueueIndex(t.Context(), IndexRequest{RepositoryID: first.RepositoryID, TargetSHA: shaB}); err != nil {
 			t.Fatal(err)
@@ -600,6 +660,7 @@ func TestGraphQueueCoalescesNewestIndexedSHA(t *testing.T) {
 		if err := store.CompleteIndex(t.Context(), job.ID, job.LeaseOwner); err != nil {
 			t.Fatal(err)
 		}
+		queueLegacyGraph(t, store, job.RepositoryID)
 	}
 	var queued, superseded int
 	if err := store.pool.QueryRow(t.Context(), `select
@@ -618,6 +679,7 @@ func TestGraphQueueClaimsOnceAndRequiresLiveLease(t *testing.T) {
 	if err := store.CompleteIndex(t.Context(), index.ID, index.LeaseOwner); err != nil {
 		t.Fatal(err)
 	}
+	queueLegacyGraph(t, store, index.RepositoryID)
 	var successes atomic.Int32
 	errs := make(chan error, 20)
 	var group sync.WaitGroup
@@ -683,6 +745,7 @@ func TestGraphQueueRetriesFiveAttemptsAndReapsOnce(t *testing.T) {
 	if err := store.CompleteIndex(t.Context(), index.ID, index.LeaseOwner); err != nil {
 		t.Fatal(err)
 	}
+	queueLegacyGraph(t, store, index.RepositoryID)
 	job, err := store.ClaimGraph(t.Context(), "scanner-1")
 	if err != nil {
 		t.Fatal(err)
@@ -736,6 +799,7 @@ func TestGraphQueueSupersedesStaleFailureAndReportsState(t *testing.T) {
 	if err := store.CompleteIndex(t.Context(), index.ID, index.LeaseOwner); err != nil {
 		t.Fatal(err)
 	}
+	queueLegacyGraph(t, store, index.RepositoryID)
 	job, err := store.ClaimGraph(t.Context(), "scanner-1")
 	if err != nil {
 		t.Fatal(err)

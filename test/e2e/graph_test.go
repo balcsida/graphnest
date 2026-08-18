@@ -32,7 +32,6 @@ import (
 	"github.com/grepnest/grepnest/internal/graphscan/javascript"
 	"github.com/grepnest/grepnest/internal/graphscan/kotlin"
 	"github.com/grepnest/grepnest/internal/graphscan/rust"
-	"github.com/grepnest/grepnest/internal/graphscanner"
 	"github.com/grepnest/grepnest/internal/graphservice"
 	"github.com/grepnest/grepnest/internal/httpapi"
 	"github.com/grepnest/grepnest/internal/mcpserver"
@@ -114,13 +113,12 @@ func TestGraphLanguageFixturesReachRESTAndMCP(t *testing.T) {
 			t.Fatal(err)
 		}
 		analyzer := &graphFixtureAnalyzer{parsers: parsers}
-		worker := &graphscanner.Worker{
-			ID: "fixture-" + test.name, Queue: database.store, Store: database.store,
-			Tokens: graphFixtureTokens{}, Git: &graphFixtureCheckout{repository: checkout, root: t.TempDir()},
-			Analyzer: analyzer, RenewEvery: time.Hour,
+		artifact, err := analyzer.Scan(t.Context(), graphscan.Request{RepositoryID: repositoryRow.ID, Commit: commit, Root: checkout})
+		if err != nil {
+			t.Fatal(err)
 		}
-		if worked, err := worker.RunOne(t.Context()); err != nil || !worked {
-			t.Fatalf("%s managed scan worked=%t err=%v", test.name, worked, err)
+		if _, err := database.store.ReplaceGraph(t.Context(), repositoryRow.ID, postgres.GraphSourceManaged, artifact); err != nil {
+			t.Fatal(err)
 		}
 		if gotSource, gotTarget := graphCallNames(analyzer.artifact); gotSource != test.source || gotTarget != test.target {
 			t.Fatalf("%s call=%q -> %q, want %q -> %q", test.name, gotSource, gotTarget, test.source, test.target)
