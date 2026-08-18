@@ -19,6 +19,7 @@ func TestZoektIndexWritesDirectoryMetadataOutsideSource(t *testing.T) {
 	argumentsFile := filepath.Join(directory, "arguments")
 	metadataFile := filepath.Join(directory, "metadata")
 	metadataPathFile := filepath.Join(directory, "metadata-path")
+	tempPathFile := filepath.Join(directory, "temp-path")
 	environmentFile := filepath.Join(directory, "environment")
 	binary := filepath.Join(directory, "zoekt-index")
 	script := "#!/bin/sh\n" +
@@ -27,6 +28,7 @@ func TestZoektIndexWritesDirectoryMetadataOutsideSource(t *testing.T) {
 		"  if [ \"$1\" = -meta ]; then printf '%s' \"$2\" > '" + metadataPathFile + "'; cp \"$2\" '" + metadataFile + "'; fi\n" +
 		"  shift\n" +
 		"done\n" +
+		"printf '%s' \"$TMPDIR\" > '" + tempPathFile + "'\n" +
 		"env > '" + environmentFile + "'\n"
 	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
@@ -35,6 +37,11 @@ func TestZoektIndexWritesDirectoryMetadataOutsideSource(t *testing.T) {
 	if err := os.Mkdir(source, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	ambientTemp := filepath.Join(source, "ambient-temp")
+	if err := os.Mkdir(ambientTemp, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", ambientTemp)
 	t.Setenv("GREPNEST_GIT_TOKEN", "must-not-leak")
 	indexer := ZoektIndexer{Binary: binary, IndexDir: filepath.Join(directory, "index"), Runner: Runner{MaxOutput: 1024, KillGrace: time.Millisecond}}
 	repo := repository.Repository{
@@ -63,6 +70,16 @@ func TestZoektIndexWritesDirectoryMetadataOutsideSource(t *testing.T) {
 	if strings.HasPrefix(string(metadataPath), source+string(filepath.Separator)) {
 		t.Fatalf("metadata written inside source: %q", metadataPath)
 	}
+	tempPath, err := os.ReadFile(tempPathFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(string(metadataPath)) != string(tempPath) {
+		t.Fatalf("metadata path %q and TMPDIR %q use different directories", metadataPath, tempPath)
+	}
+	if filepath.Dir(string(tempPath)) != filepath.Dir(indexer.IndexDir) {
+		t.Fatalf("TMPDIR %q is not adjacent to index directory %q", tempPath, indexer.IndexDir)
+	}
 	var metadata struct {
 		ID       uint32
 		Name     string
@@ -90,5 +107,8 @@ func TestZoektIndexWritesDirectoryMetadataOutsideSource(t *testing.T) {
 	}
 	if _, err := os.Stat(string(metadataPath)); !os.IsNotExist(err) {
 		t.Fatalf("metadata residue: %v", err)
+	}
+	if _, err := os.Stat(string(tempPath)); !os.IsNotExist(err) {
+		t.Fatalf("temporary directory residue: %v", err)
 	}
 }
