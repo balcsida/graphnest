@@ -59,6 +59,9 @@ flowchart LR
 
 PostgreSQL is authoritative for repository metadata, authorization, queues, indexed-SHA state, and graph artifacts. Zoekt and LadybugDB are private query stores reached only through GrepNest's authenticated services. See [Architecture](docs/architecture.md) and the accepted decisions under [`docs/adr`](docs/adr).
 
+The [architecture decision index](docs/adr/README.md) records accepted and
+superseded design decisions.
+
 ## Interfaces
 
 | Interface | Location | Authentication |
@@ -291,6 +294,9 @@ CI additionally exercises native LadybugDB linking, scanner grammar compatibilit
 | [Release process](docs/release-process.md) | Signed tags, images, OCI chart, attestations, and release verification |
 | [Implementation report](docs/implementation-report.md) | Delivered milestones, verification evidence, risks, and deferred work |
 | [Dependency pinning](docs/dependency-pinning.md) | Reproducibility and pinned dependency policy |
+
+See the [architecture decision index](docs/adr/README.md) for the complete
+decision history.
 
 ## Contributing and support
 
