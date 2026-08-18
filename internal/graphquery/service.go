@@ -63,12 +63,14 @@ func (service *Service) queryStore() Store {
 }
 
 type readyScope struct {
-	snapshots  []graphprotocol.RepositorySnapshot
-	parameters []map[string]any
-	boundaries []graphprotocol.Boundary
-	commits    map[string]string
-	selected   []graphprotocol.RepositorySnapshot
-	selectedID int64
+	snapshots       []graphprotocol.RepositorySnapshot
+	queries         []QuerySnapshot
+	parameters      []map[string]any
+	boundaries      []graphprotocol.Boundary
+	commits         map[string]string
+	selected        []graphprotocol.RepositorySnapshot
+	selectedQueries []QuerySnapshot
+	selectedID      int64
 }
 
 type nodeKey struct {
@@ -112,10 +114,13 @@ func (service *Service) ready(ctx context.Context, scope graphprotocol.Scope) (r
 			continue
 		}
 		ready.snapshots = append(ready.snapshots, snapshot)
+		querySnapshot := QuerySnapshot{RepositoryID: snapshot.ID, UploadID: manifest.UploadID, Commit: snapshot.Commit}
+		ready.queries = append(ready.queries, querySnapshot)
 		ready.parameters = append(ready.parameters, map[string]any{"id": snapshot.ID, "commit": snapshot.Commit})
 		ready.commits[snapshot.Name] = snapshot.Commit
 		if scope.SelectedRepositoryID == snapshot.ID {
 			ready.selected = append(ready.selected, snapshot)
+			ready.selectedQueries = append(ready.selectedQueries, querySnapshot)
 		}
 	}
 	if !selectedExists {
@@ -128,6 +133,13 @@ func (service *Service) ready(ctx context.Context, scope graphprotocol.Scope) (r
 		return ready.parameters[left]["id"].(int64) < ready.parameters[right]["id"].(int64)
 	})
 	return ready, nil
+}
+
+func (ready readyScope) querySnapshots(selected bool) []QuerySnapshot {
+	if selected && ready.selectedID != 0 {
+		return ready.selectedQueries
+	}
+	return ready.queries
 }
 
 func (ready readyScope) selectorSnapshots() []graphprotocol.RepositorySnapshot {

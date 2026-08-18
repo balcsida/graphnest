@@ -74,7 +74,7 @@ traversal:
 				refs = append(refs, SymbolRef{RepositoryID: key.repositoryID, UID: key.uid})
 			}
 			neighbors, queryErr := store.Neighbors(ctx, NeighborQuery{
-				Snapshots: ready.snapshots, Frontier: refs, Relation: relation, Direction: direction,
+				Snapshots: ready.querySnapshots(false), Frontier: refs, Relation: relation, Direction: direction,
 				MinConfidence: request.MinConfidence, Limit: limits.MaxFanout + 1,
 			})
 			if queryErr != nil {

@@ -17,10 +17,16 @@ type Store interface {
 }
 
 type SymbolQuery struct {
-	Snapshots      []graphprotocol.RepositorySnapshot
+	Snapshots      []QuerySnapshot
 	UID, Name      string
 	FilePath, Kind string
 	Limit          int
+}
+
+type QuerySnapshot struct {
+	RepositoryID int64
+	UploadID     int64
+	Commit       string
 }
 
 type SymbolRef struct {
@@ -29,7 +35,7 @@ type SymbolRef struct {
 }
 
 type NeighborQuery struct {
-	Snapshots     []graphprotocol.RepositorySnapshot
+	Snapshots     []QuerySnapshot
 	Frontier      []SymbolRef
 	Relation      string
 	Direction     string
@@ -59,10 +65,11 @@ func (store *ladybugStore) Manifests(ctx context.Context) (map[int64]graphartifa
 }
 
 func (store *ladybugStore) Symbols(ctx context.Context, query SymbolQuery) (symbols []graphprotocol.Symbol, err error) {
+	snapshots := protocolSnapshots(query.Snapshots)
 	err = store.database.View(ctx, func(session *ladybug.Session) error {
 		result, executeErr := session.Execute(ctx, selectSymbols, map[string]any{
-			"scope": snapshotParameters(query.Snapshots), "use_uid": query.UID != "",
-			"uids": selectorUIDs(query.Snapshots, query.UID), "name": query.Name,
+			"scope": snapshotParameters(snapshots), "use_uid": query.UID != "",
+			"uids": selectorUIDs(snapshots, query.UID), "name": query.Name,
 			"path": query.FilePath, "kind": query.Kind, "limit": int64(query.Limit),
 		}, ladybug.QueryLimits{MaxRows: query.Limit})
 		if executeErr != nil {
@@ -91,7 +98,7 @@ func (store *ladybugStore) Neighbors(ctx context.Context, query NeighborQuery) (
 	}
 	err = store.database.View(ctx, func(session *ladybug.Session) error {
 		result, executeErr := session.Execute(ctx, statement, map[string]any{
-			"scope": snapshotParameters(query.Snapshots), "frontier": frontierParameters(frontier),
+			"scope": snapshotParameters(protocolSnapshots(query.Snapshots)), "frontier": frontierParameters(frontier),
 			"depth": int64(1), "min_confidence": query.MinConfidence,
 			"offset": int64(query.Offset), "limit": int64(query.Limit),
 		}, ladybug.QueryLimits{MaxRows: query.Limit})
@@ -113,4 +120,12 @@ func (store *ladybugStore) Neighbors(ctx context.Context, query NeighborQuery) (
 		return nil
 	})
 	return neighbors, err
+}
+
+func protocolSnapshots(snapshots []QuerySnapshot) []graphprotocol.RepositorySnapshot {
+	result := make([]graphprotocol.RepositorySnapshot, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		result = append(result, graphprotocol.RepositorySnapshot{ID: snapshot.RepositoryID, Commit: snapshot.Commit})
+	}
+	return result
 }
