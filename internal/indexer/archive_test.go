@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/observability"
@@ -178,6 +179,25 @@ func TestArchiveSnapshotProviderCancellationRemovesPartialWorkspace(t *testing.T
 	}
 }
 
+func TestArchiveSnapshotProviderDeadlineRemovesPartialWorkspace(t *testing.T) {
+	root := t.TempDir()
+	body := tarGzip(t, tarEntry{name: "root/file", body: strings.Repeat("deadline-data", 4096)})
+	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Millisecond)
+	defer cancel()
+	reader := io.MultiReader(bytes.NewReader(body[:len(body)/2]), deadlineReader{ctx: ctx})
+	provider := ArchiveSnapshotProvider{Client: &readerDownload{Reader: reader}, WorkspacesDir: root, Limits: testArchiveLimits()}
+	if _, err := provider.Prepare(ctx, archiveRequest()); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Join(root, "7"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("partial workspace remains: %v", entries)
+	}
+}
+
 func TestArchiveSnapshotProviderReportsPartialCleanupFailure(t *testing.T) {
 	root := t.TempDir()
 	metrics := observability.New()
@@ -282,7 +302,7 @@ type tarEntry struct {
 	kind             byte
 }
 
-func tarGzip(t *testing.T, entries ...tarEntry) []byte {
+func tarGzip(t testing.TB, entries ...tarEntry) []byte {
 	t.Helper()
 	var output bytes.Buffer
 	gz := gzip.NewWriter(&output)
@@ -308,7 +328,7 @@ func tarGzip(t *testing.T, entries ...tarEntry) []byte {
 	return output.Bytes()
 }
 
-func gzipBytes(t *testing.T, body []byte) []byte {
+func gzipBytes(t testing.TB, body []byte) []byte {
 	t.Helper()
 	var output bytes.Buffer
 	writer := gzip.NewWriter(&output)
@@ -359,4 +379,36 @@ func (reader *chmodReader) Read(buffer []byte) (int, error) {
 		}
 	}
 	return reader.Reader.Read(buffer)
+}
+
+type deadlineReader struct{ ctx context.Context }
+
+func (reader deadlineReader) Read([]byte) (int, error) {
+	<-reader.ctx.Done()
+	return 0, reader.ctx.Err()
+}
+
+func FuzzArchiveExtraction(f *testing.F) {
+	valid := tarGzip(f, tarEntry{name: "root/file", body: "safe"})
+	for _, seed := range [][]byte{
+		valid,
+		[]byte("not gzip"),
+		gzipBytes(f, []byte("not tar")),
+		tarGzip(f, tarEntry{name: "root/../escape", body: "x"}),
+		tarGzip(f, tarEntry{name: `root\escape`, body: "x"}),
+		tarGzip(f, tarEntry{name: "root/link", kind: tar.TypeSymlink, link: "file"}),
+		tarGzip(f, tarEntry{name: "root/file", body: "a"}, tarEntry{name: "root/file", body: "b"}),
+		tarGzip(f, tarEntry{name: "root/a", body: "a"}, tarEntry{name: "other/b", body: "b"}),
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, archive []byte) {
+		if len(archive) > 64<<10 {
+			return
+		}
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		defer cancel()
+		limits := ArchiveLimits{MaxDownloadBytes: 64 << 10, MaxExtractedBytes: 64 << 10, MaxFileBytes: 16 << 10, MaxFiles: 100, MaxPathBytes: 256}
+		_ = extractArchive(ctx, bytes.NewReader(archive), t.TempDir(), limits)
+	})
 }
