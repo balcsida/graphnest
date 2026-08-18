@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -251,7 +252,12 @@ func LoadIndexer() (Indexer, error) {
 	}
 	indexer.ZoektGitIndexDeprecated = indexer.ZoektGitIndex != ""
 	if indexer.ZoektIndex == "" {
-		indexer.ZoektIndex = indexer.ZoektGitIndex
+		if indexer.ZoektGitIndex != "" {
+			if filepath.Base(indexer.ZoektGitIndex) != "zoekt-git-index" {
+				return Indexer{}, invalid("GREPNEST_ZOEKT_INDEX is required when GREPNEST_ZOEKT_GIT_INDEX is not zoekt-git-index")
+			}
+			indexer.ZoektIndex = filepath.Join(filepath.Dir(indexer.ZoektGitIndex), "zoekt-index")
+		}
 	}
 	if indexer.DataDir == "" || indexer.IndexDir == "" || indexer.ZoektIndex == "" || indexer.WorkerID == "" || (indexer.SourceProvider == "git" && indexer.GitPath == "") {
 		return Indexer{}, invalid("indexer paths and worker ID are required")
