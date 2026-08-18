@@ -161,7 +161,7 @@ func TestSnapshotProvidersProduceEquivalentDirectoryIndexes(t *testing.T) {
 		if err := (&indexer.ZoektIndexer{Binary: zoektIndex, IndexDir: indexDir, Runner: indexer.Runner{MaxOutput: 64 << 10, KillGrace: 100 * time.Millisecond}}).Index(ctx, repo, snapshot.Root); err != nil {
 			t.Fatal(err)
 		}
-		client, process, _ := parityZoekt(t, ctx, zoektWebserver, indexDir)
+		client, process, _ := parityZoekt(t, ctx, zoektWebserver, indexDir, repo.ZoektID)
 		clients[name] = client
 		processes = append(processes, process)
 	}

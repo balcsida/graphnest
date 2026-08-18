@@ -79,7 +79,7 @@ func TestPinnedFixtureSearch(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitReady(t, ctx, client, process)
-	waitIndexed(t, ctx, client, process)
+	waitIndexed(t, ctx, client, process, needle, 7, "main.go")
 	backend := &recordingBackend{SearchBackend: client}
 	registry, err := repository.NewStatic([]repository.Repository{
 		{ID: 1, ZoektID: 7, Name: fixtureName, Branch: "main", IndexedSHA: sha, WebURL: "https://example.invalid/fixture/repository"},
@@ -251,15 +251,15 @@ func waitReady(t *testing.T, ctx context.Context, client *zoekt.Client, process 
 	}
 }
 
-func waitIndexed(t *testing.T, ctx context.Context, client *zoekt.Client, process *managedProcess) {
+func waitIndexed(t *testing.T, ctx context.Context, client *zoekt.Client, process *managedProcess, query string, repositoryID uint32, path string) {
 	t.Helper()
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		response, err := client.Search(ctx, search.BackendRequest{
-			Query: needle, RepositoryIDs: []uint32{7}, Limit: 1, Timeout: time.Second,
+			Query: query, RepositoryIDs: []uint32{repositoryID}, Limit: 1, Timeout: time.Second,
 		})
-		if err == nil && len(response.Matches) == 1 && response.Matches[0].Path == "main.go" {
+		if err == nil && len(response.Matches) == 1 && response.Matches[0].Path == path {
 			return
 		}
 		select {
