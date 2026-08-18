@@ -28,6 +28,7 @@ type fakeQueue struct {
 	renewErr    error
 	renewed     chan struct{}
 	completed   bool
+	published   bool
 	failedCode  string
 	failedRetry bool
 	active      map[int64]struct{}
@@ -63,6 +64,12 @@ func (queue *fakeQueue) RenewLease(context.Context, int64, string) error {
 		}
 	}
 	return queue.renewErr
+}
+
+func (queue *fakeQueue) PublishIndex(context.Context, int64, string) error {
+	queue.record("publish")
+	queue.published = true
+	return nil
 }
 func (queue *fakeQueue) CompleteIndex(context.Context, int64, string) error {
 	queue.record("complete")
@@ -213,7 +220,7 @@ func TestWorkerRunOnePropagatesExactSnapshotAndCompletesAfterVisibility(t *testi
 	if err != nil || !worked {
 		t.Fatalf("worked = %v, error = %v", worked, err)
 	}
-	want := []string{"claim", "token", "prepare", "index", "visible", "complete", "cleanup"}
+	want := []string{"claim", "token", "prepare", "index", "visible", "publish", "complete", "cleanup"}
 	if !slices.Equal(queue.events, want) {
 		t.Fatalf("events = %v, want %v", queue.events, want)
 	}
@@ -221,8 +228,8 @@ func TestWorkerRunOnePropagatesExactSnapshotAndCompletesAfterVisibility(t *testi
 	if provider.request != request || publisher.root != "/snapshot" || provider.cleanedValue != provider.snapshot {
 		t.Fatalf("request=%+v root=%q cleanup=%+v", provider.request, publisher.root, provider.cleanedValue)
 	}
-	if !queue.completed || !provider.cleaned {
-		t.Fatalf("completed=%v cleaned=%v", queue.completed, provider.cleaned)
+	if !queue.published || !queue.completed || !provider.cleaned {
+		t.Fatalf("published=%v completed=%v cleaned=%v", queue.published, queue.completed, provider.cleaned)
 	}
 }
 

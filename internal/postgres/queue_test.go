@@ -496,6 +496,29 @@ func TestQueueDepthsUseFixedStates(t *testing.T) {
 	}
 }
 
+func TestPublishIndexIsIdempotentAndRetainsRunningLease(t *testing.T) {
+	store, job := runningIndexJob(t)
+	for range 2 {
+		if err := store.PublishIndex(t.Context(), job.ID, job.LeaseOwner); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var indexedSHA, state, owner string
+	var graphJobs int
+	if err := store.pool.QueryRow(t.Context(), `select repositories.indexed_sha,index_jobs.state,index_jobs.lease_owner,
+		(select count(*) from graph_jobs where graph_jobs.repository_id=repositories.id and graph_jobs.target_sha=index_jobs.target_sha)
+		from repositories join index_jobs on index_jobs.repository_id=repositories.id where index_jobs.id=$1`, job.ID).
+		Scan(&indexedSHA, &state, &owner, &graphJobs); err != nil {
+		t.Fatal(err)
+	}
+	if indexedSHA != job.TargetSHA || state != "running" || owner != job.LeaseOwner || graphJobs != 1 {
+		t.Fatalf("indexed_sha=%q state=%q owner=%q graph_jobs=%d", indexedSHA, state, owner, graphJobs)
+	}
+	if err := store.CompleteIndex(t.Context(), job.ID, job.LeaseOwner); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCompleteIndexEnqueuesGraphAtomically(t *testing.T) {
 	store, job := runningIndexJob(t)
 	if err := store.CompleteIndex(t.Context(), job.ID, job.LeaseOwner); err != nil {

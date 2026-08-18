@@ -173,7 +173,7 @@ func (s *Store) RenewLease(ctx context.Context, id int64, owner string) error {
 	return leaseResult(result, err)
 }
 
-func (s *Store) CompleteIndex(ctx context.Context, id int64, owner string) error {
+func (s *Store) PublishIndex(ctx context.Context, id int64, owner string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -194,25 +194,33 @@ func (s *Store) CompleteIndex(ctx context.Context, id int64, owner string) error
 	} else if err != nil {
 		return err
 	}
-	state := "superseded"
-	errorCode := ""
 	available := enabled && !archived && installationStatus == "active"
 	if available && desiredSHA == targetSHA {
-		state = "succeeded"
 		if _, err := tx.Exec(ctx, `update repositories set indexed_sha=$2, status='ready', error_code=null, last_indexed_at=now(), updated_at=now() where id=$1`, repositoryID, targetSHA); err != nil {
 			return err
 		}
 		if err := enqueueGraph(ctx, tx, repositoryID, targetSHA); err != nil {
 			return err
 		}
-	} else if !available {
-		errorCode = "repository_unavailable"
-	}
-	if _, err := tx.Exec(ctx, `update index_jobs set state=$2, lease_owner=null, lease_expires_at=null,
-		error_code=nullif($3, ''), error_message=null, updated_at=now() where id=$1`, id, state, errorCode); err != nil {
-		return err
 	}
 	return tx.Commit(ctx)
+}
+
+func (s *Store) CompleteIndex(ctx context.Context, id int64, owner string) error {
+	if err := s.PublishIndex(ctx, id, owner); err != nil {
+		return err
+	}
+	result, err := s.pool.Exec(ctx, `update index_jobs jobs set state=case
+		when repositories.enabled and not repositories.archived and installations.status='active'
+			and repositories.desired_sha=jobs.target_sha then 'succeeded' else 'superseded' end,
+		lease_owner=null,lease_expires_at=null,error_code=case
+		when repositories.enabled and not repositories.archived and installations.status='active'
+			and repositories.desired_sha=jobs.target_sha then null else 'superseded' end,
+		error_message=null,updated_at=now()
+		from repositories join installations on installations.id=repositories.installation_id
+		where jobs.id=$1 and jobs.repository_id=repositories.id and jobs.state='running'
+		and jobs.lease_owner=$2 and jobs.lease_expires_at>now()`, id, owner)
+	return leaseResult(result, err)
 }
 
 func enqueueGraph(ctx context.Context, tx pgx.Tx, repositoryID int64, targetSHA string) error {

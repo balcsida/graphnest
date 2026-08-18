@@ -19,6 +19,7 @@ import (
 type JobQueue interface {
 	ClaimIndex(context.Context, string) (postgres.IndexJob, error)
 	RenewLease(context.Context, int64, string) error
+	PublishIndex(context.Context, int64, string) error
 	CompleteIndex(context.Context, int64, string) error
 	FailIndex(context.Context, int64, string, string, bool) error
 	ActiveJobIDs(context.Context) (map[int64]struct{}, error)
@@ -199,6 +200,9 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 	worker.observePhase("visibility", started, nil)
 	if leaseErr := readError(renewErrors); leaseErr != nil {
 		return true, leaseErr
+	}
+	if err := worker.Queue.PublishIndex(jobCtx, job.ID, worker.ID); err != nil {
+		return fail("publish_failed", true)
 	}
 	if err := worker.Queue.CompleteIndex(ctx, job.ID, worker.ID); err != nil {
 		return true, err
