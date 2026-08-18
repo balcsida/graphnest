@@ -37,14 +37,29 @@ type Limits struct {
 
 type Service struct {
 	Database *ladybug.Database
+	Store    Store
 	Limits   Limits
 }
 
 func (service *Service) Health(ctx context.Context) error {
-	if service == nil || service.Database == nil {
+	store := service.queryStore()
+	if store == nil {
 		return errors.New("graph database is unavailable")
 	}
-	return service.Database.Health(ctx)
+	return store.Health(ctx)
+}
+
+func (service *Service) queryStore() Store {
+	if service == nil {
+		return nil
+	}
+	if service.Store != nil {
+		return service.Store
+	}
+	if service.Database != nil {
+		return NewLadybugStore(service.Database)
+	}
+	return nil
 }
 
 type readyScope struct {
@@ -62,10 +77,11 @@ type nodeKey struct {
 }
 
 func (service *Service) ready(ctx context.Context, scope graphprotocol.Scope) (readyScope, error) {
-	if service == nil || service.Database == nil || len(scope.Repositories) == 0 {
+	store := service.queryStore()
+	if store == nil || len(scope.Repositories) == 0 {
 		return readyScope{}, ErrInvalidRequest
 	}
-	manifests, err := service.Database.Manifests(ctx)
+	manifests, err := store.Manifests(ctx)
 	if err != nil {
 		return readyScope{}, err
 	}
