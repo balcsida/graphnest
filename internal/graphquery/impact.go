@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/grepnest/grepnest/internal/graphprotocol"
-	"github.com/grepnest/grepnest/internal/ladybug"
 )
 
 func (service *Service) Impact(ctx context.Context, request graphprotocol.ImpactRequest) (graphprotocol.ImpactResponse, error) {
@@ -60,54 +59,54 @@ func (service *Service) Impact(ctx context.Context, request graphprotocol.Impact
 	if len(frontier) > 0 {
 		response.Status = graphprotocol.StatusFound
 	}
-	err = service.Database.View(ctx, func(session *ladybug.Session) error {
-		for currentDepth := 1; currentDepth <= depth && len(frontier) > 0; currentDepth++ {
-			next, seenDepth := []nodeKey{}, map[nodeKey]struct{}{}
-			for _, relation := range relations {
-				query := relationQueries[relation].outgoing
-				if request.Direction == "upstream" {
-					query = relationQueries[relation].incoming
-				}
-				result, queryErr := session.Execute(ctx, query, map[string]any{
-					"scope": ready.parameters, "frontier": frontierParameters(frontier),
-					"depth": int64(currentDepth), "min_confidence": request.MinConfidence,
-					"offset": int64(0), "limit": int64(limits.MaxFanout + 1),
-				}, ladybug.QueryLimits{MaxRows: limits.MaxFanout + 1})
-				if queryErr != nil {
-					return queryErr
-				}
-				if len(result.Rows) > limits.MaxFanout {
-					result.Rows = result.Rows[:limits.MaxFanout]
-					response.Partial = true
-					response.Boundaries = appendBoundary(response.Boundaries, "fanout_limit", currentDepth)
-				}
-				for _, row := range result.Rows {
-					symbol := symbolFromRow(row)
-					key := keyFromRow(row)
-					if _, ok := visited[key]; ok || (!request.IncludeTests && symbol.Test) {
-						continue
-					}
-					if _, ok := seenDepth[key]; ok {
-						continue
-					}
-					if len(visited)-len(targets) >= limits.MaxNodes || len(response.Edges) >= limits.MaxEdges {
-						response.Partial = true
-						response.Boundaries = appendBoundary(response.Boundaries, "traversal_limit", currentDepth)
-						return nil
-					}
-					seenDepth[key] = struct{}{}
-					visited[key] = struct{}{}
-					next = append(next, key)
-					response.ByDepth[currentDepth] = append(response.ByDepth[currentDepth], symbol)
-					response.Edges = append(response.Edges, relationshipFromRow(row, relation, request.Direction))
-				}
+	store := service.queryStore()
+
+traversal:
+	for currentDepth := 1; currentDepth <= depth && len(frontier) > 0; currentDepth++ {
+		next, seenDepth := []nodeKey{}, map[nodeKey]struct{}{}
+		for _, relation := range relations {
+			direction := "outgoing"
+			if request.Direction == "upstream" {
+				direction = "incoming"
 			}
-			frontier = next
+			refs := make([]SymbolRef, 0, len(frontier))
+			for _, key := range frontier {
+				refs = append(refs, SymbolRef{RepositoryID: key.repositoryID, UID: key.uid})
+			}
+			neighbors, queryErr := store.Neighbors(ctx, NeighborQuery{
+				Snapshots: ready.snapshots, Frontier: refs, Relation: relation, Direction: direction,
+				MinConfidence: request.MinConfidence, Limit: limits.MaxFanout + 1,
+			})
+			if queryErr != nil {
+				return response, queryErr
+			}
+			if len(neighbors) > limits.MaxFanout {
+				neighbors = neighbors[:limits.MaxFanout]
+				response.Partial = true
+				response.Boundaries = appendBoundary(response.Boundaries, "fanout_limit", currentDepth)
+			}
+			for _, neighbor := range neighbors {
+				symbol := neighbor.Symbol
+				key := nodeKey{repositoryID: symbol.RepositoryID, uid: symbol.UID}
+				if _, ok := visited[key]; ok || (!request.IncludeTests && symbol.Test) {
+					continue
+				}
+				if _, ok := seenDepth[key]; ok {
+					continue
+				}
+				if len(visited)-len(targets) >= limits.MaxNodes || len(response.Edges) >= limits.MaxEdges {
+					response.Partial = true
+					response.Boundaries = appendBoundary(response.Boundaries, "traversal_limit", currentDepth)
+					break traversal
+				}
+				seenDepth[key] = struct{}{}
+				visited[key] = struct{}{}
+				next = append(next, key)
+				response.ByDepth[currentDepth] = append(response.ByDepth[currentDepth], symbol)
+				response.Edges = append(response.Edges, neighbor.Edge)
+			}
 		}
-		return nil
-	})
-	if err != nil {
-		return response, err
+		frontier = next
 	}
 	for currentDepth, symbols := range response.ByDepth {
 		if request.Offset >= len(symbols) {
