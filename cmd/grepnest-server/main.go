@@ -22,8 +22,8 @@ import (
 	"github.com/grepnest/grepnest/internal/authz"
 	"github.com/grepnest/grepnest/internal/config"
 	"github.com/grepnest/grepnest/internal/githubapp"
-	"github.com/grepnest/grepnest/internal/graphclient"
 	"github.com/grepnest/grepnest/internal/graphingest"
+	"github.com/grepnest/grepnest/internal/graphquery"
 	"github.com/grepnest/grepnest/internal/graphservice"
 	"github.com/grepnest/grepnest/internal/httpapi"
 	"github.com/grepnest/grepnest/internal/mcpserver"
@@ -262,10 +262,6 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	if err := postgres.Migrate(ctx, pool); err != nil {
 		return fail(err)
 	}
-	graphClient, err := graphclient.New(settings.Graph.URL, settings.Graph.InternalSecret, http.DefaultClient, settings.Graph.MaxResponseBytes)
-	if err != nil {
-		return fail(err)
-	}
 	metrics := observability.New()
 	store := postgres.New(pool)
 	if err := store.UpsertSearchNode(ctx, searchNodeID, settings.ZoektURL); err != nil {
@@ -326,7 +322,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	repositoryService := &repository.Service{Store: store, GitHub: githubClient, SCIP: store}
 	scipService := &scipgraph.Service{Store: store, GitHub: githubClient, MaxResults: settings.Limits.MaxResults}
 	graphService := &graphingest.Service{Store: store}
-	graphQueries := &graphservice.Service{Store: store, Backend: graphClient, Files: repositoryService, Limits: graphQueryLimits(settings.Graph), Observe: metrics.ObserveGraphQuery}
+	graphQueries := &graphservice.Service{Store: store, Backend: &graphquery.Service{Store: store, Limits: backendGraphQueryLimits(settings.Graph)}, Files: repositoryService, Limits: graphQueryLimits(settings.Graph), Observe: metrics.ObserveGraphQuery}
 	processor := webhook.NewGitHubProcessor(store, reconcileRequests, metrics)
 	adminService := &admin.Service{
 		Store: store, Audit: store, GitHub: githubClient, ReconcileAll: reconciler.All,
@@ -414,6 +410,14 @@ func graphQueryLimits(graph config.Graph) graphservice.Limits {
 		DefaultTraceDepth: graph.QueryLimits.DefaultTraceDepth, MaxTraceDepth: graph.QueryLimits.MaxTraceDepth, MaxRows: graph.QueryLimits.MaxRows,
 		MaxNodes: graph.QueryLimits.MaxNodes, MaxEdges: graph.QueryLimits.MaxEdges, MaxFanout: graph.QueryLimits.MaxFanout,
 		MaxResponseBytes: int(graph.MaxResponseBytes),
+	}
+}
+
+func backendGraphQueryLimits(graph config.Graph) graphquery.Limits {
+	return graphquery.Limits{
+		PerCategory: graph.QueryLimits.PerCategory, DefaultImpactDepth: graph.QueryLimits.DefaultImpactDepth, MaxDepth: graph.QueryLimits.MaxDepth,
+		DefaultTraceDepth: graph.QueryLimits.DefaultTraceDepth, MaxTraceDepth: graph.QueryLimits.MaxTraceDepth, MaxRows: graph.QueryLimits.MaxRows,
+		MaxNodes: graph.QueryLimits.MaxNodes, MaxEdges: graph.QueryLimits.MaxEdges, MaxFanout: graph.QueryLimits.MaxFanout,
 	}
 }
 
