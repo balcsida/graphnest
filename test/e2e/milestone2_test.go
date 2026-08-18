@@ -16,6 +16,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -82,17 +83,13 @@ func TestMilestone2Vertical(t *testing.T) {
 	privateKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)})
 	github := newFakeGHES(t, root, primary, empty, 7, &privateKey.PublicKey)
 	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: github.server.Certificate().Raw})
-	caFile := filepath.Join(root, "github-ca.pem")
-	if err := os.WriteFile(caFile, caPEM, 0o600); err != nil {
-		t.Fatal(err)
-	}
 	base, err := url.Parse(github.server.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	apiBase := *base
 	apiBase.Path = "/api/v3"
-	endpoints := githubapp.Endpoints{Web: base, API: &apiBase, Upload: base, Git: base}
+	endpoints := githubapp.Endpoints{Web: base, API: &apiBase, Upload: base, Git: base, Archive: base}
 	httpClient, err := githubapp.NewHTTPClient(caPEM, endpoints, 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
@@ -165,23 +162,11 @@ func TestMilestone2Vertical(t *testing.T) {
 	assertQueuedTarget(t, database.pool, milestoneRepositoryID, primary.shas[2], 1)
 	primaryRepository := authorizedRepository(t, database.store, milestoneRepositoryID)
 
-	indexerExecutable := filepath.Join(root, "grepnest-indexer")
-	libraryPath := os.Getenv("DYLD_LIBRARY_PATH")
-	if libraryPath == "" {
-		libraryPath = os.Getenv("LD_LIBRARY_PATH")
-	}
-	buildIndexer := exec.CommandContext(ctx, "go", "build", "-o", indexerExecutable, "../../cmd/grepnest-indexer")
-	buildIndexer.Env = append(os.Environ(), "CGO_LDFLAGS="+os.Getenv("CGO_LDFLAGS")+" -Wl,-rpath,"+libraryPath)
-	if output, err := buildIndexer.CombinedOutput(); err != nil {
-		t.Fatalf("build indexer askpass: %v\n%s", err, output)
-	}
 	queue := &publicationBarrier{Store: database.store, reached: make(chan struct{}), release: make(chan struct{}), block: true}
 	worker := &indexer.Worker{
 		ID: "e2e-worker", Queue: queue, Store: database.store, Tokens: githubClient,
-		Snapshots: indexer.GitSnapshotProvider{Git: &indexer.Git{
-			Binary: "git", BaseURL: github.server.URL, AskPass: indexerExecutable, CABundle: caFile,
-			MirrorsDir: filepath.Join(root, "data", "mirrors"), WorktreesDir: filepath.Join(root, "data", "worktrees"),
-			Runner: indexer.Runner{MaxOutput: 64 << 10, KillGrace: 100 * time.Millisecond}, CommandTimeout: 10 * time.Second,
+		Snapshots: indexer.ArchiveSnapshotProvider{Client: githubClient, WorkspacesDir: filepath.Join(root, "data", "archives"), Limits: indexer.ArchiveLimits{
+			MaxDownloadBytes: 2 << 20, MaxExtractedBytes: 4 << 20, MaxFileBytes: 1 << 20, MaxFiles: 100, MaxPathBytes: 1024,
 		}},
 		Zoekt: &indexer.ZoektIndexer{
 			Binary: zoektIndex, IndexDir: indexDir, Runner: indexer.Runner{MaxOutput: 64 << 10, KillGrace: 100 * time.Millisecond},
@@ -258,12 +243,10 @@ func TestMilestone2Vertical(t *testing.T) {
 	}
 	assertDisabledRead(t, server, milestoneRepositoryID)
 	backendLogs := github.backendLogs()
-	if !strings.Contains(backendLogs, rawStderrMarker) {
-		t.Fatalf("git-http-backend stderr marker was not captured: %q", backendLogs)
-	}
 	forbidden := []string{milestoneGitToken, milestoneWebhookSecret, token, string(privateKeyPEM), string(installationBody), "Authorization:", "x-access-token@"}
 	forbidden = append(forbidden, milestonePayloadSecret)
 	assertNoSecrets(t, database.pool, map[string]string{
+		"Archive workspaces": filepath.Join(root, "data", "archives"),
 		"Git mirrors":        filepath.Join(root, "data", "mirrors"),
 		"Git worktrees":      filepath.Join(root, "data", "worktrees"),
 		"Zoekt index shards": indexDir,
@@ -271,10 +254,7 @@ func TestMilestone2Vertical(t *testing.T) {
 		"git-http-backend stderr": backendLogs,
 		"Zoekt process logs":      zoektProcess.logs.String(),
 	}, forbidden...)
-	remote := strings.TrimSpace(run(t, ctx, "git", "--git-dir", filepath.Join(root, "data", "mirrors", strconv.FormatInt(primaryRepository.ID, 10)+".git"), "config", "--get", "remote.origin.url"))
-	if remote != github.server.URL+"/acme/source.git" || strings.Contains(remote, milestoneGitToken) || strings.Contains(remote, "@") {
-		t.Fatalf("persisted remote contains credentials: %q", remote)
-	}
+	assertNoIndexerResidue(t, filepath.Join(root, "data"))
 	github.assertRequests(t)
 }
 
@@ -469,6 +449,28 @@ func (github *fakeGHES) serveAPI(writer http.ResponseWriter, request *http.Reque
 			}
 		}
 		writer.WriteHeader(http.StatusNotFound)
+	case request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/tarball/"):
+		nameAndSHA := strings.TrimPrefix(request.URL.Path, "/api/v3/repos/")
+		parts := strings.SplitN(nameAndSHA, "/tarball/", 2)
+		if len(parts) != 2 {
+			writer.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		for _, repository := range repositories {
+			if repository.name != parts[0] || repository.sha != parts[1] {
+				continue
+			}
+			command := exec.CommandContext(request.Context(), "git", "--git-dir", filepath.Join(github.gitRoot, filepath.FromSlash(repository.name)+".git"), "archive", "--format=tar.gz", "--prefix=snapshot/", parts[1])
+			archive, err := command.Output()
+			if err != nil {
+				writer.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			writer.Header().Set("Content-Type", "application/gzip")
+			_, _ = writer.Write(archive)
+			return
+		}
+		writer.WriteHeader(http.StatusNotFound)
 	case request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/contents/"):
 		nameAndPath := strings.TrimPrefix(request.URL.Path, "/api/v3/repos/")
 		parts := strings.SplitN(nameAndPath, "/contents/", 2)
@@ -629,7 +631,7 @@ func (github *fakeGHES) assertRequests(t *testing.T) {
 	t.Helper()
 	github.mu.Lock()
 	defer github.mu.Unlock()
-	if github.apiAuth == 0 || github.gitAuth == 0 {
+	if github.apiAuth == 0 || github.gitAuth != 0 {
 		t.Fatalf("authenticated API/Git requests = %d/%d", github.apiAuth, github.gitAuth)
 	}
 }
@@ -900,6 +902,10 @@ func assertNoSecrets(t *testing.T, pool *pgxpool.Pool, roots, logs map[string]st
 	check("PostgreSQL persisted fields", []byte(databaseText))
 	for name, root := range roots {
 		var persisted bytes.Buffer
+		if _, err := os.Stat(root); errors.Is(err, os.ErrNotExist) {
+			check(name, nil)
+			continue
+		}
 		if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 			if err != nil || entry.IsDir() {
 				return err
@@ -917,7 +923,7 @@ func assertNoSecrets(t *testing.T, pool *pgxpool.Pool, roots, logs map[string]st
 	for name, contents := range logs {
 		check(name, []byte(contents))
 	}
-	for _, required := range []string{"PostgreSQL persisted fields", "Git mirrors", "Git worktrees", "Zoekt index shards", "git-http-backend stderr", "Zoekt process logs"} {
+	for _, required := range []string{"PostgreSQL persisted fields", "Archive workspaces", "Git mirrors", "Git worktrees", "Zoekt index shards", "git-http-backend stderr", "Zoekt process logs"} {
 		if !checked[required] {
 			t.Fatalf("secret scanner did not execute surface %q", required)
 		}
@@ -935,6 +941,28 @@ func freeAddress(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return address
+}
+
+func assertNoIndexerResidue(t *testing.T, dataDir string) {
+	t.Helper()
+	if err := filepath.WalkDir(dataDir, func(path string, entry os.DirEntry, err error) error {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if path == dataDir {
+			return nil
+		}
+		name := strings.ToLower(entry.Name())
+		if !entry.IsDir() || name == "mirrors" || name == "worktrees" || name == "source" || strings.Contains(name, "askpass") || strings.Contains(name, "credential") || strings.HasSuffix(name, ".tar") || strings.HasSuffix(name, ".tar.gz") {
+			return fmt.Errorf("indexer residue: %s", path)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func rawZoektList(t *testing.T, address, query string) string {

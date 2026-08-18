@@ -23,7 +23,7 @@ services:
       GREPNEST_GITHUB_PRIVATE_KEY_FILE: /run/secrets/grepnest/private-key.pem
       GREPNEST_DATA_DIR: /var/lib/grepnest/data
       GREPNEST_INDEX_DIR: /var/lib/grepnest/index
-      GREPNEST_GIT_PATH: /usr/bin/git
+      GREPNEST_SOURCE_PROVIDER: archive
       GREPNEST_ZOEKT_INDEX: /usr/local/bin/zoekt-index
       GREPNEST_WORKER_ID: primary
       GREPNEST_MIN_FREE_BYTES: 1073741824

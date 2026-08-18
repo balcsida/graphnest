@@ -235,7 +235,7 @@ func LoadIndexer() (Indexer, error) {
 		ZoektIndex:           os.Getenv("GREPNEST_ZOEKT_INDEX"),
 		ZoektGitIndex:        os.Getenv("GREPNEST_ZOEKT_GIT_INDEX"),
 		WorkerID:             os.Getenv("GREPNEST_WORKER_ID"),
-		SourceProvider:       valueOr("GREPNEST_SOURCE_PROVIDER", "git"),
+		SourceProvider:       valueOr("GREPNEST_SOURCE_PROVIDER", "archive"),
 	}
 	parsedDatabase, databaseErr := url.Parse(indexer.DatabaseURL)
 	if databaseErr != nil || parsedDatabase.Host == "" || (parsedDatabase.Scheme != "postgres" && parsedDatabase.Scheme != "postgresql") {
