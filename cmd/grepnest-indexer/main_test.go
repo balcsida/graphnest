@@ -329,6 +329,22 @@ func TestRuntimeTreatsRealWorkerCancellationAsClean(t *testing.T) {
 	}
 }
 
+func TestSnapshotProviderSelection(t *testing.T) {
+	git := &indexer.Git{}
+	client := &githubapp.Client{}
+	settings := config.Indexer{SourceProvider: "git"}
+	if _, ok := newSnapshotProvider(settings, client, git, nil).(indexer.GitSnapshotProvider); !ok {
+		t.Fatal("git provider not selected")
+	}
+	settings.SourceProvider = "archive"
+	settings.DataDir = "/data"
+	settings.ArchiveLimits = config.ArchiveLimits{MaxDownloadBytes: 1, MaxExtractedBytes: 2, MaxFileBytes: 3, MaxFiles: 4, MaxPathBytes: 5}
+	provider, ok := newSnapshotProvider(settings, client, git, nil).(indexer.ArchiveSnapshotProvider)
+	if !ok || provider.WorkspacesDir != "/data/archives" || provider.Limits != (indexer.ArchiveLimits{MaxDownloadBytes: 1, MaxExtractedBytes: 2, MaxFileBytes: 3, MaxFiles: 4, MaxPathBytes: 5}) {
+		t.Fatalf("archive provider = %#v", provider)
+	}
+}
+
 type commandQueue struct{ job postgres.IndexJob }
 
 func (queue *commandQueue) ClaimIndex(context.Context, string) (postgres.IndexJob, error) {

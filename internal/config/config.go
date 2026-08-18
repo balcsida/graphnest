@@ -26,10 +26,10 @@ type Limits struct {
 }
 
 type GitHub struct {
-	WebURL, APIURL, UploadURL, GitURL string
-	PrivateKeyFile, WebhookSecretFile string
-	APIVersion, CAFile                string
-	AppID                             int64
+	WebURL, APIURL, UploadURL, GitURL, ArchiveURL string
+	PrivateKeyFile, WebhookSecretFile             string
+	APIVersion, CAFile                            string
+	AppID                                         int64
 }
 
 type Indexer struct {
@@ -38,6 +38,13 @@ type Indexer struct {
 	Graph                                               Graph
 	DataDir, IndexDir, GitPath, ZoektGitIndex, WorkerID string
 	MinFreeBytes, MaxRepositoryBytes                    int64
+	SourceProvider                                      string
+	ArchiveLimits                                       ArchiveLimits
+}
+
+type ArchiveLimits struct {
+	MaxDownloadBytes, MaxExtractedBytes, MaxFileBytes int64
+	MaxFiles, MaxPathBytes                            int
 }
 
 type Graph struct {
@@ -185,6 +192,14 @@ func loadGitHub(requireWebhookSecret bool) (GitHub, error) {
 		APIVersion:     valueOr("GREPNEST_GITHUB_API_VERSION", "2022-11-28"),
 		CAFile:         os.Getenv("GREPNEST_GITHUB_CA_FILE"),
 	}
+	github.ArchiveURL = os.Getenv("GREPNEST_GITHUB_ARCHIVE_URL")
+	if github.ArchiveURL == "" {
+		if parsed, _ := url.Parse(github.WebURL); parsed != nil && parsed.Hostname() == "github.com" {
+			github.ArchiveURL = "https://codeload.github.com"
+		} else {
+			github.ArchiveURL = github.WebURL
+		}
+	}
 	if requireWebhookSecret {
 		github.WebhookSecretFile = os.Getenv("GREPNEST_GITHUB_WEBHOOK_SECRET_FILE")
 	}
@@ -195,9 +210,10 @@ func loadGitHub(requireWebhookSecret bool) (GitHub, error) {
 	for _, endpoint := range []struct{ name, value string }{
 		{"GREPNEST_GITHUB_WEB_URL", github.WebURL}, {"GREPNEST_GITHUB_API_URL", github.APIURL},
 		{"GREPNEST_GITHUB_UPLOAD_URL", github.UploadURL}, {"GREPNEST_GITHUB_GIT_URL", github.GitURL},
+		{"GREPNEST_GITHUB_ARCHIVE_URL", github.ArchiveURL},
 	} {
 		parsed, err := url.Parse(endpoint.value)
-		if err != nil || parsed.Host == "" || parsed.Scheme != "https" {
+		if err != nil || parsed.Host == "" || parsed.Scheme != "https" || parsed.User != nil {
 			return GitHub{}, invalid(endpoint.name + " must be an HTTPS URL")
 		}
 	}
@@ -217,6 +233,7 @@ func LoadIndexer() (Indexer, error) {
 		GitPath:              os.Getenv("GREPNEST_GIT_PATH"),
 		ZoektGitIndex:        os.Getenv("GREPNEST_ZOEKT_GIT_INDEX"),
 		WorkerID:             os.Getenv("GREPNEST_WORKER_ID"),
+		SourceProvider:       valueOr("GREPNEST_SOURCE_PROVIDER", "git"),
 	}
 	parsedDatabase, databaseErr := url.Parse(indexer.DatabaseURL)
 	if databaseErr != nil || parsedDatabase.Host == "" || (parsedDatabase.Scheme != "postgres" && parsedDatabase.Scheme != "postgresql") {
@@ -238,6 +255,33 @@ func LoadIndexer() (Indexer, error) {
 	}
 	if indexer.MaxRepositoryBytes, err = strconv.ParseInt(valueOr("GREPNEST_MAX_REPOSITORY_BYTES", "5368709120"), 10, 64); err != nil || indexer.MaxRepositoryBytes <= 0 {
 		return Indexer{}, invalid("GREPNEST_MAX_REPOSITORY_BYTES must be a positive integer")
+	}
+	if indexer.SourceProvider != "git" && indexer.SourceProvider != "archive" {
+		return Indexer{}, invalid("GREPNEST_SOURCE_PROVIDER must be archive or git")
+	}
+	archiveValues := []struct {
+		name        string
+		value       string
+		destination *int64
+	}{
+		{"GREPNEST_ARCHIVE_MAX_DOWNLOAD_BYTES", "1073741824", &indexer.ArchiveLimits.MaxDownloadBytes},
+		{"GREPNEST_ARCHIVE_MAX_EXTRACTED_BYTES", "5368709120", &indexer.ArchiveLimits.MaxExtractedBytes},
+		{"GREPNEST_ARCHIVE_MAX_FILE_BYTES", "536870912", &indexer.ArchiveLimits.MaxFileBytes},
+	}
+	for _, setting := range archiveValues {
+		if *setting.destination, err = strconv.ParseInt(valueOr(setting.name, setting.value), 10, 64); err != nil || *setting.destination <= 0 {
+			return Indexer{}, invalid(setting.name + " must be a positive integer")
+		}
+	}
+	if value, parseErr := strconv.Atoi(valueOr("GREPNEST_ARCHIVE_MAX_FILES", "200000")); parseErr != nil || value <= 0 {
+		return Indexer{}, invalid("GREPNEST_ARCHIVE_MAX_FILES must be a positive integer")
+	} else {
+		indexer.ArchiveLimits.MaxFiles = value
+	}
+	if value, parseErr := strconv.Atoi(valueOr("GREPNEST_ARCHIVE_MAX_PATH_BYTES", "4096")); parseErr != nil || value <= 0 {
+		return Indexer{}, invalid("GREPNEST_ARCHIVE_MAX_PATH_BYTES must be a positive integer")
+	} else {
+		indexer.ArchiveLimits.MaxPathBytes = value
 	}
 	if err := validListenAddress(indexer.MetricsListenAddress); err != nil {
 		return Indexer{}, err

@@ -320,6 +320,51 @@ func TestLoadIndexerRejectsZeroFreeSpaceFloor(t *testing.T) {
 	}
 }
 
+func TestLoadIndexerSourceProviderAndArchiveLimits(t *testing.T) {
+	setValidEnvironment(t)
+	setDurableEnvironment(t)
+	t.Setenv("GREPNEST_SOURCE_PROVIDER", "archive")
+	t.Setenv("GREPNEST_GITHUB_ARCHIVE_URL", "https://archives.example.com")
+	t.Setenv("GREPNEST_ARCHIVE_MAX_DOWNLOAD_BYTES", "11")
+	t.Setenv("GREPNEST_ARCHIVE_MAX_EXTRACTED_BYTES", "12")
+	t.Setenv("GREPNEST_ARCHIVE_MAX_FILE_BYTES", "13")
+	t.Setenv("GREPNEST_ARCHIVE_MAX_FILES", "14")
+	t.Setenv("GREPNEST_ARCHIVE_MAX_PATH_BYTES", "15")
+	got, err := LoadIndexer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SourceProvider != "archive" || got.GitHub.ArchiveURL != "https://archives.example.com" || got.ArchiveLimits != (ArchiveLimits{MaxDownloadBytes: 11, MaxExtractedBytes: 12, MaxFileBytes: 13, MaxFiles: 14, MaxPathBytes: 15}) {
+		t.Fatalf("configuration = %#v", got)
+	}
+}
+
+func TestLoadIndexerDefaultsToGitAndRejectsInvalidArchiveConfiguration(t *testing.T) {
+	setValidEnvironment(t)
+	setDurableEnvironment(t)
+	got, err := LoadIndexer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SourceProvider != "git" {
+		t.Fatalf("source provider = %q", got.SourceProvider)
+	}
+	for _, test := range []struct{ name, env, value string }{
+		{"provider", "GREPNEST_SOURCE_PROVIDER", "other"},
+		{"archive URL", "GREPNEST_GITHUB_ARCHIVE_URL", "http://archives.example.com"},
+		{"download limit", "GREPNEST_ARCHIVE_MAX_DOWNLOAD_BYTES", "0"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			setValidEnvironment(t)
+			setDurableEnvironment(t)
+			t.Setenv(test.env, test.value)
+			if _, err := LoadIndexer(); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("LoadIndexer() error = %v", err)
+			}
+		})
+	}
+}
+
 func TestLoadIndexerRequiresOnlyIndexerConfiguration(t *testing.T) {
 	setValidEnvironment(t)
 	setDurableEnvironment(t)

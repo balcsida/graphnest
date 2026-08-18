@@ -206,7 +206,7 @@ func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime
 		WorktreesDir: filepath.Join(settings.DataDir, "worktrees"), Runner: runner, CommandTimeout: 2 * time.Minute,
 	}
 	worker := &indexer.Worker{
-		ID: settings.WorkerID, Queue: store, Store: store, Tokens: githubClient, Snapshots: indexer.GitSnapshotProvider{Git: git},
+		ID: settings.WorkerID, Queue: store, Store: store, Tokens: githubClient, Snapshots: newSnapshotProvider(settings, githubClient, git, metrics),
 		Zoekt:        &indexer.ZoektIndexer{Binary: settings.ZoektGitIndex, IndexDir: settings.IndexDir, Runner: runner, Client: zoektClient, IndexTimeout: 10 * time.Minute, VisibilityTimeout: 2 * time.Minute},
 		MinFreeBytes: uint64(settings.MinFreeBytes), MaxRepositoryBytes: settings.MaxRepositoryBytes, Metrics: metrics,
 	}
@@ -228,6 +228,17 @@ func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime
 		runGraph:     graphService(settings.Graph, store, slog.Default()),
 		close:        func() { _ = listener.Close(); pool.Close() },
 	}, nil
+}
+
+func newSnapshotProvider(settings config.Indexer, client *githubapp.Client, git *indexer.Git, metrics *observability.Metrics) indexer.SnapshotProvider {
+	if settings.SourceProvider == "archive" {
+		limits := settings.ArchiveLimits
+		return indexer.ArchiveSnapshotProvider{
+			Client: client, WorkspacesDir: filepath.Join(settings.DataDir, "archives"), Metrics: metrics,
+			Limits: indexer.ArchiveLimits{MaxDownloadBytes: limits.MaxDownloadBytes, MaxExtractedBytes: limits.MaxExtractedBytes, MaxFileBytes: limits.MaxFileBytes, MaxFiles: limits.MaxFiles, MaxPathBytes: limits.MaxPathBytes},
+		}
+	}
+	return indexer.GitSnapshotProvider{Git: git}
 }
 
 func graphService(settings config.Graph, source ladybug.SnapshotSource, logger *slog.Logger) func(context.Context) error {
@@ -283,7 +294,7 @@ func serveMetrics(ctx context.Context, listener net.Listener, handler http.Handl
 }
 
 func parseGitHubEndpoints(settings config.GitHub) (githubapp.Endpoints, error) {
-	values := []string{settings.WebURL, settings.APIURL, settings.UploadURL, settings.GitURL}
+	values := []string{settings.WebURL, settings.APIURL, settings.UploadURL, settings.GitURL, settings.ArchiveURL}
 	parsed := make([]*url.URL, len(values))
 	for index, value := range values {
 		var err error
@@ -291,7 +302,7 @@ func parseGitHubEndpoints(settings config.GitHub) (githubapp.Endpoints, error) {
 			return githubapp.Endpoints{}, errors.New("invalid GitHub endpoint")
 		}
 	}
-	return githubapp.Endpoints{Web: parsed[0], API: parsed[1], Upload: parsed[2], Git: parsed[3]}, nil
+	return githubapp.Endpoints{Web: parsed[0], API: parsed[1], Upload: parsed[2], Git: parsed[3], Archive: parsed[4]}, nil
 }
 
 func readBoundedFile(path string, maxBytes int64) ([]byte, error) {

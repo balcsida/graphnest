@@ -29,6 +29,22 @@ func TestMilestone2MetricsRecordFixedLabels(t *testing.T) {
 	}
 }
 
+func TestArchiveMetricsUseOnlyFixedLabels(t *testing.T) {
+	metrics := New()
+	metrics.ObserveArchive("download", "success", time.Second)
+	metrics.ObserveArchive("repository-123", strings.Repeat("a", 40), time.Second)
+	body := scrape(t, metrics)
+	for _, want := range []string{
+		`grepnest_archive_operations_total{operation="download",result="success"} 1`,
+		`grepnest_archive_operations_total{operation="unknown",result="error"} 1`,
+		`grepnest_archive_operation_duration_seconds_count{operation="download",result="success"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("metrics missing %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestMilestone2MetricsBoundUnknownLabels(t *testing.T) {
 	metrics := New()
 	metrics.ObserveGitHub("repository-secret", "raw error text")

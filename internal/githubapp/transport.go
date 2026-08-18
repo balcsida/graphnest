@@ -12,12 +12,15 @@ import (
 var ErrUnconfiguredHost = errors.New("GitHub request host is not configured")
 
 type Endpoints struct {
-	Web, API, Upload, Git *url.URL
+	Web, API, Upload, Git, Archive *url.URL
 }
 
 func NewHTTPClient(caPEM []byte, endpoints Endpoints, timeout time.Duration) (*http.Client, error) {
-	hosts := make(map[string]struct{}, 4)
-	for _, endpoint := range []*url.URL{endpoints.Web, endpoints.API, endpoints.Upload, endpoints.Git} {
+	if endpoints.Archive == nil {
+		endpoints.Archive = endpoints.Web
+	}
+	hosts := make(map[string]struct{}, 5)
+	for _, endpoint := range []*url.URL{endpoints.Web, endpoints.API, endpoints.Upload, endpoints.Git, endpoints.Archive} {
 		if endpoint == nil || endpoint.Scheme != "https" || endpoint.Host == "" {
 			return nil, errors.New("GitHub endpoint must be HTTPS")
 		}
