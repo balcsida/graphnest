@@ -227,6 +227,9 @@ func extractArchive(ctx context.Context, input io.Reader, destination string, li
 		if err != nil {
 			return fmt.Errorf("read archive tar: %w", err)
 		}
+		if header.Typeflag == tar.TypeXGlobalHeader {
+			continue
+		}
 		if !archivePathSafe(header.Name, limits.MaxPathBytes) {
 			return errors.New("unsafe archive path")
 		}
