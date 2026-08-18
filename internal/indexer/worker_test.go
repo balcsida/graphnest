@@ -117,6 +117,7 @@ type fakeSnapshots struct {
 	prepared     bool
 	request      SnapshotRequest
 	snapshot     Snapshot
+	zeroSnapshot bool
 	cleaned      bool
 	cleanedValue Snapshot
 	cleanupErr   error
@@ -133,7 +134,7 @@ func (provider *fakeSnapshots) Prepare(_ context.Context, request SnapshotReques
 	provider.queue.record("prepare")
 	provider.prepared = true
 	provider.request = request
-	if provider.snapshot.RepositoryID == 0 {
+	if provider.snapshot.RepositoryID == 0 && !provider.zeroSnapshot {
 		provider.snapshot = Snapshot{Root: "/snapshot", RepositoryID: request.Repository.ID, JobID: request.JobID, CommitSHA: request.CommitSHA}
 	}
 	if provider.prepareDone != nil {
@@ -216,7 +217,7 @@ func TestWorkerRunOnePropagatesExactSnapshotAndCompletesAfterVisibility(t *testi
 	if !slices.Equal(queue.events, want) {
 		t.Fatalf("events = %v, want %v", queue.events, want)
 	}
-	request := SnapshotRequest{Repository: store.repo, JobID: queue.job.ID, CommitSHA: queue.job.TargetSHA, AccessToken: "token"}
+	request := SnapshotRequest{RepositoryID: queue.job.RepositoryID, Repository: store.repo, JobID: queue.job.ID, CommitSHA: queue.job.TargetSHA, AccessToken: "token"}
 	if provider.request != request || publisher.root != "/snapshot" || provider.cleanedValue != provider.snapshot {
 		t.Fatalf("request=%+v root=%q cleanup=%+v", provider.request, publisher.root, provider.cleanedValue)
 	}
@@ -494,6 +495,24 @@ func TestWorkerCleanupFailureIsJoinedWithPrimaryError(t *testing.T) {
 	worked, err := worker.RunOne(t.Context())
 	if !worked || !errors.Is(err, postgres.ErrLeaseLost) || !errors.Is(err, cleanupErr) {
 		t.Fatalf("worked = %v, error = %v", worked, err)
+	}
+}
+
+func TestWorkerCleansZeroSnapshotAndJoinsErrorAfterPrepareFailure(t *testing.T) {
+	worker, _, _, provider, _ := workerFixture()
+	prepareErr := errors.New("prepare failed")
+	cleanupErr := errors.New("cleanup failed")
+	provider.prepareErr = prepareErr
+	provider.cleanupErr = cleanupErr
+	provider.zeroSnapshot = true
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	worked, err := worker.RunOne(ctx)
+	if !worked || !errors.Is(err, context.Canceled) || !errors.Is(err, cleanupErr) {
+		t.Fatalf("worked=%v error=%v", worked, err)
+	}
+	if !provider.cleaned || provider.cleanedValue != (Snapshot{}) {
+		t.Fatalf("cleaned=%v snapshot=%+v", provider.cleaned, provider.cleanedValue)
 	}
 }
 

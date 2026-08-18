@@ -34,10 +34,11 @@ type TokenSource interface {
 }
 
 type SnapshotRequest struct {
-	Repository  repository.Repository
-	JobID       int64
-	CommitSHA   string
-	AccessToken string
+	RepositoryID int64
+	Repository   repository.Repository
+	JobID        int64
+	CommitSHA    string
+	AccessToken  string
 }
 type Snapshot struct {
 	Root         string
@@ -162,16 +163,14 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 		return fail("insufficient_space", true)
 	}
 	started := time.Now()
-	snapshot, err := worker.Snapshots.Prepare(jobCtx, SnapshotRequest{Repository: repo, JobID: job.ID, CommitSHA: job.TargetSHA, AccessToken: token.Value})
-	if snapshot.RepositoryID != 0 && snapshot.JobID != 0 {
-		defer func() {
-			cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), worker.cleanupTimeout())
-			defer cleanupCancel()
-			if cleanupErr := worker.Snapshots.Cleanup(cleanupCtx, snapshot); cleanupErr != nil {
-				resultErr = errors.Join(resultErr, cleanupErr)
-			}
-		}()
-	}
+	snapshot, err := worker.Snapshots.Prepare(jobCtx, SnapshotRequest{RepositoryID: job.RepositoryID, Repository: repo, JobID: job.ID, CommitSHA: job.TargetSHA, AccessToken: token.Value})
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), worker.cleanupTimeout())
+		defer cleanupCancel()
+		if cleanupErr := worker.Snapshots.Cleanup(cleanupCtx, snapshot); cleanupErr != nil {
+			resultErr = errors.Join(resultErr, cleanupErr)
+		}
+	}()
 	worker.observePhase("fetch", started, err)
 	if err != nil {
 		if errors.Is(err, ErrTargetMissing) {

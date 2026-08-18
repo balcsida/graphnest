@@ -29,7 +29,10 @@ type Git struct {
 type GitSnapshotProvider struct{ Git *Git }
 
 func (provider GitSnapshotProvider) Prepare(ctx context.Context, request SnapshotRequest) (Snapshot, error) {
-	snapshot := Snapshot{RepositoryID: request.Repository.ID, JobID: request.JobID, CommitSHA: request.CommitSHA}
+	snapshot := Snapshot{RepositoryID: request.RepositoryID, JobID: request.JobID, CommitSHA: request.CommitSHA}
+	if request.RepositoryID != request.Repository.ID {
+		return snapshot, errors.New("invalid Git repository job")
+	}
 	if provider.Git == nil {
 		return snapshot, errors.New("Git snapshot provider is required")
 	}
@@ -39,6 +42,9 @@ func (provider GitSnapshotProvider) Prepare(ctx context.Context, request Snapsho
 }
 
 func (provider GitSnapshotProvider) Cleanup(ctx context.Context, snapshot Snapshot) error {
+	if snapshot.RepositoryID <= 0 || snapshot.JobID <= 0 {
+		return nil
+	}
 	if provider.Git == nil {
 		return errors.New("Git snapshot provider is required")
 	}
