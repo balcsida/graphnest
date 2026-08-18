@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/githubapp"
+	"github.com/grepnest/grepnest/internal/graphartifact"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/grepnest/grepnest/internal/repository"
@@ -29,6 +30,7 @@ type fakeQueue struct {
 	renewed     chan struct{}
 	completed   bool
 	published   bool
+	enrichment  postgres.EnrichmentStatus
 	failedCode  string
 	failedRetry bool
 	active      map[int64]struct{}
@@ -71,9 +73,12 @@ func (queue *fakeQueue) PublishIndex(context.Context, int64, string) error {
 	queue.published = true
 	return nil
 }
-func (queue *fakeQueue) CompleteIndex(context.Context, int64, string) error {
+func (queue *fakeQueue) CompleteIndex(_ context.Context, _ int64, _ string, enrichment ...postgres.EnrichmentStatus) error {
 	queue.record("complete")
 	queue.completed = true
+	if len(enrichment) > 0 {
+		queue.enrichment = enrichment[0]
+	}
 	return nil
 }
 func (queue *fakeQueue) FailIndex(_ context.Context, _ int64, _ string, code string, retry bool) error {
@@ -185,6 +190,25 @@ type fakePublisher struct {
 	root       string
 }
 
+type fakeEnricher struct {
+	queue    *fakeQueue
+	status   EnrichmentStatus
+	err      error
+	snapshot Snapshot
+	started  chan struct{}
+	release  chan struct{}
+}
+
+func (enricher *fakeEnricher) Enrich(_ context.Context, snapshot Snapshot, _ repository.Repository, _ string) (EnrichmentStatus, error) {
+	enricher.queue.record("enrich")
+	enricher.snapshot = snapshot
+	if enricher.started != nil {
+		close(enricher.started)
+		<-enricher.release
+	}
+	return enricher.status, enricher.err
+}
+
 func (publisher *fakePublisher) Index(ctx context.Context, _ repository.Repository, root string) error {
 	publisher.queue.record("index")
 	publisher.indexed = true
@@ -230,6 +254,50 @@ func TestWorkerRunOnePropagatesExactSnapshotAndCompletesAfterVisibility(t *testi
 	}
 	if !queue.published || !queue.completed || !provider.cleaned {
 		t.Fatalf("published=%v completed=%v cleaned=%v", queue.published, queue.completed, provider.cleaned)
+	}
+}
+
+func TestWorkerEnrichesPublishedIndexBeforeSnapshotCleanup(t *testing.T) {
+	worker, queue, _, provider, _ := workerFixture()
+	artifact := graphartifact.Artifact{RepositoryID: queue.job.RepositoryID, Commit: queue.job.TargetSHA}
+	enricher := &fakeEnricher{queue: queue, status: EnrichmentStatus{Artifact: &artifact}}
+	worker.Enricher = enricher
+	worked, err := worker.RunOne(t.Context())
+	if err != nil || !worked {
+		t.Fatalf("RunOne() = %v, %v", worked, err)
+	}
+	want := []string{"claim", "token", "prepare", "index", "visible", "publish", "enrich", "complete", "cleanup"}
+	if !slices.Equal(queue.events, want) || enricher.snapshot != provider.snapshot || queue.enrichment.Artifact != &artifact {
+		t.Fatalf("events=%v snapshot=%+v status=%+v", queue.events, enricher.snapshot, queue.enrichment)
+	}
+}
+
+func TestWorkerRecordsEnrichmentFailureWithoutFailingSearch(t *testing.T) {
+	worker, queue, _, _, _ := workerFixture()
+	worker.Enricher = &fakeEnricher{queue: queue, err: context.DeadlineExceeded}
+	worked, err := worker.RunOne(t.Context())
+	if err != nil || !worked || queue.failedCode != "" || queue.enrichment.ErrorCode != "enrichment_timeout" {
+		t.Fatalf("RunOne()=%v,%v failed=%q enrichment=%+v", worked, err, queue.failedCode, queue.enrichment)
+	}
+}
+
+func TestWorkerRenewsIndexLeaseDuringEnrichment(t *testing.T) {
+	worker, queue, _, _, _ := workerFixture()
+	queue.renewed = make(chan struct{}, 1)
+	started, release := make(chan struct{}), make(chan struct{})
+	worker.Enricher = &fakeEnricher{queue: queue, started: started, release: release}
+	worker.RenewEvery = time.Millisecond
+	done := make(chan error, 1)
+	go func() { _, err := worker.RunOne(t.Context()); done <- err }()
+	<-started
+	select {
+	case <-queue.renewed:
+	case <-time.After(time.Second):
+		t.Fatal("lease was not renewed during enrichment")
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 

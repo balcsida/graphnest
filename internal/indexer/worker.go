@@ -16,11 +16,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+type EnrichmentStatus = postgres.EnrichmentStatus
+
 type JobQueue interface {
 	ClaimIndex(context.Context, string) (postgres.IndexJob, error)
 	RenewLease(context.Context, int64, string) error
 	PublishIndex(context.Context, int64, string) error
-	CompleteIndex(context.Context, int64, string) error
+	CompleteIndex(context.Context, int64, string, ...postgres.EnrichmentStatus) error
 	FailIndex(context.Context, int64, string, string, bool) error
 	ActiveJobIDs(context.Context) (map[int64]struct{}, error)
 }
@@ -60,6 +62,10 @@ type IndexPublisher interface {
 	WaitVisible(context.Context, uint32, string, string) error
 }
 
+type Enricher interface {
+	Enrich(context.Context, Snapshot, repository.Repository, string) (EnrichmentStatus, error)
+}
+
 type Worker struct {
 	ID                 string
 	Queue              JobQueue
@@ -67,6 +73,7 @@ type Worker struct {
 	Tokens             TokenSource
 	Snapshots          SnapshotProvider
 	Zoekt              IndexPublisher
+	Enricher           Enricher
 	MinFreeBytes       uint64
 	MaxRepositoryBytes int64
 	RenewEvery         time.Duration
@@ -204,7 +211,19 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 	if err := worker.Queue.PublishIndex(jobCtx, job.ID, worker.ID); err != nil {
 		return fail("publish_failed", true)
 	}
-	if err := worker.Queue.CompleteIndex(ctx, job.ID, worker.ID); err != nil {
+	status := EnrichmentStatus{ErrorCode: "enrichment_disabled"}
+	if worker.Enricher != nil {
+		started := time.Now()
+		status, err = worker.Enricher.Enrich(jobCtx, snapshot, repo, job.TargetSHA)
+		worker.observePhase("enrichment", started, err)
+		if err != nil {
+			status.ErrorCode = "enrichment_failed"
+			if errors.Is(err, context.DeadlineExceeded) {
+				status.ErrorCode = "enrichment_timeout"
+			}
+		}
+	}
+	if err := worker.Queue.CompleteIndex(ctx, job.ID, worker.ID, status); err != nil {
 		return true, err
 	}
 	return true, nil

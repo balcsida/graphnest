@@ -365,8 +365,11 @@ type commandQueue struct{ job postgres.IndexJob }
 func (queue *commandQueue) ClaimIndex(context.Context, string) (postgres.IndexJob, error) {
 	return queue.job, nil
 }
-func (*commandQueue) RenewLease(context.Context, int64, string) error              { return nil }
-func (*commandQueue) CompleteIndex(context.Context, int64, string) error           { return nil }
+func (*commandQueue) RenewLease(context.Context, int64, string) error   { return nil }
+func (*commandQueue) PublishIndex(context.Context, int64, string) error { return nil }
+func (*commandQueue) CompleteIndex(context.Context, int64, string, ...postgres.EnrichmentStatus) error {
+	return nil
+}
 func (*commandQueue) FailIndex(context.Context, int64, string, string, bool) error { return nil }
 func (*commandQueue) ActiveJobIDs(context.Context) (map[int64]struct{}, error) {
 	return map[int64]struct{}{}, nil

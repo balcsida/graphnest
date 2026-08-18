@@ -266,17 +266,21 @@ type publicationBarrier struct {
 	once    sync.Once
 }
 
-func (queue *publicationBarrier) CompleteIndex(ctx context.Context, id int64, owner string) error {
+func (queue *publicationBarrier) PublishIndex(ctx context.Context, id int64, owner string) error {
 	if !queue.block {
-		return queue.Store.CompleteIndex(ctx, id, owner)
+		return queue.Store.PublishIndex(ctx, id, owner)
 	}
 	queue.once.Do(func() { close(queue.reached) })
 	select {
 	case <-queue.release:
-		return queue.Store.CompleteIndex(ctx, id, owner)
+		return queue.Store.PublishIndex(ctx, id, owner)
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func (queue *publicationBarrier) CompleteIndex(ctx context.Context, id int64, owner string, enrichment ...postgres.EnrichmentStatus) error {
+	return queue.Store.CompleteIndex(ctx, id, owner, enrichment...)
 }
 
 type milestoneDatabase struct {

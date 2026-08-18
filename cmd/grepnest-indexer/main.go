@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/config"
+	"github.com/grepnest/grepnest/internal/enrichment"
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/graphquery"
 	"github.com/grepnest/grepnest/internal/graphruntime"
@@ -218,6 +219,7 @@ func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime
 	worker := &indexer.Worker{
 		ID: settings.WorkerID, Queue: store, Store: store, Tokens: githubClient, Snapshots: newSnapshotProvider(settings, githubClient, git, metrics),
 		Zoekt:        &indexer.ZoektIndexer{Binary: settings.ZoektIndex, IndexDir: settings.IndexDir, Runner: runner, Client: zoektClient, IndexTimeout: 10 * time.Minute, VisibilityTimeout: 2 * time.Minute},
+		Enricher:     newEnricher(os.Getenv("GREPNEST_SCANNER_PATH")),
 		MinFreeBytes: uint64(settings.MinFreeBytes), MaxRepositoryBytes: settings.MaxRepositoryBytes, Metrics: metrics,
 	}
 	listener, err := net.Listen("tcp", settings.MetricsListenAddress)
@@ -238,6 +240,17 @@ func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime
 		runGraph:     graphService(settings.Graph, store, slog.Default()),
 		close:        func() { _ = listener.Close(); pool.Close() },
 	}, nil
+}
+
+func newEnricher(binary string) indexer.Enricher {
+	if binary == "" {
+		return nil
+	}
+	return enrichment.Runner{
+		Binary:  binary,
+		Process: indexer.Runner{MaxOutput: 64 << 20, KillGrace: 5 * time.Second},
+		Timeout: 2 * time.Minute,
+	}
 }
 
 func newSnapshotProvider(settings config.Indexer, client *githubapp.Client, git *indexer.Git, metrics *observability.Metrics) indexer.SnapshotProvider {

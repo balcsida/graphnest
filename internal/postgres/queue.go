@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/admin"
+	"github.com/grepnest/grepnest/internal/graphartifact"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -70,6 +71,11 @@ func (s *Store) RetryAdminJob(ctx context.Context, installationID int64, reposit
 
 var ErrNoJob = errors.New("no index job available")
 var ErrLeaseLost = errors.New("index job lease lost")
+
+type EnrichmentStatus struct {
+	Artifact  *graphartifact.Artifact
+	ErrorCode string
+}
 
 type IndexRequest struct {
 	RepositoryID                 int64
@@ -199,44 +205,85 @@ func (s *Store) PublishIndex(ctx context.Context, id int64, owner string) error 
 		if _, err := tx.Exec(ctx, `update repositories set indexed_sha=$2, status='ready', error_code=null, last_indexed_at=now(), updated_at=now() where id=$1`, repositoryID, targetSHA); err != nil {
 			return err
 		}
-		if err := enqueueGraph(ctx, tx, repositoryID, targetSHA); err != nil {
+		if err := enqueueGraph(ctx, tx, repositoryID, targetSHA, owner); err != nil {
 			return err
 		}
 	}
 	return tx.Commit(ctx)
 }
 
-func (s *Store) CompleteIndex(ctx context.Context, id int64, owner string) error {
+func (s *Store) CompleteIndex(ctx context.Context, id int64, owner string, enrichment ...EnrichmentStatus) error {
 	if err := s.PublishIndex(ctx, id, owner); err != nil {
 		return err
 	}
-	result, err := s.pool.Exec(ctx, `update index_jobs jobs set state=case
-		when repositories.enabled and not repositories.archived and installations.status='active'
-			and repositories.desired_sha=jobs.target_sha then 'succeeded' else 'superseded' end,
-		lease_owner=null,lease_expires_at=null,error_code=case
-		when repositories.enabled and not repositories.archived and installations.status='active'
-			and repositories.desired_sha=jobs.target_sha then null else 'superseded' end,
-		error_message=null,updated_at=now()
-		from repositories join installations on installations.id=repositories.installation_id
-		where jobs.id=$1 and jobs.repository_id=repositories.id and jobs.state='running'
-		and jobs.lease_owner=$2 and jobs.lease_expires_at>now()`, id, owner)
-	return leaseResult(result, err)
-}
-
-func enqueueGraph(ctx context.Context, tx pgx.Tx, repositoryID int64, targetSHA string) error {
-	_, err := tx.Exec(ctx, `update graph_jobs set state='superseded', updated_at=now()
-		where repository_id=$1 and state='queued' and target_sha<>$2`, repositoryID, targetSHA)
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	var exists bool
-	if err := tx.QueryRow(ctx, `select exists(select 1 from graph_jobs
-		where repository_id=$1 and target_sha=$2 and state in ('queued','running'))`, repositoryID, targetSHA).Scan(&exists); err != nil || exists {
+	defer tx.Rollback(ctx)
+	var repositoryID int64
+	var targetSHA, desiredSHA, installationStatus string
+	var enabled, archived bool
+	if err := tx.QueryRow(ctx, `select repositories.id,index_jobs.target_sha,coalesce(repositories.desired_sha,''),
+		repositories.enabled,repositories.archived,installations.status
+		from installations join repositories on repositories.installation_id=installations.id
+		join index_jobs on index_jobs.repository_id=repositories.id
+		where index_jobs.id=$1 and index_jobs.state='running' and index_jobs.lease_owner=$2
+		and index_jobs.lease_expires_at>now() for share of installations for update of repositories,index_jobs`, id, owner).
+		Scan(&repositoryID, &targetSHA, &desiredSHA, &enabled, &archived, &installationStatus); errors.Is(err, pgx.ErrNoRows) {
+		return ErrLeaseLost
+	} else if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `insert into graph_jobs(repository_id,target_sha,state,max_attempts)
-		values($1,$2,'queued',5)
-		on conflict do nothing`, repositoryID, targetSHA)
+	status := EnrichmentStatus{ErrorCode: "enrichment_disabled"}
+	if len(enrichment) > 0 {
+		status = enrichment[0]
+	}
+	graphState := "failed"
+	if status.Artifact != nil {
+		if status.Artifact.RepositoryID != repositoryID || status.Artifact.Commit != targetSHA || graphartifact.Validate(*status.Artifact, graphartifact.Limits{}) != nil {
+			return graphartifact.ErrInvalidArtifact
+		}
+		if _, err := replaceGraph(ctx, tx, repositoryID, GraphSourceManaged, *status.Artifact); err != nil {
+			return err
+		}
+		graphState, status.ErrorCode = "succeeded", ""
+	} else if status.ErrorCode == "" {
+		status.ErrorCode = "enrichment_failed"
+	}
+	if _, err := tx.Exec(ctx, `update graph_jobs set state=$3,lease_owner=null,lease_expires_at=null,
+			error_code=nullif($4,''),error_message=null,updated_at=now()
+			where repository_id=$1 and target_sha=$2 and state in ('queued','running')`, repositoryID, targetSHA, graphState, status.ErrorCode); err != nil {
+		return err
+	}
+	state, errorCode := "superseded", "superseded"
+	if !enabled || archived || installationStatus != "active" {
+		errorCode = "repository_unavailable"
+	} else if desiredSHA == targetSHA {
+		state, errorCode = "succeeded", ""
+	}
+	if _, err := tx.Exec(ctx, `update index_jobs set state=$2,lease_owner=null,lease_expires_at=null,
+		error_code=nullif($3,''),error_message=null,updated_at=now() where id=$1`, id, state, errorCode); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func enqueueGraph(ctx context.Context, tx pgx.Tx, repositoryID int64, targetSHA, owner string) error {
+	if _, err := tx.Exec(ctx, `update graph_jobs set state='superseded',lease_owner=null,lease_expires_at=null,updated_at=now()
+		where repository_id=$1 and state in ('queued','running') and target_sha<>$2`, repositoryID, targetSHA); err != nil {
+		return err
+	}
+	result, err := tx.Exec(ctx, `update graph_jobs set state='running',lease_owner=$3::varchar,
+		lease_expires_at=(select lease_expires_at from index_jobs where repository_id=$1 and state='running' and lease_owner=$3::varchar),
+		error_code=null,error_message=null,updated_at=now()
+		where repository_id=$1 and target_sha=$2 and state in ('queued','running')`, repositoryID, targetSHA, owner)
+	if err != nil || result.RowsAffected() > 0 {
+		return err
+	}
+	_, err = tx.Exec(ctx, `insert into graph_jobs(repository_id,target_sha,state,max_attempts,lease_owner,lease_expires_at)
+		select $1,$2,'running',5,$3::varchar,lease_expires_at from index_jobs
+		where repository_id=$1 and state='running' and lease_owner=$3::varchar`, repositoryID, targetSHA, owner)
 	return err
 }
 
