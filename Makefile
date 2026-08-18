@@ -121,6 +121,7 @@ postgres-integration:
 
 tools:
 	mkdir -p .cache/bin
+	GOBIN=$$(pwd)/.cache/bin go install github.com/sourcegraph/zoekt/cmd/zoekt-index@$(ZOEKT_VERSION)
 	GOBIN=$$(pwd)/.cache/bin go install github.com/sourcegraph/zoekt/cmd/zoekt-git-index@$(ZOEKT_VERSION)
 	GOBIN=$$(pwd)/.cache/bin go install github.com/sourcegraph/zoekt/cmd/zoekt-webserver@$(ZOEKT_VERSION)
 
@@ -136,7 +137,7 @@ e2e: tools
 	$(MAKE) e2e-test GREPNEST_TEST_POSTGRES_DSN="postgres://grepnest:grepnest@$$address/grepnest?sslmode=disable"
 
 e2e-test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' GREPNEST_REQUIRE_POSTGRES=1 ZOEKT_GIT_INDEX=$$(pwd)/.cache/bin/zoekt-git-index ZOEKT_WEBSERVER=$$(pwd)/.cache/bin/zoekt-webserver $(LADYBUG_GO) test -v -tags='e2e system_ladybug' ./test/e2e
+	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' GREPNEST_REQUIRE_POSTGRES=1 ZOEKT_INDEX=$$(pwd)/.cache/bin/zoekt-index ZOEKT_GIT_INDEX=$$(pwd)/.cache/bin/zoekt-git-index ZOEKT_WEBSERVER=$$(pwd)/.cache/bin/zoekt-webserver $(LADYBUG_GO) test -v -tags='e2e system_ladybug' ./test/e2e
 
 build: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
 	$(LADYBUG_GO) build $(LADYBUG_TAGS) $(LADYBUG_RPATH) ./cmd/...

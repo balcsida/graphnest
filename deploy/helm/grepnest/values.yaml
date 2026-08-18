@@ -65,7 +65,7 @@ node:
   indexer:
     executable: /usr/local/bin/grepnest-indexer
     gitExecutable: /usr/bin/git
-    zoektGitIndexExecutable: /usr/local/bin/zoekt-git-index
+    zoektIndexExecutable: /usr/local/bin/zoekt-index
     minFreeBytes: 10737418240
     maxRepositoryBytes: 5368709120
     metricsPort: 9090

@@ -24,7 +24,7 @@ services:
       GREPNEST_DATA_DIR: /var/lib/grepnest/data
       GREPNEST_INDEX_DIR: /var/lib/grepnest/index
       GREPNEST_GIT_PATH: /usr/bin/git
-      GREPNEST_ZOEKT_GIT_INDEX: /usr/bin/zoekt-git-index
+      GREPNEST_ZOEKT_INDEX: /usr/local/bin/zoekt-index
       GREPNEST_WORKER_ID: primary
       GREPNEST_MIN_FREE_BYTES: 1073741824
     volumes:

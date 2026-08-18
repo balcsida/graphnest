@@ -46,6 +46,7 @@ docker run --rm --read-only --tmpfs /tmp --tmpfs /var/run/grepnest \
     command -v grepnest-scanner
     command -v grepnest-graph
     command -v git
+    command -v zoekt-index
     command -v zoekt-git-index
     command -v zoekt-webserver
     git --version
