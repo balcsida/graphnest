@@ -44,8 +44,8 @@ func (provider ArchiveSnapshotProvider) Prepare(ctx context.Context, request Sna
 	owner, name, _ := strings.Cut(request.Repository.Name, "/")
 	started := time.Now()
 	body, err := provider.Client.DownloadArchive(ctx, owner, name, request.CommitSHA, request.AccessToken)
-	provider.observe("download", err, started)
 	if err != nil {
+		provider.observe("download", err, started)
 		var status githubapp.HTTPStatusError
 		if errors.As(err, &status) && status.StatusCode == 404 {
 			return snapshot, errors.Join(ErrTargetMissing, err)
@@ -53,6 +53,8 @@ func (provider ArchiveSnapshotProvider) Prepare(ctx context.Context, request Sna
 		return snapshot, err
 	}
 	defer body.Close()
+	downloadErr := errors.New("archive body was not consumed")
+	defer func() { provider.observe("download", downloadErr, started) }()
 	repositoryDir, err := numericPath(provider.WorkspacesDir, strconv.FormatInt(request.RepositoryID, 10))
 	if err != nil {
 		return snapshot, err
@@ -75,12 +77,18 @@ func (provider ArchiveSnapshotProvider) Prepare(ctx context.Context, request Sna
 	}
 	defer func() {
 		if err != nil {
-			_ = os.RemoveAll(staging)
+			cleanupStarted := time.Now()
+			cleanupErr := os.RemoveAll(staging)
+			provider.observe("cleanup", cleanupErr, cleanupStarted)
+			if cleanupErr != nil {
+				err = errors.Join(err, fmt.Errorf("cleanup partial archive workspace: %w", cleanupErr))
+			}
 		}
 	}()
-	started = time.Now()
-	err = extractArchive(body, staging, provider.Limits)
-	provider.observe("extract", err, started)
+	extractStarted := time.Now()
+	err = extractArchive(ctx, body, staging, provider.Limits)
+	downloadErr = err
+	provider.observe("extract", err, extractStarted)
 	if err != nil {
 		return snapshot, err
 	}
@@ -191,19 +199,27 @@ func (provider ArchiveSnapshotProvider) validate(request SnapshotRequest) error 
 	return nil
 }
 
-func extractArchive(input io.Reader, destination string, limits ArchiveLimits) error {
-	compressed := &io.LimitedReader{R: input, N: limits.MaxDownloadBytes + 1}
+func extractArchive(ctx context.Context, input io.Reader, destination string, limits ArchiveLimits) error {
+	compressed := &io.LimitedReader{R: contextReader{ctx: ctx, reader: input}, N: limits.MaxDownloadBytes + 1}
 	gz, err := gzip.NewReader(compressed)
 	if err != nil {
 		return fmt.Errorf("read archive gzip: %w", err)
 	}
 	defer gz.Close()
 	reader := tar.NewReader(gz)
+	root, err := os.OpenRoot(destination)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	var prefix string
 	var extracted int64
 	seen := make(map[string]struct{})
-	files := 0
+	entries := 0
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		header, err := reader.Next()
 		if errors.Is(err, io.EOF) {
 			break
@@ -211,13 +227,14 @@ func extractArchive(input io.Reader, destination string, limits ArchiveLimits) e
 		if err != nil {
 			return fmt.Errorf("read archive tar: %w", err)
 		}
-		if len(header.Name) > limits.MaxPathBytes || strings.ContainsAny(header.Name, "\x00\\") {
+		if !archivePathSafe(header.Name, limits.MaxPathBytes) {
+			return errors.New("unsafe archive path")
+		}
+		entries++
+		if entries > limits.MaxFiles {
 			return errors.New("archive entry limit exceeded")
 		}
 		clean := path.Clean(header.Name)
-		if clean == "." || path.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") || clean != strings.TrimSuffix(header.Name, "/") {
-			return errors.New("unsafe archive path")
-		}
 		parts := strings.Split(clean, "/")
 		if prefix == "" {
 			prefix = parts[0]
@@ -236,33 +253,31 @@ func extractArchive(input io.Reader, destination string, limits ArchiveLimits) e
 			return errors.New("duplicate archive path")
 		}
 		seen[relative] = struct{}{}
-		target := filepath.Join(destination, filepath.FromSlash(relative))
+		target := filepath.FromSlash(relative)
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0o700); err != nil {
+			if err := root.MkdirAll(target, 0o700); err != nil {
 				return err
 			}
 		case tar.TypeReg:
-			files++
-			if files > limits.MaxFiles {
-				return errors.New("archive file limit exceeded")
-			}
 			if header.Size < 0 || header.Size > limits.MaxFileBytes || extracted > limits.MaxExtractedBytes-header.Size {
 				return errors.New("archive content limit exceeded")
 			}
 			extracted += header.Size
-			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-				return err
+			if parent := filepath.Dir(target); parent != "." {
+				if err := root.MkdirAll(parent, 0o700); err != nil {
+					return err
+				}
 			}
 			mode := os.FileMode(0o644)
 			if header.Mode&0o111 != 0 {
 				mode = 0o755
 			}
-			file, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+			file, err := root.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 			if err != nil {
 				return err
 			}
-			_, copyErr := io.CopyN(file, reader, header.Size)
+			copyErr := copyContextN(ctx, file, reader, header.Size)
 			closeErr := file.Close()
 			if copyErr != nil || closeErr != nil {
 				return errors.Join(copyErr, closeErr)
@@ -276,6 +291,53 @@ func extractArchive(input io.Reader, destination string, limits ArchiveLimits) e
 	}
 	if prefix == "" {
 		return errors.New("archive is empty")
+	}
+	return nil
+}
+
+func archivePathSafe(name string, maxBytes int) bool {
+	clean := path.Clean(name)
+	return len(name) <= maxBytes && !strings.ContainsAny(name, "\x00\\") && clean != "." && !path.IsAbs(clean) && clean != ".." && !strings.HasPrefix(clean, "../") && clean == strings.TrimSuffix(name, "/")
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (reader contextReader) Read(buffer []byte) (int, error) {
+	if err := reader.ctx.Err(); err != nil {
+		return 0, err
+	}
+	read, err := reader.reader.Read(buffer)
+	if contextErr := reader.ctx.Err(); contextErr != nil {
+		return read, contextErr
+	}
+	return read, err
+}
+
+func copyContextN(ctx context.Context, destination io.Writer, source io.Reader, remaining int64) error {
+	buffer := make([]byte, 32<<10)
+	for remaining > 0 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		chunk := int64(len(buffer))
+		if remaining < chunk {
+			chunk = remaining
+		}
+		read, err := io.ReadFull(source, buffer[:chunk])
+		if err != nil {
+			return err
+		}
+		written, err := destination.Write(buffer[:read])
+		if err != nil {
+			return err
+		}
+		if written != read {
+			return io.ErrShortWrite
+		}
+		remaining -= int64(written)
 	}
 	return nil
 }
