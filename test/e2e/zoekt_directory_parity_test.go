@@ -84,8 +84,8 @@ func TestZoektDirectoryMatchesGitIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gitClient, gitProcess, _ := parityZoekt(t, ctx, zoektWebserver, gitIndexDir)
-	directoryClient, directoryProcess, _ := parityZoekt(t, ctx, zoektWebserver, directoryIndexDir)
+	gitClient, gitProcess, _ := parityZoekt(t, ctx, zoektWebserver, gitIndexDir, 7001)
+	directoryClient, directoryProcess, _ := parityZoekt(t, ctx, zoektWebserver, directoryIndexDir, 7001)
 	t.Cleanup(func() { gitProcess.stop(t); directoryProcess.stop(t) })
 	for _, query := range []string{"LiteralNeedle", "Regex[0-9]+Needle", "árvíztűrő", "BinaryNeedle", "file:empty.txt", "ExecutableNeedle", "OrderNeedle"} {
 		gitResult, err := gitClient.Search(ctx, search.BackendRequest{Query: query, RepositoryIDs: []uint32{7001}, Limit: 100, Timeout: time.Second})
@@ -124,7 +124,7 @@ func requiredExecutable(t *testing.T, name string) string {
 	return path
 }
 
-func parityZoekt(t *testing.T, ctx context.Context, executable, indexDir string) (*zoekt.Client, *managedProcess, string) {
+func parityZoekt(t *testing.T, ctx context.Context, executable, indexDir string, repositoryID uint32) (*zoekt.Client, *managedProcess, string) {
 	t.Helper()
 	address := freeAddress(t)
 	process := startProcess(t, exec.CommandContext(ctx, executable, "-index", indexDir, "-listen", address, "-rpc", "-html=false"))
@@ -133,6 +133,7 @@ func parityZoekt(t *testing.T, ctx context.Context, executable, indexDir string)
 		t.Fatal(err)
 	}
 	waitReady(t, ctx, client, process)
+	waitIndexed(t, ctx, client, process, "LiteralNeedle", repositoryID, "literal.txt")
 	return client, process, address
 }
 
