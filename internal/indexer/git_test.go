@@ -129,7 +129,7 @@ func TestGitSnapshotProviderPreservesExactSnapshotIdentity(t *testing.T) {
 	git, repo, job, _, _, _, _ := gitPrepareFixture(t)
 	provider := GitSnapshotProvider{Git: &git}
 	snapshot, err := provider.Prepare(t.Context(), SnapshotRequest{
-		Repository: repo, JobID: job.ID, CommitSHA: job.TargetSHA, AccessToken: "token-that-must-not-persist",
+		RepositoryID: repo.ID, Repository: repo, JobID: job.ID, CommitSHA: job.TargetSHA, AccessToken: "token-that-must-not-persist",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -143,6 +143,21 @@ func TestGitSnapshotProviderPreservesExactSnapshotIdentity(t *testing.T) {
 	}
 	if _, err := os.Stat(snapshot.Root); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("snapshot root still exists: %v", err)
+	}
+}
+
+func TestGitSnapshotProviderRejectsMismatchedRepositoryID(t *testing.T) {
+	git, repo, job, _, _, _, _ := gitPrepareFixture(t)
+	provider := GitSnapshotProvider{Git: &git}
+	request := SnapshotRequest{RepositoryID: repo.ID + 1, Repository: repo, JobID: job.ID, CommitSHA: job.TargetSHA, AccessToken: "token-that-must-not-persist"}
+	if _, err := provider.Prepare(t.Context(), request); err == nil {
+		t.Fatal("mismatched repository ID was accepted")
+	}
+}
+
+func TestGitSnapshotProviderCleanupEmptySnapshotIsNoop(t *testing.T) {
+	if err := (GitSnapshotProvider{}).Cleanup(t.Context(), Snapshot{}); err != nil {
+		t.Fatal(err)
 	}
 }
 

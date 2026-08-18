@@ -362,7 +362,7 @@ func (commandTokens) InstallationToken(context.Context, int64, []int64) (githuba
 type commandSnapshots struct{}
 
 func (commandSnapshots) Prepare(_ context.Context, request indexer.SnapshotRequest) (indexer.Snapshot, error) {
-	return indexer.Snapshot{Root: "/snapshot", RepositoryID: request.Repository.ID, JobID: request.JobID, CommitSHA: request.CommitSHA}, nil
+	return indexer.Snapshot{Root: "/snapshot", RepositoryID: request.RepositoryID, JobID: request.JobID, CommitSHA: request.CommitSHA}, nil
 }
 func (commandSnapshots) Cleanup(context.Context, indexer.Snapshot) error { return nil }
 func (commandSnapshots) CleanupStale(context.Context, indexer.ActiveJobs) error {
