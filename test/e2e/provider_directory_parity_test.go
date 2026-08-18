@@ -3,9 +3,6 @@
 package e2e
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
 	"context"
 	"crypto/x509"
 	"encoding/pem"
@@ -17,7 +14,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -79,7 +75,10 @@ func TestSnapshotProvidersProduceEquivalentDirectoryIndexes(t *testing.T) {
 	}
 	run(t, ctx, gitBinary, "clone", "--bare", work, bare)
 	run(t, ctx, gitBinary, "--git-dir", bare, "update-server-info")
-	archive := providerArchive(t, "repo-"+sha, fixtures)
+	archive, err := exec.CommandContext(ctx, gitBinary, "-C", work, "archive", "--format=tar.gz", "--prefix=repo-"+sha+"/", sha).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
 	const token = "provider-parity-token"
 	fileServer := http.FileServer(http.Dir(origins))
 	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -257,42 +256,4 @@ func assertArchiveProviderEmpty(t *testing.T, root string) {
 	}); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
-}
-
-func providerArchive(t *testing.T, root string, fixtures map[string]struct {
-	data []byte
-	mode os.FileMode
-}) []byte {
-	t.Helper()
-	var output bytes.Buffer
-	gzipWriter := gzip.NewWriter(&output)
-	tarWriter := tar.NewWriter(gzipWriter)
-	if err := tarWriter.WriteHeader(&tar.Header{Name: root + "/", Typeflag: tar.TypeDir, Mode: 0o755}); err != nil {
-		t.Fatal(err)
-	}
-	if err := tarWriter.WriteHeader(&tar.Header{Name: root + "/order/", Typeflag: tar.TypeDir, Mode: 0o755}); err != nil {
-		t.Fatal(err)
-	}
-	names := make([]string, 0, len(fixtures))
-	for name := range fixtures {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		fixture := fixtures[name]
-		header := &tar.Header{Name: root + "/" + name, Typeflag: tar.TypeReg, Mode: int64(fixture.mode.Perm()), Size: int64(len(fixture.data))}
-		if err := tarWriter.WriteHeader(header); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := tarWriter.Write(fixture.data); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := tarWriter.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := gzipWriter.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return output.Bytes()
 }
