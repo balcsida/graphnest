@@ -213,8 +213,19 @@ func (s *Store) PublishIndex(ctx context.Context, id int64, owner string) error 
 }
 
 func (s *Store) CompleteIndex(ctx context.Context, id int64, owner string, enrichment ...EnrichmentStatus) error {
-	if err := s.PublishIndex(ctx, id, owner); err != nil {
-		return err
+	published := false
+	if len(enrichment) > 0 {
+		if err := s.pool.QueryRow(ctx, `select exists(select 1 from graph_jobs
+			join index_jobs on index_jobs.repository_id=graph_jobs.repository_id and index_jobs.target_sha=graph_jobs.target_sha
+			where index_jobs.id=$1 and graph_jobs.state='running' and graph_jobs.lease_owner=$2
+			and graph_jobs.lease_expires_at is null)`, id, owner).Scan(&published); err != nil {
+			return err
+		}
+	}
+	if !published {
+		if err := s.PublishIndex(ctx, id, owner); err != nil {
+			return err
+		}
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -222,18 +233,36 @@ func (s *Store) CompleteIndex(ctx context.Context, id int64, owner string, enric
 	}
 	defer tx.Rollback(ctx)
 	var repositoryID int64
-	var targetSHA, desiredSHA, installationStatus string
+	var targetSHA, desiredSHA, indexedSHA, installationStatus string
 	var enabled, archived bool
 	if err := tx.QueryRow(ctx, `select repositories.id,index_jobs.target_sha,coalesce(repositories.desired_sha,''),
-		repositories.enabled,repositories.archived,installations.status
+		coalesce(repositories.indexed_sha,''),repositories.enabled,repositories.archived,installations.status
 		from installations join repositories on repositories.installation_id=installations.id
 		join index_jobs on index_jobs.repository_id=repositories.id
 		where index_jobs.id=$1 and index_jobs.state='running' and index_jobs.lease_owner=$2
 		and index_jobs.lease_expires_at>now() for share of installations for update of repositories,index_jobs`, id, owner).
-		Scan(&repositoryID, &targetSHA, &desiredSHA, &enabled, &archived, &installationStatus); errors.Is(err, pgx.ErrNoRows) {
+		Scan(&repositoryID, &targetSHA, &desiredSHA, &indexedSHA, &enabled, &archived, &installationStatus); errors.Is(err, pgx.ErrNoRows) {
 		return ErrLeaseLost
 	} else if err != nil {
 		return err
+	}
+	if indexedSHA != targetSHA {
+		errorCode := "stale_indexed_sha"
+		if !enabled || archived || installationStatus != "active" {
+			errorCode = "repository_unavailable"
+		} else if desiredSHA != targetSHA {
+			errorCode = "superseded"
+		}
+		if _, err := tx.Exec(ctx, `update graph_jobs set state='superseded',lease_owner=null,lease_expires_at=null,
+			error_code=$3,error_message=null,updated_at=now()
+			where repository_id=$1 and target_sha=$2 and state in ('queued','running')`, repositoryID, targetSHA, errorCode); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `update index_jobs set state='superseded',lease_owner=null,lease_expires_at=null,
+			error_code=$2,error_message=null,updated_at=now() where id=$1`, id, errorCode); err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
 	}
 	status := EnrichmentStatus{ErrorCode: "enrichment_disabled"}
 	if len(enrichment) > 0 {
@@ -275,15 +304,22 @@ func enqueueGraph(ctx context.Context, tx pgx.Tx, repositoryID int64, targetSHA,
 		return err
 	}
 	result, err := tx.Exec(ctx, `update graph_jobs set state='running',lease_owner=$3::varchar,
-		lease_expires_at=(select lease_expires_at from index_jobs where repository_id=$1 and state='running' and lease_owner=$3::varchar),
+		lease_expires_at=null,
 		error_code=null,error_message=null,updated_at=now()
 		where repository_id=$1 and target_sha=$2 and state in ('queued','running')`, repositoryID, targetSHA, owner)
 	if err != nil || result.RowsAffected() > 0 {
 		return err
 	}
 	_, err = tx.Exec(ctx, `insert into graph_jobs(repository_id,target_sha,state,max_attempts,lease_owner,lease_expires_at)
-		select $1,$2,'running',5,$3::varchar,lease_expires_at from index_jobs
-		where repository_id=$1 and state='running' and lease_owner=$3::varchar`, repositoryID, targetSHA, owner)
+		values($1,$2,'running',5,$3::varchar,null)`, repositoryID, targetSHA, owner)
+	return err
+}
+
+func finishInlineGraph(ctx context.Context, tx pgx.Tx, repositoryID int64, targetSHA, state, errorCode string) error {
+	_, err := tx.Exec(ctx, `update graph_jobs set state=$3,lease_owner=null,lease_expires_at=null,
+		error_code=$4,error_message=null,updated_at=now()
+		where repository_id=$1 and target_sha=$2 and state='running' and lease_expires_at is null`,
+		repositoryID, targetSHA, state, errorCode)
 	return err
 }
 
@@ -327,6 +363,11 @@ func (s *Store) finishFailure(ctx context.Context, id int64, owner, errorCode st
 			least(5*power(2::double precision, attempt-1), 300)*random() else run_after end,
 		updated_at=now() where id=$1`, id, state, errorCode); err != nil {
 		return err
+	}
+	if state != "queued" {
+		if err := finishInlineGraph(ctx, tx, repositoryID, targetSHA, state, errorCode); err != nil {
+			return err
+		}
 	}
 	if state == "failed" {
 		if _, err := tx.Exec(ctx, `update repositories set status='failed', error_code=$2, updated_at=now() where id=$1 and enabled`, repositoryID, errorCode); err != nil {
@@ -388,6 +429,11 @@ func (s *Store) ReapExpired(ctx context.Context, limit int) (int64, error) {
 				least(5*power(2::double precision, attempt-1), 300)*random() else run_after end,
 			updated_at=now() where id=$1`, job.id, state, errorCode); err != nil {
 			return 0, err
+		}
+		if state != "queued" {
+			if err := finishInlineGraph(ctx, tx, job.repositoryID, job.target, state, errorCode); err != nil {
+				return 0, err
+			}
 		}
 		if state == "failed" {
 			if _, err := tx.Exec(ctx, `update repositories set status='failed', error_code='lease_expired', updated_at=now() where id=$1 and enabled`, job.repositoryID); err != nil {
