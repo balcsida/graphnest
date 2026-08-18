@@ -74,7 +74,7 @@ func (service *Service) Trace(ctx context.Context, request graphprotocol.TraceRe
 			refs = append(refs, SymbolRef{RepositoryID: key.repositoryID, UID: key.uid})
 		}
 		neighbors, queryErr := store.Neighbors(ctx, NeighborQuery{
-			Snapshots: ready.snapshots, Frontier: refs, Relation: "calls", Direction: "outgoing",
+			Snapshots: ready.querySnapshots(false), Frontier: refs, Relation: "calls", Direction: "outgoing",
 			Limit: limits.MaxFanout + 1,
 		})
 		if queryErr != nil {
@@ -142,5 +142,5 @@ func (service *Service) lookupSymbols(ctx context.Context, ready readyScope, uid
 	if len(snapshots) == 0 {
 		return nil, nil
 	}
-	return service.queryStore().Symbols(ctx, SymbolQuery{Snapshots: snapshots, UID: uid, Limit: len(snapshots)})
+	return service.queryStore().Symbols(ctx, SymbolQuery{Snapshots: ready.querySnapshots(selected), UID: uid, Limit: len(snapshots)})
 }

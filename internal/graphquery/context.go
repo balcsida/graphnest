@@ -37,7 +37,7 @@ func (service *Service) Context(ctx context.Context, request graphprotocol.Conte
 	}
 	store := service.queryStore()
 	candidates, err := store.Symbols(ctx, SymbolQuery{
-		Snapshots: ready.selectorSnapshots(), UID: request.UID, Name: request.Name,
+		Snapshots: ready.querySnapshots(true), UID: request.UID, Name: request.Name,
 		FilePath: request.FilePath, Kind: request.Kind, Limit: 101,
 	})
 	if err != nil {
@@ -48,7 +48,7 @@ func (service *Service) Context(ctx context.Context, request graphprotocol.Conte
 		for _, relation := range relations {
 			for _, direction := range []string{"incoming", "outgoing"} {
 				neighbors, queryErr := store.Neighbors(ctx, NeighborQuery{
-					Snapshots: ready.snapshots, Frontier: frontier, Relation: relation, Direction: direction,
+					Snapshots: ready.querySnapshots(false), Frontier: frontier, Relation: relation, Direction: direction,
 					Offset: request.PerCategoryOffset, Limit: categoryLimit + 1,
 				})
 				if queryErr != nil {
