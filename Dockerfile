@@ -35,6 +35,8 @@ RUN go build -tags=system_ladybug -trimpath -ldflags="-s -w -extldflags=-Wl,-rpa
  && go build -tags=system_ladybug -trimpath -ldflags="-s -w -extldflags=-Wl,-rpath,/usr/lib" \
     -o /out/grepnest-graph ./cmd/grepnest-graph
 RUN CGO_ENABLED=0 GOBIN=/out go install \
+      github.com/sourcegraph/zoekt/cmd/zoekt-index@"$ZOEKT_VERSION" \
+ && CGO_ENABLED=0 GOBIN=/out go install \
       github.com/sourcegraph/zoekt/cmd/zoekt-git-index@"$ZOEKT_VERSION" \
  && CGO_ENABLED=0 GOBIN=/out go install \
       github.com/sourcegraph/zoekt/cmd/zoekt-webserver@"$ZOEKT_VERSION"
@@ -60,7 +62,7 @@ RUN apt-get update \
  && mkdir -p /data /tmp /var/run/grepnest \
  && chgrp -R 0 /data /tmp /var/run/grepnest \
  && chmod -R g=u /data /tmp /var/run/grepnest
-COPY --from=builder /out/grepnest-indexer /out/grepnest-scanner /out/grepnest-graph /out/zoekt-git-index /out/zoekt-webserver /usr/local/bin/
+COPY --from=builder /out/grepnest-indexer /out/grepnest-scanner /out/grepnest-graph /out/zoekt-index /out/zoekt-git-index /out/zoekt-webserver /usr/local/bin/
 COPY --from=builder /opt/ladybug/liblbug.so* /usr/lib/
 USER 65532:0
 EXPOSE 6070 9090

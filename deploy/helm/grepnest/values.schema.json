@@ -336,7 +336,7 @@
           "required": [
             "executable",
             "gitExecutable",
-            "zoektGitIndexExecutable",
+            "zoektIndexExecutable",
             "minFreeBytes",
             "maxRepositoryBytes",
             "metricsPort",
@@ -349,7 +349,7 @@
             "gitExecutable": {
               "$ref": "#/definitions/path"
             },
-            "zoektGitIndexExecutable": {
+            "zoektIndexExecutable": {
               "$ref": "#/definitions/path"
             },
             "minFreeBytes": {

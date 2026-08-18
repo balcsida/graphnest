@@ -33,13 +33,14 @@ type GitHub struct {
 }
 
 type Indexer struct {
-	DatabaseURL, ZoektURL, MetricsListenAddress         string
-	GitHub                                              GitHub
-	Graph                                               Graph
-	DataDir, IndexDir, GitPath, ZoektGitIndex, WorkerID string
-	MinFreeBytes, MaxRepositoryBytes                    int64
-	SourceProvider                                      string
-	ArchiveLimits                                       ArchiveLimits
+	DatabaseURL, ZoektURL, MetricsListenAddress                     string
+	GitHub                                                          GitHub
+	Graph                                                           Graph
+	DataDir, IndexDir, GitPath, ZoektIndex, ZoektGitIndex, WorkerID string
+	ZoektGitIndexDeprecated                                         bool
+	MinFreeBytes, MaxRepositoryBytes                                int64
+	SourceProvider                                                  string
+	ArchiveLimits                                                   ArchiveLimits
 }
 
 type ArchiveLimits struct {
@@ -231,6 +232,7 @@ func LoadIndexer() (Indexer, error) {
 		DataDir:              os.Getenv("GREPNEST_DATA_DIR"),
 		IndexDir:             os.Getenv("GREPNEST_INDEX_DIR"),
 		GitPath:              os.Getenv("GREPNEST_GIT_PATH"),
+		ZoektIndex:           os.Getenv("GREPNEST_ZOEKT_INDEX"),
 		ZoektGitIndex:        os.Getenv("GREPNEST_ZOEKT_GIT_INDEX"),
 		WorkerID:             os.Getenv("GREPNEST_WORKER_ID"),
 		SourceProvider:       valueOr("GREPNEST_SOURCE_PROVIDER", "git"),
@@ -247,7 +249,11 @@ func LoadIndexer() (Indexer, error) {
 	if indexer.GitHub, err = loadGitHub(false); err != nil {
 		return Indexer{}, err
 	}
-	if indexer.DataDir == "" || indexer.IndexDir == "" || indexer.ZoektGitIndex == "" || indexer.WorkerID == "" || (indexer.SourceProvider == "git" && indexer.GitPath == "") {
+	indexer.ZoektGitIndexDeprecated = indexer.ZoektGitIndex != ""
+	if indexer.ZoektIndex == "" {
+		indexer.ZoektIndex = indexer.ZoektGitIndex
+	}
+	if indexer.DataDir == "" || indexer.IndexDir == "" || indexer.ZoektIndex == "" || indexer.WorkerID == "" || (indexer.SourceProvider == "git" && indexer.GitPath == "") {
 		return Indexer{}, invalid("indexer paths and worker ID are required")
 	}
 	if indexer.MinFreeBytes, err = requiredInt64("GREPNEST_MIN_FREE_BYTES"); err != nil {

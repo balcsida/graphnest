@@ -62,7 +62,8 @@ const (
 )
 
 func TestMilestone2Vertical(t *testing.T) {
-	zoektGitIndex, zoektWebserver := requiredExecutables(t)
+	_, zoektWebserver := requiredExecutables(t)
+	zoektIndex := requiredExecutable(t, "ZOEKT_INDEX")
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
 	database := newMilestoneDatabase(t)
@@ -177,13 +178,13 @@ func TestMilestone2Vertical(t *testing.T) {
 	queue := &publicationBarrier{Store: database.store, reached: make(chan struct{}), release: make(chan struct{}), block: true}
 	worker := &indexer.Worker{
 		ID: "e2e-worker", Queue: queue, Store: database.store, Tokens: githubClient,
-		Git: &indexer.Git{
+		Snapshots: indexer.GitSnapshotProvider{Git: &indexer.Git{
 			Binary: "git", BaseURL: github.server.URL, AskPass: indexerExecutable, CABundle: caFile,
 			MirrorsDir: filepath.Join(root, "data", "mirrors"), WorktreesDir: filepath.Join(root, "data", "worktrees"),
 			Runner: indexer.Runner{MaxOutput: 64 << 10, KillGrace: 100 * time.Millisecond}, CommandTimeout: 10 * time.Second,
-		},
+		}},
 		Zoekt: &indexer.ZoektIndexer{
-			Binary: zoektGitIndex, IndexDir: indexDir, Runner: indexer.Runner{MaxOutput: 64 << 10, KillGrace: 100 * time.Millisecond},
+			Binary: zoektIndex, IndexDir: indexDir, Runner: indexer.Runner{MaxOutput: 64 << 10, KillGrace: 100 * time.Millisecond},
 			Client: zoektClient, IndexTimeout: 15 * time.Second, VisibilityTimeout: 10 * time.Second,
 		},
 		RenewEvery: time.Second, CleanupTimeout: 5 * time.Second,

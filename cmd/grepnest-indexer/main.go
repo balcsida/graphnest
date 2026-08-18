@@ -79,6 +79,9 @@ func main() {
 }
 
 func warnIgnoredGitSettings(logger *slog.Logger, settings config.Indexer) {
+	if settings.ZoektGitIndexDeprecated {
+		logger.Warn("deprecated Zoekt indexer setting", "setting", "GREPNEST_ZOEKT_GIT_INDEX", "replacement", "GREPNEST_ZOEKT_INDEX")
+	}
 	if settings.SourceProvider == "archive" && settings.GitPath != "" {
 		logger.Warn("deprecated Git runtime setting ignored in archive mode", "setting", "GREPNEST_GIT_PATH")
 	}
@@ -214,7 +217,7 @@ func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime
 	}
 	worker := &indexer.Worker{
 		ID: settings.WorkerID, Queue: store, Store: store, Tokens: githubClient, Snapshots: newSnapshotProvider(settings, githubClient, git, metrics),
-		Zoekt:        &indexer.ZoektIndexer{Binary: settings.ZoektGitIndex, IndexDir: settings.IndexDir, Runner: runner, Client: zoektClient, IndexTimeout: 10 * time.Minute, VisibilityTimeout: 2 * time.Minute},
+		Zoekt:        &indexer.ZoektIndexer{Binary: settings.ZoektIndex, IndexDir: settings.IndexDir, Runner: runner, Client: zoektClient, IndexTimeout: 10 * time.Minute, VisibilityTimeout: 2 * time.Minute},
 		MinFreeBytes: uint64(settings.MinFreeBytes), MaxRepositoryBytes: settings.MaxRepositoryBytes, Metrics: metrics,
 	}
 	listener, err := net.Listen("tcp", settings.MetricsListenAddress)

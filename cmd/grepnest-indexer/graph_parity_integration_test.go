@@ -200,7 +200,7 @@ func parityIndexerSettings(t *testing.T, dsn, root, graphAddress string, secret 
 	return config.Indexer{
 		DatabaseURL: dsn, ZoektURL: "http://127.0.0.1:1",
 		MetricsListenAddress: freeAddress(t), DataDir: dataDir, IndexDir: indexDir,
-		GitPath: "/usr/bin/git", ZoektGitIndex: "/usr/bin/true", WorkerID: "parity",
+		GitPath: "/usr/bin/git", ZoektIndex: "/usr/bin/true", WorkerID: "parity",
 		MinFreeBytes: 1, MaxRepositoryBytes: 1 << 20,
 		GitHub: config.GitHub{
 			AppID: 1, PrivateKeyFile: keyFile, APIVersion: "2022-11-28",
