@@ -81,7 +81,10 @@ data:
   {{- end }}
   GREPNEST_DATA_DIR: {{ .Values.node.paths.data | quote }}
   GREPNEST_INDEX_DIR: {{ .Values.node.paths.indexes | quote }}
+  GREPNEST_SOURCE_PROVIDER: {{ .Values.node.indexer.sourceProvider | quote }}
+  {{- if eq .Values.node.indexer.sourceProvider "git" }}
   GREPNEST_GIT_PATH: {{ .Values.node.indexer.gitExecutable | quote }}
+  {{- end }}
   GREPNEST_ZOEKT_INDEX: {{ .Values.node.indexer.zoektIndexExecutable | quote }}
   GREPNEST_MIN_FREE_BYTES: {{ printf "%d" (int64 .Values.node.indexer.minFreeBytes) | quote }}
   GREPNEST_MAX_REPOSITORY_BYTES: {{ printf "%d" (int64 .Values.node.indexer.maxRepositoryBytes) | quote }}

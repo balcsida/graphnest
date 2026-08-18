@@ -334,6 +334,7 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
+            "sourceProvider",
             "executable",
             "gitExecutable",
             "zoektIndexExecutable",
@@ -343,6 +344,10 @@
             "resources"
           ],
           "properties": {
+            "sourceProvider": {
+              "type": "string",
+              "enum": ["archive", "git"]
+            },
             "executable": {
               "$ref": "#/definitions/path"
             },

@@ -339,14 +339,14 @@ func TestLoadIndexerSourceProviderAndArchiveLimits(t *testing.T) {
 	}
 }
 
-func TestLoadIndexerDefaultsToGitAndRejectsInvalidArchiveConfiguration(t *testing.T) {
+func TestLoadIndexerDefaultsToArchiveAndRejectsInvalidArchiveConfiguration(t *testing.T) {
 	setValidEnvironment(t)
 	setDurableEnvironment(t)
 	got, err := LoadIndexer()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.SourceProvider != "git" {
+	if got.SourceProvider != "archive" {
 		t.Fatalf("source provider = %q", got.SourceProvider)
 	}
 	for _, test := range []struct{ name, env, value string }{

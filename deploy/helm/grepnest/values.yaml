@@ -63,6 +63,7 @@ node:
     executable: /usr/local/bin/zoekt-webserver
     resources: {requests: {cpu: "2", memory: 8Gi}, limits: {cpu: "8", memory: 24Gi}}
   indexer:
+    sourceProvider: archive
     executable: /usr/local/bin/grepnest-indexer
     gitExecutable: /usr/bin/git
     zoektIndexExecutable: /usr/local/bin/zoekt-index
