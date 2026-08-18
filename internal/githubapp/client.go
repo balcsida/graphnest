@@ -185,6 +185,67 @@ func (c *Client) ReadContents(ctx context.Context, installationID int64, owner, 
 	return content, err
 }
 
+func (c *Client) DownloadArchive(ctx context.Context, owner, repository, sha, token string) (io.ReadCloser, error) {
+	if c == nil || c.http == nil || c.endpoints.API == nil || c.endpoints.Archive == nil || owner == "" || repository == "" || !archiveSHA(sha) || token == "" {
+		return nil, errors.New("invalid GitHub archive request")
+	}
+	endpoint := c.apiURL("repos", owner, repository, "tarball", sha)
+	httpClient := *c.http
+	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	for redirects := 0; redirects <= 5; redirects++ {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+		if err != nil {
+			return nil, errors.New("create GitHub archive request")
+		}
+		SetAPIHeaders(request.Header, c.apiVersion)
+		request.Header.Set("Accept", githubMediaType)
+		if sameOrigin(endpoint, c.endpoints.API) {
+			request.Header.Set("Authorization", "Bearer "+token)
+		}
+		response, err := httpClient.Do(request)
+		if err != nil {
+			return nil, errors.New("GitHub archive request failed")
+		}
+		if response.StatusCode >= 200 && response.StatusCode < 300 {
+			return response.Body, nil
+		}
+		if response.StatusCode < 300 || response.StatusCode >= 400 || redirects == 5 {
+			_ = response.Body.Close()
+			return nil, HTTPStatusError{StatusCode: response.StatusCode}
+		}
+		location, err := response.Location()
+		_ = response.Body.Close()
+		if err != nil || !allowedArchiveURL(location, c.endpoints) {
+			return nil, errors.New("GitHub archive redirect rejected")
+		}
+		endpoint = location
+	}
+	return nil, errors.New("too many GitHub archive redirects")
+}
+
+func archiveSHA(value string) bool {
+	if len(value) != 40 {
+		return false
+	}
+	for _, character := range value {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func allowedArchiveURL(candidate *url.URL, endpoints Endpoints) bool {
+	if candidate == nil || candidate.Scheme != "https" || candidate.User != nil || candidate.Host == "" {
+		return false
+	}
+	return sameOrigin(candidate, endpoints.API) || sameOrigin(candidate, endpoints.Archive)
+}
+
+func sameOrigin(left, right *url.URL) bool {
+	return left != nil && right != nil && left.Scheme == right.Scheme && left.Host == right.Host
+}
+
 func (c *Client) doInstallationJSON(ctx context.Context, operation string, installationID int64, endpoint *url.URL, limit int64, target any) (string, error) {
 	for attempt := 0; attempt < 2; attempt++ {
 		token, err := c.InstallationToken(ctx, installationID, nil)
