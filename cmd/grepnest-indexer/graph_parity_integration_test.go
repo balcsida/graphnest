@@ -201,11 +201,12 @@ func parityIndexerSettings(t *testing.T, dsn, root, graphAddress string, secret 
 		DatabaseURL: dsn, ZoektURL: "http://127.0.0.1:1",
 		MetricsListenAddress: freeAddress(t), DataDir: dataDir, IndexDir: indexDir,
 		GitPath: "/usr/bin/git", ZoektIndex: "/usr/bin/true", WorkerID: "parity",
-		MinFreeBytes: 1, MaxRepositoryBytes: 1 << 20,
+		MinFreeBytes: 1, MaxRepositoryBytes: 1 << 20, SourceProvider: "git",
 		GitHub: config.GitHub{
 			AppID: 1, PrivateKeyFile: keyFile, APIVersion: "2022-11-28",
 			WebURL: "https://example.invalid", APIURL: "https://example.invalid",
 			UploadURL: "https://example.invalid", GitURL: "https://example.invalid",
+			ArchiveURL: "https://example.invalid",
 		},
 		Graph: config.Graph{
 			Mode: "embedded", ListenAddress: graphAddress, DataDir: dataDir,
