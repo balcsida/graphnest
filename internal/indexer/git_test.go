@@ -125,6 +125,27 @@ func TestGitPreparePreservesSuccessfulExactCheckout(t *testing.T) {
 	}
 }
 
+func TestGitSnapshotProviderPreservesExactSnapshotIdentity(t *testing.T) {
+	git, repo, job, _, _, _, _ := gitPrepareFixture(t)
+	provider := GitSnapshotProvider{Git: &git}
+	snapshot, err := provider.Prepare(t.Context(), SnapshotRequest{
+		Repository: repo, JobID: job.ID, CommitSHA: job.TargetSHA, AccessToken: "token-that-must-not-persist",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Snapshot{Root: filepath.Join(git.WorktreesDir, "7", "11"), RepositoryID: repo.ID, JobID: job.ID, CommitSHA: job.TargetSHA}
+	if snapshot != want || provider.FreeSpacePath() != git.WorktreesDir {
+		t.Fatalf("snapshot=%+v path=%q", snapshot, provider.FreeSpacePath())
+	}
+	if err := provider.Cleanup(t.Context(), snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(snapshot.Root); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("snapshot root still exists: %v", err)
+	}
+}
+
 func TestGitPrepareFetchesExactSHAAfterBranchRewrite(t *testing.T) {
 	git, repo, job, _, _, source, origin := gitPrepareFixture(t)
 	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("rewritten\n"), 0o600); err != nil {
@@ -246,6 +267,26 @@ func TestGitPruneRemovesOnlyInactiveNumericWorktrees(t *testing.T) {
 		t.Fatal(err)
 	}
 	for path, exists := range map[string]bool{"7/11": true, "7/12": false, "7/not-a-job": true} {
+		_, err := os.Stat(filepath.Join(git.WorktreesDir, path))
+		if (err == nil) != exists {
+			t.Fatalf("path=%s exists=%v err=%v", path, exists, err)
+		}
+	}
+}
+
+func TestGitSnapshotProviderCleansOnlyStaleJobs(t *testing.T) {
+	root := t.TempDir()
+	git := &Git{Binary: gitBinary(t), MirrorsDir: filepath.Join(root, "mirrors"), WorktreesDir: filepath.Join(root, "worktrees"), Runner: Runner{MaxOutput: 1024, KillGrace: time.Millisecond}}
+	for _, path := range []string{"7/11", "7/12"} {
+		if err := os.MkdirAll(filepath.Join(git.WorktreesDir, path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	provider := GitSnapshotProvider{Git: git}
+	if err := provider.CleanupStale(t.Context(), ActiveJobs{11: {}}); err != nil {
+		t.Fatal(err)
+	}
+	for path, exists := range map[string]bool{"7/11": true, "7/12": false} {
 		_, err := os.Stat(filepath.Join(git.WorktreesDir, path))
 		if (err == nil) != exists {
 			t.Fatalf("path=%s exists=%v err=%v", path, exists, err)

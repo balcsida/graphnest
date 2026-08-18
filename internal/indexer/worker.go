@@ -33,10 +33,24 @@ type TokenSource interface {
 	InstallationToken(context.Context, int64, []int64) (githubapp.Token, error)
 }
 
-type GitWorkspace interface {
-	Prepare(context.Context, repository.Repository, postgres.IndexJob, string) (string, string, error)
-	Cleanup(context.Context, int64, int64) error
-	Prune(context.Context, map[int64]struct{}) error
+type SnapshotRequest struct {
+	Repository  repository.Repository
+	JobID       int64
+	CommitSHA   string
+	AccessToken string
+}
+type Snapshot struct {
+	Root         string
+	RepositoryID int64
+	JobID        int64
+	CommitSHA    string
+}
+type ActiveJobs map[int64]struct{}
+type SnapshotProvider interface {
+	Prepare(context.Context, SnapshotRequest) (Snapshot, error)
+	Cleanup(context.Context, Snapshot) error
+	CleanupStale(context.Context, ActiveJobs) error
+	FreeSpacePath() string
 }
 
 type IndexPublisher interface {
@@ -49,7 +63,7 @@ type Worker struct {
 	Queue              JobQueue
 	Store              IndexStore
 	Tokens             TokenSource
-	Git                GitWorkspace
+	Snapshots          SnapshotProvider
 	Zoekt              IndexPublisher
 	MinFreeBytes       uint64
 	MaxRepositoryBytes int64
@@ -68,7 +82,7 @@ func (worker *Worker) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := worker.Git.Prune(ctx, active); err != nil {
+	if err := worker.Snapshots.CleanupStale(ctx, ActiveJobs(active)); err != nil {
 		return err
 	}
 	for {
@@ -133,13 +147,13 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 	if RepositoryTooLarge(repo.SizeBytes, worker.MaxRepositoryBytes) {
 		return fail("repository_too_large", false)
 	}
-	defer func() {
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), worker.cleanupTimeout())
-		defer cleanupCancel()
-		if cleanupErr := worker.Git.Cleanup(cleanupCtx, repo.ID, job.ID); cleanupErr != nil {
-			resultErr = errors.Join(resultErr, cleanupErr)
-		}
-	}()
+	desired, err := worker.Store.DesiredSHA(jobCtx, repo.ID)
+	if err != nil {
+		return fail("repository_failed", true)
+	}
+	if desired != job.TargetSHA {
+		return fail("superseded", false)
+	}
 	token, err := worker.Tokens.InstallationToken(jobCtx, repo.InstallationID, []int64{repo.GitHubID})
 	if err != nil {
 		return fail("token_failed", true)
@@ -148,7 +162,16 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 		return fail("insufficient_space", true)
 	}
 	started := time.Now()
-	_, worktree, err := worker.Git.Prepare(jobCtx, repo, job, token.Value)
+	snapshot, err := worker.Snapshots.Prepare(jobCtx, SnapshotRequest{Repository: repo, JobID: job.ID, CommitSHA: job.TargetSHA, AccessToken: token.Value})
+	if snapshot.RepositoryID != 0 && snapshot.JobID != 0 {
+		defer func() {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), worker.cleanupTimeout())
+			defer cleanupCancel()
+			if cleanupErr := worker.Snapshots.Cleanup(cleanupCtx, snapshot); cleanupErr != nil {
+				resultErr = errors.Join(resultErr, cleanupErr)
+			}
+		}()
+	}
 	worker.observePhase("fetch", started, err)
 	if err != nil {
 		if errors.Is(err, ErrTargetMissing) {
@@ -156,7 +179,7 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 		}
 		return fail("git_failed", true)
 	}
-	desired, err := worker.Store.DesiredSHA(jobCtx, repo.ID)
+	desired, err = worker.Store.DesiredSHA(jobCtx, repo.ID)
 	if err != nil {
 		return fail("repository_failed", true)
 	}
@@ -164,7 +187,7 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 		return fail("superseded", false)
 	}
 	started = time.Now()
-	if err := worker.Zoekt.Index(jobCtx, repo, worktree); err != nil {
+	if err := worker.Zoekt.Index(jobCtx, repo, snapshot.Root); err != nil {
 		worker.observePhase("index", started, err)
 		return fail("index_failed", true)
 	}
@@ -255,7 +278,7 @@ func (worker *Worker) renew(ctx context.Context, job postgres.IndexJob, cancel c
 }
 
 func (worker *Worker) validate() error {
-	if worker == nil || worker.ID == "" || worker.Queue == nil || worker.Store == nil || worker.Tokens == nil || worker.Git == nil || worker.Zoekt == nil {
+	if worker == nil || worker.ID == "" || worker.Queue == nil || worker.Store == nil || worker.Tokens == nil || worker.Snapshots == nil || worker.Zoekt == nil {
 		return errors.New("invalid index worker")
 	}
 	return nil
@@ -272,11 +295,7 @@ func (worker *Worker) enoughSpace() (bool, error) {
 	if worker.MinFreeBytes == 0 {
 		return true, nil
 	}
-	path := "."
-	if git, ok := worker.Git.(*Git); ok && git.WorktreesDir != "" {
-		path = git.WorktreesDir
-	}
-	return EnoughFreeSpace(path, worker.MinFreeBytes)
+	return EnoughFreeSpace(worker.Snapshots.FreeSpacePath(), worker.MinFreeBytes)
 }
 
 func RepositoryTooLarge(sizeBytes, maxBytes int64) bool {

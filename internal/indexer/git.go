@@ -26,6 +26,39 @@ type Git struct {
 	CommandTimeout                                               time.Duration
 }
 
+type GitSnapshotProvider struct{ Git *Git }
+
+func (provider GitSnapshotProvider) Prepare(ctx context.Context, request SnapshotRequest) (Snapshot, error) {
+	snapshot := Snapshot{RepositoryID: request.Repository.ID, JobID: request.JobID, CommitSHA: request.CommitSHA}
+	if provider.Git == nil {
+		return snapshot, errors.New("Git snapshot provider is required")
+	}
+	var err error
+	_, snapshot.Root, err = provider.Git.PrepareCommit(ctx, request.Repository, request.JobID, request.CommitSHA, request.AccessToken)
+	return snapshot, err
+}
+
+func (provider GitSnapshotProvider) Cleanup(ctx context.Context, snapshot Snapshot) error {
+	if provider.Git == nil {
+		return errors.New("Git snapshot provider is required")
+	}
+	return provider.Git.Cleanup(ctx, snapshot.RepositoryID, snapshot.JobID)
+}
+
+func (provider GitSnapshotProvider) CleanupStale(ctx context.Context, active ActiveJobs) error {
+	if provider.Git == nil {
+		return errors.New("Git snapshot provider is required")
+	}
+	return provider.Git.Prune(ctx, active)
+}
+
+func (provider GitSnapshotProvider) FreeSpacePath() string {
+	if provider.Git == nil {
+		return ""
+	}
+	return provider.Git.WorktreesDir
+}
+
 func (git *Git) Prepare(ctx context.Context, repo repository.Repository, job postgres.IndexJob, token string) (string, string, error) {
 	if job.RepositoryID != repo.ID {
 		return "", "", errors.New("invalid Git repository job")
