@@ -219,6 +219,15 @@ func newMilestoneDatabase(t *testing.T) milestoneDatabase {
 		t.Fatal(err)
 	}
 	schema := "grepnest_e2e_" + hex.EncodeToString(random)
+	connection, err := pgx.Connect(t.Context(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := connection.Exec(t.Context(), "create schema "+pgx.Identifier{schema}.Sanitize()); err != nil {
+		connection.Close(t.Context())
+		t.Fatal(err)
+	}
+	connection.Close(t.Context())
 	config, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		t.Fatal(err)
