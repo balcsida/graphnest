@@ -151,3 +151,60 @@ func TestPostgresGraphQueryStoreSupportsBoundedTraversal(t *testing.T) {
 		t.Fatalf("Symbols() error=%v want=%v", err, canceled.Err())
 	}
 }
+
+func TestPostgresGraphQueryStorePaginatesDuplicateNeighborsDeterministically(t *testing.T) {
+	store, repositoryID := readyGraphStore(t, testSHA('a'))
+	artifact := artifactFor(repositoryID, testSHA('a'), "pagination")
+	artifact.Nodes = append(artifact.Nodes, graphartifact.Node{UID: "next", Kind: graphartifact.NodeSymbol, Path: "next.go", QualifiedName: "Next", Range: graphartifact.Range{EndCharacter: 1}})
+	artifact.Edges = append(artifact.Edges,
+		graphartifact.Edge{SourceUID: "symbol", TargetUID: "next", Kind: graphartifact.EdgeCalls, Path: "z.go", Range: graphartifact.Range{EndCharacter: 1}, Confidence: .8, ResolutionReason: "second"},
+		graphartifact.Edge{SourceUID: "symbol", TargetUID: "next", Kind: graphartifact.EdgeCalls, Path: "a.go", Range: graphartifact.Range{EndCharacter: 1}, Confidence: .9, ResolutionReason: "first"},
+	)
+	artifact.ContentHash[0]++
+	replacement, err := store.ReplaceGraph(t.Context(), repositoryID, GraphSourceManaged, artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshots := []graphquery.QuerySnapshot{{RepositoryID: repositoryID, UploadID: replacement.Upload.ID, Commit: testSHA('a')}}
+	for _, test := range []struct {
+		name, direction, frontier string
+	}{
+		{name: "outgoing", direction: "outgoing", frontier: "symbol"},
+		{name: "incoming", direction: "incoming", frontier: "next"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tx, err := store.pool.Begin(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer tx.Rollback(t.Context())
+			if _, err := tx.Exec(t.Context(), `set local enable_indexscan=off; set local enable_bitmapscan=off`); err != nil {
+				t.Fatal(err)
+			}
+			sql := outgoingNeighborsSQL
+			if test.direction == "incoming" {
+				sql = incomingNeighborsSQL
+			}
+			paths := make([]string, 0, 2)
+			for offset := range 2 {
+				rows, err := tx.Query(t.Context(), sql, []int64{repositoryID}, []int64{snapshots[0].UploadID}, []string{testSHA('a')},
+					[]int64{repositoryID}, []string{test.frontier}, int16(graphartifact.EdgeCalls), float32(0), offset, 1)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !rows.Next() {
+					t.Fatalf("Neighbors(offset=%d) returned no row: %v", offset, rows.Err())
+				}
+				neighbor, err := scanGraphNeighbor(rows, "calls", test.direction)
+				rows.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+				paths = append(paths, neighbor.Edge.Path)
+			}
+			if paths[0] != "a.go" || paths[1] != "z.go" {
+				t.Fatalf("paginated paths=%v want=[a.go z.go]", paths)
+			}
+		})
+	}
+}
