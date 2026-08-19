@@ -56,8 +56,9 @@ type findInput struct {
 }
 
 type output struct {
-	Matches   []api.SearchMatch `json:"matches"`
-	Truncated bool              `json:"truncated"`
+	Matches     []api.SearchMatch      `json:"matches"`
+	Truncated   bool                   `json:"truncated"`
+	Consistency *api.SearchConsistency `json:"consistency,omitempty"`
 }
 
 type repositoryIDInput struct {
@@ -306,17 +307,17 @@ func runSearch(ctx context.Context, service *search.Service, input api.SearchReq
 	if response.Matches == nil {
 		response.Matches = []api.SearchMatch{}
 	}
-	limited, err := limitSearchOutput(output{Matches: response.Matches, Truncated: response.Truncated}, maxBytes)
+	limited, err := limitSearchOutput(output{Matches: response.Matches, Truncated: response.Truncated, Consistency: response.Consistency}, maxBytes)
 	return structuredResult(), limited, err
 }
 
 func limitSearchOutput(value output, maxBytes int64) (output, error) {
-	limited := output{Matches: []api.SearchMatch{}, Truncated: value.Truncated || len(value.Matches) > 0}
+	limited := output{Matches: []api.SearchMatch{}, Truncated: value.Truncated || len(value.Matches) > 0, Consistency: value.Consistency}
 	if !fitsOutput(limited, maxBytes) {
 		return output{}, errOutputBudget
 	}
 	for index, match := range value.Matches {
-		candidate := output{Matches: append(limited.Matches, match), Truncated: value.Truncated || index+1 < len(value.Matches)}
+		candidate := output{Matches: append(limited.Matches, match), Truncated: value.Truncated || index+1 < len(value.Matches), Consistency: value.Consistency}
 		if !fitsOutput(candidate, maxBytes) {
 			break
 		}

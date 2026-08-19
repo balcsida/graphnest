@@ -38,3 +38,10 @@ selectors resolve to stable numeric repository IDs, and every result is scoped
 by repository ID, upload ID, and commit. Authorization and freshness checks
 apply to bounded context, impact, and trace operations; see
 [OpenAPI](openapi.yaml) for the exact contract.
+# Search backend compatibility
+
+`GREPNEST_SEARCH_BACKEND=zoekt` remains the default and preserves exact indexed
+SHA search/read semantics. Durable deployments can explicitly select `github`;
+it uses GitHub App code search with the existing private-CA/GHES client, returns
+best-effort partial results, and never claims an exact revision. `github` is not
+available in static mode and neither backend automatically falls back to the other.

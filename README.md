@@ -56,6 +56,11 @@ flowchart LR
 
 PostgreSQL is authoritative for repository metadata, authorization, queues, indexed-SHA state, graph artifacts, and graph queries. Zoekt is a private query store reached only through GrepNest's authenticated services. See [Architecture](docs/architecture.md) and the accepted decisions under [`docs/adr`](docs/adr).
 
+`GREPNEST_SEARCH_BACKEND` defaults to `zoekt`. Durable deployments may set it to
+`github` for low-volume degraded code search: every request remains
+authorization-scoped, but results are best-effort, may be partial, and never
+claim an exact indexed SHA. It does not automatically fall back between backends.
+
 The [architecture decision index](docs/adr/README.md) records accepted and
 superseded design decisions.
 

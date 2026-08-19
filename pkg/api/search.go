@@ -33,6 +33,15 @@ type SearchMatch struct {
 }
 
 type SearchResponse struct {
-	Matches   []SearchMatch `json:"matches"`
-	Truncated bool          `json:"truncated"`
+	Matches     []SearchMatch      `json:"matches"`
+	Truncated   bool               `json:"truncated"`
+	Consistency *SearchConsistency `json:"consistency,omitempty"`
+}
+
+// SearchConsistency states what the selected backend can prove about results.
+type SearchConsistency struct {
+	Backend  string `json:"backend"`
+	Exact    bool   `json:"exact"`
+	Revision string `json:"revision,omitempty"`
+	Partial  bool   `json:"partial"`
 }

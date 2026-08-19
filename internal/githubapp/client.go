@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/observability"
+	"github.com/grepnest/grepnest/pkg/api"
 )
 
 const githubMediaType = "application/vnd.github+json"
@@ -183,6 +184,52 @@ func (c *Client) ReadContents(ctx context.Context, installationID int64, owner, 
 	var content Content
 	_, err := c.doInstallationJSON(ctx, "contents", installationID, endpoint, limit, &content)
 	return content, err
+}
+
+// SearchCode performs a deliberately best-effort installation-scoped code
+// search. GitHub does not provide an exact-commit consistency guarantee here.
+func (c *Client) SearchCode(ctx context.Context, installationID int64, query string, repositoryIDs []int64) (api.SearchResponse, error) {
+	endpoint := c.apiURL("search", "code")
+	values := endpoint.Query()
+	values.Set("q", query)
+	values.Set("per_page", "100")
+	endpoint.RawQuery = values.Encode()
+	var wire struct {
+		IncompleteResults bool `json:"incomplete_results"`
+		Items             []struct {
+			Path       string `json:"path"`
+			SHA        string `json:"sha"`
+			Repository struct {
+				ID       int64  `json:"id"`
+				FullName string `json:"full_name"`
+				HTMLURL  string `json:"html_url"`
+			} `json:"repository"`
+		} `json:"items"`
+	}
+	ids := append([]int64(nil), repositoryIDs...)
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	for attempt := 0; attempt < 2; attempt++ {
+		token, err := c.InstallationToken(ctx, installationID, ids)
+		if err != nil {
+			return api.SearchResponse{}, err
+		}
+		_, err = c.doJSON(ctx, "search_code", http.MethodGet, endpoint, nil, "Bearer "+token.Value, c.maxBytes, &wire)
+		var statusErr HTTPStatusError
+		if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusUnauthorized || attempt == 1 {
+			if err != nil {
+				return api.SearchResponse{}, err
+			}
+			break
+		}
+		c.mu.Lock()
+		delete(c.tokens, tokenKey(installationID, ids))
+		c.mu.Unlock()
+	}
+	response := api.SearchResponse{Matches: make([]api.SearchMatch, 0, len(wire.Items)), Truncated: wire.IncompleteResults, Consistency: &api.SearchConsistency{Backend: "github", Partial: true}}
+	for _, item := range wire.Items {
+		response.Matches = append(response.Matches, api.SearchMatch{Path: item.Path, SHA: item.SHA, Repository: api.Repository{ID: item.Repository.ID, Name: item.Repository.FullName, WebURL: item.Repository.HTMLURL}})
+	}
+	return response, nil
 }
 
 func (c *Client) DownloadArchive(ctx context.Context, owner, repository, sha, token string) (io.ReadCloser, error) {
