@@ -12,9 +12,15 @@ import (
 
 var _ graphquery.Store = (*Store)(nil)
 
-func (s *Store) Health(ctx context.Context) error { return s.pool.Ping(ctx) }
+func (s *Store) Health(ctx context.Context) error {
+	ctx, cancel := s.graphQueryContext(ctx)
+	defer cancel()
+	return s.pool.Ping(ctx)
+}
 
 func (s *Store) Manifests(ctx context.Context) (map[int64]graphartifact.Manifest, error) {
+	ctx, cancel := s.graphQueryContext(ctx)
+	defer cancel()
 	manifests, err := s.GraphManifests(ctx)
 	if err != nil {
 		return nil, err
@@ -27,6 +33,8 @@ func (s *Store) Manifests(ctx context.Context) (map[int64]graphartifact.Manifest
 }
 
 func (s *Store) Symbols(ctx context.Context, query graphquery.SymbolQuery) ([]graphprotocol.Symbol, error) {
+	ctx, cancel := s.graphQueryContext(ctx)
+	defer cancel()
 	repositoryIDs, uploadIDs, commits := graphScope(query.Snapshots)
 	rows, err := s.pool.Query(ctx, `with scope as (
 		select * from unnest($1::bigint[], $2::bigint[], $3::text[]) as value(repository_id, upload_id, commit)
@@ -56,6 +64,8 @@ func (s *Store) Symbols(ctx context.Context, query graphquery.SymbolQuery) ([]gr
 }
 
 func (s *Store) Neighbors(ctx context.Context, query graphquery.NeighborQuery) ([]graphquery.Neighbor, error) {
+	ctx, cancel := s.graphQueryContext(ctx)
+	defer cancel()
 	kind, ok := graphRelationKind(query.Relation)
 	if !ok || query.Direction != "incoming" && query.Direction != "outgoing" {
 		return nil, graphquery.ErrInvalidRequest
