@@ -7,7 +7,7 @@ IMAGE_PLATFORM ?= linux/amd64
 APPLICATION_IMAGE ?= grepnest-application:dev
 NODE_IMAGE ?= grepnest-node:dev
 
-.PHONY: fmt lint staticcheck govulncheck test test-race makefile-test scanner-test abi-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test ui-smoke
+.PHONY: fmt lint staticcheck govulncheck test test-race makefile-test scanner-test abi-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test tools-check ui-smoke
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
@@ -30,6 +30,11 @@ test:
 
 test-race:
 	go test -race ./...
+
+tools-check:
+	@tool=$$(cd tools && go tool -n buf); \
+	"$$tool" generate; \
+	git diff --exit-code -- internal/graphartifact/v1/artifact.pb.go
 
 makefile-test:
 	@for target in lint test test-race build; do \
