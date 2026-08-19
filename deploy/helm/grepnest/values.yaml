@@ -65,7 +65,7 @@ node:
     executable: /usr/local/bin/grepnest-indexer
     zoektIndexExecutable: /usr/local/bin/zoekt-index
     workspaceSizeLimit: 6Gi
-    minFreeBytes: 10737418240
+    minFreeBytes: 1073741824
     maxRepositoryBytes: 5368709120
     metricsPort: 9090
     resources: {requests: {cpu: "1", memory: 2Gi}, limits: {cpu: "4", memory: 8Gi}}
