@@ -6,12 +6,31 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/grepnest/grepnest/internal/graphartifact"
 	"github.com/grepnest/grepnest/internal/graphprotocol"
 	"github.com/grepnest/grepnest/internal/graphquery"
 	"github.com/grepnest/grepnest/internal/scipgraph"
 )
+
+func TestPostgresGraphQueryStoreBoundsBlockedQueries(t *testing.T) {
+	store, repositoryID := readyGraphStore(t, testSHA('a'))
+	store.graphQueryTimeout = 20 * time.Millisecond
+	barrier, err := store.pool.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer barrier.Rollback(t.Context())
+	if _, err := barrier.Exec(t.Context(), `lock table graph_uploads in access exclusive mode`); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = store.Symbols(t.Context(), graphquery.SymbolQuery{Snapshots: []graphquery.QuerySnapshot{{RepositoryID: repositoryID, Commit: testSHA('a')}}, UID: "missing", Limit: 1})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Symbols() error=%v want=%v", err, context.DeadlineExceeded)
+	}
+}
 
 func TestPostgresGraphQueryStoreSupportsSCIPFallback(t *testing.T) {
 	store, repositoryID := readyGraphStore(t, testSHA('a'))
