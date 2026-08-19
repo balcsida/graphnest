@@ -44,7 +44,7 @@ makefile-test:
 	done
 
 scanner-build:
-	go -C scanner build ./cmd/grepnest-scanner
+	go -C scanner build ./...
 
 scanner-test:
 	CGO_ENABLED=1 go -C scanner test -race ./...
