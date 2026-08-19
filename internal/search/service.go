@@ -68,7 +68,7 @@ func (service *Service) Search(ctx context.Context, principal authn.Principal, r
 	metadata := make(map[uint32]api.Repository, len(repositories))
 	for index, repository := range repositories {
 		backendRequest.RepositoryIDs[index] = repository.ZoektID
-		backendRequest.RepositoryScopes[index] = RepositoryScope{ID: repository.ID, GitHubID: repository.GitHubID, Name: repository.Name, IndexedSHA: repository.IndexedSHA}
+		backendRequest.RepositoryScopes[index] = RepositoryScope{ID: repository.ID, GitHubID: repository.GitHubID, InstallationID: repository.InstallationID, Name: repository.Name, IndexedSHA: repository.IndexedSHA}
 		publicID := repository.GitHubID
 		if publicID == 0 {
 			publicID = repository.ID
@@ -108,7 +108,7 @@ func limitResponse(response api.SearchResponse, maxMatches int, maxBytes int64) 
 		response.Truncated = true
 	}
 	matches := response.Matches
-	limited := api.SearchResponse{Matches: []api.SearchMatch{}, Truncated: response.Truncated || len(matches) > 0}
+	limited := api.SearchResponse{Matches: []api.SearchMatch{}, Truncated: response.Truncated || len(matches) > 0, Consistency: response.Consistency}
 	if !fits(limited, maxBytes) {
 		// The empty truncated JSON envelope is the response floor even when the caller requests fewer bytes.
 		return limited
@@ -116,8 +116,9 @@ func limitResponse(response api.SearchResponse, maxMatches int, maxBytes int64) 
 	// ponytail: O(n²) marshaling is bounded by 100 matches; stream/count once if that cap grows.
 	for index, match := range matches {
 		candidate := api.SearchResponse{
-			Matches:   append(limited.Matches, match),
-			Truncated: response.Truncated || index+1 < len(matches),
+			Matches:     append(limited.Matches, match),
+			Truncated:   response.Truncated || index+1 < len(matches),
+			Consistency: response.Consistency,
 		}
 		if !fits(candidate, maxBytes) {
 			limited.Truncated = true

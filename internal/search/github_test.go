@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/grepnest/grepnest/pkg/api"
 )
@@ -45,22 +46,40 @@ func TestGitHubBackendDeduplicatesDeterministicallyAndPreservesPartial(t *testin
 }
 
 func TestGitHubBackendStopsOnRateLimit(t *testing.T) {
-	client := &githubSearchClient{err: ErrRateLimited}
+	client := &githubSearchClient{err: rateLimitError{status: 429}}
 	backend := NewGitHubBackend(client, 1)
-	_, err := backend.Search(t.Context(), BackendRequest{Query: "needle", InstallationID: 10, RepositoryScopes: []RepositoryScope{{Name: "acme/one"}}})
-	if !errors.Is(err, ErrRateLimited) {
-		t.Fatalf("error = %v", err)
+	got, err := backend.Search(t.Context(), BackendRequest{Query: "needle", InstallationID: 10, RepositoryScopes: []RepositoryScope{{Name: "acme/one"}}})
+	if err != nil || !got.Truncated || got.Consistency == nil || !got.Consistency.Partial {
+		t.Fatalf("response=%#v error=%v", got, err)
+	}
+}
+
+func TestGitHubBackendUsesScopeInstallationAndRequestTimeout(t *testing.T) {
+	client := &githubSearchClient{wait: true}
+	backend := NewGitHubBackend(client, 1)
+	_, err := backend.Search(t.Context(), BackendRequest{Query: "needle", Timeout: time.Millisecond, RepositoryScopes: []RepositoryScope{{InstallationID: 10, GitHubID: 101, Name: "acme/one"}, {InstallationID: 20, GitHubID: 201, Name: "acme/two"}}})
+	if !errors.Is(err, context.DeadlineExceeded) || !reflect.DeepEqual(client.installations, []int64{10}) || !reflect.DeepEqual(client.repositoryIDs, [][]int64{{101}}) {
+		t.Fatalf("error=%v installations=%v repositoryIDs=%v", err, client.installations, client.repositoryIDs)
 	}
 }
 
 type githubSearchClient struct {
-	queries   []string
-	responses []api.SearchResponse
-	err       error
+	queries       []string
+	installations []int64
+	repositoryIDs [][]int64
+	responses     []api.SearchResponse
+	err           error
+	wait          bool
 }
 
-func (client *githubSearchClient) SearchCode(_ context.Context, _ int64, query string, _ []int64) (api.SearchResponse, error) {
+func (client *githubSearchClient) SearchCode(ctx context.Context, installationID int64, query string, repositoryIDs []int64) (api.SearchResponse, error) {
 	client.queries = append(client.queries, query)
+	client.installations = append(client.installations, installationID)
+	client.repositoryIDs = append(client.repositoryIDs, append([]int64(nil), repositoryIDs...))
+	if client.wait {
+		<-ctx.Done()
+		return api.SearchResponse{}, ctx.Err()
+	}
 	if client.err != nil {
 		return api.SearchResponse{}, client.err
 	}
@@ -68,3 +87,9 @@ func (client *githubSearchClient) SearchCode(_ context.Context, _ int64, query s
 	client.responses = client.responses[1:]
 	return response, nil
 }
+
+type rateLimitError struct{ status int }
+
+func (err rateLimitError) Error() string       { return "rate limited" }
+func (err rateLimitError) HTTPStatus() int     { return err.status }
+func (err rateLimitError) IsRateLimited() bool { return true }

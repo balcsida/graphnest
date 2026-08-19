@@ -312,12 +312,16 @@ func (c *Client) doInstallationJSON(ctx context.Context, operation string, insta
 }
 
 type HTTPStatusError struct {
-	StatusCode int
+	StatusCode  int
+	RateLimited bool
 }
 
 func (err HTTPStatusError) Error() string {
 	return fmt.Sprintf("GitHub API status %d", err.StatusCode)
 }
+
+func (err HTTPStatusError) HTTPStatus() int     { return err.StatusCode }
+func (err HTTPStatusError) IsRateLimited() bool { return err.RateLimited }
 
 func (c *Client) doJSON(ctx context.Context, operation, method string, endpoint *url.URL, body []byte, authorization string, limit int64, target any) (link string, resultErr error) {
 	result := "error"
@@ -339,7 +343,7 @@ func (c *Client) doJSON(ctx context.Context, operation, method string, endpoint 
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", HTTPStatusError{StatusCode: response.StatusCode}
+		return "", HTTPStatusError{StatusCode: response.StatusCode, RateLimited: response.StatusCode == http.StatusTooManyRequests || response.Header.Get("X-RateLimit-Remaining") == "0" || response.Header.Get("Retry-After") != ""}
 	}
 	reader := io.LimitReader(response.Body, limit+1)
 	data, err := io.ReadAll(reader)
