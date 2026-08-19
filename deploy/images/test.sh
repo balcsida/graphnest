@@ -15,6 +15,7 @@ docker run --rm --read-only --tmpfs /tmp --tmpfs /var/run/grepnest \
     command -v grepnest-admin
     command -v grepnest-migrate
     command -v grepnest-mcp
+    ! command -v grepnest-scanner >/dev/null
     command -v wget
   '
 
