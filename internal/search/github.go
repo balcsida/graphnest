@@ -68,7 +68,7 @@ func (backend *GitHubBackend) Search(ctx context.Context, request BackendRequest
 			return api.SearchResponse{}, err
 		}
 		response.Matches = append(response.Matches, got.Matches...)
-		response.Truncated = response.Truncated || got.Truncated || got.Consistency != nil && got.Consistency.Partial
+		response.Truncated = response.Truncated || got.Truncated
 		start = end
 	}
 	sort.SliceStable(response.Matches, func(i, j int) bool {

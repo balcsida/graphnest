@@ -12,8 +12,8 @@ import (
 
 func TestGitHubBackendChunksAuthorizedRepositoryQualifiers(t *testing.T) {
 	client := &githubSearchClient{responses: []api.SearchResponse{
-		{Matches: []api.SearchMatch{{Path: "a.go", SHA: "one", Repository: api.Repository{ID: 1, Name: "acme/one"}}}},
-		{Matches: []api.SearchMatch{{Path: "b.go", SHA: "two", Repository: api.Repository{ID: 2, Name: "acme/two"}}}},
+		{Matches: []api.SearchMatch{{Path: "a.go", SHA: "one", Repository: api.Repository{ID: 1, Name: "acme/one"}}}, Consistency: &api.SearchConsistency{Backend: "github", Partial: true}},
+		{Matches: []api.SearchMatch{{Path: "b.go", SHA: "two", Repository: api.Repository{ID: 2, Name: "acme/two"}}}, Consistency: &api.SearchConsistency{Backend: "github", Partial: true}},
 	}}
 	backend := NewGitHubBackend(client, 1)
 	got, err := backend.Search(t.Context(), BackendRequest{Query: "needle", InstallationID: 10, RepositoryScopes: []RepositoryScope{
@@ -25,7 +25,7 @@ func TestGitHubBackendChunksAuthorizedRepositoryQualifiers(t *testing.T) {
 	if !reflect.DeepEqual(client.queries, []string{"needle repo:acme/one", "needle repo:acme/two"}) {
 		t.Fatalf("queries = %q", client.queries)
 	}
-	if len(got.Matches) != 2 || got.Consistency == nil || got.Consistency.Backend != "github" || got.Consistency.Exact || got.Consistency.Revision != "" || !got.Consistency.Partial {
+	if got.Truncated || len(got.Matches) != 2 || got.Consistency == nil || got.Consistency.Backend != "github" || got.Consistency.Exact || got.Consistency.Revision != "" || !got.Consistency.Partial {
 		t.Fatalf("response = %#v", got)
 	}
 }
