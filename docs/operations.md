@@ -76,16 +76,17 @@ repository status and graph jobs in PostgreSQL when diagnosing readiness.
 Recovery uses the normal durable pipeline:
 
 1. Restore PostgreSQL according to the database backup policy.
-2. Requeue graph scanning for repositories whose current indexed SHA has no
-   completed upload.
-3. Confirm an optional scanner or exact-SHA SCIP upload stores a completed
-   artifact for that same repository ID and commit.
+2. Requeue indexing for repositories whose current indexed SHA has no completed
+   upload. For native enrichment, install `grepnest-scanner` in the indexer and
+   set `GREPNEST_SCANNER_PATH` to that binary.
+3. Confirm the indexer's `grepnest-scanner enrich` invocation or an exact-SHA
+   SCIP upload stores a completed artifact for that repository ID and commit.
 4. Retry the bounded graph operation.
 
-Do not hand-edit graph nodes or edges. Rebuild them from an exact source
-snapshot or an accepted exact-SHA SCIP upload. Optional scanner workers remain
-independent of the default deployment; PostgreSQL job leasing prevents
-duplicate ownership.
+Do not hand-edit graph nodes or edges. Rebuild them from the indexer's exact
+source snapshot or an accepted exact-SHA SCIP upload. Running the scanner
+without the indexer's `enrich` invocation only idles for compatibility; it does
+not lease or complete graph work.
 
 Graph request limits are configured with `GREPNEST_GRAPH_*` query settings.
 Context, impact, and trace enforce traversal depth, fanout, node, edge, row,

@@ -33,7 +33,7 @@ Under the hood, GrepNest combines fast [Zoekt](https://github.com/sourcegraph/zo
 | **Durable identity and access** | Use OIDC or GitHub OAuth browser sign-in, SCIM 2.0 provisioning, revocable API tokens, user and group repository assignments, administrative controls, and security audit events. |
 | **Pilot deployment tooling** | Run locally with Docker Compose or deploy the single-node pilot with Helm. Releases publish multi-architecture images, an OCI chart, SBOMs, provenance, and GitHub attestations. |
 
-Optional native graph scanners support **Go, JavaScript, TypeScript/TSX, Java, Kotlin, and Rust**. They are built separately and are not part of the default images or deployment. SCIP uploads remain a separate, language-indexer-independent navigation path.
+An optional native enrichment binary supports **Go, JavaScript, TypeScript/TSX, Java, Kotlin, and Rust**. When configured, the indexer invokes it on the same archive snapshot; it is not a standalone worker and is not part of the default images or deployment. SCIP uploads remain a separate, language-indexer-independent navigation path.
 
 ## Architecture
 
