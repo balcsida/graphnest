@@ -45,6 +45,24 @@ func TestLoadKeepsStaticConfiguration(t *testing.T) {
 	}
 }
 
+func TestLoadSelectsZoektByDefaultAndGitHubExplicitly(t *testing.T) {
+	setValidEnvironment(t)
+	setDurableEnvironment(t)
+	got, err := Load()
+	if err != nil || got.SearchBackend != "zoekt" {
+		t.Fatalf("configuration=%#v error=%v", got, err)
+	}
+	t.Setenv("GREPNEST_SEARCH_BACKEND", "github")
+	got, err = Load()
+	if err != nil || got.SearchBackend != "github" {
+		t.Fatalf("configuration=%#v error=%v", got, err)
+	}
+	t.Setenv("GREPNEST_SEARCH_BACKEND", "other")
+	if _, err := Load(); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
+
 func TestLoadReadsDurableConfiguration(t *testing.T) {
 	setValidEnvironment(t)
 	setDurableEnvironment(t)

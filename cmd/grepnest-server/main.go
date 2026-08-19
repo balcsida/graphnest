@@ -284,12 +284,17 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	reconcileDone := startReconcileRequests(loopCtx, reconcileRequests, reconciler.Installation, func(error) {
 		logger.Error("webhook reconciliation failed")
 	})
-	backend, err := zoekt.New(settings.ZoektURL, http.DefaultClient, settings.Limits.MaxResponseBytes, metrics)
-	if err != nil {
-		cancel()
-		<-done
-		<-reconcileDone
-		return fail(err)
+	var backend search.SearchBackend
+	if settings.SearchBackend == "github" {
+		backend = search.NewGitHubBackend(githubClient, 1)
+	} else {
+		backend, err = zoekt.New(settings.ZoektURL, http.DefaultClient, settings.Limits.MaxResponseBytes, metrics)
+		if err != nil {
+			cancel()
+			<-done
+			<-reconcileDone
+			return fail(err)
+		}
 	}
 	authenticator := durableAuthenticator(store)
 	auth, err := newAuthRuntime(loopCtx, settings, store, authenticator, metrics, endpoints, httpClient)

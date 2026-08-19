@@ -1217,6 +1217,16 @@ components:
       properties:
         matches: {type: array, items: {$ref: '#/components/schemas/SearchMatch'}}
         truncated: {type: boolean}
+        consistency: {$ref: '#/components/schemas/SearchConsistency'}
+    SearchConsistency:
+      type: object
+      additionalProperties: false
+      required: [backend, exact, partial]
+      properties:
+        backend: {type: string, enum: [github]}
+        exact: {type: boolean, description: GitHub code search never claims an exact indexed SHA.}
+        revision: {type: string, pattern: '^[0-9a-f]{40}$'}
+        partial: {type: boolean, description: True when GitHub search is best-effort or incomplete.}
     SearchMatch:
       type: object
       additionalProperties: false

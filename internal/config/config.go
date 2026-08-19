@@ -73,18 +73,18 @@ type Scanner struct {
 }
 
 type Config struct {
-	ListenAddress, ZoektURL, RepositoriesFile string
-	UserToken, AdminToken                     string
-	UserRepositories, AdminRepositories       []string
-	DatabaseURL                               string
-	GitHub                                    GitHub
-	Graph                                     Graph
-	Indexer                                   Indexer
-	UserInstallationID, AdminInstallationID   int64
-	UserRepositoryIDs, AdminRepositoryIDs     []int64
-	Limits                                    Limits
-	SSO                                       SSO
-	SCIM                                      SCIM
+	ListenAddress, ZoektURL, RepositoriesFile, SearchBackend string
+	UserToken, AdminToken                                    string
+	UserRepositories, AdminRepositories                      []string
+	DatabaseURL                                              string
+	GitHub                                                   GitHub
+	Graph                                                    Graph
+	Indexer                                                  Indexer
+	UserInstallationID, AdminInstallationID                  int64
+	UserRepositoryIDs, AdminRepositoryIDs                    []int64
+	Limits                                                   Limits
+	SSO                                                      SSO
+	SCIM                                                     SCIM
 }
 
 type SCIM struct {
@@ -103,6 +103,7 @@ func Load() (Config, error) {
 	config := Config{
 		ListenAddress:    valueOr("GREPNEST_LISTEN_ADDRESS", ":8080"),
 		ZoektURL:         zoektURL,
+		SearchBackend:    valueOr("GREPNEST_SEARCH_BACKEND", "zoekt"),
 		RepositoriesFile: os.Getenv("GREPNEST_REPOSITORIES_FILE"),
 		Limits: Limits{
 			DefaultResults:      25,
@@ -116,6 +117,9 @@ func Load() (Config, error) {
 			SCIPMaxUploadBytes:  64 << 20,
 			GraphMaxUploadBytes: 64 << 20,
 		},
+	}
+	if config.SearchBackend != "zoekt" && config.SearchBackend != "github" {
+		return Config{}, invalid("GREPNEST_SEARCH_BACKEND must be zoekt or github")
 	}
 	if err := loadLimits(&config.Limits); err != nil {
 		return Config{}, err
@@ -133,6 +137,9 @@ func Load() (Config, error) {
 			return Config{}, err
 		}
 	} else {
+		if config.SearchBackend == "github" {
+			return Config{}, invalid("GREPNEST_SEARCH_BACKEND=github requires durable configuration")
+		}
 		config.UserToken = os.Getenv("GREPNEST_USER_TOKEN")
 		config.AdminToken = os.Getenv("GREPNEST_ADMIN_TOKEN")
 		config.UserRepositories = split(os.Getenv("GREPNEST_USER_REPOSITORIES"))

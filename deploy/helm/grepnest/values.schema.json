@@ -129,7 +129,8 @@
             "githubUploadURL",
             "githubGitURL",
             "githubAPIVersion",
-            "githubAppID",
+              "githubAppID",
+              "searchBackend",
             "defaultResults",
             "maxResults",
             "defaultContextLines",
@@ -159,6 +160,10 @@
             },
             "githubAppID": {
               "$ref": "#/definitions/id"
+            },
+            "searchBackend": {
+              "type": "string",
+              "enum": ["zoekt", "github"]
             },
             "defaultResults": {
               "type": "integer",

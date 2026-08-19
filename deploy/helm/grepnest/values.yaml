@@ -18,6 +18,7 @@ server:
   port: 8080
   service: {port: 8080, annotations: {}}
   config:
+    searchBackend: zoekt
     githubWebURL: https://github.example.invalid
     githubAPIURL: https://github.example.invalid/api/v3
     githubUploadURL: https://github.example.invalid/api/uploads

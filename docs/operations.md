@@ -19,6 +19,11 @@ Run the server with the environment in the [local quick start](../README.md).
 Use `GET /healthz` for process liveness. `GET /readyz` performs a bounded Zoekt
 health query and returns 503 with `{"error":"unavailable"}` when Zoekt is not
 ready. `GET /metrics` exposes Prometheus metrics. Search and readiness are
+
+For an explicit low-volume degraded path, set `GREPNEST_SEARCH_BACKEND=github`
+on the durable server. GitHub code search is authorization-scoped but eventual,
+rate-limited, and reported as partial without an exact-SHA claim. Restore the
+default `zoekt` value to roll back; no automatic fallback occurs.
 bounded by the configuration caps documented in the README.
 
 Keep Zoekt private. Compose keeps Zoekt and PostgreSQL on an internal network

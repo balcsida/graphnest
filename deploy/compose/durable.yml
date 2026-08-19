@@ -14,6 +14,7 @@ services:
     environment:
       GREPNEST_DATABASE_URL: postgres://grepnest:grepnest@postgres:5432/grepnest?sslmode=disable
       GREPNEST_ZOEKT_URL: http://zoekt-durable:6070
+      GREPNEST_SEARCH_BACKEND: ${GREPNEST_SEARCH_BACKEND:-zoekt}
       GREPNEST_GITHUB_WEB_URL: ${GREPNEST_GITHUB_WEB_URL:?GREPNEST_GITHUB_WEB_URL is required}
       GREPNEST_GITHUB_API_URL: ${GREPNEST_GITHUB_API_URL:?GREPNEST_GITHUB_API_URL is required}
       GREPNEST_GITHUB_UPLOAD_URL: ${GREPNEST_GITHUB_UPLOAD_URL:?GREPNEST_GITHUB_UPLOAD_URL is required}
