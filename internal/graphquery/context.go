@@ -6,8 +6,6 @@ import (
 	"github.com/grepnest/grepnest/internal/graphprotocol"
 )
 
-const selectSymbols = `UNWIND $scope AS scope MATCH (r:Repository), (s:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND s.repository_id = r.id AND ($use_uid = false OR s.uid IN $uids) AND ($name = "" OR s.qualified_name = $name) AND ($path = "" OR s.path = $path) AND ($kind = "" OR s.kind = $kind) RETURN s.repository_id, s.uid, s.qualified_name, s.path, s.language, s.kind, s.signature, s.start_line, s.start_character, s.end_line, s.end_character ORDER BY s.repository_id, s.uid LIMIT $limit`
-
 func (service *Service) Context(ctx context.Context, request graphprotocol.ContextRequest) (graphprotocol.ContextResponse, error) {
 	ready, err := service.ready(ctx, request.Scope)
 	response := graphprotocol.ContextResponse{

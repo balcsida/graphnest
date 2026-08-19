@@ -10,14 +10,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/grepnest/grepnest/internal/config"
 	"github.com/grepnest/grepnest/internal/githubapp"
-	"github.com/grepnest/grepnest/internal/graphartifact"
-	"github.com/grepnest/grepnest/internal/graphruntime"
 	"github.com/grepnest/grepnest/internal/indexer"
-	"github.com/grepnest/grepnest/internal/ladybug"
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/grepnest/grepnest/internal/repository"
 )
@@ -84,110 +80,6 @@ func TestRuntimeInitializesBeforeOneWorkerAndClosesLast(t *testing.T) {
 	if got := strings.Join(events, ","); got != want {
 		t.Fatalf("events=%q want=%q", got, want)
 	}
-}
-
-func TestRuntimeStartsEmbeddedGraphAfterHealthyInitialization(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	var mu sync.Mutex
-	var events []string
-	add := func(event string) func(context.Context) error {
-		return func(ctx context.Context) error {
-			mu.Lock()
-			events = append(events, event)
-			mu.Unlock()
-			if event == "worker" || event == "graph" {
-				<-ctx.Done()
-				return ctx.Err()
-			}
-			return nil
-		}
-	}
-	runtime := indexRuntime{
-		ping: add("ping"), migrate: add("migrate"), upsertNode: add("upsert"),
-		reapExpired: add("reap"), pruneHistory: add("prune"),
-		runWorker: add("worker"), runGraph: add("graph"),
-	}
-	done := make(chan error, 1)
-	go func() { done <- runtime.run(ctx) }()
-	deadline := time.After(time.Second)
-	for {
-		mu.Lock()
-		started := len(events) == 7
-		mu.Unlock()
-		if started {
-			break
-		}
-		select {
-		case <-deadline:
-			cancel()
-			<-done
-			t.Fatal("embedded graph did not start")
-		default:
-		}
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	if got := strings.Join(events[:5], ","); got != "ping,migrate,upsert,reap,prune" {
-		t.Fatalf("initialization = %q", got)
-	}
-}
-
-func TestGraphServiceSkipsSeparateMode(t *testing.T) {
-	called := false
-	old := startGraphRuntime
-	startGraphRuntime = func(context.Context, graphruntime.Config, ladybug.SnapshotSource, *slog.Logger) error {
-		called = true
-		return nil
-	}
-	t.Cleanup(func() { startGraphRuntime = old })
-	if run := graphService(config.Graph{Mode: "separate"}, nil, nil); run != nil {
-		t.Fatal("separate mode returned graph service")
-	}
-	if called {
-		t.Fatal("separate mode opened Ladybug")
-	}
-}
-
-func TestGraphServicePropagatesEmbeddedLimits(t *testing.T) {
-	var got graphruntime.Config
-	old := startGraphRuntime
-	startGraphRuntime = func(_ context.Context, settings graphruntime.Config, _ ladybug.SnapshotSource, _ *slog.Logger) error {
-		got = settings
-		return nil
-	}
-	t.Cleanup(func() { startGraphRuntime = old })
-	settings := config.Graph{
-		Mode: "embedded", DataDir: "/graph",
-		QueryLimits: config.GraphQueryLimits{
-			DefaultImpactDepth: 2, MaxDepth: 7, DefaultTraceDepth: 4,
-			MaxTraceDepth: 9, MaxRows: 321,
-		},
-	}
-	run := graphService(settings, emptySnapshotSource{}, nil)
-	if run == nil {
-		t.Fatal("embedded mode omitted graph service")
-	}
-	if err := run(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	if got.QueryLimits.DefaultImpactDepth != 2 || got.QueryLimits.MaxDepth != 7 ||
-		got.QueryLimits.DefaultTraceDepth != 4 || got.QueryLimits.MaxTraceDepth != 9 ||
-		got.QueryLimits.MaxRows != 321 {
-		t.Fatalf("runtime limits = %#v", got.QueryLimits)
-	}
-}
-
-type emptySnapshotSource struct{}
-
-func (emptySnapshotSource) GraphManifests(context.Context) ([]graphartifact.Manifest, error) {
-	return nil, nil
-}
-func (emptySnapshotSource) GraphArtifact(context.Context, int64, int64) (graphartifact.Artifact, error) {
-	return graphartifact.Artifact{}, errors.New("unexpected artifact")
 }
 
 func TestRuntimeWaitsForCancelledWorkerBeforeClosing(t *testing.T) {

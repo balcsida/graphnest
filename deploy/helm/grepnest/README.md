@@ -19,7 +19,7 @@ corresponding values. The key names below are the defaults.
 
 | Values | Required keys | Purpose |
 | --- | --- | --- |
-| `secrets.runtime.name` | `database-url`, `graph-secret` | PostgreSQL DSN and the internal graph bearer token |
+| `secrets.runtime.name` | `database-url` | PostgreSQL DSN |
 | `secrets.githubApp.name` | `private-key.pem`, `webhook-secret` | GitHub App private key and webhook secret |
 | `secrets.customCA.name` | `ca.crt` | Optional GitHub CA bundle; set the key with `secrets.customCA.key` |
 | `secrets.oidc.name` | `client-secret` | OIDC client secret; set `secrets.oidc.clientSecretKey` to override |
@@ -29,7 +29,7 @@ corresponding values. The key names below are the defaults.
 | `images.pullSecrets[]` | Kubernetes pull-secret contract | Optional private-registry credentials |
 | `ingress.tls[].secretName` | Ingress-controller TLS contract | Optional existing TLS Secret for the listed hosts |
 
-Override the runtime key names with `databaseURLKey` and `graphSecretKey`, and
+Override the runtime key name with `databaseURLKey`, and
 the GitHub App key names with `privateKeyKey` and
 `webhookSecretKey`. The chart never accepts plaintext credentials in values.
 Referenced object names must be Kubernetes DNS subdomains. Secret data keys
@@ -95,19 +95,13 @@ is the internal Service port.
 `node.indexer.maxRepositoryBytes` defaults to 5 GiB and rejects oversized
 GHES repositories before the indexer mints credentials or fetches Git data.
 
-`graph.mode` defaults to `embedded`. Embedded mode runs the sole writable graph
-runtime in the indexer and stores `/data/graph` on the node PVC. `separate`
-renders one graph Deployment, ClusterIP Service, ServiceAccount, and RWO PVC.
-Both modes give the server the same internal graph Service URL; no graph
-Ingress or public Service is rendered.
-
 Set `scanner.enabled` to run independently scalable scanner pods.
 `scanner.replicas` controls their count. Each scanner uses ephemeral checkout
 storage and the scanner image.
 
 `monitoring.serviceMonitor.enabled` requires the
 `monitoring.coreos.com/v1/ServiceMonitor` CRD. Rendering fails clearly if that
-CRD is unavailable. It scrapes the server, indexer, graph runtime, and enabled
+CRD is unavailable. It scrapes the server, indexer, and enabled
 scanners through internal Services. Configure the monitoring namespace selector
 in the ingress policy when Prometheus runs outside the release namespace.
 

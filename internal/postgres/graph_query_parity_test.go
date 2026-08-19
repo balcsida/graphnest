@@ -1,4 +1,4 @@
-//go:build integration && system_ladybug
+//go:build integration
 
 package postgres
 
@@ -7,15 +7,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
-	lbug "github.com/LadybugDB/go-ladybug"
 	"github.com/grepnest/grepnest/internal/graphartifact"
 	"github.com/grepnest/grepnest/internal/graphprotocol"
 	"github.com/grepnest/grepnest/internal/graphquery"
-	"github.com/grepnest/grepnest/internal/ladybug"
 )
 
 func TestGraphQueryStoresMatchGolden(t *testing.T) {
@@ -26,24 +23,14 @@ func TestGraphQueryStoresMatchGolden(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertGraphQueryPlan(t, postgresStore, repositoryID, replacement.Upload.ID, artifact.Commit)
-	manifest := graphartifact.Manifest{
-		RepositoryID: repositoryID, UploadID: replacement.Upload.ID, Commit: artifact.Commit,
-		Source: "managed", SchemaVersion: artifact.SchemaVersion, ContentHash: bytes.Clone(artifact.ContentHash),
-	}
 	hiddenID := seedReadyRepository(t, postgresStore, 102, testSHA('c'))
 	hiddenArtifact := parityHiddenArtifact(hiddenID, testSHA('c'))
-	hiddenReplacement, err := postgresStore.ReplaceGraph(t.Context(), hiddenID, GraphSourceManaged, hiddenArtifact)
+	_, err = postgresStore.ReplaceGraph(t.Context(), hiddenID, GraphSourceManaged, hiddenArtifact)
 	if err != nil {
 		t.Fatal(err)
 	}
-	hiddenManifest := graphartifact.Manifest{
-		RepositoryID: hiddenID, UploadID: hiddenReplacement.Upload.ID, Commit: hiddenArtifact.Commit,
-		Source: "managed", SchemaVersion: hiddenArtifact.SchemaVersion, ContentHash: bytes.Clone(hiddenArtifact.ContentHash),
-	}
-	ladybugStore := parityLadybugStore(t, []graphartifact.Manifest{manifest, hiddenManifest}, []graphartifact.Artifact{artifact, hiddenArtifact})
 	limits := graphquery.Limits{PerCategory: 2, DefaultImpactDepth: 3, MaxDepth: 4, DefaultTraceDepth: 4, MaxTraceDepth: 4, MaxNodes: 20, MaxEdges: 20, MaxFanout: 20}
 	postgresService := &graphquery.Service{Store: postgresStore, Limits: limits}
-	ladybugService := &graphquery.Service{Store: ladybugStore, Limits: limits}
 	scope := graphprotocol.Scope{SelectedRepositoryID: repositoryID, Repositories: []graphprotocol.RepositorySnapshot{{ID: repositoryID, Name: "acme/renamed", Commit: artifact.Commit}}}
 	staleScope := scope
 	staleScope.Repositories = append([]graphprotocol.RepositorySnapshot(nil), scope.Repositories...)
@@ -100,11 +87,7 @@ func TestGraphQueryStoresMatchGolden(t *testing.T) {
 		return got
 	}
 
-	wantBackend := run(t, ladybugService)
 	got := run(t, postgresService)
-	if !reflect.DeepEqual(got, wantBackend) {
-		t.Fatalf("PostgreSQL/Ladybug mismatch:\npostgres=%#v\nladybug=%#v", got, wantBackend)
-	}
 	type golden struct {
 		ContextIncomingCalls, ContextIncomingReferences, ContextOutgoingCalls []string
 		ImpactDepth1, ImpactDepth2, ImpactMinimumDepth1                       []string
@@ -178,38 +161,6 @@ func assertGraphQueryPlan(t *testing.T, store *Store, repositoryID, uploadID int
 		t.Fatalf("unbounded or incomplete graph plan:\n%s", plan)
 	}
 	t.Logf("PostgreSQL graph frontier plan:\n%s", plan)
-}
-
-func parityLadybugStore(t *testing.T, manifests []graphartifact.Manifest, artifacts []graphartifact.Artifact) graphquery.Store {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "graph")
-	handle, err := lbug.OpenDatabase(path, lbug.DefaultSystemConfig())
-	if err != nil {
-		t.Fatal(err)
-	}
-	connection, err := lbug.OpenConnection(handle)
-	if err != nil {
-		handle.Close()
-		t.Fatal(err)
-	}
-	if err := ladybug.EnsureSchema(t.Context(), connection); err != nil {
-		connection.Close()
-		handle.Close()
-		t.Fatal(err)
-	}
-	connection.Close()
-	handle.Close()
-	database, err := ladybug.Open(ladybug.Options{Path: path})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	for index := range manifests {
-		if err := database.ReplaceRepository(t.Context(), manifests[index], artifacts[index]); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return graphquery.NewLadybugStore(database)
 }
 
 func parityHiddenArtifact(repositoryID int64, commit string) graphartifact.Artifact {

@@ -3,19 +3,13 @@ package graphquery
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/grepnest/grepnest/internal/graphprotocol"
-	"github.com/grepnest/grepnest/internal/ladybug"
 )
 
 var (
-	ErrInvalidRequest    = errors.New("invalid graph query")
-	ErrAdminRequired     = errors.New("administrator required")
-	ErrUnauthorizedScope = errors.New("unauthorized graph scope")
+	ErrInvalidRequest = errors.New("invalid graph query")
 )
 
 const (
@@ -36,9 +30,8 @@ type Limits struct {
 }
 
 type Service struct {
-	Database *ladybug.Database
-	Store    Store
-	Limits   Limits
+	Store  Store
+	Limits Limits
 }
 
 func (service *Service) Health(ctx context.Context) error {
@@ -53,19 +46,12 @@ func (service *Service) queryStore() Store {
 	if service == nil {
 		return nil
 	}
-	if service.Store != nil {
-		return service.Store
-	}
-	if service.Database != nil {
-		return NewLadybugStore(service.Database)
-	}
-	return nil
+	return service.Store
 }
 
 type readyScope struct {
 	snapshots       []graphprotocol.RepositorySnapshot
 	queries         []QuerySnapshot
-	parameters      []map[string]any
 	boundaries      []graphprotocol.Boundary
 	commits         map[string]string
 	selected        []graphprotocol.RepositorySnapshot
@@ -116,7 +102,6 @@ func (service *Service) ready(ctx context.Context, scope graphprotocol.Scope) (r
 		ready.snapshots = append(ready.snapshots, snapshot)
 		querySnapshot := QuerySnapshot{RepositoryID: snapshot.ID, UploadID: manifest.UploadID, Commit: snapshot.Commit}
 		ready.queries = append(ready.queries, querySnapshot)
-		ready.parameters = append(ready.parameters, map[string]any{"id": snapshot.ID, "commit": snapshot.Commit})
 		ready.commits[snapshot.Name] = snapshot.Commit
 		if scope.SelectedRepositoryID == snapshot.ID {
 			ready.selected = append(ready.selected, snapshot)
@@ -128,9 +113,6 @@ func (service *Service) ready(ctx context.Context, scope graphprotocol.Scope) (r
 	}
 	sort.Slice(ready.snapshots, func(left, right int) bool {
 		return ready.snapshots[left].ID < ready.snapshots[right].ID
-	})
-	sort.Slice(ready.parameters, func(left, right int) bool {
-		return ready.parameters[left]["id"].(int64) < ready.parameters[right]["id"].(int64)
 	})
 	return ready, nil
 }
@@ -185,125 +167,15 @@ func (service *Service) limits() Limits {
 	return limits
 }
 
-func symbolFromRow(row []any) graphprotocol.Symbol {
-	repositoryID := row[0].(int64)
-	path := row[3].(string)
-	return graphprotocol.Symbol{
-		RepositoryID: repositoryID,
-		UID:          stripStorageUID(repositoryID, row[1].(string)),
-		Name:         row[2].(string),
-		FilePath:     path,
-		Language:     row[4].(string),
-		Kind:         row[5].(string),
-		Signature:    row[6].(string),
-		Range: graphprotocol.Position{
-			StartLine: row[7].(int32), StartCharacter: row[8].(int32),
-			EndLine: row[9].(int32), EndCharacter: row[10].(int32),
-		},
-		Test: isTestPath(path),
-	}
-}
-
-func stripStorageUID(repositoryID int64, uid string) string {
-	return strings.TrimPrefix(uid, strconv.FormatInt(repositoryID, 10)+":")
-}
-
-func frontierParameters(frontier []nodeKey) []map[string]any {
-	ordered := append([]nodeKey(nil), frontier...)
-	sort.Slice(ordered, func(left, right int) bool {
-		return ordered[left].repositoryID < ordered[right].repositoryID ||
-			ordered[left].repositoryID == ordered[right].repositoryID && ordered[left].uid < ordered[right].uid
-	})
-	parameters := make([]map[string]any, 0, len(ordered))
-	for _, key := range ordered {
-		parameters = append(parameters, map[string]any{
-			"repository_id": key.repositoryID,
-			"uid":           fmt.Sprintf("%d:%s", key.repositoryID, key.uid),
-		})
-	}
-	return parameters
-}
-
-func selectorUIDs(snapshots []graphprotocol.RepositorySnapshot, uid string) []string {
-	qualified := make([]string, 0, len(snapshots))
-	for _, snapshot := range snapshots {
-		qualified = append(qualified, fmt.Sprintf("%d:%s", snapshot.ID, uid))
-	}
-	return qualified
-}
-
-func snapshotParameters(snapshots []graphprotocol.RepositorySnapshot) []map[string]any {
-	parameters := make([]map[string]any, 0, len(snapshots))
-	for _, snapshot := range snapshots {
-		parameters = append(parameters, map[string]any{"id": snapshot.ID, "commit": snapshot.Commit})
-	}
-	return parameters
-}
-
-func isTestPath(path string) bool {
-	return strings.Contains(path, "/test/") || strings.Contains(path, "/tests/") ||
-		strings.HasSuffix(path, "_test.go") || strings.HasSuffix(path, ".test.ts") ||
-		strings.HasSuffix(path, ".test.js")
-}
-
-var relationQueries = map[string]struct{ incoming, outgoing string }{
-	"calls": {
-		incoming: `UNWIND $scope AS scope UNWIND $frontier AS frontier MATCH (r:Repository), (a:Symbol)-[edge:CALLS]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND a.repository_id = r.id AND b.repository_id = frontier.repository_id AND b.uid = frontier.uid AND $depth > 0 AND edge.confidence >= $min_confidence RETURN a.repository_id, a.uid, a.qualified_name, a.path, a.language, a.kind, a.signature, a.start_line, a.start_character, a.end_line, a.end_character, b.uid, edge.confidence, edge.path, edge.start_line, edge.start_character, edge.end_line, edge.end_character, edge.resolution_reason ORDER BY a.repository_id, a.uid, b.uid SKIP $offset LIMIT $limit`,
-		outgoing: `UNWIND $scope AS scope UNWIND $frontier AS frontier MATCH (r:Repository), (a:Symbol)-[edge:CALLS]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND a.repository_id = frontier.repository_id AND b.repository_id = r.id AND a.uid = frontier.uid AND $depth > 0 AND edge.confidence >= $min_confidence RETURN b.repository_id, b.uid, b.qualified_name, b.path, b.language, b.kind, b.signature, b.start_line, b.start_character, b.end_line, b.end_character, a.uid, edge.confidence, edge.path, edge.start_line, edge.start_character, edge.end_line, edge.end_character, edge.resolution_reason ORDER BY b.repository_id, b.uid, a.uid SKIP $offset LIMIT $limit`,
-	},
-	"references": {
-		incoming: `UNWIND $scope AS scope UNWIND $frontier AS frontier MATCH (r:Repository), (a:Symbol)-[edge:REFERENCES]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND a.repository_id = r.id AND b.repository_id = frontier.repository_id AND b.uid = frontier.uid AND $depth > 0 AND edge.confidence >= $min_confidence RETURN a.repository_id, a.uid, a.qualified_name, a.path, a.language, a.kind, a.signature, a.start_line, a.start_character, a.end_line, a.end_character, b.uid, edge.confidence, edge.path, edge.start_line, edge.start_character, edge.end_line, edge.end_character, edge.resolution_reason ORDER BY a.repository_id, a.uid, b.uid SKIP $offset LIMIT $limit`,
-		outgoing: `UNWIND $scope AS scope UNWIND $frontier AS frontier MATCH (r:Repository), (a:Symbol)-[edge:REFERENCES]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND a.repository_id = frontier.repository_id AND b.repository_id = r.id AND a.uid = frontier.uid AND $depth > 0 AND edge.confidence >= $min_confidence RETURN b.repository_id, b.uid, b.qualified_name, b.path, b.language, b.kind, b.signature, b.start_line, b.start_character, b.end_line, b.end_character, a.uid, edge.confidence, edge.path, edge.start_line, edge.start_character, edge.end_line, edge.end_character, edge.resolution_reason ORDER BY b.repository_id, b.uid, a.uid SKIP $offset LIMIT $limit`,
-	},
-	"extends": {
-		incoming: `UNWIND $scope AS scope UNWIND $frontier AS frontier MATCH (r:Repository), (a:Symbol)-[edge:EXTENDS]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND a.repository_id = r.id AND b.repository_id = frontier.repository_id AND b.uid = frontier.uid AND $depth > 0 AND edge.confidence >= $min_confidence RETURN a.repository_id, a.uid, a.qualified_name, a.path, a.language, a.kind, a.signature, a.start_line, a.start_character, a.end_line, a.end_character, b.uid, edge.confidence, edge.path, edge.start_line, edge.start_character, edge.end_line, edge.end_character, edge.resolution_reason ORDER BY a.repository_id, a.uid, b.uid SKIP $offset LIMIT $limit`,
-		outgoing: `UNWIND $scope AS scope UNWIND $frontier AS frontier MATCH (r:Repository), (a:Symbol)-[edge:EXTENDS]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND a.repository_id = frontier.repository_id AND b.repository_id = r.id AND a.uid = frontier.uid AND $depth > 0 AND edge.confidence >= $min_confidence RETURN b.repository_id, b.uid, b.qualified_name, b.path, b.language, b.kind, b.signature, b.start_line, b.start_character, b.end_line, b.end_character, a.uid, edge.confidence, edge.path, edge.start_line, edge.start_character, edge.end_line, edge.end_character, edge.resolution_reason ORDER BY b.repository_id, b.uid, a.uid SKIP $offset LIMIT $limit`,
-	},
-	"implements": {
-		incoming: `UNWIND $scope AS scope UNWIND $frontier AS frontier MATCH (r:Repository), (a:Symbol)-[edge:IMPLEMENTS]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND a.repository_id = r.id AND b.repository_id = frontier.repository_id AND b.uid = frontier.uid AND $depth > 0 AND edge.confidence >= $min_confidence RETURN a.repository_id, a.uid, a.qualified_name, a.path, a.language, a.kind, a.signature, a.start_line, a.start_character, a.end_line, a.end_character, b.uid, edge.confidence, edge.path, edge.start_line, edge.start_character, edge.end_line, edge.end_character, edge.resolution_reason ORDER BY a.repository_id, a.uid, b.uid SKIP $offset LIMIT $limit`,
-		outgoing: `UNWIND $scope AS scope UNWIND $frontier AS frontier MATCH (r:Repository), (a:Symbol)-[edge:IMPLEMENTS]->(b:Symbol) WHERE r.id = scope.id AND r.commit = scope.commit AND a.repository_id = frontier.repository_id AND b.repository_id = r.id AND a.uid = frontier.uid AND $depth > 0 AND edge.confidence >= $min_confidence RETURN b.repository_id, b.uid, b.qualified_name, b.path, b.language, b.kind, b.signature, b.start_line, b.start_character, b.end_line, b.end_character, a.uid, edge.confidence, edge.path, edge.start_line, edge.start_character, edge.end_line, edge.end_character, edge.resolution_reason ORDER BY b.repository_id, b.uid, a.uid SKIP $offset LIMIT $limit`,
-	},
-}
-
-func keyFromRow(row []any) nodeKey {
-	repositoryID := row[0].(int64)
-	return nodeKey{repositoryID: repositoryID, uid: stripStorageUID(repositoryID, row[1].(string))}
-}
-
-func relationshipFromRow(row []any, kind, direction string) graphprotocol.Relationship {
-	neighbor := keyFromRow(row)
-	parent := keyFromStorageUID(row[11].(string))
-	relationship := graphprotocol.Relationship{
-		SourceRepositoryID: parent.repositoryID, TargetRepositoryID: neighbor.repositoryID,
-		SourceUID: parent.uid, TargetUID: neighbor.uid, Kind: kind,
-		Confidence: row[12].(float64), Path: row[13].(string),
-		Range: graphprotocol.Position{
-			StartLine: row[14].(int32), StartCharacter: row[15].(int32),
-			EndLine: row[16].(int32), EndCharacter: row[17].(int32),
-		},
-		ResolutionReason: row[18].(string),
-	}
-	if direction == "upstream" {
-		relationship.SourceRepositoryID, relationship.TargetRepositoryID = neighbor.repositoryID, parent.repositoryID
-		relationship.SourceUID, relationship.TargetUID = neighbor.uid, parent.uid
-	}
-	return relationship
-}
-
-func keyFromStorageUID(uid string) nodeKey {
-	prefix, logical, _ := strings.Cut(uid, ":")
-	repositoryID, _ := strconv.ParseInt(prefix, 10, 64)
-	return nodeKey{repositoryID: repositoryID, uid: logical}
-}
-
 func selectedRelations(requested []string) ([]string, error) {
+	valid := map[string]struct{}{"calls": {}, "references": {}, "extends": {}, "implements": {}}
 	if len(requested) == 0 {
 		return []string{"calls", "references", "extends", "implements"}, nil
 	}
 	seen := map[string]struct{}{}
 	out := make([]string, 0, len(requested))
 	for _, relation := range requested {
-		if _, ok := relationQueries[relation]; !ok {
+		if _, ok := valid[relation]; !ok {
 			return nil, ErrInvalidRequest
 		}
 		if _, duplicate := seen[relation]; duplicate {

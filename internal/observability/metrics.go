@@ -30,9 +30,6 @@ type Metrics struct {
 	graphDuration      *prometheus.HistogramVec
 	graphQueries       *prometheus.CounterVec
 	graphQueryDuration *prometheus.HistogramVec
-	graphSyncs         *prometheus.CounterVec
-	graphSyncDuration  *prometheus.HistogramVec
-	graphReady         prometheus.Gauge
 	authEvents         *prometheus.CounterVec
 }
 
@@ -56,32 +53,15 @@ func New() *Metrics {
 	metrics.graphDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "grepnest_graph_scan_phase_duration_seconds", Help: "Graph scan phase duration."}, []string{"phase", "result"})
 	metrics.graphQueries = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "grepnest_graph_query_total", Help: "Graph queries."}, []string{"operation", "result"})
 	metrics.graphQueryDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "grepnest_graph_query_duration_seconds", Help: "Graph query duration."}, []string{"operation", "result"})
-	metrics.graphSyncs = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "grepnest_graph_sync_total", Help: "Graph synchronizations."}, []string{"result"})
-	metrics.graphSyncDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "grepnest_graph_sync_duration_seconds", Help: "Graph synchronization duration."}, []string{"result"})
-	metrics.graphReady = prometheus.NewGauge(prometheus.GaugeOpts{Name: "grepnest_graph_ready", Help: "Graph readiness."})
 	metrics.authEvents = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "grepnest_auth_events_total", Help: "Authentication events."}, []string{"provider", "event", "result"})
-	metrics.registry.MustRegister(metrics.archiveOperations, metrics.archiveDuration, metrics.activeRequests, metrics.httpRequests, metrics.httpDuration, metrics.httpResponseSize, metrics.backendCalls, metrics.backendDuration, metrics.githubRequests, metrics.webhookDeliveries, metrics.indexQueueDepth, metrics.indexPhases, metrics.indexDuration, metrics.graphQueueDepth, metrics.graphPhases, metrics.graphDuration, metrics.graphQueries, metrics.graphQueryDuration, metrics.graphSyncs, metrics.graphSyncDuration, metrics.graphReady, metrics.authEvents)
+	metrics.registry.MustRegister(metrics.archiveOperations, metrics.archiveDuration, metrics.activeRequests, metrics.httpRequests, metrics.httpDuration, metrics.httpResponseSize, metrics.backendCalls, metrics.backendDuration, metrics.githubRequests, metrics.webhookDeliveries, metrics.indexQueueDepth, metrics.indexPhases, metrics.indexDuration, metrics.graphQueueDepth, metrics.graphPhases, metrics.graphDuration, metrics.graphQueries, metrics.graphQueryDuration, metrics.authEvents)
 	return metrics
 }
 
 func (metrics *Metrics) ObserveGraphQuery(operation, result string, duration time.Duration) {
-	labels := []string{fixed(operation, "context", "impact", "trace", "cypher"), successOrError(result)}
+	labels := []string{fixed(operation, "context", "impact", "trace"), successOrError(result)}
 	metrics.graphQueries.WithLabelValues(labels...).Inc()
 	metrics.graphQueryDuration.WithLabelValues(labels...).Observe(duration.Seconds())
-}
-
-func (metrics *Metrics) ObserveGraphSync(result string, duration time.Duration) {
-	result = successOrError(result)
-	metrics.graphSyncs.WithLabelValues(result).Inc()
-	metrics.graphSyncDuration.WithLabelValues(result).Observe(duration.Seconds())
-}
-
-func (metrics *Metrics) SetGraphReady(ready bool) {
-	if ready {
-		metrics.graphReady.Set(1)
-		return
-	}
-	metrics.graphReady.Set(0)
 }
 
 func (metrics *Metrics) Handler() http.Handler {

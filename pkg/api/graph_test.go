@@ -31,8 +31,8 @@ func TestGraphRepositorySelectorJSON(t *testing.T) {
 }
 
 func TestGraphRepositorySelectorOmittedFromRequests(t *testing.T) {
-	data, err := json.Marshal(GraphCypherRequest{Statement: "RETURN 1"})
-	if err != nil || string(data) != `{"statement":"RETURN 1"}` {
+	data, err := json.Marshal(GraphTraceRequest{SourceUID: "a", TargetUID: "b"})
+	if err != nil || string(data) != `{"source_uid":"a","target_uid":"b"}` {
 		t.Fatalf("JSON = %s, %v", data, err)
 	}
 }
@@ -65,7 +65,6 @@ func TestGraphResponsesExposeDiscriminatorCommitsAndCandidates(t *testing.T) {
 		{"context", GraphContextResponse{Status: "ambiguous", Candidates: []GraphCandidate{candidate}, Commits: map[string]string{}}},
 		{"impact", GraphImpactResponse{Status: "ambiguous", Candidates: []GraphCandidate{candidate}, Commits: map[string]string{}}},
 		{"trace", GraphTraceResponse{Status: "ambiguous", Candidates: []GraphCandidate{candidate}, Commits: map[string]string{}}},
-		{"cypher", GraphCypherResponse{Status: "ok", Commits: map[string]string{}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			data, err := json.Marshal(test.response)
@@ -77,10 +76,10 @@ func TestGraphResponsesExposeDiscriminatorCommitsAndCandidates(t *testing.T) {
 					t.Fatalf("JSON = %s, missing %s", data, field)
 				}
 			}
-			if test.name != "cypher" && !bytes.Contains(data, []byte(`"candidates":[`)) {
+			if !bytes.Contains(data, []byte(`"candidates":[`)) {
 				t.Fatalf("JSON = %s, missing candidates", data)
 			}
-			if test.name != "cypher" && !bytes.Contains(data, []byte(`"repository_id":101`)) {
+			if !bytes.Contains(data, []byte(`"repository_id":101`)) {
 				t.Fatalf("JSON = %s, missing retryable repository identity", data)
 			}
 		})

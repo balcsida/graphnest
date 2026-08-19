@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/grepnest/grepnest/internal/graphprotocol"
 	"github.com/grepnest/grepnest/internal/graphservice"
 	"github.com/grepnest/grepnest/internal/httpapi"
 	"github.com/grepnest/grepnest/pkg/api"
@@ -27,10 +26,6 @@ func registerGraphTools(server *mcp.Server, service *graphservice.Service, maxOu
 		response, err := service.Trace(ctx, httpapi.PrincipalFromContext(ctx), input)
 		return graphResult(response, err, maxOutputBytes)
 	})
-	mcp.AddTool(server, &mcp.Tool{Name: "cypher", Description: "Run an administrator-only read query against the code graph.", InputSchema: graphCypherSchema()}, func(ctx context.Context, _ *mcp.CallToolRequest, input api.GraphCypherRequest) (*mcp.CallToolResult, any, error) {
-		response, err := service.Cypher(ctx, httpapi.PrincipalFromContext(ctx), input)
-		return graphResult(response, err, maxOutputBytes)
-	})
 }
 
 func graphResult[T any](response T, err error, maxBytes int64) (*mcp.CallToolResult, any, error) {
@@ -45,8 +40,6 @@ func graphResult[T any](response T, err error, maxBytes int64) (*mcp.CallToolRes
 
 func graphError(err error) error {
 	switch {
-	case errors.Is(err, graphservice.ErrAdminRequired):
-		return errors.New("administrator access required")
 	case errors.Is(err, graphservice.ErrInvalidRequest), errors.Is(err, graphservice.ErrInvalidRepositorySelector):
 		return errors.New("graph request is invalid")
 	case errors.Is(err, graphservice.ErrRepositoryNotFound):
@@ -57,14 +50,6 @@ func graphError(err error) error {
 		return errors.New("branch is not indexed")
 	case errors.Is(err, graphservice.ErrGraphNotReady):
 		return errors.New("graph is not ready")
-	case errors.Is(err, graphprotocol.ErrUnauthorized):
-		return errors.New("graph runtime rejected the request; check the shared internal secret")
-	case errors.Is(err, graphprotocol.ErrUnreachable):
-		return errors.New("graph runtime is unreachable; check that it is running and that the graph URL is correct")
-	case errors.Is(err, graphprotocol.ErrInvalidReply):
-		return errors.New("graph runtime returned a malformed response")
-	case errors.Is(err, graphprotocol.ErrReplyTooLarge):
-		return errors.New("graph runtime response exceeded the configured limit")
 	default:
 		return errors.New("graph service is unavailable")
 	}
@@ -110,15 +95,6 @@ func graphTraceSchema() map[string]any {
 	properties["target_uid"] = map[string]any{"type": "string", "minLength": 1, "description": "target symbol UID"}
 	properties["max_depth"] = cappedIntegerSchema("maximum traversal depth; default: 10; values above 30 are capped", 10)
 	return map[string]any{"type": "object", "additionalProperties": false, "required": []string{"source_uid", "target_uid"}, "properties": properties}
-}
-
-func graphCypherSchema() map[string]any {
-	properties := graphBaseProperties()
-	properties["statement"] = map[string]any{"type": "string", "minLength": 1, "description": "read-only Cypher statement"}
-	properties["parameters"] = map[string]any{"type": "object", "additionalProperties": true, "description": "JSON query parameters"}
-	properties["max_rows"] = cappedIntegerSchema("maximum rows; default: 100; values above 100 are capped", 100)
-	properties["max_bytes"] = cappedIntegerSchema("maximum response bytes; default: 262144; values above 262144 are capped", 256<<10)
-	return map[string]any{"type": "object", "additionalProperties": false, "required": []string{"statement"}, "properties": properties}
 }
 
 func relationSchema() map[string]any {

@@ -22,10 +22,8 @@ import (
 	"github.com/grepnest/grepnest/internal/authn"
 	"github.com/grepnest/grepnest/internal/githubapp"
 	"github.com/grepnest/grepnest/internal/graphartifact"
-	"github.com/grepnest/grepnest/internal/graphclient"
 	"github.com/grepnest/grepnest/internal/graphingest"
 	"github.com/grepnest/grepnest/internal/graphquery"
-	"github.com/grepnest/grepnest/internal/graphruntime"
 	"github.com/grepnest/grepnest/internal/graphscan"
 	"github.com/grepnest/grepnest/internal/graphscan/golang"
 	"github.com/grepnest/grepnest/internal/graphscan/java"
@@ -88,21 +86,19 @@ func TestGraphLanguageFixturesReachRESTAndMCP(t *testing.T) {
 	database := newMilestoneDatabase(t)
 	parsers := graphFixtureParsers()
 	type fixtureResult struct {
-		githubID                      int64
-		name, commit, source, target  string
-		relationQuery, relationSource string
-		relationTarget                string
-		artifact                      graphartifact.Artifact
+		githubID                     int64
+		name, commit, source, target string
+		artifact                     graphartifact.Artifact
 	}
 	tests := []struct {
-		name, source, target, relationQuery, relationSource, relationTarget string
+		name, source, target string
 	}{
-		{"go", "fixture.Call", "fixture.CrossFile", graphSymbolRelationQuery("IMPLEMENTS"), "Service", "Worker"},
-		{"typescript", "Service.run", "work", graphSymbolRelationQuery("EXTENDS"), "Service", "Parent"},
-		{"javascript", "run", "work", graphFileRelationQuery("IMPORTS"), "main.js", "base.js"},
-		{"java", "fixture.Main.call", "fixture.Helper.execute", graphSymbolRelationQuery("IMPLEMENTS"), "fixture.Runner", "fixture.Worker"},
-		{"kotlin", "fixture.call", "fixture.Runner", graphSymbolRelationQuery("IMPLEMENTS"), "fixture.Runner", "fixture.Worker"},
-		{"rust", "lib::call", "worker::run", graphSymbolRelationQuery("IMPLEMENTS"), "worker::Runner", "worker::Worker"},
+		{"go", "fixture.Call", "fixture.CrossFile"},
+		{"typescript", "Service.run", "work"},
+		{"javascript", "run", "work"},
+		{"java", "fixture.Main.call", "fixture.Helper.execute"},
+		{"kotlin", "fixture.call", "fixture.Runner"},
+		{"rust", "lib::call", "worker::run"},
 	}
 	results := make([]fixtureResult, 0, len(tests))
 	for index, test := range tests {
@@ -125,44 +121,15 @@ func TestGraphLanguageFixturesReachRESTAndMCP(t *testing.T) {
 		}
 		results = append(results, fixtureResult{
 			githubID: githubID, name: "fixtures/" + test.name, commit: commit,
-			source: test.source, target: test.target, relationQuery: test.relationQuery,
-			relationSource: test.relationSource, relationTarget: test.relationTarget,
-			artifact: analyzer.artifact,
+			source: test.source, target: test.target, artifact: analyzer.artifact,
 		})
 	}
 
-	secret := []byte("graph-e2e-secret")
-	address := freeAddress(t)
-	graphRuntime, err := graphruntime.New(t.Context(), graphruntime.Config{
-		DatabasePath: filepath.Join(t.TempDir(), "grepnest.lbug"), ListenAddress: address,
-		InternalSecret: secret, ReadConnections: 2, SyncInterval: 20 * time.Millisecond,
-		QueryTimeout: 5 * time.Second, InterruptGrace: 2 * time.Second,
-		QueryLimits: graphquery.Limits{
-			PerCategory: 10, DefaultImpactDepth: 3, MaxDepth: 5,
-			DefaultTraceDepth: 3, MaxTraceDepth: 5, MaxRows: 100,
-			MaxNodes: 100, MaxEdges: 100, MaxFanout: 20,
-		},
-	}, database.store, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	runtimeCtx, stopRuntime := context.WithCancel(t.Context())
-	runtimeDone := make(chan error, 1)
-	go func() { runtimeDone <- graphRuntime.Run(runtimeCtx) }()
-	t.Cleanup(func() {
-		stopRuntime()
-		if err := <-runtimeDone; err != nil {
-			t.Error(err)
-		}
-		if err := graphRuntime.Close(); err != nil {
-			t.Error(err)
-		}
-	})
-	graphWaitReady(t, address)
-	backend, err := graphclient.New("http://"+address, secret, http.DefaultClient, 256<<10)
-	if err != nil {
-		t.Fatal(err)
-	}
+	backend := &graphquery.Service{Store: database.store, Limits: graphquery.Limits{
+		PerCategory: 10, DefaultImpactDepth: 3, MaxDepth: 5,
+		DefaultTraceDepth: 3, MaxTraceDepth: 5, MaxRows: 100,
+		MaxNodes: 100, MaxEdges: 100, MaxFanout: 20,
+	}}
 	repositoryIDs := make([]int64, len(results))
 	for index := range results {
 		repositoryIDs[index] = results[index].githubID
@@ -199,56 +166,7 @@ func TestGraphLanguageFixturesReachRESTAndMCP(t *testing.T) {
 		if status["state"] != "ready" || status["source"] != "managed" || status["commit"] != result.commit {
 			t.Fatalf("%s status=%#v", result.name, status)
 		}
-		relationInput := map[string]any{
-			"repo": result.githubID, "statement": result.relationQuery,
-			"parameters": map[string]any{"repository_id": result.artifact.RepositoryID},
-		}
-		relation := graphFixtureAdminRequest(t, server, relationInput, result.name)
-		relationMCP := graphFixtureMCPCall(t, server, "admin", "cypher", relationInput)
-		if !reflect.DeepEqual(relation, relationMCP) {
-			t.Fatalf("%s relationship REST/MCP mismatch:\nREST=%#v\nMCP=%#v", result.name, relation, relationMCP)
-		}
-		if got := graphCypherPair(relation); got != [2]string{result.relationSource, result.relationTarget} {
-			t.Fatalf("%s persisted relationship=%q", result.name, got)
-		}
-		if result.name == "fixtures/typescript" {
-			tsxInput := map[string]any{
-				"repo":       result.githubID,
-				"statement":  `MATCH (s:Symbol) WHERE s.repository_id = $repository_id AND s.path = "component.tsx" RETURN s.qualified_name, s.language`,
-				"parameters": map[string]any{"repository_id": result.artifact.RepositoryID},
-			}
-			tsx := graphFixtureAdminRequest(t, server, tsxInput, result.name)
-			tsxMCP := graphFixtureMCPCall(t, server, "admin", "cypher", tsxInput)
-			if !reflect.DeepEqual(tsx, tsxMCP) {
-				t.Fatalf("TSX REST/MCP mismatch:\nREST=%#v\nMCP=%#v", tsx, tsxMCP)
-			}
-			if got := graphCypherPair(tsx); got != [2]string{"View", "typescript"} {
-				t.Fatalf("persisted TSX symbol=%q", got)
-			}
-		}
 	}
-}
-
-func graphSymbolRelationQuery(relation string) string {
-	return `MATCH (a:Symbol)-[:` + relation + `]->(b:Symbol) WHERE a.repository_id = $repository_id AND b.repository_id = $repository_id RETURN a.qualified_name, b.qualified_name`
-}
-
-func graphFileRelationQuery(relation string) string {
-	return `MATCH (a:File)-[:` + relation + `]->(b:File) WHERE a.repository_id = $repository_id AND b.repository_id = $repository_id RETURN a.path, b.path`
-}
-
-func graphCypherPair(response map[string]any) [2]string {
-	rows, _ := response["rows"].([]any)
-	if len(rows) != 1 {
-		return [2]string{}
-	}
-	values, _ := rows[0].([]any)
-	if len(values) != 2 {
-		return [2]string{}
-	}
-	left, _ := values[0].(string)
-	right, _ := values[1].(string)
-	return [2]string{left, right}
 }
 
 func hasGraphEdge(artifact graphartifact.Artifact, kind graphartifact.EdgeKind) bool {
@@ -393,24 +311,6 @@ func graphUID(artifact graphartifact.Artifact, qualifiedName string) string {
 	return ""
 }
 
-func graphWaitReady(t *testing.T, address string) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		response, err := http.Get("http://" + address + "/readyz")
-		if err == nil {
-			response.Body.Close()
-			if response.StatusCode == http.StatusOK {
-				return
-			}
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("graph runtime did not become ready: %v", err)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-}
-
 func graphFixtureREST(t *testing.T, server *httptest.Server, name string, input map[string]any) map[string]any {
 	t.Helper()
 	return graphFixtureRequest(t, server, http.MethodPost, "/v1/graph/context", input, name)
@@ -424,11 +324,6 @@ func graphFixtureStatus(t *testing.T, server *httptest.Server, repositoryID int6
 func graphFixtureRequest(t *testing.T, server *httptest.Server, method, path string, input any, name string) map[string]any {
 	t.Helper()
 	return graphFixtureRequestWithToken(t, server, "user", method, path, input, name)
-}
-
-func graphFixtureAdminRequest(t *testing.T, server *httptest.Server, input any, name string) map[string]any {
-	t.Helper()
-	return graphFixtureRequestWithToken(t, server, "admin", http.MethodPost, "/v1/graph/cypher", input, name)
 }
 
 func graphFixtureRequestWithToken(t *testing.T, server *httptest.Server, token, method, path string, input any, name string) map[string]any {

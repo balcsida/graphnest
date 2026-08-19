@@ -12,23 +12,17 @@ and production-scale compatibility remain unverified.
 
 ## Graph analysis
 
-Graph analysis is durable-mode only. PostgreSQL is the authoritative source;
-LadybugDB is derived and rebuildable. The runtime uses the native LadybugDB
-ABI v0.18.3 through `github.com/LadybugDB/go-ladybug` v0.17.0, so builds need
-cgo and the matching native shared library. The Makefile downloads the pinned
-artifact only for Darwin/arm64 and Linux/x86_64 (glibc). Those build targets
-are packaging constraints, not a claim of native-platform certification.
+Graph analysis is available only in durable mode. PostgreSQL is the
+authoritative graph store and serves bounded graph queries directly; builds no
+longer require a separate graph runtime, native graph ABI, or shared library.
 
 The native scanner currently recognizes Go, TypeScript, JavaScript, Java,
-Kotlin, and Rust. It does not promise language-indexer equivalence. Direct
-`.scip` uploads remain supported independently for code navigation; at the
-current indexed SHA they can provide graph fallback/compatibility data when a
-native graph is unavailable. They do not enable native scanning.
+Kotlin, and Rust. This does not promise language-indexer equivalence. Direct
+`.scip` uploads remain supported independently for code navigation and can
+supply exact-SHA graph data when native graph scanning is unavailable.
 
-The graph implementation is compatible only with the current indexed default
-branch. Name and integer repository selectors are accepted by graph requests;
-the server resolves both to the authorized repository and current exact SHA.
-Graph results are rejected as `graph_not_ready` if that authorization/freshness
-check no longer holds. The externally observable tools are context, impact,
-trace, and administrator-only read-only Cypher; see [OpenAPI](openapi.yaml)
-for their bounded request and response contract.
+Graph queries target only the current indexed default branch. Repository
+selectors resolve to stable numeric repository IDs, and every result is scoped
+by repository ID, upload ID, and commit. Authorization and freshness checks
+apply to bounded context, impact, and trace operations; see
+[OpenAPI](openapi.yaml) for the exact contract.

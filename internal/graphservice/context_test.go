@@ -28,13 +28,11 @@ type fakeBackend struct {
 	context        func() graphprotocol.ContextResponse
 	impact         func() graphprotocol.ImpactResponse
 	trace          func() graphprotocol.TraceResponse
-	cypher         func() graphprotocol.CypherResponse
 	after          func()
 	calls          int
 	contextRequest graphprotocol.ContextRequest
 	impactRequest  graphprotocol.ImpactRequest
 	traceRequest   graphprotocol.TraceRequest
-	cypherRequest  graphprotocol.CypherRequest
 }
 
 func (b *fakeBackend) Context(_ context.Context, request graphprotocol.ContextRequest) (graphprotocol.ContextResponse, error) {
@@ -55,12 +53,6 @@ func (b *fakeBackend) Trace(_ context.Context, request graphprotocol.TraceReques
 	b.traceRequest = request
 	return b.trace(), nil
 }
-func (b *fakeBackend) Cypher(_ context.Context, request graphprotocol.CypherRequest) (graphprotocol.CypherResponse, error) {
-	b.calls++
-	b.cypherRequest = request
-	return b.cypher(), nil
-}
-
 func readyRepository(name string) repository.Repository {
 	return repository.Repository{ID: 1, GitHubID: 101, Name: name, Branch: "main", IndexedSHA: strings.Repeat("a", 40)}
 }
@@ -79,10 +71,6 @@ func emptyImpact() graphprotocol.ImpactResponse {
 func emptyTrace() graphprotocol.TraceResponse {
 	return graphprotocol.TraceResponse{Status: graphprotocol.StatusNoPath, Commits: map[string]string{"a": strings.Repeat("a", 40)}}
 }
-func emptyCypher() graphprotocol.CypherResponse {
-	return graphprotocol.CypherResponse{Commits: map[string]string{"a": strings.Repeat("a", 40)}}
-}
-
 func TestContextReauthorizesAfterBackend(t *testing.T) {
 	store := &fakeRepositoryStore{repositories: []repository.Repository{readyRepository("a")}}
 	backend := &fakeBackend{context: emptyContext, after: func() { store.repositories[0].IndexedSHA = strings.Repeat("b", 40) }}

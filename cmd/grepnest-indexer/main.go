@@ -20,10 +20,7 @@ import (
 	"github.com/grepnest/grepnest/internal/config"
 	"github.com/grepnest/grepnest/internal/enrichment"
 	"github.com/grepnest/grepnest/internal/githubapp"
-	"github.com/grepnest/grepnest/internal/graphquery"
-	"github.com/grepnest/grepnest/internal/graphruntime"
 	"github.com/grepnest/grepnest/internal/indexer"
-	"github.com/grepnest/grepnest/internal/ladybug"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/grepnest/grepnest/internal/zoekt"
@@ -40,17 +37,8 @@ const (
 )
 
 type indexRuntime struct {
-	ping, migrate, upsertNode, reapExpired, pruneHistory, runWorker, runMetrics, runGraph func(context.Context) error
-	close                                                                                 func()
-}
-
-var startGraphRuntime = func(ctx context.Context, settings graphruntime.Config, source ladybug.SnapshotSource, logger *slog.Logger) error {
-	runtime, err := graphruntime.New(ctx, settings, source, logger)
-	if err != nil {
-		return err
-	}
-	defer runtime.Close()
-	return runtime.Run(ctx)
+	ping, migrate, upsertNode, reapExpired, pruneHistory, runWorker, runMetrics func(context.Context) error
+	close                                                                       func()
 }
 
 func main() {
@@ -145,12 +133,6 @@ func (runtime indexRuntime) run(ctx context.Context) error {
 			run  func(context.Context) error
 		}{"metrics", runtime.runMetrics})
 	}
-	if runtime.runGraph != nil {
-		services = append(services, struct {
-			name string
-			run  func(context.Context) error
-		}{"graph", runtime.runGraph})
-	}
 	results := make(chan result, len(services))
 	for _, service := range services {
 		go func() { results <- result{name: service.name, err: service.run(runCtx)} }()
@@ -237,7 +219,6 @@ func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime
 		pruneHistory: func(ctx context.Context) error { _, _, err := store.Prune(ctx); return err },
 		runWorker:    worker.Run,
 		runMetrics:   func(ctx context.Context) error { return serveMetrics(ctx, listener, metricsMux) },
-		runGraph:     graphService(settings.Graph, store, slog.Default()),
 		close:        func() { _ = listener.Close(); pool.Close() },
 	}, nil
 }
@@ -262,31 +243,6 @@ func newSnapshotProvider(settings config.Indexer, client *githubapp.Client, git 
 		}
 	}
 	return indexer.GitSnapshotProvider{Git: git}
-}
-
-func graphService(settings config.Graph, source ladybug.SnapshotSource, logger *slog.Logger) func(context.Context) error {
-	if settings.Mode != "embedded" {
-		return nil
-	}
-	runtimeConfig := graphruntime.Config{
-		DatabasePath:  filepath.Join(settings.DataDir, "grepnest.lbug"),
-		ListenAddress: settings.ListenAddress, InternalSecret: settings.InternalSecret,
-		ReadConnections: settings.ReadConnections, SyncInterval: settings.SyncInterval,
-		QueryTimeout: settings.QueryTimeout, InterruptGrace: settings.InterruptGrace,
-		QueryLimits: graphquery.Limits{
-			PerCategory:        settings.QueryLimits.PerCategory,
-			DefaultImpactDepth: settings.QueryLimits.DefaultImpactDepth,
-			MaxDepth:           settings.QueryLimits.MaxDepth,
-			DefaultTraceDepth:  settings.QueryLimits.DefaultTraceDepth,
-			MaxTraceDepth:      settings.QueryLimits.MaxTraceDepth,
-			MaxRows:            settings.QueryLimits.MaxRows,
-			MaxNodes:           settings.QueryLimits.MaxNodes, MaxEdges: settings.QueryLimits.MaxEdges,
-			MaxFanout: settings.QueryLimits.MaxFanout,
-		},
-	}
-	return func(ctx context.Context) error {
-		return startGraphRuntime(ctx, runtimeConfig, source, logger)
-	}
 }
 
 func serveMetrics(ctx context.Context, listener net.Listener, handler http.Handler) error {
