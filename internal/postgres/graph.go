@@ -14,7 +14,6 @@ import (
 
 const scipManifestOffset = int64(math.MaxInt64 / 2)
 
-func scipManifestID(uploadID int64) int64 { return scipManifestOffset + uploadID }
 func scipUploadID(manifestID int64) int64 { return manifestID - scipManifestOffset }
 
 func (s *Store) GraphManifests(ctx context.Context) ([]graphartifact.Manifest, error) {
