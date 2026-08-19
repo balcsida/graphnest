@@ -2,17 +2,6 @@ package graphprotocol
 
 import (
 	"context"
-	"errors"
-)
-
-// Transport failure causes shared by the graph client and its callers. Callers used to
-// see every one of these as a single opaque "graph service is unavailable", which hides
-// the difference between a misconfigured secret and an unreachable runtime.
-var (
-	ErrUnauthorized  = errors.New("graph_unauthorized")
-	ErrUnreachable   = errors.New("graph_unreachable")
-	ErrInvalidReply  = errors.New("graph_invalid_response")
-	ErrReplyTooLarge = errors.New("graph_response_too_large")
 )
 
 const (
@@ -136,26 +125,8 @@ type TraceResponse struct {
 	Commits    map[string]string `json:"commits"`
 }
 
-type CypherRequest struct {
-	Scope      Scope          `json:"scope"`
-	Admin      bool           `json:"admin"`
-	Statement  string         `json:"statement"`
-	Parameters map[string]any `json:"parameters,omitempty"`
-	MaxRows    int            `json:"max_rows,omitempty"`
-	MaxBytes   int            `json:"max_bytes,omitempty"`
-}
-
-type CypherResponse struct {
-	Columns    []string          `json:"columns"`
-	Rows       [][]any           `json:"rows"`
-	Truncated  bool              `json:"truncated"`
-	Boundaries []Boundary        `json:"boundaries,omitempty"`
-	Commits    map[string]string `json:"commits,omitempty"`
-}
-
 type QueryEngine interface {
 	Context(context.Context, ContextRequest) (ContextResponse, error)
 	Impact(context.Context, ImpactRequest) (ImpactResponse, error)
 	Trace(context.Context, TraceRequest) (TraceResponse, error)
-	Cypher(context.Context, CypherRequest) (CypherResponse, error)
 }

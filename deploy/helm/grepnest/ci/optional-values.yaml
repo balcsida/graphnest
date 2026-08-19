@@ -57,14 +57,6 @@ scanner:
         nodeSelectorTerms:
           - matchExpressions: [{key: grepnest.example.invalid/tier, operator: In, values: [scanner]}]
   tolerations: [{key: grepnest.example.invalid/dedicated, operator: Equal, value: scanner, effect: NoSchedule}]
-graph:
-  nodeSelector: {grepnest.example.invalid/pool: graph}
-  affinity:
-    nodeAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        nodeSelectorTerms:
-          - matchExpressions: [{key: grepnest.example.invalid/tier, operator: In, values: [graph]}]
-  tolerations: [{key: grepnest.example.invalid/dedicated, operator: Equal, value: graph, effect: NoSchedule}]
 migration:
   nodeSelector: {grepnest.example.invalid/pool: migration}
   affinity:

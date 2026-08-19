@@ -13,7 +13,7 @@
 
 GrepNest is an experimental, self-hosted code search and context layer for engineering teams and AI agents. Authorized clients can search GitHub repositories, open files at the exact indexed commit, follow symbols across repositories, and inspect dependency and impact relationships without receiving direct access to the underlying search index.
 
-Under the hood, GrepNest combines fast [Zoekt](https://github.com/sourcegraph/zoekt) search, [SCIP](https://github.com/sourcegraph/scip) code navigation, and a rebuildable [LadybugDB](https://github.com/LadybugDB/ladybug) relationship graph behind web, REST, and MCP interfaces.
+Under the hood, GrepNest combines fast [Zoekt](https://github.com/sourcegraph/zoekt) search, [SCIP](https://github.com/sourcegraph/scip) code navigation, and a PostgreSQL relationship graph behind web, REST, and MCP interfaces.
 
 > [!IMPORTANT]
 > GrepNest is **pre-1.0 pilot software**. It is not production-ready, currently indexes default branches only, and has not yet been validated at production scale or certified against a live GitHub Enterprise Server or OpenShift environment. See [Compatibility](docs/compatibility.md) for the current boundaries.
@@ -27,7 +27,7 @@ Under the hood, GrepNest combines fast [Zoekt](https://github.com/sourcegraph/zo
 | **Fast, scoped code search** | Search authorized repositories through a server-controlled Zoekt backend. Clients never receive direct Zoekt access or choose raw Zoekt repository IDs. |
 | **Exact indexed revisions** | Open files at the precise indexed commit. Search results are suppressed when Zoekt and PostgreSQL disagree about the current indexed SHA. |
 | **Cross-repository code navigation** | Upload pre-generated SCIP indexes to navigate definitions, references, and implementations without running language indexers inside GrepNest. |
-| **Relationship-aware graph analysis** | Explore context, impact, and dependency paths through a derived LadybugDB graph. Administrators can also run bounded, read-only Cypher queries. |
+| **Relationship-aware graph analysis** | Explore bounded context, impact, and dependency paths directly from PostgreSQL. |
 | **Human and agent interfaces** | Use the embedded browser console, REST API, hosted Streamable HTTP MCP endpoint, or the `grepnest-mcp` stdio proxy. |
 | **GitHub-native repository management** | Reconcile GitHub App installations, verify webhook signatures, queue default-branch indexing, support private CAs, and retain numeric GitHub repository identity across renames. |
 | **Durable identity and access** | Use OIDC or GitHub OAuth browser sign-in, SCIM 2.0 provisioning, revocable API tokens, user and group repository assignments, administrative controls, and security audit events. |
@@ -52,12 +52,11 @@ flowchart LR
     Indexer --> Zoekt[(Zoekt index)]
     Server --> Zoekt
 
-    Postgres --> Graph[Embedded or separate graph runtime]
-    Graph --> Ladybug[(LadybugDB derived store)]
+    Server --> Postgres
     Server --> Graph
 ```
 
-PostgreSQL is authoritative for repository metadata, authorization, queues, indexed-SHA state, and graph artifacts. Zoekt and LadybugDB are private query stores reached only through GrepNest's authenticated services. See [Architecture](docs/architecture.md) and the accepted decisions under [`docs/adr`](docs/adr).
+PostgreSQL is authoritative for repository metadata, authorization, queues, indexed-SHA state, graph artifacts, and graph queries. Zoekt is a private query store reached only through GrepNest's authenticated services. See [Architecture](docs/architecture.md) and the accepted decisions under [`docs/adr`](docs/adr).
 
 The [architecture decision index](docs/adr/README.md) records accepted and
 superseded design decisions.
@@ -198,22 +197,18 @@ A durable deployment consists of:
 - `grepnest-server` for the web UI, REST, MCP, authentication, authorization, and GitHub reconciliation;
 - one `grepnest-indexer` for leased default-branch indexing and Zoekt publication;
 - zero or more `grepnest-scanner` workers for native graph extraction;
-- one graph owner, embedded in the indexer by default or running as `grepnest-graph`;
 - PostgreSQL as the authoritative state store; and
-- Zoekt plus LadybugDB as private query infrastructure.
+- Zoekt as private query infrastructure.
 
-The Compose deployment requires application and node images, PostgreSQL, GitHub App credentials, an internal graph secret, and the server settings documented in [Operations](docs/operations.md). Start one graph topology only:
+The Compose deployment requires application and node images, PostgreSQL, GitHub App credentials, and the server settings documented in [Operations](docs/operations.md):
 
 ```sh
 docker compose \
   -f deploy/compose/compose.yml \
   -f deploy/compose/durable.yml \
-  -f deploy/compose/graph-embedded.yml \
   --profile durable \
   up -d --wait
 ```
-
-Replace `graph-embedded.yml` with `graph-separate.yml` to run a standalone graph owner.
 
 ## Authentication and authorization
 
@@ -257,7 +252,7 @@ Review the [Helm chart documentation](deploy/helm/grepnest/README.md) for requir
 - Kubernetes, OpenShift, backup and restore, upgrade and rollback, ingress, and production-scale capacity still require environment-specific validation.
 - Native graph scanning is not equivalent to a full language server or language-specific indexer.
 - GrepNest does not currently provide embedding-based semantic search.
-- LadybugDB is derived and rebuildable; it is not a backup or authorization source.
+- PostgreSQL graph data follows the same backup and recovery policy as other durable repository state.
 
 Read [Compatibility](docs/compatibility.md), [Benchmarking](docs/benchmarking.md), and [Operations](docs/operations.md) before planning a pilot.
 
@@ -278,13 +273,13 @@ make test test-race integration e2e
 make openapi-check compose-test helm-lint helm-test
 ```
 
-CI additionally exercises native LadybugDB linking, scanner grammar compatibility, UI smoke tests, and release packaging. Some targets download pinned tools or native libraries and require Docker.
+CI additionally exercises scanner grammar compatibility, UI smoke tests, and release packaging. Some targets download pinned tools and require Docker.
 
 ## Documentation
 
 | Document | Purpose |
 | --- | --- |
-| [Architecture](docs/architecture.md) | Service boundaries, authorization flow, indexing, and graph ownership |
+| [Architecture](docs/architecture.md) | Service boundaries, authorization flow, indexing, and graph queries |
 | [Operations](docs/operations.md) | Local and durable operation, recovery, identity, and graph runbooks |
 | [OpenAPI](docs/openapi.yaml) | Canonical REST request, response, security, and limit contract |
 | [Helm chart](deploy/helm/grepnest/README.md) | Kubernetes configuration, Secrets, storage, networking, and installation |

@@ -6,7 +6,7 @@ images:
   scanner: {repository: "", digest: "", tag: "", pullPolicy: IfNotPresent}
   pullSecrets: []
 secrets:
-  runtime: {name: "", databaseURLKey: database-url, graphSecretKey: graph-secret}
+  runtime: {name: "", databaseURLKey: database-url}
   githubApp: {name: "", privateKeyKey: private-key.pem, webhookSecretKey: webhook-secret}
   customCA: {name: "", key: ca.crt}
   oidc: {name: "", clientSecretKey: client-secret}
@@ -78,18 +78,6 @@ node:
   affinity: {}
   tolerations: []
   topologySpreadConstraints: []
-  podSecurityContext: {}
-  podAnnotations: {}
-graph:
-  mode: embedded
-  executable: /usr/local/bin/grepnest-graph
-  port: 8081
-  dataPath: /data/graph
-  resources: {requests: {cpu: 500m, memory: 1Gi}, limits: {cpu: "2", memory: 4Gi}}
-  storage: {size: 50Gi, accessModes: [ReadWriteOnce], storageClassName: "", annotations: {}}
-  nodeSelector: {}
-  affinity: {}
-  tolerations: []
   podSecurityContext: {}
   podAnnotations: {}
 scanner:

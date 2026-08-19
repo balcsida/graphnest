@@ -467,24 +467,6 @@ paths:
         '500': {description: Response exceeded the configured byte limit}
         '503': {$ref: '#/components/responses/Unavailable'}
         '504': {$ref: '#/components/responses/Timeout'}
-  /v1/graph/cypher:
-    post:
-      security: [{bearerAuth: []}]
-      description: Administrator-only read-only Cypher. Results are constrained by row and encoded-output limits.
-      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/GraphCypherRequest'}}}}
-      responses:
-        '200': {description: Bounded tabular Cypher result, content: {application/json: {schema: {$ref: '#/components/schemas/GraphCypherResponse'}}}}
-        '400': {$ref: '#/components/responses/InvalidRequest'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
-        '403': {$ref: '#/components/responses/Forbidden'}
-        '404': {$ref: '#/components/responses/NotFound'}
-        '405': {$ref: '#/components/responses/InvalidRequest'}
-        '409': {$ref: '#/components/responses/GraphConflict'}
-        '413': {$ref: '#/components/responses/InvalidRequest'}
-        '415': {$ref: '#/components/responses/InvalidRequest'}
-        '500': {description: Response exceeded the configured byte limit}
-        '503': {$ref: '#/components/responses/Unavailable'}
-        '504': {$ref: '#/components/responses/Timeout'}
   /v1/scip/navigation:
     post:
       security: [{bearerAuth: []}, {sessionCookie: []}]
@@ -1021,17 +1003,6 @@ components:
         source_uid: {type: string, minLength: 1}
         target_uid: {type: string, minLength: 1}
         max_depth: {type: integer, minimum: 0, default: 10, description: Values greater than 30 are capped to 30.}
-    GraphCypherRequest:
-      type: object
-      additionalProperties: false
-      required: [statement]
-      properties:
-        repo: {$ref: '#/components/schemas/GraphRepositorySelector'}
-        branch: {type: string, description: Only the current indexed default branch is supported.}
-        statement: {type: string, minLength: 1}
-        parameters: {type: object, additionalProperties: {}}
-        max_rows: {type: integer, minimum: 0, default: 100, description: Values greater than 100 are capped to 100.}
-        max_bytes: {type: integer, format: int64, minimum: 0, default: 262144, description: Values greater than 262144 are capped to 262144.}
     GraphPosition:
       type: object
       additionalProperties: false
@@ -1198,17 +1169,6 @@ components:
       properties:
         status: {type: string, const: ambiguous}
         candidates: {type: array, minItems: 1, items: {$ref: '#/components/schemas/GraphCandidate'}}
-        boundaries: {type: array, items: {$ref: '#/components/schemas/GraphBoundary'}}
-        commits: {type: object, additionalProperties: {type: string, pattern: '^[0-9a-f]{40}$'}}
-    GraphCypherResponse:
-      type: object
-      additionalProperties: false
-      required: [status, columns, rows, truncated, commits]
-      properties:
-        status: {type: string, const: ok}
-        columns: {type: array, items: {type: string}}
-        rows: {type: array, items: {type: array, items: {}}}
-        truncated: {type: boolean}
         boundaries: {type: array, items: {$ref: '#/components/schemas/GraphBoundary'}}
         commits: {type: object, additionalProperties: {type: string, pattern: '^[0-9a-f]{40}$'}}
     SCIPFallbackStatus:

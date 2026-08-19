@@ -8,8 +8,6 @@ metadata:
 data:
   GREPNEST_LISTEN_ADDRESS: {{ printf ":%v" .Values.server.port | quote }}
   GREPNEST_ZOEKT_URL: {{ printf "http://%s:%v" (include "grepnest.zoektName" .) .Values.node.service.port | quote }}
-  GREPNEST_GRAPH_URL: {{ printf "http://%s:%v" (include "grepnest.graphName" .) .Values.graph.port | quote }}
-  GREPNEST_GRAPH_SECRET_FILE: /var/run/secrets/grepnest/graph/secret
   GREPNEST_GITHUB_WEB_URL: {{ .Values.server.config.githubWebURL | quote }}
   GREPNEST_GITHUB_API_URL: {{ .Values.server.config.githubAPIURL | quote }}
   GREPNEST_GITHUB_UPLOAD_URL: {{ .Values.server.config.githubUploadURL | quote }}
@@ -89,12 +87,6 @@ data:
   GREPNEST_MIN_FREE_BYTES: {{ printf "%d" (int64 .Values.node.indexer.minFreeBytes) | quote }}
   GREPNEST_MAX_REPOSITORY_BYTES: {{ printf "%d" (int64 .Values.node.indexer.maxRepositoryBytes) | quote }}
   GREPNEST_METRICS_LISTEN_ADDRESS: {{ printf ":%v" .Values.node.indexer.metricsPort | quote }}
-  GREPNEST_GRAPH_MODE: {{ .Values.graph.mode | quote }}
-  {{- if eq .Values.graph.mode "embedded" }}
-  GREPNEST_GRAPH_DATA_DIR: {{ .Values.graph.dataPath | quote }}
-  GREPNEST_GRAPH_LISTEN_ADDRESS: {{ printf ":%v" .Values.graph.port | quote }}
-  GREPNEST_GRAPH_SECRET_FILE: /var/run/secrets/grepnest/graph/secret
-  {{- end }}
 {{- if .Values.scanner.enabled }}
 ---
 apiVersion: v1

@@ -13,7 +13,6 @@ import (
 
 var (
 	ErrInvalidRequest = errors.New("invalid_graph_request")
-	ErrAdminRequired  = errors.New("administrator_required")
 )
 
 type Limits struct {

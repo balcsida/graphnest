@@ -173,24 +173,6 @@ type GraphTraceResponse struct {
 	Commits    map[string]string `json:"commits"`
 }
 
-type GraphCypherRequest struct {
-	Repo       GraphRepositorySelector    `json:"repo,omitzero"`
-	Branch     string                     `json:"branch,omitempty"`
-	Statement  string                     `json:"statement"`
-	Parameters map[string]json.RawMessage `json:"parameters,omitempty"`
-	MaxRows    int                        `json:"max_rows,omitempty"`
-	MaxBytes   int                        `json:"max_bytes,omitempty"`
-}
-
-type GraphCypherResponse struct {
-	Status     string              `json:"status"`
-	Columns    []string            `json:"columns"`
-	Rows       [][]json.RawMessage `json:"rows"`
-	Truncated  bool                `json:"truncated"`
-	Boundaries []GraphBoundary     `json:"boundaries,omitempty"`
-	Commits    map[string]string   `json:"commits"`
-}
-
 type GraphState string
 
 const (

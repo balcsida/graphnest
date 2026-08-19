@@ -1,10 +1,8 @@
 package config
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/url"
 	"os"
@@ -12,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/grepnest/grepnest/internal/graphtransport"
 )
 
 var ErrInvalid = errors.New("invalid configuration")
@@ -36,7 +32,6 @@ type GitHub struct {
 type Indexer struct {
 	DatabaseURL, ZoektURL, MetricsListenAddress                     string
 	GitHub                                                          GitHub
-	Graph                                                           Graph
 	DataDir, IndexDir, GitPath, ZoektIndex, ZoektGitIndex, WorkerID string
 	ZoektGitIndexDeprecated                                         bool
 	MinFreeBytes, MaxRepositoryBytes                                int64
@@ -50,14 +45,10 @@ type ArchiveLimits struct {
 }
 
 type Graph struct {
-	Mode, URL, ListenAddress, DataDir, SecretFile, DatabaseURL string
-	InternalSecret                                             []byte
-	SyncInterval, QueryTimeout, InterruptGrace                 time.Duration
-	ReadConnections, DefaultImpactDepth, MaxImpactDepth        int
-	DefaultTraceDepth, MaxTraceDepth, MaxRows                  int
-	MaxNodes, MaxEdges                                         int
-	MaxRequestBytes, MaxResponseBytes                          int64
-	QueryLimits                                                GraphQueryLimits
+	DefaultImpactDepth, MaxImpactDepth, DefaultTraceDepth int
+	MaxTraceDepth, MaxRows, MaxNodes, MaxEdges            int
+	MaxRequestBytes, MaxResponseBytes                     int64
+	QueryLimits                                           GraphQueryLimits
 }
 
 type GraphQueryLimits struct {
@@ -298,36 +289,15 @@ func LoadIndexer() (Indexer, error) {
 	if err := validListenAddress(indexer.MetricsListenAddress); err != nil {
 		return Indexer{}, err
 	}
-	if indexer.Graph, err = loadGraph(false); err != nil {
-		return Indexer{}, err
-	}
 	return indexer, nil
 }
 
-func LoadGraph() (Graph, error) { return loadGraph(true) }
-
 func loadServerGraph() (Graph, error) {
-	graph, err := loadGraph(true)
-	if err != nil {
-		return Graph{}, err
-	}
-	parsed, err := url.Parse(graph.URL)
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || (parsed.EscapedPath() != "" && parsed.EscapedPath() != "/") {
-		return Graph{}, invalid("GREPNEST_GRAPH_URL must be an HTTP(S) URL without credentials, query, fragment, or path")
-	}
-	return graph, nil
+	return loadGraph()
 }
 
-func loadGraph(force bool) (Graph, error) {
+func loadGraph() (Graph, error) {
 	graph := Graph{
-		Mode:          valueOr("GREPNEST_GRAPH_MODE", "embedded"),
-		URL:           os.Getenv("GREPNEST_GRAPH_URL"),
-		ListenAddress: valueOr("GREPNEST_GRAPH_LISTEN_ADDRESS", "127.0.0.1:8081"),
-		DataDir:       valueOr("GREPNEST_GRAPH_DATA_DIR", "/var/lib/grepnest/graph"),
-		SecretFile:    os.Getenv("GREPNEST_GRAPH_SECRET_FILE"),
-		DatabaseURL:   os.Getenv("GREPNEST_DATABASE_URL"),
-		SyncInterval:  30 * time.Second, QueryTimeout: 5 * time.Second,
-		InterruptGrace: 2 * time.Second, ReadConnections: 8,
 		DefaultImpactDepth: 3, MaxImpactDepth: 32,
 		DefaultTraceDepth: 10, MaxTraceDepth: 30,
 		MaxRows: 1_000, MaxNodes: 1_000, MaxEdges: 5_000,
@@ -337,24 +307,6 @@ func loadGraph(force bool) (Graph, error) {
 			DefaultTraceDepth: 10, MaxTraceDepth: 30, MaxRows: 1_000,
 			MaxNodes: 1_000, MaxEdges: 5_000, MaxFanout: 100,
 		},
-	}
-	if graph.Mode != "embedded" && graph.Mode != "separate" {
-		return Graph{}, invalid("GREPNEST_GRAPH_MODE must be embedded or separate")
-	}
-	if err := validListenAddress(graph.ListenAddress); err != nil {
-		return Graph{}, invalid("GREPNEST_GRAPH_LISTEN_ADDRESS must be a host:port address")
-	}
-	for name, target := range map[string]*time.Duration{
-		"GREPNEST_GRAPH_SYNC_INTERVAL":   &graph.SyncInterval,
-		"GREPNEST_GRAPH_QUERY_TIMEOUT":   &graph.QueryTimeout,
-		"GREPNEST_GRAPH_INTERRUPT_GRACE": &graph.InterruptGrace,
-	} {
-		if err := durationValue(name, target); err != nil {
-			return Graph{}, err
-		}
-	}
-	if err := intValue("GREPNEST_GRAPH_READ_CONNECTIONS", &graph.ReadConnections); err != nil {
-		return Graph{}, err
 	}
 	if err := int64Value("GREPNEST_GRAPH_MAX_REQUEST_BYTES", &graph.MaxRequestBytes); err != nil {
 		return Graph{}, err
@@ -375,12 +327,6 @@ func loadGraph(force bool) (Graph, error) {
 			return Graph{}, err
 		}
 	}
-	if graph.ReadConnections > 32 {
-		graph.ReadConnections = 32
-	}
-	if graph.QueryTimeout > 5*time.Second || graph.InterruptGrace > 2*time.Second {
-		return Graph{}, invalid("graph timeouts exceed safety caps")
-	}
 	if graph.MaxRequestBytes > 64<<10 || graph.MaxResponseBytes > 256<<10 {
 		return Graph{}, invalid("graph public limits exceed safety caps")
 	}
@@ -396,47 +342,7 @@ func loadGraph(force bool) (Graph, error) {
 	graph.QueryLimits.MaxRows = graph.MaxRows
 	graph.QueryLimits.MaxNodes = graph.MaxNodes
 	graph.QueryLimits.MaxEdges = graph.MaxEdges
-	if force || graph.Mode == "embedded" {
-		parsed, err := url.Parse(graph.DatabaseURL)
-		if err != nil || parsed.Host == "" || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") {
-			return Graph{}, invalid("GREPNEST_DATABASE_URL must be a PostgreSQL URL")
-		}
-		secret, err := readSecretFile(graph.SecretFile, 4<<10)
-		if err != nil {
-			return Graph{}, err
-		}
-		graph.InternalSecret = append([]byte(nil), secret...)
-	}
 	return graph, nil
-}
-
-func readSecretFile(path string, maxBytes int64) ([]byte, error) {
-	info, err := os.Lstat(path)
-	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
-		return nil, invalid("GREPNEST_GRAPH_SECRET_FILE must be a secure regular file")
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, invalid("GREPNEST_GRAPH_SECRET_FILE cannot be read")
-	}
-	defer file.Close()
-	opened, err := file.Stat()
-	if err != nil || !opened.Mode().IsRegular() || opened.Mode().Perm()&0o077 != 0 || !os.SameFile(info, opened) {
-		return nil, invalid("GREPNEST_GRAPH_SECRET_FILE must be a secure regular file")
-	}
-	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
-	if err != nil || len(data) == 0 || int64(len(data)) > maxBytes {
-		return nil, invalid("GREPNEST_GRAPH_SECRET_FILE size is invalid")
-	}
-	if bytes.HasSuffix(data, []byte("\r\n")) {
-		data = data[:len(data)-2]
-	} else if bytes.HasSuffix(data, []byte("\n")) {
-		data = data[:len(data)-1]
-	}
-	if !graphtransport.ValidBearerToken(data) {
-		return nil, invalid("GREPNEST_GRAPH_SECRET_FILE must contain an RFC 6750 bearer token")
-	}
-	return data, nil
 }
 
 func LoadScanner() (Scanner, error) {
