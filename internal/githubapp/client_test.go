@@ -202,7 +202,7 @@ func TestSearchCodeRequestsAndReturnsBoundedTextMatches(t *testing.T) {
 		t.Fatalf("response=%#v", response)
 	}
 	match := response.Matches[0]
-	if match.LineNumber != 2 || match.LineStart != 2 || match.LineEnd != 2 || match.Preview != fragment {
+	if match.LineNumber != 0 || match.LineStart != 0 || match.LineEnd != 0 || match.Preview != fragment {
 		t.Fatalf("match=%#v", match)
 	}
 }
@@ -210,7 +210,7 @@ func TestSearchCodeRequestsAndReturnsBoundedTextMatches(t *testing.T) {
 func TestBoundedGitHubTextMatchKeepsMatchInPreview(t *testing.T) {
 	fragment := strings.Repeat("x", 3000) + "\nneedle"
 	preview, lineStart, lineEnd, truncated := boundedGitHubTextMatch(fragment, [2]int{3001, 3007}, false)
-	if len([]rune(preview)) != maxGitHubPreviewRunes || lineStart != 2 || lineEnd != 2 || !strings.Contains(preview, "needle") || !truncated {
+	if len([]rune(preview)) != maxGitHubPreviewRunes || lineStart != 0 || lineEnd != 0 || !strings.Contains(preview, "needle") || !truncated {
 		t.Fatalf("preview runes=%d lines=%d-%d contains=%v truncated=%v", len([]rune(preview)), lineStart, lineEnd, strings.Contains(preview, "needle"), truncated)
 	}
 }

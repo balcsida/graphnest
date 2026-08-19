@@ -239,13 +239,12 @@ func (c *Client) SearchCode(ctx context.Context, installationID int64, query str
 	}
 	response := api.SearchResponse{Matches: make([]api.SearchMatch, 0, len(wire.Items)), Truncated: wire.IncompleteResults || wire.TotalCount > len(wire.Items), Consistency: &api.SearchConsistency{Backend: "github", Partial: true}}
 	for _, item := range wire.Items {
-		match := api.SearchMatch{Path: item.Path, SHA: item.SHA, Repository: api.Repository{ID: item.Repository.ID, Name: item.Repository.FullName, WebURL: item.Repository.HTMLURL}, LineNumber: 1, LineStart: 1, LineEnd: 1, Preview: item.Path}
+		match := api.SearchMatch{Path: item.Path, SHA: item.SHA, Repository: api.Repository{ID: item.Repository.ID, Name: item.Repository.FullName, WebURL: item.Repository.HTMLURL}, Preview: item.Path}
 		for _, textMatch := range item.TextMatches {
 			if textMatch.Property != "content" || textMatch.Fragment == "" || len(textMatch.Matches) == 0 {
 				continue
 			}
 			match.Preview, match.LineStart, match.LineEnd, response.Truncated = boundedGitHubTextMatch(textMatch.Fragment, textMatch.Matches[0].Indices, response.Truncated)
-			match.LineNumber = match.LineStart
 			break
 		}
 		response.Matches = append(response.Matches, match)
@@ -266,20 +265,7 @@ func boundedGitHubTextMatch(fragment string, indices [2]int, truncated bool) (st
 		windowStart = max(0, windowEnd-maxGitHubPreviewRunes)
 		truncated = true
 	}
-	start, end = max(start-windowStart, 0), min(end-windowStart, windowEnd-windowStart)
-	lineStart := 1
-	for _, character := range value[windowStart : windowStart+start] {
-		if character == '\n' {
-			lineStart++
-		}
-	}
-	lineEnd := lineStart
-	for _, character := range value[windowStart+start : windowStart+end] {
-		if character == '\n' {
-			lineEnd++
-		}
-	}
-	return string(value[windowStart:windowEnd]), lineStart, lineEnd, truncated
+	return string(value[windowStart:windowEnd]), 0, 0, truncated
 }
 
 func (c *Client) DownloadArchive(ctx context.Context, owner, repository, sha, token string) (io.ReadCloser, error) {

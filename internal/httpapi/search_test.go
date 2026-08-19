@@ -95,7 +95,7 @@ func TestSearchErrorUsesRequestContextID(t *testing.T) {
 }
 
 func TestSearchHTTPPreservesGitHubMatchText(t *testing.T) {
-	want := api.SearchMatch{Repository: api.Repository{ID: 1, Name: "acme/one"}, Path: "main.go", SHA: "blob", LineNumber: 2, LineStart: 2, LineEnd: 2, Preview: "before\nneedle\nafter"}
+	want := api.SearchMatch{Repository: api.Repository{ID: 1, Name: "acme/one"}, Path: "main.go", SHA: "blob", Preview: "before\nneedle\nafter"}
 	handler := testHandler(t, &stubBackend{response: api.SearchResponse{Matches: []api.SearchMatch{want}, Consistency: &api.SearchConsistency{Backend: "github", Partial: true}}}, 4096)
 	request := httptest.NewRequest(http.MethodPost, "/v1/search", strings.NewReader(`{"query":"needle"}`))
 	request.Header.Set("Authorization", "Bearer secret")

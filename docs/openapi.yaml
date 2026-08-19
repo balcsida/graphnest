@@ -1235,9 +1235,9 @@ components:
         repository: {$ref: '#/components/schemas/Repository'}
         path: {type: string}
         sha: {type: string}
-        line_number: {type: integer, description: One-based source line used for repository-host anchors}
-        line_start: {type: integer}
-        line_end: {type: integer}
+        line_number: {type: integer, minimum: 0, description: One-based source line used for repository-host anchors; zero when the selected backend cannot determine an absolute source line}
+        line_start: {type: integer, minimum: 0, description: One-based source line, or zero when unavailable}
+        line_end: {type: integer, minimum: 0, description: One-based source line, or zero when unavailable}
         preview: {type: string}
         score: {type: number, format: double}
     SCIPNavigationRequest:
