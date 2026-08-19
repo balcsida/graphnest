@@ -34,7 +34,7 @@ test-race:
 tools-check:
 	@tool=$$(cd tools && go tool -n buf); \
 	"$$tool" generate; \
-	git diff --exit-code -- internal/graphartifact/v1/artifact.pb.go
+	git diff --exit-code
 
 makefile-test:
 	@for target in lint test test-race build; do \
