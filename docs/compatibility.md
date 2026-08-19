@@ -16,10 +16,19 @@ Graph analysis is available only in durable mode. PostgreSQL is the
 authoritative graph store and serves bounded graph queries directly; builds no
 longer require a separate graph runtime, native graph ABI, or shared library.
 
-The native scanner currently recognizes Go, TypeScript, JavaScript, Java,
-Kotlin, and Rust. This does not promise language-indexer equivalence. Direct
+The optional native scanner recognizes Go, TypeScript, JavaScript, Java,
+Kotlin, and Rust. It is not included in the default images, Compose, or Helm
+chart and does not promise language-indexer equivalence. During the pre-1.0
+compatibility window, operators can explicitly build Docker's `legacy-node`
+target for Git ingestion and the scanner; that image is not published or
+selected automatically. Direct
 `.scip` uploads remain supported independently for code navigation and can
 supply exact-SHA graph data when native graph scanning is unavailable.
+
+`GREPNEST_ZOEKT_GIT_INDEX` remains a deprecated alias for
+`GREPNEST_ZOEKT_INDEX` when its basename is `zoekt-git-index`. New deployments
+must use archive ingestion and `GREPNEST_ZOEKT_INDEX`. See the
+[migration runbook](migrations/archive-postgres-graph.md).
 
 Graph queries target only the current indexed default branch. Repository
 selectors resolve to stable numeric repository IDs, and every result is scoped

@@ -33,7 +33,7 @@ Under the hood, GrepNest combines fast [Zoekt](https://github.com/sourcegraph/zo
 | **Durable identity and access** | Use OIDC or GitHub OAuth browser sign-in, SCIM 2.0 provisioning, revocable API tokens, user and group repository assignments, administrative controls, and security audit events. |
 | **Pilot deployment tooling** | Run locally with Docker Compose or deploy the single-node pilot with Helm. Releases publish multi-architecture images, an OCI chart, SBOMs, provenance, and GitHub attestations. |
 
-Native graph scanners currently support **Go, JavaScript, TypeScript/TSX, Java, Kotlin, and Rust**. SCIP uploads remain a separate, language-indexer-independent navigation path.
+Optional native graph scanners support **Go, JavaScript, TypeScript/TSX, Java, Kotlin, and Rust**. They are built separately and are not part of the default images or deployment. SCIP uploads remain a separate, language-indexer-independent navigation path.
 
 ## Architecture
 
@@ -43,8 +43,7 @@ flowchart LR
 
     Server -->|GitHub App API| GitHub[GitHub.com or GHES]
     GitHub -->|Signed webhooks| Server
-    Indexer[grepnest-indexer] -->|Fetch default branch| GitHub
-    Scanner[grepnest-scanner] -->|Graph artifacts| Postgres[(PostgreSQL)]
+    Indexer[grepnest-indexer] -->|Download default-branch archive| GitHub
 
     Server --> Postgres
     Indexer --> Postgres
@@ -53,7 +52,6 @@ flowchart LR
     Server --> Zoekt
 
     Server --> Postgres
-    Server --> Graph
 ```
 
 PostgreSQL is authoritative for repository metadata, authorization, queues, indexed-SHA state, graph artifacts, and graph queries. Zoekt is a private query store reached only through GrepNest's authenticated services. See [Architecture](docs/architecture.md) and the accepted decisions under [`docs/adr`](docs/adr).
@@ -196,7 +194,6 @@ A durable deployment consists of:
 
 - `grepnest-server` for the web UI, REST, MCP, authentication, authorization, and GitHub reconciliation;
 - one `grepnest-indexer` for leased default-branch indexing and Zoekt publication;
-- zero or more `grepnest-scanner` workers for native graph extraction;
 - PostgreSQL as the authoritative state store; and
 - Zoekt as private query infrastructure.
 
@@ -242,7 +239,7 @@ helm upgrade --install grepnest grepnest-0.2.0.tgz \
   --timeout 15m
 ```
 
-Review the [Helm chart documentation](deploy/helm/grepnest/README.md) for required images, Secrets, storage, ingress, network policies, OIDC, GitHub OAuth, SCIM, scanners, graph topology, monitoring, and recovery procedures. Release notes contain immutable artifact references and attestation-verification commands.
+Review the [Helm chart documentation](deploy/helm/grepnest/README.md) for required images, Secrets, storage, ingress, network policies, OIDC, GitHub OAuth, SCIM, monitoring, and recovery procedures. Follow the [archive and PostgreSQL graph migration](docs/migrations/archive-postgres-graph.md) when upgrading an older deployment. Release notes contain immutable artifact references and attestation-verification commands.
 
 ## Current limits
 
@@ -250,7 +247,7 @@ Review the [Helm chart documentation](deploy/helm/grepnest/README.md) for requir
 - Only default branches are indexed.
 - The default GHES contract targets GitHub Enterprise Server 3.17 with REST API version `2022-11-28`; this has not been certified against a live GHES deployment.
 - Kubernetes, OpenShift, backup and restore, upgrade and rollback, ingress, and production-scale capacity still require environment-specific validation.
-- Native graph scanning is not equivalent to a full language server or language-specific indexer.
+- Optional native graph scanning is not equivalent to a full language server or language-specific indexer.
 - GrepNest does not currently provide embedding-based semantic search.
 - PostgreSQL graph data follows the same backup and recovery policy as other durable repository state.
 
@@ -289,6 +286,7 @@ CI additionally exercises scanner grammar compatibility, UI smoke tests, and rel
 | [Release process](docs/release-process.md) | Signed tags, images, OCI chart, attestations, and release verification |
 | [Implementation report](docs/implementation-report.md) | Delivered milestones, verification evidence, risks, and deferred work |
 | [Dependency pinning](docs/dependency-pinning.md) | Reproducibility and pinned dependency policy |
+| [Archive and graph migration](docs/migrations/archive-postgres-graph.md) | Upgrade, verification, cleanup, and rollback procedure |
 
 See the [architecture decision index](docs/adr/README.md) for the complete
 decision history.

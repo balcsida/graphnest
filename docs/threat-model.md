@@ -83,12 +83,13 @@ all clients appear as one source.
 
 - webhook HMAC is checked over bounded untouched bytes before JSON decoding;
 - App and installation credentials stay in memory and are redacted from logs;
-- Go and Git extend system trust with the same custom CA, require HTTPS, and
-  reject redirects and unconfigured hosts;
-- persisted Git remotes contain no credentials, and child processes receive an
-  allowlisted environment through a fixed askpass helper;
+- Go extends system trust with the configured custom CA, requires HTTPS, and
+  rejects redirects and unconfigured hosts. The default archive path does not
+  invoke Git;
 - indexing never runs repository hooks, code, submodules, LFS smudge filters,
-  build tools, or repository-supplied ctags configuration;
+  build tools, or repository-supplied ctags configuration; archive extraction
+  rejects unsafe paths and is bounded by download, file, count, and total-size
+  limits;
 - numeric IDs determine database and disk identity; untrusted names and paths
   never determine filesystem locations;
 - bearer authorization binds to explicit numeric GitHub repository-ID subsets,
@@ -139,7 +140,9 @@ no automatic retention or export policy; PostgreSQL growth, backup retention,
 and external archival remain operator responsibilities.
 
 This remains a local development slice, not a production security boundary.
-Git pack expansion and Zoekt shards require container and volume quotas.
+Archive expansion and Zoekt shards require separate container and volume
+quotas. Exhausting the ephemeral archive workspace fails the job without
+publishing a new indexed SHA; it must not corrupt durable shards.
 Compose keeps its fixture services on an internal network, and the Helm chart
 renders default-deny ingress plus optional CIDR/selector-based egress policy;
 these are repository controls, not evidence that the running platform enforces
