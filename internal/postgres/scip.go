@@ -6,6 +6,7 @@ import (
 
 	"github.com/grepnest/grepnest/internal/admin"
 	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/grepnest/grepnest/internal/graphartifact"
 	"github.com/grepnest/grepnest/internal/scipgraph"
 	"github.com/jackc/pgx/v5"
 	"github.com/scip-code/scip/bindings/go/scip"
@@ -116,6 +117,13 @@ func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit stri
 			return []any{uploadID, relationship.Path, relationship.Source, sourceKey, relationship.Target, targetKey,
 				relationship.Definition, relationship.Reference, relationship.Implementation, relationship.TypeDefinition}, err
 		})); err != nil {
+		return err
+	}
+	artifact, err := graphartifact.FromSCIP(graphartifact.SCIPRepository{ID: repositoryID, Commit: commit}, upload.Occurrences, upload.Relationships)
+	if err != nil {
+		return err
+	}
+	if _, err := replaceGraph(ctx, tx, repositoryID, GraphSourceSCIP, artifact); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
