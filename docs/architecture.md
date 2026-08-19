@@ -1,11 +1,9 @@
 # Architecture
 
 ```text
-GitHub Enterprise -> PostgreSQL <- indexer / scanners
-                       |              |
-REST and MCP -> server -> PostgreSQL graph store
-                       |                         |
-                      Zoekt                  derived graph files
+GitHub Enterprise -> indexer -> Zoekt shards
+          |               |
+          +-> PostgreSQL <-+-> server <- REST and MCP
 ```
 
 `grepnest-server` is the sole Zoekt search client. It authenticates a single
@@ -59,7 +57,8 @@ bind to numeric GitHub repository IDs within an installation boundary; mutable
 repository names are selectors only.
 
 The local durable Compose profile keeps PostgreSQL and Zoekt on the internal
-network and bind-mounts the host indexer's shard directory into Zoekt. Zoekt is
+network and bind-mounts the host shard directory into Zoekt. Archive extraction
+uses a bounded ephemeral workspace that is separate from those shards. Zoekt is
 published only at `127.0.0.1:6070`; it is not public ingress. OpenShift
 packaging and production ingress remain Milestone 3 work. See `docs/adr` for
 accepted decisions.
@@ -67,10 +66,10 @@ accepted decisions.
 ## Derived graph analysis
 
 PostgreSQL is authoritative for repository state, the indexed default-branch
-SHA, graph artifacts, upload metadata, graph jobs, and graph queries. Scanners
-are independent, horizontally scalable workers that write extracted artifacts
-to PostgreSQL. Server replicas query that same state directly; there is no
-separate graph owner, transport, or derived database.
+SHA, graph artifacts, upload metadata, graph jobs, and graph queries. Optional
+external scanners and SCIP uploads write artifacts to PostgreSQL. Server
+replicas query that same state directly; there is no separate graph owner,
+transport, derived database, or graph volume.
 
 Before a graph query, the server resolves the authorized repository selector
 (numeric GitHub ID or name) and the current indexed default-branch SHA. It

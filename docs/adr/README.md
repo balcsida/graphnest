@@ -3,6 +3,10 @@
 Accepted decisions are append-only. A newer record supersedes an older record
 when the architecture changes.
 
+The deployment implements ADR-0013 and ADR-0014 directly: archive workspaces
+are ephemeral, PostgreSQL serves graph queries, and the superseded LadybugDB
+topology is not rendered.
+
 | ADR | Decision | Status |
 | --- | --- | --- |
 | [0001](0001-go.md) | Go | Accepted |

@@ -28,8 +28,8 @@ Docker's emulation is needed because the pinned image has no arm64 variant.
 
 ## Durable local indexer
 
-Durable Compose runs PostgreSQL, Zoekt, the server, one indexer, and optional
-scanner workers from `compose.yml` and `durable.yml`:
+Durable Compose runs PostgreSQL, Zoekt, the server, and one indexer from
+`compose.yml` and `durable.yml`:
 
 ```sh
 docker compose \
@@ -40,14 +40,16 @@ docker compose \
 
 PostgreSQL is authoritative for repositories, authorization, jobs, indexed
 SHAs, graph artifacts, and graph query data. Zoekt remains internal and is
-published only on `127.0.0.1:6070` for local diagnostics. Scanner workers
-lease graph jobs from PostgreSQL and write exact-SHA artifacts back to it; no
-additional graph topology or internal graph secret is required.
+published only on `127.0.0.1:6070` for local diagnostics. The indexer downloads
+archives into a bounded ephemeral workspace separate from durable Zoekt
+shards. No checkout volume, graph topology, or internal graph secret is
+required.
 
 For a source-tree run, start PostgreSQL and Zoekt, apply migrations, and run
 the indexer with the documented GitHub App, database, data-directory, index
 directory, Zoekt URL, worker, repository-size, free-space, and metrics
-settings. The indexer handles SIGINT and SIGTERM by cancelling active work and
+settings. `GREPNEST_DATA_DIR` must point to job-scoped ephemeral storage, while
+`GREPNEST_INDEX_DIR` points to durable Zoekt shards. The indexer handles SIGINT and SIGTERM by cancelling active work and
 releasing PostgreSQL leases. Keep checkout data job-scoped and logs free of
 credentials.
 
@@ -76,13 +78,13 @@ Recovery uses the normal durable pipeline:
 1. Restore PostgreSQL according to the database backup policy.
 2. Requeue graph scanning for repositories whose current indexed SHA has no
    completed upload.
-3. Confirm the scanner stores a completed artifact for that same repository ID
-   and commit.
+3. Confirm an optional scanner or exact-SHA SCIP upload stores a completed
+   artifact for that same repository ID and commit.
 4. Retry the bounded graph operation.
 
-Do not hand-edit graph nodes or edges. Rebuild them from the exact checkout or
-an accepted exact-SHA SCIP upload. Scanner workers remain horizontally
-scalable and may be restarted independently; PostgreSQL job leasing prevents
+Do not hand-edit graph nodes or edges. Rebuild them from an exact source
+snapshot or an accepted exact-SHA SCIP upload. Optional scanner workers remain
+independent of the default deployment; PostgreSQL job leasing prevents
 duplicate ownership.
 
 Graph request limits are configured with `GREPNEST_GRAPH_*` query settings.
@@ -250,6 +252,10 @@ existing sessions and API tokens on their next request. Bulk, sorting, ETags,
 passwords, `/Me`, `/.search`, root search, enterprise extensions, custom
 schemas/resources, roles, and entitlements are unsupported.
 
+See [Archive ingestion and PostgreSQL graph migration](migrations/archive-postgres-graph.md)
+before upgrading a deployment that used Git mirrors, persistent worktrees, or
+the former graph topology.
+
 ## Kubernetes chart boundary
 
 Releases publish multi-architecture images and an OCI chart. Replace each
@@ -280,7 +286,8 @@ not create Secrets or PostgreSQL. Its migration failure blocks install or
 upgrade and leaves the failed hook Job inspectable.
 
 Keep the singleton Zoekt Service internal. The node's Zoekt and indexer
-containers share a 250Gi `ReadWriteOnce` PVC by default. Select operator-managed
+containers share a 250Gi `ReadWriteOnce` PVC only for Zoekt shards. Archive
+extraction uses a bounded `emptyDir`. Select operator-managed
 SSD-backed RWO storage with `node.storage.storageClassName`. Server and node
 scheduling maps are independent, as are their resource settings; use them to
 place the storage-heavy node separately from stateless server replicas.
