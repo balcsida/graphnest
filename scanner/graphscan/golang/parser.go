@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/grepnest/grepnest/internal/graphartifact"
-	"github.com/grepnest/grepnest/internal/graphscan"
+	"github.com/grepnest/grepnest/scanner/graphscan"
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 	tree_sitter_go "github.com/tree-sitter/tree-sitter-go/bindings/go"
 )

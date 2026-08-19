@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/grepnest/grepnest/internal/graphartifact"
-	"github.com/grepnest/grepnest/internal/graphscan"
+	"github.com/grepnest/grepnest/scanner/graphscan"
 )
 
 func TestParseJavaEmitsPackageImportsDeclarationsAndCalls(t *testing.T) {

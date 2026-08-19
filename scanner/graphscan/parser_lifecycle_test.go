@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/graphscan"
-	"github.com/grepnest/grepnest/internal/graphscan/golang"
-	"github.com/grepnest/grepnest/internal/graphscan/java"
-	"github.com/grepnest/grepnest/internal/graphscan/javascript"
-	"github.com/grepnest/grepnest/internal/graphscan/kotlin"
-	"github.com/grepnest/grepnest/internal/graphscan/rust"
+	"github.com/grepnest/grepnest/scanner/graphscan"
+	"github.com/grepnest/grepnest/scanner/graphscan/golang"
+	"github.com/grepnest/grepnest/scanner/graphscan/java"
+	"github.com/grepnest/grepnest/scanner/graphscan/javascript"
+	"github.com/grepnest/grepnest/scanner/graphscan/kotlin"
+	"github.com/grepnest/grepnest/scanner/graphscan/rust"
 )
 
 func TestParsersReleaseCanceledNativeHandles(t *testing.T) {

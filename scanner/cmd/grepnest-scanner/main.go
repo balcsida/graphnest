@@ -16,8 +16,8 @@ import (
 	"syscall"
 
 	"github.com/grepnest/grepnest/internal/enrichment"
-	"github.com/grepnest/grepnest/internal/graphscan"
-	"github.com/grepnest/grepnest/internal/graphscanner"
+	"github.com/grepnest/grepnest/scanner/graphscan"
+	"github.com/grepnest/grepnest/scanner/graphscanner"
 )
 
 func main() {
