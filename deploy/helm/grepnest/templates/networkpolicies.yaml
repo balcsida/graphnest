@@ -94,30 +94,6 @@ spec:
         {{- end }}
       ports:
         - {protocol: TCP, port: {{ .Values.node.indexer.metricsPort }}}
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: {{ include "grepnest.resourceName" (list . "allow-scanner-metrics-ingress") }}
-  labels:
-    {{- include "grepnest.labels" . | nindent 4 }}
-spec:
-  podSelector:
-    matchLabels:
-      {{- include "grepnest.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: scanner
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ .Release.Namespace }}
-        {{- with .Values.networkPolicy.serverIngress.monitoringNamespaceSelector }}
-        - namespaceSelector:
-            {{- toYaml . | nindent 12 }}
-        {{- end }}
-      ports:
-        - {protocol: TCP, port: {{ .Values.scanner.metricsPort }}}
 {{- end }}
 {{- if .Values.networkPolicy.externalEgress.enabled }}
 ---
@@ -174,7 +150,7 @@ spec:
     matchExpressions:
       - key: app.kubernetes.io/component
         operator: In
-        values: [server, node, migration, scanner]
+        values: [server, node, migration]
   policyTypes: [Egress]
   egress:
     - to:
@@ -203,7 +179,7 @@ spec:
     matchExpressions:
       - key: app.kubernetes.io/component
         operator: In
-        values: [server, node, migration, scanner]
+        values: [server, node, migration]
   policyTypes: [Egress]
   egress:
     - to:
@@ -226,7 +202,7 @@ spec:
     matchExpressions:
       - key: app.kubernetes.io/component
         operator: In
-        values: [server, node, scanner]
+        values: [server, node]
   policyTypes: [Egress]
   egress:
     - to:

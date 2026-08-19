@@ -75,15 +75,12 @@ helm template pilot "$chart" -n grepnest -f "$minimal" -f "$optional" \
 helm template uid "$chart" -n grepnest -f "$minimal" \
   --set=server.podSecurityContext.runAsUser=1001230000 \
   --set=node.podSecurityContext.runAsUser=1001230001 >"$tmp/uid.yaml"
-helm template scanner-off "$chart" -n grepnest -f "$minimal" \
-  --set=scanner.enabled=false \
-  --set-string=images.scanner.repository= \
-  --set-string=images.scanner.digest= >"$tmp/scanner-off.yaml"
-expect_failure "$tmp/scanner-image.err" helm template bad "$chart" -f "$minimal" \
-  --set=scanner.enabled=true \
-  --set-string=images.scanner.repository= \
-  --set-string=images.scanner.digest=
-require "/images/scanner/(repository|digest)" "$tmp/scanner-image.err"
+for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
+  reject 'app.kubernetes.io/component: scanner|grepnest-scanner|GREPNEST_GIT_PATH|zoekt-git-index|liblbug' "$manifest"
+  require 'name: archive-workspace, mountPath: "/var/lib/grepnest/work"' "$manifest"
+  require 'name: archive-workspace$' "$manifest"
+  require 'sizeLimit: 6Gi' "$manifest"
+done
 helm template scim "$chart" -n grepnest -f "$minimal" \
   --set=server.scim.enabled=true \
   --set-string=server.sso.publicURL=https://grepnest.example.invalid \
@@ -125,13 +122,14 @@ done
   -eq 9 ] || exit 1
 
 helm template paths "$chart" -n grepnest -f "$minimal" \
-  --set-string=node.paths.data=/srv/grepnest-data \
-  --set-string=node.paths.indexes=/srv/grepnest-data/zoekt/index \
+  --set-string=node.paths.workspace=/srv/grepnest-work \
+  --set-string=node.paths.indexes=/srv/grepnest-index \
+  --set-string=node.indexer.workspaceSizeLimit=8Gi \
   --set=node.zoekt.port=16070 --set=node.service.port=16071 \
   --set=node.indexer.metricsPort=19090 >"$tmp/node-contract.yaml"
 for pattern in \
-  'GREPNEST_DATA_DIR: "/srv/grepnest-data"' \
-  'GREPNEST_INDEX_DIR: "/srv/grepnest-data/zoekt/index"' \
+  'GREPNEST_DATA_DIR: "/srv/grepnest-work"' \
+  'GREPNEST_INDEX_DIR: "/srv/grepnest-index"' \
   'GREPNEST_MIN_FREE_BYTES: "10737418240"' \
   'GREPNEST_MAX_REPOSITORY_BYTES: "5368709120"' \
 	'GREPNEST_SCIP_MAX_UPLOAD_BYTES: "67108864"' \
@@ -139,23 +137,19 @@ for pattern in \
   'GREPNEST_METRICS_LISTEN_ADDRESS: ":19090"' \
   'name: metrics, containerPort: 19090' \
   'name: metrics, port: 19090, targetPort: metrics' \
-  'mountPath: "/srv/grepnest-data/zoekt/index", subPath: "zoekt/index", readOnly: true' \
-  'mountPath: "/srv/grepnest-data"}'; do
+  'mountPath: "/srv/grepnest-index", readOnly: true' \
+  'name: archive-workspace, mountPath: "/srv/grepnest-work"' \
+  'sizeLimit: 8Gi'; do
   require "$pattern" "$tmp/node-contract.yaml"
 done
 sed -n '/name: zoekt-webserver$/,/name: grepnest-indexer$/p' \
   "$tmp/node-contract.yaml" >"$tmp/node-contract-zoekt.yaml"
 require '^- -index$|^            - -index$' "$tmp/node-contract-zoekt.yaml"
-require '^            - "/srv/grepnest-data/zoekt/index"$' \
+require '^            - "/srv/grepnest-index"$' \
   "$tmp/node-contract-zoekt.yaml"
 require '^- -listen$|^            - -listen$' "$tmp/node-contract-zoekt.yaml"
 require '^            - ":16070"$' "$tmp/node-contract-zoekt.yaml"
 [ "$(grep -E -c -e 'tcpSocket: \{port: zoekt\}' "$tmp/node-contract-zoekt.yaml")" -eq 2 ] || exit 1
-
-expect_failure "$tmp/disconnected-indexes.err" helm template bad "$chart" -f "$minimal" \
-  --set-string=node.paths.data=/srv/grepnest-data \
-  --set-string=node.paths.indexes=/srv/other/index
-require 'node.paths.indexes must be a child of node.paths.data' "$tmp/disconnected-indexes.err"
 
 helm template refs "$chart" -n grepnest -f "$minimal" \
   --set-string=secrets.runtime.name=runtime.team.example \
@@ -250,9 +244,8 @@ for pattern in '^kind: Ingress$' '^kind: ServiceMonitor$' \
   'cpu: 250m' 'memory: 256Mi' 'cpu: "8"' 'memory: 24Gi'; do
   require "$pattern" "$tmp/optional.yaml"
 done
-[ "$(grep -E -c -e '^kind: ServiceMonitor$' "$tmp/optional.yaml")" -eq 3 ] || exit 1
+[ "$(grep -E -c -e '^kind: ServiceMonitor$' "$tmp/optional.yaml")" -eq 2 ] || exit 1
 require 'app.kubernetes.io/component: indexer' "$tmp/optional.yaml"
-require 'app.kubernetes.io/component: scanner' "$tmp/optional.yaml"
 require 'port: metrics' "$tmp/optional.yaml"
 
 sed -n '/^kind: StatefulSet$/,/^# Source: grepnest\/templates\/migration-job.yaml$/p' \
@@ -326,11 +319,11 @@ require 'k8s-app: kube-dns' "$tmp/allow-dns-egress-spec.yaml"
 require 'protocol: UDP, port: 53' "$tmp/allow-dns-egress-spec.yaml"
 require 'protocol: TCP, port: 53' "$tmp/allow-dns-egress-spec.yaml"
 
-require 'values: \[server, node, migration, scanner\]' "$tmp/allow-postgresql-egress-spec.yaml"
+require 'values: \[server, node, migration\]' "$tmp/allow-postgresql-egress-spec.yaml"
 require 'policyTypes: \[Egress\]' "$tmp/allow-postgresql-egress-spec.yaml"
 require 'cidr: "192\.0\.2\.10/32"' "$tmp/allow-postgresql-egress-spec.yaml"
 require 'protocol: TCP, port: 5432' "$tmp/allow-postgresql-egress-spec.yaml"
-require 'values: \[server, node, scanner\]' "$tmp/allow-github-egress-spec.yaml"
+require 'values: \[server, node\]' "$tmp/allow-github-egress-spec.yaml"
 require 'policyTypes: \[Egress\]' "$tmp/allow-github-egress-spec.yaml"
 require 'cidr: "198\.51\.100\.0/24"' "$tmp/allow-github-egress-spec.yaml"
 require 'cidr: "2001:db8:1234::/48"' "$tmp/allow-github-egress-spec.yaml"
@@ -400,27 +393,9 @@ done
 require 'runAsUser: 1001230000' "$tmp/uid.yaml"
 require 'runAsUser: 1001230001' "$tmp/uid.yaml"
 
-for pattern in 'app.kubernetes.io/component: scanner' '^  replicas: 3$' \
-  'command: \["/usr/local/bin/grepnest-scanner"\]' \
-  'GREPNEST_MAX_REPOSITORY_BYTES: "4294967296"' \
-  'GREPNEST_MIN_FREE_BYTES: "2147483648"' \
-  'GREPNEST_GRAPH_SCAN_TIMEOUT: "20m"' \
-  'name: worktree, mountPath: /data' 'name: worktree, emptyDir: \{\}' \
-  'name: metrics, containerPort: 9090' 'requests:' 'limits:' \
-  'automountServiceAccountToken: false' 'readOnlyRootFilesystem: true'; do
-  require "$pattern" "$tmp/optional.yaml"
-done
-awk 'BEGIN {RS="---"} /kind: Deployment/ && /app.kubernetes.io\/component: scanner/ {print}' \
-  "$tmp/optional.yaml" >"$tmp/scanner-workload.yaml"
-for pattern in 'grepnest.example.invalid/pool: scanner' \
-  'grepnest.example.invalid/tier' '^[[:space:]]*- scanner$' \
-  'grepnest.example.invalid/dedicated' 'value: scanner'; do
-  require "$pattern" "$tmp/scanner-workload.yaml"
-done
 require 'values: \[server, node\]' "$tmp/optional.yaml"
-require 'values: \[server, node, migration, scanner\]' "$tmp/optional.yaml"
-require 'values: \[server, node, scanner\]' "$tmp/optional.yaml"
-[ "$(grep -E -c -e '^kind: ServiceMonitor$' "$tmp/optional.yaml")" -eq 3 ] || exit 1
+require 'values: \[server, node, migration\]' "$tmp/optional.yaml"
+[ "$(grep -E -c -e '^kind: ServiceMonitor$' "$tmp/optional.yaml")" -eq 2 ] || exit 1
 
 expect_failure "$tmp/repository.err" helm template bad "$chart" -f "$minimal" \
   --set-string=images.application.repository=

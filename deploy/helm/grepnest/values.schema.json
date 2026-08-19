@@ -8,7 +8,6 @@
     "breakGlass",
     "server",
     "node",
-    "scanner",
     "migration",
     "ingress",
     "monitoring",
@@ -27,7 +26,6 @@
       "required": [
         "application",
         "node",
-        "scanner",
         "pullSecrets"
       ],
       "properties": {
@@ -36,9 +34,6 @@
         },
         "node": {
           "$ref": "#/definitions/image"
-        },
-        "scanner": {
-          "$ref": "#/definitions/optionalImage"
         },
         "pullSecrets": {
           "type": "array",
@@ -333,28 +328,23 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "sourceProvider",
             "executable",
-            "gitExecutable",
             "zoektIndexExecutable",
+            "workspaceSizeLimit",
             "minFreeBytes",
             "maxRepositoryBytes",
             "metricsPort",
             "resources"
           ],
           "properties": {
-            "sourceProvider": {
-              "type": "string",
-              "enum": ["archive", "git"]
-            },
             "executable": {
-              "$ref": "#/definitions/path"
-            },
-            "gitExecutable": {
               "$ref": "#/definitions/path"
             },
             "zoektIndexExecutable": {
               "$ref": "#/definitions/path"
+            },
+            "workspaceSizeLimit": {
+              "$ref": "#/definitions/quantity"
             },
             "minFreeBytes": {
               "$ref": "#/definitions/positiveInteger"
@@ -374,11 +364,11 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "data",
+            "workspace",
             "indexes"
           ],
           "properties": {
-            "data": {
+            "workspace": {
               "$ref": "#/definitions/path"
             },
             "indexes": {
@@ -436,32 +426,6 @@
         "podAnnotations": {
           "$ref": "#/definitions/stringMap"
         }
-      }
-    },
-    "scanner": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "enabled", "replicas", "maxRepositoryBytes", "minFreeBytes", "scanTimeout", "executable", "dataPath", "gitExecutable",
-        "metricsPort", "resources", "nodeSelector", "affinity", "tolerations",
-        "podSecurityContext", "podAnnotations"
-      ],
-      "properties": {
-        "enabled": {"type": "boolean"},
-        "replicas": {"type": "integer", "minimum": 1},
-        "maxRepositoryBytes": {"$ref": "#/definitions/positiveInteger"},
-        "minFreeBytes": {"$ref": "#/definitions/positiveInteger"},
-        "scanTimeout": {"$ref": "#/definitions/duration"},
-        "executable": {"$ref": "#/definitions/path"},
-        "dataPath": {"$ref": "#/definitions/path"},
-        "gitExecutable": {"$ref": "#/definitions/path"},
-        "metricsPort": {"$ref": "#/definitions/port"},
-        "resources": {"$ref": "#/definitions/resources"},
-        "nodeSelector": {"$ref": "#/definitions/map"},
-        "affinity": {"$ref": "#/definitions/map"},
-        "tolerations": {"$ref": "#/definitions/array"},
-        "podSecurityContext": {"$ref": "#/definitions/map"},
-        "podAnnotations": {"$ref": "#/definitions/stringMap"}
       }
     },
     "migration": {
@@ -718,30 +682,6 @@
     {
       "if": {"properties": {"networkPolicy": {"properties": {"externalEgress": {"properties": {"enabled": {"const": true}}}}}, "server": {"properties": {"sso": {"properties": {"oidc": {"properties": {"enabled": {"const": true}}}}}}}}},
       "then": {"properties": {"networkPolicy": {"properties": {"externalEgress": {"properties": {"identityProvider": {"properties": {"cidrs": {"minItems": 1}}}}}}}}}
-    },
-    {
-      "if": {
-        "properties": {
-          "scanner": {
-            "properties": {
-              "enabled": {
-                "const": true
-              }
-            }
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "images": {
-            "properties": {
-              "scanner": {
-                "$ref": "#/definitions/image"
-              }
-            }
-          }
-        }
-      }
     },
     {
       "if": {

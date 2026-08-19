@@ -21,59 +21,18 @@ services:
       GREPNEST_GITHUB_APP_ID: ${GREPNEST_GITHUB_APP_ID:?GREPNEST_GITHUB_APP_ID is required}
       GREPNEST_GITHUB_CA_FILE: ${GREPNEST_GITHUB_CA_FILE:+/run/secrets/grepnest/github-ca.pem}
       GREPNEST_GITHUB_PRIVATE_KEY_FILE: /run/secrets/grepnest/private-key.pem
-      GREPNEST_DATA_DIR: /var/lib/grepnest/data
+      GREPNEST_DATA_DIR: /var/lib/grepnest/work
       GREPNEST_INDEX_DIR: /var/lib/grepnest/index
       GREPNEST_SOURCE_PROVIDER: archive
       GREPNEST_ZOEKT_INDEX: /usr/local/bin/zoekt-index
       GREPNEST_WORKER_ID: primary
       GREPNEST_MIN_FREE_BYTES: 1073741824
     volumes:
-      - grepnest-data:/var/lib/grepnest/data
+      - type: tmpfs
+        target: /var/lib/grepnest/work
+        tmpfs:
+          size: 6442450944
       - ../../.cache/durable-index:/var/lib/grepnest/index
-      - type: bind
-        source: ${GREPNEST_GITHUB_PRIVATE_KEY_FILE:?GREPNEST_GITHUB_PRIVATE_KEY_FILE is required}
-        target: /run/secrets/grepnest/private-key.pem
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ${GREPNEST_GITHUB_CA_FILE:-/dev/null}
-        target: /run/secrets/grepnest/github-ca.pem
-        read_only: true
-        bind:
-          create_host_path: false
-    networks: [internal]
-
-  grepnest-scanner:
-    profiles: [durable]
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    image: ${GREPNEST_NODE_IMAGE:?GREPNEST_NODE_IMAGE is required}
-    entrypoint: ["/bin/sh", "-ec"]
-    command: ["GREPNEST_WORKER_ID=$(hostname) exec grepnest-scanner"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-    deploy:
-      replicas: ${GREPNEST_SCANNER_REPLICAS:-2}
-    environment:
-      GREPNEST_DATABASE_URL: postgres://grepnest:grepnest@postgres:5432/grepnest?sslmode=disable
-      GREPNEST_GITHUB_WEB_URL: ${GREPNEST_GITHUB_WEB_URL:?GREPNEST_GITHUB_WEB_URL is required}
-      GREPNEST_GITHUB_API_URL: ${GREPNEST_GITHUB_API_URL:?GREPNEST_GITHUB_API_URL is required}
-      GREPNEST_GITHUB_UPLOAD_URL: ${GREPNEST_GITHUB_UPLOAD_URL:?GREPNEST_GITHUB_UPLOAD_URL is required}
-      GREPNEST_GITHUB_GIT_URL: ${GREPNEST_GITHUB_GIT_URL:?GREPNEST_GITHUB_GIT_URL is required}
-      GREPNEST_GITHUB_APP_ID: ${GREPNEST_GITHUB_APP_ID:?GREPNEST_GITHUB_APP_ID is required}
-      GREPNEST_GITHUB_CA_FILE: ${GREPNEST_GITHUB_CA_FILE:+/run/secrets/grepnest/github-ca.pem}
-      GREPNEST_GITHUB_PRIVATE_KEY_FILE: /run/secrets/grepnest/private-key.pem
-      GREPNEST_DATA_DIR: /var/lib/grepnest/data
-      GREPNEST_GIT_PATH: /usr/bin/git
-      GREPNEST_MAX_REPOSITORY_BYTES: 5368709120
-      GREPNEST_MIN_FREE_BYTES: 1073741824
-      GREPNEST_GRAPH_SCAN_TIMEOUT: 15m
-    tmpfs:
-      - /var/lib/grepnest
-    volumes:
       - type: bind
         source: ${GREPNEST_GITHUB_PRIVATE_KEY_FILE:?GREPNEST_GITHUB_PRIVATE_KEY_FILE is required}
         target: /run/secrets/grepnest/private-key.pem
@@ -179,6 +138,3 @@ services:
       retries: 5
       start_period: 10s
     networks: [internal, loopback]
-
-volumes:
-  grepnest-data:
