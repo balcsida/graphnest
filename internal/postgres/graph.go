@@ -35,48 +35,28 @@ func (s *Store) GraphManifests(ctx context.Context) ([]graphartifact.Manifest, e
 
 func (s *Store) graphManifests(ctx context.Context, queryer graphQueryer) ([]graphartifact.Manifest, error) {
 	rows, err := queryer.Query(ctx, `select repositories.id, repositories.indexed_sha,
-		graph_uploads.id, graph_uploads.schema_version, graph_uploads.content_hash, graph_uploads.source, scip_uploads.id
+		graph_uploads.id, graph_uploads.schema_version, graph_uploads.content_hash, graph_uploads.source
 		from installations join repositories on repositories.installation_id=installations.id
-		left join graph_uploads on graph_uploads.repository_id=repositories.id and graph_uploads.commit=repositories.indexed_sha
-		left join scip_uploads on scip_uploads.repository_id=repositories.id and scip_uploads.commit=repositories.indexed_sha
+		join graph_uploads on graph_uploads.repository_id=repositories.id and graph_uploads.commit=repositories.indexed_sha
 		where installations.status='active' and repositories.enabled and not repositories.archived and repositories.indexed_sha is not null
-		and (graph_uploads.id is not null or scip_uploads.id is not null)
 		order by repositories.id`)
 	if err != nil {
 		return nil, err
 	}
-	type candidate struct {
-		repositoryID, graphID, scipID *int64
-		commit, source                *string
-		schemaVersion                 *uint32
-		contentHash                   []byte
-	}
-	var candidates []candidate
+	manifests := []graphartifact.Manifest{}
 	for rows.Next() {
-		var candidate candidate
-		if err := rows.Scan(&candidate.repositoryID, &candidate.commit, &candidate.graphID, &candidate.schemaVersion, &candidate.contentHash, &candidate.source, &candidate.scipID); err != nil {
+		var manifest graphartifact.Manifest
+		if err := rows.Scan(&manifest.RepositoryID, &manifest.Commit, &manifest.UploadID, &manifest.SchemaVersion, &manifest.ContentHash, &manifest.Source); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		candidates = append(candidates, candidate)
+		manifests = append(manifests, manifest)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
 		return nil, err
 	}
 	rows.Close()
-	manifests := make([]graphartifact.Manifest, 0, len(candidates))
-	for _, candidate := range candidates {
-		if candidate.graphID != nil {
-			manifests = append(manifests, graphartifact.Manifest{RepositoryID: *candidate.repositoryID, UploadID: *candidate.graphID, Commit: *candidate.commit, Source: *candidate.source, SchemaVersion: *candidate.schemaVersion, ContentHash: candidate.contentHash})
-			continue
-		}
-		artifact, err := s.scipArtifact(ctx, queryer, *candidate.repositoryID, *candidate.scipID, *candidate.commit)
-		if err != nil {
-			return nil, err
-		}
-		manifests = append(manifests, graphartifact.Manifest{RepositoryID: *candidate.repositoryID, UploadID: scipManifestID(*candidate.scipID), Commit: *candidate.commit, Source: "scip", SchemaVersion: artifact.SchemaVersion, ContentHash: artifact.ContentHash})
-	}
 	return manifests, nil
 }
 
@@ -164,6 +144,7 @@ type GraphSource string
 const (
 	GraphSourceManaged  GraphSource = "managed"
 	GraphSourceExternal GraphSource = "external"
+	GraphSourceSCIP     GraphSource = "scip"
 )
 
 type GraphUpload struct {
@@ -209,7 +190,7 @@ func (s *Store) GraphStatus(ctx context.Context, repositoryID int64) (api.GraphS
 		return status, nil
 	}
 	status.Commit = indexedSHA
-	if source != nil {
+	if source != nil && *source != string(GraphSourceSCIP) {
 		status.State, status.Source = api.GraphStateReady, api.GraphSource(*source)
 		return status, nil
 	}
@@ -264,7 +245,8 @@ func replaceGraph(ctx context.Context, tx pgx.Tx, repositoryID int64, source Gra
 	if err != nil && err != pgx.ErrNoRows {
 		return GraphReplacement{}, err
 	}
-	if artifact.Commit != indexedSHA || current.Source == GraphSourceExternal && current.Commit == indexedSHA && source == GraphSourceManaged {
+	if artifact.Commit != indexedSHA || current.Commit == indexedSHA &&
+		(current.Source == GraphSourceExternal && source != GraphSourceExternal || current.Source == GraphSourceManaged && source == GraphSourceSCIP) {
 		return GraphReplacement{Upload: current}, nil
 	}
 	if current.ID != 0 {
