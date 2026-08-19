@@ -94,7 +94,8 @@ chart derives Zoekt's index and listen arguments from `node.paths.indexes` and
 
 `node.indexer.maxRepositoryBytes` defaults to 5 GiB and rejects oversized
 GHES repositories before the indexer mints credentials or downloads an
-archive.
+archive. The 6 GiB workspace keeps a 1 GiB free-space floor, leaving the full
+5 GiB repository allowance usable without making the default self-rejecting.
 
 `monitoring.serviceMonitor.enabled` requires the
 `monitoring.coreos.com/v1/ServiceMonitor` CRD. Rendering fails clearly if that

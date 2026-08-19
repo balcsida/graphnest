@@ -130,7 +130,7 @@ helm template paths "$chart" -n grepnest -f "$minimal" \
 for pattern in \
   'GREPNEST_DATA_DIR: "/srv/grepnest-work"' \
   'GREPNEST_INDEX_DIR: "/srv/grepnest-index"' \
-  'GREPNEST_MIN_FREE_BYTES: "10737418240"' \
+  'GREPNEST_MIN_FREE_BYTES: "1073741824"' \
   'GREPNEST_MAX_REPOSITORY_BYTES: "5368709120"' \
 	'GREPNEST_SCIP_MAX_UPLOAD_BYTES: "67108864"' \
   'containerPort: 16070' 'port: 16071, targetPort: zoekt' \
