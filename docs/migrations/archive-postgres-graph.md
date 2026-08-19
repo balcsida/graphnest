@@ -25,7 +25,8 @@ Configure two distinct writable locations:
 
 - `GREPNEST_DATA_DIR` is bounded ephemeral archive workspace. Compose uses a
   6 GiB tmpfs and Helm uses `node.paths.workspace` with
-  `node.indexer.workspaceSizeLimit`.
+  `node.indexer.workspaceSizeLimit`. Both packaged deployments use a 1 GiB
+  free-space floor so a 5 GiB repository can fit within that workspace.
 - `GREPNEST_INDEX_DIR` is durable Zoekt shard storage. Do not place the archive
   workspace inside this volume.
 
@@ -64,12 +65,15 @@ query path are removed. Clients must use the bounded context, impact, and trace
 operations in the OpenAPI contract. Missing or stale graph data returns the
 documented readiness status instead of querying an older commit.
 
-Native scanning is optional and is no longer installed by Compose or Helm.
+Native enrichment is optional and is no longer installed by Compose or Helm.
 Operators that still need it during the compatibility window may explicitly
-build Docker's `legacy-node` target and run the scanner module as a separately
-managed worker. The default `node` target remains archive-only. Prefer an
-exact-SHA `.scip` upload when a language-specific indexer already exists;
-uploads continue to work without the native scanner.
+run the indexer from Docker's `legacy-node` target, or mount the scanner binary
+into the default node, and set
+`GREPNEST_SCANNER_PATH=/usr/local/bin/grepnest-scanner`. The indexer invokes
+`grepnest-scanner enrich` on the same job-scoped archive snapshot; the scanner
+is not a standalone lease worker. Prefer an exact-SHA `.scip` upload when a
+language-specific indexer already exists; uploads continue to work without the
+native scanner.
 
 ## Disk failures and retry
 

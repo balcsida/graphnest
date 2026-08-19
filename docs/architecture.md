@@ -66,10 +66,11 @@ accepted decisions.
 ## Derived graph analysis
 
 PostgreSQL is authoritative for repository state, the indexed default-branch
-SHA, graph artifacts, upload metadata, graph jobs, and graph queries. Optional
-external scanners and SCIP uploads write artifacts to PostgreSQL. Server
-replicas query that same state directly; there is no separate graph owner,
-transport, derived database, or graph volume.
+SHA, graph artifacts, upload metadata, graph jobs, and graph queries. The
+indexer may invoke an optional enrichment binary on its job-scoped snapshot;
+SCIP uploads are the other artifact source. Server replicas query that same
+state directly; there is no separate graph owner, transport, derived database,
+or graph volume.
 
 Before a graph query, the server resolves the authorized repository selector
 (numeric GitHub ID or name) and the current indexed default-branch SHA. It

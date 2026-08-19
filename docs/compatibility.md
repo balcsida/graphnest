@@ -16,12 +16,15 @@ Graph analysis is available only in durable mode. PostgreSQL is the
 authoritative graph store and serves bounded graph queries directly; builds no
 longer require a separate graph runtime, native graph ABI, or shared library.
 
-The optional native scanner recognizes Go, TypeScript, JavaScript, Java,
-Kotlin, and Rust. It is not included in the default images, Compose, or Helm
-chart and does not promise language-indexer equivalence. During the pre-1.0
-compatibility window, operators can explicitly build Docker's `legacy-node`
-target for Git ingestion and the scanner; that image is not published or
-selected automatically. Direct
+The optional native enrichment binary recognizes Go, TypeScript, JavaScript,
+Java, Kotlin, and Rust. It is not included in the default images, Compose, or
+Helm chart and does not promise language-indexer equivalence. During the
+pre-1.0 compatibility window, operators can explicitly use Docker's
+`legacy-node` target, or mount `grepnest-scanner` into the default node, and set
+`GREPNEST_SCANNER_PATH=/usr/local/bin/grepnest-scanner` on the indexer. The
+indexer invokes its `enrich` subcommand on the same archive snapshot; it is not
+a standalone worker. The compatibility image is not published or selected
+automatically. Direct
 `.scip` uploads remain supported independently for code navigation and can
 supply exact-SHA graph data when native graph scanning is unavailable.
 
