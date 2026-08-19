@@ -164,6 +164,7 @@ capacity guarantees.
 
 Workloads run as non-root without a fixed UID, drop all capabilities, disable
 privilege escalation, use `RuntimeDefault` seccomp and read-only root filesystems,
-and do not automount Kubernetes API tokens. Writable paths use PVC or
-`emptyDir` volumes. The chart renders no host paths, privileged containers,
+and do not automount Kubernetes API tokens. The node defaults `fsGroup` to
+65532 so its non-root indexer can write the archive workspace and shard PVC.
+Writable paths use PVC or `emptyDir` volumes. The chart renders no host paths, privileged containers,
 external Zoekt endpoint, Secret, or bundled database.

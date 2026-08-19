@@ -76,7 +76,7 @@ node:
   affinity: {}
   tolerations: []
   topologySpreadConstraints: []
-  podSecurityContext: {}
+  podSecurityContext: {fsGroup: 65532}
   podAnnotations: {}
 migration:
   executable: /usr/local/bin/grepnest-migrate

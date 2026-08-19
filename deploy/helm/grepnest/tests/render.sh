@@ -251,6 +251,7 @@ require 'port: metrics' "$tmp/optional.yaml"
 sed -n '/^kind: StatefulSet$/,/^# Source: grepnest\/templates\/migration-job.yaml$/p' \
   "$tmp/minimal.yaml" >"$tmp/node.yaml"
 require '^kind: StatefulSet$' "$tmp/node.yaml"
+require '^        fsGroup: 65532$' "$tmp/node.yaml"
 [ "$(grep -E -c -e '^  volumeClaimTemplates:$' "$tmp/node.yaml")" -eq 1 ] || exit 1
 sed -n '/^      containers:$/,/^      volumes:$/p' "$tmp/node.yaml" >"$tmp/node-containers.yaml"
 require '^      containers:$' "$tmp/node-containers.yaml"
