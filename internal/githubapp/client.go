@@ -20,7 +20,11 @@ import (
 	"github.com/grepnest/grepnest/pkg/api"
 )
 
-const githubMediaType = "application/vnd.github+json"
+const (
+	githubMediaType          = "application/vnd.github+json"
+	githubTextMatchMediaType = "application/vnd.github.text-match+json"
+	maxGitHubPreviewRunes    = 2048
+)
 
 type Client struct {
 	endpoints  Endpoints
@@ -70,7 +74,7 @@ func (c *Client) InstallationToken(ctx context.Context, installationID int64, re
 		Value     string    `json:"token"`
 		ExpiresAt time.Time `json:"expires_at"`
 	}
-	_, err = c.doJSON(ctx, "installation_token", http.MethodPost, c.apiURL("app", "installations", strconv.FormatInt(installationID, 10), "access_tokens"), body, "Bearer "+jwt, c.maxBytes, &response)
+	_, err = c.doJSON(ctx, "installation_token", http.MethodPost, c.apiURL("app", "installations", strconv.FormatInt(installationID, 10), "access_tokens"), body, "Bearer "+jwt, githubMediaType, c.maxBytes, &response)
 	if err != nil {
 		return Token{}, err
 	}
@@ -101,7 +105,7 @@ func (c *Client) Installations(ctx context.Context) ([]Installation, error) {
 		if err != nil {
 			return nil, fmt.Errorf("sign GitHub App JWT: %w", err)
 		}
-		link, err := c.doJSON(ctx, "installations", http.MethodGet, next, nil, "Bearer "+jwt, c.maxBytes, &page)
+		link, err := c.doJSON(ctx, "installations", http.MethodGet, next, nil, "Bearer "+jwt, githubMediaType, c.maxBytes, &page)
 		if err != nil {
 			return nil, err
 		}
@@ -195,6 +199,7 @@ func (c *Client) SearchCode(ctx context.Context, installationID int64, query str
 	values.Set("per_page", "100")
 	endpoint.RawQuery = values.Encode()
 	var wire struct {
+		TotalCount        int  `json:"total_count"`
 		IncompleteResults bool `json:"incomplete_results"`
 		Items             []struct {
 			Path       string `json:"path"`
@@ -204,6 +209,13 @@ func (c *Client) SearchCode(ctx context.Context, installationID int64, query str
 				FullName string `json:"full_name"`
 				HTMLURL  string `json:"html_url"`
 			} `json:"repository"`
+			TextMatches []struct {
+				Property string `json:"property"`
+				Fragment string `json:"fragment"`
+				Matches  []struct {
+					Indices [2]int `json:"indices"`
+				} `json:"matches"`
+			} `json:"text_matches"`
 		} `json:"items"`
 	}
 	ids := append([]int64(nil), repositoryIDs...)
@@ -213,7 +225,7 @@ func (c *Client) SearchCode(ctx context.Context, installationID int64, query str
 		if err != nil {
 			return api.SearchResponse{}, err
 		}
-		_, err = c.doJSON(ctx, "search_code", http.MethodGet, endpoint, nil, "Bearer "+token.Value, c.maxBytes, &wire)
+		_, err = c.doJSON(ctx, "search_code", http.MethodGet, endpoint, nil, "Bearer "+token.Value, githubTextMatchMediaType, c.maxBytes, &wire)
 		var statusErr HTTPStatusError
 		if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusUnauthorized || attempt == 1 {
 			if err != nil {
@@ -225,11 +237,49 @@ func (c *Client) SearchCode(ctx context.Context, installationID int64, query str
 		delete(c.tokens, tokenKey(installationID, ids))
 		c.mu.Unlock()
 	}
-	response := api.SearchResponse{Matches: make([]api.SearchMatch, 0, len(wire.Items)), Truncated: wire.IncompleteResults, Consistency: &api.SearchConsistency{Backend: "github", Partial: true}}
+	response := api.SearchResponse{Matches: make([]api.SearchMatch, 0, len(wire.Items)), Truncated: wire.IncompleteResults || wire.TotalCount > len(wire.Items), Consistency: &api.SearchConsistency{Backend: "github", Partial: true}}
 	for _, item := range wire.Items {
-		response.Matches = append(response.Matches, api.SearchMatch{Path: item.Path, SHA: item.SHA, Repository: api.Repository{ID: item.Repository.ID, Name: item.Repository.FullName, WebURL: item.Repository.HTMLURL}})
+		match := api.SearchMatch{Path: item.Path, SHA: item.SHA, Repository: api.Repository{ID: item.Repository.ID, Name: item.Repository.FullName, WebURL: item.Repository.HTMLURL}, LineNumber: 1, LineStart: 1, LineEnd: 1, Preview: item.Path}
+		for _, textMatch := range item.TextMatches {
+			if textMatch.Property != "content" || textMatch.Fragment == "" || len(textMatch.Matches) == 0 {
+				continue
+			}
+			match.Preview, match.LineStart, match.LineEnd, response.Truncated = boundedGitHubTextMatch(textMatch.Fragment, textMatch.Matches[0].Indices, response.Truncated)
+			match.LineNumber = match.LineStart
+			break
+		}
+		response.Matches = append(response.Matches, match)
 	}
 	return response, nil
+}
+
+func boundedGitHubTextMatch(fragment string, indices [2]int, truncated bool) (string, int, int, bool) {
+	value := []rune(fragment)
+	start, end := indices[0], indices[1]
+	if start < 0 || start > len(value) || end < start || end > len(value) {
+		start, end = 0, 0
+	}
+	windowStart, windowEnd := 0, len(value)
+	if windowEnd > maxGitHubPreviewRunes {
+		windowStart = max(0, start-maxGitHubPreviewRunes/2)
+		windowEnd = min(len(value), windowStart+maxGitHubPreviewRunes)
+		windowStart = max(0, windowEnd-maxGitHubPreviewRunes)
+		truncated = true
+	}
+	start, end = max(start-windowStart, 0), min(end-windowStart, windowEnd-windowStart)
+	lineStart := 1
+	for _, character := range value[windowStart : windowStart+start] {
+		if character == '\n' {
+			lineStart++
+		}
+	}
+	lineEnd := lineStart
+	for _, character := range value[windowStart+start : windowStart+end] {
+		if character == '\n' {
+			lineEnd++
+		}
+	}
+	return string(value[windowStart:windowEnd]), lineStart, lineEnd, truncated
 }
 
 func (c *Client) DownloadArchive(ctx context.Context, owner, repository, sha, token string) (io.ReadCloser, error) {
@@ -299,7 +349,7 @@ func (c *Client) doInstallationJSON(ctx context.Context, operation string, insta
 		if err != nil {
 			return "", err
 		}
-		link, err := c.doJSON(ctx, operation, http.MethodGet, endpoint, nil, "Bearer "+token.Value, limit, target)
+		link, err := c.doJSON(ctx, operation, http.MethodGet, endpoint, nil, "Bearer "+token.Value, githubMediaType, limit, target)
 		var statusError HTTPStatusError
 		if !errors.As(err, &statusError) || statusError.StatusCode != http.StatusUnauthorized || attempt == 1 {
 			return link, err
@@ -323,7 +373,7 @@ func (err HTTPStatusError) Error() string {
 func (err HTTPStatusError) HTTPStatus() int     { return err.StatusCode }
 func (err HTTPStatusError) IsRateLimited() bool { return err.RateLimited }
 
-func (c *Client) doJSON(ctx context.Context, operation, method string, endpoint *url.URL, body []byte, authorization string, limit int64, target any) (link string, resultErr error) {
+func (c *Client) doJSON(ctx context.Context, operation, method string, endpoint *url.URL, body []byte, authorization, mediaType string, limit int64, target any) (link string, resultErr error) {
 	result := "error"
 	if c.metrics != nil {
 		defer func() { c.metrics.ObserveGitHub(operation, result) }()
@@ -333,6 +383,7 @@ func (c *Client) doJSON(ctx context.Context, operation, method string, endpoint 
 		return "", err
 	}
 	SetAPIHeaders(request.Header, c.apiVersion)
+	request.Header.Set("Accept", mediaType)
 	request.Header.Set("Authorization", authorization)
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")

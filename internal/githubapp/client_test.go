@@ -175,6 +175,46 @@ func TestClientRecordsBoundedRequestMetrics(t *testing.T) {
 	}
 }
 
+func TestSearchCodeRequestsAndReturnsBoundedTextMatches(t *testing.T) {
+	now := time.Date(2026, time.August, 19, 12, 0, 0, 0, time.UTC)
+	fragment := "before\nneedle here\nafter"
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.EscapedPath(), "/access_tokens"):
+			fmt.Fprintf(w, `{"token":"opaque","expires_at":%q}`, now.Add(10*time.Minute).Format(time.RFC3339))
+		case strings.HasSuffix(r.URL.EscapedPath(), "/search/code"):
+			if r.Header.Get("Accept") != "application/vnd.github.text-match+json" || r.Header.Get("Authorization") != "Bearer opaque" {
+				t.Fatalf("accept=%q authorization=%q", r.Header.Get("Accept"), r.Header.Get("Authorization"))
+			}
+			fmt.Fprintf(w, `{"total_count":1,"incomplete_results":false,"items":[{"path":"main.go","sha":"blob","repository":{"id":101,"full_name":"acme/one","html_url":"https://example.com/acme/one"},"text_matches":[{"property":"content","fragment":%q,"matches":[{"indices":[7,13]}]}]}]}`, fragment)
+		default:
+			t.Fatalf("unexpected path %q", r.URL.EscapedPath())
+		}
+	}))
+	defer server.Close()
+	client := testClient(t, server, &now, 32<<10)
+
+	response, err := client.SearchCode(t.Context(), 9, "needle repo:acme/one", []int64{101})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Truncated || response.Consistency == nil || !response.Consistency.Partial || len(response.Matches) != 1 {
+		t.Fatalf("response=%#v", response)
+	}
+	match := response.Matches[0]
+	if match.LineNumber != 2 || match.LineStart != 2 || match.LineEnd != 2 || match.Preview != fragment {
+		t.Fatalf("match=%#v", match)
+	}
+}
+
+func TestBoundedGitHubTextMatchKeepsMatchInPreview(t *testing.T) {
+	fragment := strings.Repeat("x", 3000) + "\nneedle"
+	preview, lineStart, lineEnd, truncated := boundedGitHubTextMatch(fragment, [2]int{3001, 3007}, false)
+	if len([]rune(preview)) != maxGitHubPreviewRunes || lineStart != 2 || lineEnd != 2 || !strings.Contains(preview, "needle") || !truncated {
+		t.Fatalf("preview runes=%d lines=%d-%d contains=%v truncated=%v", len([]rune(preview)), lineStart, lineEnd, strings.Contains(preview, "needle"), truncated)
+	}
+}
+
 func TestClientRecordsEveryFixedOperationResultOnce(t *testing.T) {
 	for _, operation := range []string{"installation_token", "installations", "repositories", "default_branch", "contents", "dependency_sbom"} {
 		for _, result := range []string{"success", "error"} {
