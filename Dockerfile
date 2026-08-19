@@ -5,14 +5,15 @@ RUN test -n "$ZOEKT_VERSION"
 
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+COPY scanner/go.mod scanner/go.sum ./scanner/
+RUN GOWORK=off go mod download && GOWORK=off go -C scanner mod download
 COPY . .
 RUN go build -trimpath -ldflags="-s -w" -o /out/grepnest-server ./cmd/grepnest-server && \
     go build -trimpath -ldflags="-s -w" -o /out/grepnest-admin ./cmd/grepnest-admin && \
     go build -trimpath -ldflags="-s -w" -o /out/grepnest-migrate ./cmd/grepnest-migrate && \
     go build -trimpath -ldflags="-s -w" -o /out/grepnest-mcp ./cmd/grepnest-mcp && \
-    go build -trimpath -ldflags="-s -w" -o /out/grepnest-indexer ./cmd/grepnest-indexer && \
-    go build -trimpath -ldflags="-s -w" -o /out/grepnest-scanner ./cmd/grepnest-scanner
+go build -trimpath -ldflags="-s -w" -o /out/grepnest-indexer ./cmd/grepnest-indexer && \
+go -C scanner build -trimpath -ldflags="-s -w" -o /out/grepnest-scanner ./cmd/grepnest-scanner
 RUN CGO_ENABLED=0 GOBIN=/out go install github.com/sourcegraph/zoekt/cmd/zoekt-index@"$ZOEKT_VERSION" && \
     CGO_ENABLED=0 GOBIN=/out go install github.com/sourcegraph/zoekt/cmd/zoekt-git-index@"$ZOEKT_VERSION" && \
     CGO_ENABLED=0 GOBIN=/out go install github.com/sourcegraph/zoekt/cmd/zoekt-webserver@"$ZOEKT_VERSION"

@@ -7,7 +7,7 @@ IMAGE_PLATFORM ?= linux/amd64
 APPLICATION_IMAGE ?= grepnest-application:dev
 NODE_IMAGE ?= grepnest-node:dev
 
-.PHONY: fmt lint staticcheck govulncheck test test-race makefile-test scanner-test abi-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test tools-check ui-smoke
+.PHONY: fmt lint staticcheck govulncheck test test-race makefile-test scanner-build scanner-test scanner-vulncheck abi-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test tools-check ui-smoke
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
@@ -26,7 +26,7 @@ govulncheck:
 	.cache/bin/govulncheck ./...
 
 test:
-	go test ./...
+	CGO_ENABLED=0 go test ./...
 
 test-race:
 	go test -race ./...
@@ -43,11 +43,17 @@ makefile-test:
 		fi; \
 	done
 
+scanner-build:
+	go -C scanner build ./cmd/grepnest-scanner
+
 scanner-test:
-	CGO_ENABLED=1 go test -race ./internal/graphscan/... ./internal/graphscanner ./cmd/grepnest-scanner
+	CGO_ENABLED=1 go -C scanner test -race ./...
+
+scanner-vulncheck:
+	go -C scanner run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
 abi-test:
-	CGO_ENABLED=1 go test ./internal/graphscan -run '^TestGrammarMatrix$$' -count=1
+	CGO_ENABLED=1 go -C scanner test ./graphscan -run '^TestGrammarMatrix$$' -count=1
 
 openapi-check:
 	ruby scripts/check_openapi.rb
@@ -87,6 +93,7 @@ e2e: tools
 
 e2e-test:
 	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' GREPNEST_REQUIRE_POSTGRES=1 ZOEKT_INDEX=$$(pwd)/.cache/bin/zoekt-index ZOEKT_GIT_INDEX=$$(pwd)/.cache/bin/zoekt-git-index ZOEKT_WEBSERVER=$$(pwd)/.cache/bin/zoekt-webserver go test -v -tags=e2e ./test/e2e
+	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' GREPNEST_REQUIRE_POSTGRES=1 CGO_ENABLED=1 go -C scanner test -v -tags=e2e ./test/e2e
 
 build:
 	go build ./cmd/...

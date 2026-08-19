@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/grepnest/grepnest/internal/graphartifact"
-	"github.com/grepnest/grepnest/internal/graphscan"
-	"github.com/grepnest/grepnest/internal/graphscan/golang"
-	"github.com/grepnest/grepnest/internal/graphscan/java"
+	"github.com/grepnest/grepnest/scanner/graphscan"
+	"github.com/grepnest/grepnest/scanner/graphscan/golang"
+	"github.com/grepnest/grepnest/scanner/graphscan/java"
 )
 
 func TestResolveParsedGoImportAcrossFiles(t *testing.T) {

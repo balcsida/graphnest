@@ -5,6 +5,8 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,17 +26,19 @@ import (
 	"github.com/grepnest/grepnest/internal/graphartifact"
 	"github.com/grepnest/grepnest/internal/graphingest"
 	"github.com/grepnest/grepnest/internal/graphquery"
-	"github.com/grepnest/grepnest/internal/graphscan"
-	"github.com/grepnest/grepnest/internal/graphscan/golang"
-	"github.com/grepnest/grepnest/internal/graphscan/java"
-	"github.com/grepnest/grepnest/internal/graphscan/javascript"
-	"github.com/grepnest/grepnest/internal/graphscan/kotlin"
-	"github.com/grepnest/grepnest/internal/graphscan/rust"
 	"github.com/grepnest/grepnest/internal/graphservice"
 	"github.com/grepnest/grepnest/internal/httpapi"
 	"github.com/grepnest/grepnest/internal/mcpserver"
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/grepnest/grepnest/scanner/graphscan"
+	"github.com/grepnest/grepnest/scanner/graphscan/golang"
+	"github.com/grepnest/grepnest/scanner/graphscan/java"
+	"github.com/grepnest/grepnest/scanner/graphscan/javascript"
+	"github.com/grepnest/grepnest/scanner/graphscan/kotlin"
+	"github.com/grepnest/grepnest/scanner/graphscan/rust"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -59,7 +63,7 @@ func TestGraphLanguageFixturesResolveCrossFileCalls(t *testing.T) {
 			artifact, err := graphscan.Scan(t.Context(), graphscan.Request{
 				RepositoryID: 101,
 				Commit:       strings.Repeat("a", 40),
-				Root:         filepath.Join("..", "fixtures", "graph", test.name),
+				Root:         filepath.Join("..", "..", "..", "test", "fixtures", "graph", test.name),
 			}, parsers, graphscan.Limits{
 				MaxFileBytes: 1 << 20, MaxTotalBytes: 8 << 20, MaxFiles: 100,
 				MaxNodes: 1000, MaxEdges: 2000, ParseTimeout: 5 * time.Second,
@@ -103,7 +107,7 @@ func TestGraphLanguageFixturesReachRESTAndMCP(t *testing.T) {
 	results := make([]fixtureResult, 0, len(tests))
 	for index, test := range tests {
 		githubID := int64(1101 + index)
-		checkout, commit := graphFixtureRepository(t, filepath.Join("..", "fixtures", "graph", test.name))
+		checkout, commit := graphFixtureRepository(t, filepath.Join("..", "..", "..", "test", "fixtures", "graph", test.name))
 		repositoryRow := graphFixtureRepositoryRow(t, database, githubID, test.name, commit)
 		if _, err := database.pool.Exec(t.Context(), `insert into graph_jobs(repository_id,target_sha,state,max_attempts) values($1,$2,'queued',3)`, repositoryRow.ID, commit); err != nil {
 			t.Fatal(err)
@@ -197,6 +201,60 @@ func graphFixtureParsers() map[string]graphscan.Parser {
 type graphFixtureAnalyzer struct {
 	parsers  map[string]graphscan.Parser
 	artifact graphartifact.Artifact
+}
+
+type milestoneDatabase struct {
+	pool  *pgxpool.Pool
+	store *postgres.Store
+}
+
+func newMilestoneDatabase(t *testing.T) milestoneDatabase {
+	t.Helper()
+	dsn := os.Getenv("GREPNEST_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Fatal("GREPNEST_TEST_POSTGRES_DSN is required for Milestone 2 E2E")
+	}
+	random := make([]byte, 8)
+	if _, err := rand.Read(random); err != nil {
+		t.Fatal(err)
+	}
+	schema := "grepnest_e2e_" + hex.EncodeToString(random)
+	config, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		_, err := conn.Exec(ctx, "set search_path to "+pgx.Identifier{schema}.Sanitize())
+		return err
+	}
+	pool, err := pgxpool.NewWithConfig(t.Context(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := postgres.Migrate(t.Context(), pool); err != nil {
+		pool.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		pool.Close()
+		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		connection, err := pgx.Connect(cleanup, dsn)
+		if err == nil {
+			defer connection.Close(cleanup)
+			_, _ = connection.Exec(cleanup, "drop schema if exists "+pgx.Identifier{schema}.Sanitize()+" cascade")
+		}
+	})
+	return milestoneDatabase{pool: pool, store: postgres.New(pool)}
+}
+
+func run(t *testing.T, ctx context.Context, name string, args ...string) string {
+	t.Helper()
+	output, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s %v: %v\n%s", name, args, err, output)
+	}
+	return string(output)
 }
 
 func (analyzer *graphFixtureAnalyzer) Scan(ctx context.Context, request graphscan.Request) (graphartifact.Artifact, error) {
