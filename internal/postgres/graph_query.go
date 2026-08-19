@@ -116,7 +116,11 @@ const outgoingNeighborsSQL = graphNeighborScopeSQL + `select ` + graphNeighborCo
 	join frontier on frontier.repository_id=scope.repository_id and frontier.uid=edge.source_uid
 	join graph_nodes parent on parent.upload_id=upload.id and parent.uid=edge.source_uid
 	join graph_nodes node on node.upload_id=upload.id and node.uid=edge.target_uid and node.kind=3
-	order by scope.repository_id, node.uid, parent.uid offset $8 limit $9`
+	order by scope.repository_id, node.uid, parent.uid,
+		edge.source_uid, edge.target_uid, edge.kind, edge.path,
+		edge.start_line, edge.start_character, edge.end_line, edge.end_character,
+		edge.confidence, edge.resolution_reason, edge.id
+	offset $8 limit $9`
 
 const incomingNeighborsSQL = graphNeighborScopeSQL + `select ` + graphNeighborColumns + `
 	from scope
@@ -125,7 +129,11 @@ const incomingNeighborsSQL = graphNeighborScopeSQL + `select ` + graphNeighborCo
 	join frontier on frontier.repository_id=scope.repository_id and frontier.uid=edge.target_uid
 	join graph_nodes parent on parent.upload_id=upload.id and parent.uid=edge.target_uid
 	join graph_nodes node on node.upload_id=upload.id and node.uid=edge.source_uid and node.kind=3
-	order by scope.repository_id, node.uid, parent.uid offset $8 limit $9`
+	order by scope.repository_id, node.uid, parent.uid,
+		edge.source_uid, edge.target_uid, edge.kind, edge.path,
+		edge.start_line, edge.start_character, edge.end_line, edge.end_character,
+		edge.confidence, edge.resolution_reason, edge.id
+	offset $8 limit $9`
 
 func graphScope(snapshots []graphquery.QuerySnapshot) ([]int64, []int64, []string) {
 	repositoryIDs := make([]int64, 0, len(snapshots))
