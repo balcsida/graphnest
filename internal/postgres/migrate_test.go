@@ -15,6 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grepnest/grepnest/internal/graphprotocol"
+	"github.com/grepnest/grepnest/internal/graphquery"
+	"github.com/grepnest/grepnest/internal/scipgraph"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -92,7 +95,7 @@ func TestMigrateIsConcurrentAndIdempotent(t *testing.T) {
 		}
 	}
 	var count int
-	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != 18 {
+	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != 19 {
 		t.Fatalf("migrations=%d err=%v", count, err)
 	}
 	for index, test := range []struct {
@@ -226,6 +229,95 @@ func TestMigrateInvalidatesAppliedV4SCIPRows(t *testing.T) {
 	if uploads != 0 || version != 1 {
 		t.Fatalf("uploads = %d, migration 5 rows = %d", uploads, version)
 	}
+}
+
+func TestMigrateBackfillsCurrentLegacySCIPGraph(t *testing.T) {
+	pool := testPool(t)
+	if err := migrateThrough(t.Context(), pool, 18); err != nil {
+		t.Fatal(err)
+	}
+	store := New(pool)
+	repositoryID := seedReadyRepository(t, store, 101, testSHA('a'))
+	upload := scipgraph.Upload{
+		ProjectRoot: "file:///src", IndexerName: "test", IndexerVersion: "1",
+		Occurrences: []scipgraph.Occurrence{{Path: "main.go", Symbol: globalSymbol, EndCharacter: 1, PositionEncoding: 1}},
+	}
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), upload); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), `delete from graph_uploads where repository_id=$1`, repositoryID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Migrate(t.Context(), pool); err != nil {
+		t.Fatal(err)
+	}
+	service := &graphquery.Service{Store: store, Limits: graphquery.Limits{MaxFanout: 10, MaxNodes: 10, MaxEdges: 10}}
+	scope := graphprotocol.Scope{SelectedRepositoryID: repositoryID, Repositories: []graphprotocol.RepositorySnapshot{{ID: repositoryID, Name: "acme/legacy", Commit: testSHA('a')}}}
+	result, err := service.Context(t.Context(), graphprotocol.ContextRequest{Scope: scope, UID: "symbol:" + globalSymbol, Relations: []string{"references"}})
+	if err != nil || result.Status != graphprotocol.StatusFound {
+		t.Fatalf("Context()=%#v err=%v", result, err)
+	}
+	var source GraphSource
+	var nodes int
+	if err := pool.QueryRow(t.Context(), `select source, node_count from graph_uploads where repository_id=$1`, repositoryID).Scan(&source, &nodes); err != nil || source != GraphSourceSCIP || nodes < 1 {
+		t.Fatalf("source=%q nodes=%d err=%v", source, nodes, err)
+	}
+}
+
+func TestMigrateLegacySCIPBackfillPreservesNativeGraph(t *testing.T) {
+	pool := testPool(t)
+	if err := migrateThrough(t.Context(), pool, 18); err != nil {
+		t.Fatal(err)
+	}
+	store := New(pool)
+	repositoryID := seedReadyRepository(t, store, 101, testSHA('a'))
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("fallback.go", globalSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	native, err := store.ReplaceGraph(t.Context(), repositoryID, GraphSourceManaged, artifactFor(repositoryID, testSHA('a'), "native"))
+	if err != nil || !native.Applied {
+		t.Fatalf("ReplaceGraph()=%#v err=%v", native, err)
+	}
+
+	if err := Migrate(t.Context(), pool); err != nil {
+		t.Fatal(err)
+	}
+	var uploadID int64
+	var source GraphSource
+	if err := pool.QueryRow(t.Context(), `select id, source from graph_uploads where repository_id=$1`, repositoryID).Scan(&uploadID, &source); err != nil || uploadID != native.Upload.ID || source != GraphSourceManaged {
+		t.Fatalf("upload=%d source=%q err=%v", uploadID, source, err)
+	}
+}
+
+func migrateThrough(ctx context.Context, pool *pgxpool.Pool, maximum int64) error {
+	if _, err := pool.Exec(ctx, `create table schema_migrations (version bigint primary key)`); err != nil {
+		return err
+	}
+	entries, err := fs.ReadDir(migrationFiles, "migrations")
+	if err != nil {
+		return err
+	}
+	migrations, err := migrationDescriptors(entries)
+	if err != nil {
+		return err
+	}
+	for _, migration := range migrations {
+		if migration.version > maximum {
+			continue
+		}
+		sql, err := migrationFiles.ReadFile("migrations/" + migration.name)
+		if err != nil {
+			return err
+		}
+		if _, err := pool.Exec(ctx, string(sql)); err != nil {
+			return err
+		}
+		if _, err := pool.Exec(ctx, "insert into schema_migrations (version) values ($1)", migration.version); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func TestMigrateUpgradesAppliedV1(t *testing.T) {
