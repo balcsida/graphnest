@@ -7,7 +7,7 @@ release image digests filled in.
 
 The chart requires an operator-managed PostgreSQL database and never installs
 PostgreSQL or creates Secrets. Supply image repositories and immutable
-`sha256:` digests in `images.application`, `images.node`, and `images.scanner`; rendered images
+`sha256:` digests in `images.application` and `images.node`; rendered images
 always use `repository@digest`. `images.pullSecrets` is an optional list of
 existing image-pull Secret names. Tags are metadata only and cannot replace a
 digest.
@@ -86,23 +86,20 @@ using name overrides). Correct the database or migration problem before retrying
 `className`, `hosts`, and optional existing TLS Secret references. Keep the
 Zoekt Service internal: it is deliberately ClusterIP-only and has no Ingress.
 
-`node.paths.indexes` must be a child of `node.paths.data`. The indexer mounts
-the PVC at the data path, while Zoekt mounts the matching child subpath
-read-only at the indexes path. The chart derives Zoekt's index and listen
-arguments from `node.paths.indexes` and `node.zoekt.port`; `node.service.port`
-is the internal Service port.
+The indexer and Zoekt share only the durable shard PVC at
+`node.paths.indexes`. Archive extraction uses a separate bounded `emptyDir` at
+`node.paths.workspace`; size it with `node.indexer.workspaceSizeLimit`. The
+chart derives Zoekt's index and listen arguments from `node.paths.indexes` and
+`node.zoekt.port`; `node.service.port` is the internal Service port.
 
 `node.indexer.maxRepositoryBytes` defaults to 5 GiB and rejects oversized
-GHES repositories before the indexer mints credentials or fetches Git data.
-
-Set `scanner.enabled` to run independently scalable scanner pods.
-`scanner.replicas` controls their count. Each scanner uses ephemeral checkout
-storage and the scanner image.
+GHES repositories before the indexer mints credentials or downloads an
+archive.
 
 `monitoring.serviceMonitor.enabled` requires the
 `monitoring.coreos.com/v1/ServiceMonitor` CRD. Rendering fails clearly if that
-CRD is unavailable. It scrapes the server, indexer, and enabled
-scanners through internal Services. Configure the monitoring namespace selector
+CRD is unavailable. It scrapes the server and indexer through internal
+Services. Configure the monitoring namespace selector
 in the ingress policy when Prometheus runs outside the release namespace.
 
 Ingress isolation is enabled by default. External egress CIDR isolation is
@@ -157,8 +154,6 @@ Default resource starting points are:
 | Server | 250m CPU, 256Mi memory | 1 CPU, 1Gi memory |
 | Zoekt | 2 CPU, 8Gi memory | 8 CPU, 24Gi memory |
 | Indexer | 1 CPU, 2Gi memory | 4 CPU, 8Gi memory |
-| Graph | 500m CPU, 1Gi memory | 2 CPU, 4Gi memory |
-| Scanner | 500m CPU, 512Mi memory | 2 CPU, 2Gi memory |
 
 Actual capacity must be based on measured source corpus size, index size,
 indexing duration, and query concurrency rather than repository count alone.

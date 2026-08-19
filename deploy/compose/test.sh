@@ -116,7 +116,15 @@ config=$(render \
 
 printf '%s' "$config" | jq -e '
   .services["grepnest-server"] as $server
+  | .services["grepnest-indexer"] as $indexer
   | if $server == null then false else
+    (.services | has("grepnest-scanner") | not)
+  and ($indexer.environment.GREPNEST_SOURCE_PROVIDER == "archive")
+  and ($indexer.environment | has("GREPNEST_GIT_PATH") | not)
+  and ($indexer.volumes | any(.target == "/var/lib/grepnest/work" and .type == "tmpfs"))
+  and ($indexer.volumes | any(.target == "/var/lib/grepnest/index" and .type == "bind"))
+  and ([.volumes // {} | keys[]] | length == 0)
+  and
     $server.profiles == ["durable"]
   and $server.image == "registry.example/grepnest/application:test"
   and $server.entrypoint == ["grepnest-server"]

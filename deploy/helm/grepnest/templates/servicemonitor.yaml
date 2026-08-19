@@ -49,30 +49,4 @@ spec:
       path: /metrics
       interval: {{ .Values.monitoring.serviceMonitor.interval }}
       scrapeTimeout: {{ .Values.monitoring.serviceMonitor.scrapeTimeout }}
-{{- if .Values.scanner.enabled }}
----
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: {{ include "grepnest.scannerName" . }}
-  labels:
-    {{- include "grepnest.labels" . | nindent 4 }}
-    {{- with .Values.monitoring.serviceMonitor.labels }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
-spec:
-  selector:
-    matchLabels:
-      {{- include "grepnest.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: scanner
-  {{- with .Values.monitoring.serviceMonitor.namespaceSelector }}
-  namespaceSelector:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
-  endpoints:
-    - port: metrics
-      path: /metrics
-      interval: {{ .Values.monitoring.serviceMonitor.interval }}
-      scrapeTimeout: {{ .Values.monitoring.serviceMonitor.scrapeTimeout }}
-{{- end }}
 {{- end }}
