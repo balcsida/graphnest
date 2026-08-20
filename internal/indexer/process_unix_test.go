@@ -3,6 +3,7 @@
 package indexer
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -25,6 +26,18 @@ func TestRunnerBoundsOutputAndPreservesExit(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "secret-output") {
 		t.Fatalf("error exposed child output: %v", err)
+	}
+}
+
+func TestRunnerOutputReturnsBoundedStdout(t *testing.T) {
+	var output bytes.Buffer
+	runner := Runner{MaxOutput: 4, KillGrace: 100 * time.Millisecond, Capture: &output}
+	err := runner.Run(t.Context(), "/bin/sh", []string{"-c", "printf test"}, []string{"LANG=C"}, "")
+	if err != nil || output.String() != "test" {
+		t.Fatalf("Run() = %q, %v", output.String(), err)
+	}
+	if err := runner.Run(t.Context(), "/bin/sh", []string{"-c", "printf tests"}, []string{"LANG=C"}, ""); err == nil {
+		t.Fatal("Run() accepted oversized stdout")
 	}
 }
 

@@ -10,72 +10,9 @@ import (
 	"time"
 )
 
-func TestLoadGraphDefaultsAndClamps(t *testing.T) {
-	secret := writeGraphSecret(t, 0o600)
-	t.Setenv("GREPNEST_GRAPH_SECRET_FILE", secret)
-	t.Setenv("GREPNEST_DATABASE_URL", "postgres://grepnest:secret@db/grepnest")
-	t.Setenv("GREPNEST_GRAPH_READ_CONNECTIONS", "99")
-
-	got, err := LoadGraph()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Mode != "embedded" || got.DataDir != "/var/lib/grepnest/graph" ||
-		got.ListenAddress != "127.0.0.1:8081" || got.URL != "" || got.ReadConnections != 32 ||
-		got.SyncInterval != 30*time.Second || got.QueryTimeout != 5*time.Second ||
-		got.InterruptGrace != 2*time.Second || string(got.InternalSecret) != "graph-secret" {
-		t.Fatalf("graph configuration = %#v", got)
-	}
-	got.InternalSecret[0] = 'X'
-	data, err := os.ReadFile(secret)
-	if err != nil || string(data) != "graph-secret" {
-		t.Fatalf("secret file changed: %q %v", data, err)
-	}
-}
-
-func TestLoadGraphNormalizesAndValidatesBearerSecret(t *testing.T) {
-	for _, test := range []struct {
-		name, secret, want string
-		valid              bool
-	}{
-		{"raw", "abc._~+/-=", "abc._~+/-=", true},
-		{"LF", "secret\n", "secret", true},
-		{"CRLF", "secret\r\n", "secret", true},
-		{"empty", "", "", false},
-		{"only LF", "\n", "", false},
-		{"space", "secret value", "", false},
-		{"control", "secret\x00", "", false},
-		{"two LF", "secret\n\n", "", false},
-		{"embedded LF", "sec\nret", "", false},
-		{"bare CR", "secret\r", "", false},
-		{"bad padding", "secret=a", "", false},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "secret")
-			if err := os.WriteFile(path, []byte(test.secret), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("GREPNEST_GRAPH_SECRET_FILE", path)
-			t.Setenv("GREPNEST_GRAPH_URL", "http://127.0.0.1:8081")
-			t.Setenv("GREPNEST_DATABASE_URL", "postgres://grepnest:secret@db/grepnest")
-			got, err := LoadGraph()
-			if !test.valid {
-				if !errors.Is(err, ErrInvalid) {
-					t.Fatalf("LoadGraph() error = %v", err)
-				}
-				return
-			}
-			if err != nil || string(got.InternalSecret) != test.want {
-				t.Fatalf("secret=%q error=%v", got.InternalSecret, err)
-			}
-		})
-	}
-}
-
-func TestLoadGraphPropagatesQueryOverrides(t *testing.T) {
-	t.Setenv("GREPNEST_GRAPH_SECRET_FILE", writeGraphSecret(t, 0o600))
-	t.Setenv("GREPNEST_GRAPH_URL", "http://127.0.0.1:8081")
-	t.Setenv("GREPNEST_DATABASE_URL", "postgres://grepnest:secret@db/grepnest")
+func TestLoadGraphQueryOverrides(t *testing.T) {
+	setValidEnvironment(t)
+	setDurableEnvironment(t)
 	for name, value := range map[string]string{
 		"GREPNEST_GRAPH_DEFAULT_IMPACT_DEPTH": "2",
 		"GREPNEST_GRAPH_MAX_IMPACT_DEPTH":     "7",
@@ -85,87 +22,15 @@ func TestLoadGraphPropagatesQueryOverrides(t *testing.T) {
 	} {
 		t.Setenv(name, value)
 	}
-	got, err := LoadGraph()
+	got, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.QueryLimits.DefaultImpactDepth != 2 || got.QueryLimits.MaxDepth != 7 ||
-		got.QueryLimits.DefaultTraceDepth != 4 || got.QueryLimits.MaxTraceDepth != 9 ||
-		got.QueryLimits.MaxRows != 321 {
-		t.Fatalf("query limits = %#v", got.QueryLimits)
+	if got.Graph.QueryLimits.DefaultImpactDepth != 2 || got.Graph.QueryLimits.MaxDepth != 7 ||
+		got.Graph.QueryLimits.DefaultTraceDepth != 4 || got.Graph.QueryLimits.MaxTraceDepth != 9 ||
+		got.Graph.QueryLimits.MaxRows != 321 {
+		t.Fatalf("query limits = %#v", got.Graph.QueryLimits)
 	}
-}
-
-func TestLoadGraphRejectsUnsafeConfiguration(t *testing.T) {
-	secret := writeGraphSecret(t, 0o600)
-	for _, test := range []struct{ name, env, value string }{
-		{"mode", "GREPNEST_GRAPH_MODE", "remote"},
-		{"listen", "GREPNEST_GRAPH_LISTEN_ADDRESS", ":0"},
-		{"sync interval", "GREPNEST_GRAPH_SYNC_INTERVAL", "0s"},
-		{"query timeout", "GREPNEST_GRAPH_QUERY_TIMEOUT", "6s"},
-		{"interrupt grace", "GREPNEST_GRAPH_INTERRUPT_GRACE", "3s"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Setenv("GREPNEST_GRAPH_SECRET_FILE", secret)
-			t.Setenv("GREPNEST_GRAPH_URL", "http://127.0.0.1:8081")
-			t.Setenv(test.env, test.value)
-			if _, err := LoadGraph(); !errors.Is(err, ErrInvalid) {
-				t.Fatalf("LoadGraph() error = %v", err)
-			}
-		})
-	}
-}
-
-func TestLoadGraphRequiresSecureRegularSecretFile(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		path func(*testing.T) string
-	}{
-		{"missing", func(t *testing.T) string { return filepath.Join(t.TempDir(), "missing") }},
-		{"directory", func(t *testing.T) string { return t.TempDir() }},
-		{"permissive", func(t *testing.T) string { return writeGraphSecret(t, 0o644) }},
-		{"symlink", func(t *testing.T) string {
-			target := writeGraphSecret(t, 0o600)
-			link := filepath.Join(t.TempDir(), "secret")
-			if err := os.Symlink(target, link); err != nil {
-				t.Fatal(err)
-			}
-			return link
-		}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Setenv("GREPNEST_GRAPH_SECRET_FILE", test.path(t))
-			t.Setenv("GREPNEST_GRAPH_URL", "http://127.0.0.1:8081")
-			if _, err := LoadGraph(); !errors.Is(err, ErrInvalid) {
-				t.Fatalf("LoadGraph() error = %v", err)
-			}
-		})
-	}
-}
-
-func TestLoadIndexerSeparateModeDoesNotReadGraphSecret(t *testing.T) {
-	setDurableEnvironment(t)
-	t.Setenv("GREPNEST_ZOEKT_URL", "http://127.0.0.1:6070")
-	t.Setenv("GREPNEST_GRAPH_MODE", "separate")
-	t.Setenv("GREPNEST_GRAPH_URL", "")
-	t.Setenv("GREPNEST_GRAPH_SECRET_FILE", filepath.Join(t.TempDir(), "missing"))
-
-	got, err := LoadIndexer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Graph.Mode != "separate" || got.Graph.InternalSecret != nil {
-		t.Fatalf("graph configuration = %#v", got.Graph)
-	}
-}
-
-func writeGraphSecret(t *testing.T, mode os.FileMode) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "secret")
-	if err := os.WriteFile(path, []byte("graph-secret"), mode); err != nil {
-		t.Fatal(err)
-	}
-	return path
 }
 
 func TestLoadKeepsStaticConfiguration(t *testing.T) {
@@ -180,6 +45,24 @@ func TestLoadKeepsStaticConfiguration(t *testing.T) {
 	}
 }
 
+func TestLoadSelectsZoektByDefaultAndGitHubExplicitly(t *testing.T) {
+	setValidEnvironment(t)
+	setDurableEnvironment(t)
+	got, err := Load()
+	if err != nil || got.SearchBackend != "zoekt" {
+		t.Fatalf("configuration=%#v error=%v", got, err)
+	}
+	t.Setenv("GREPNEST_SEARCH_BACKEND", "github")
+	got, err = Load()
+	if err != nil || got.SearchBackend != "github" {
+		t.Fatalf("configuration=%#v error=%v", got, err)
+	}
+	t.Setenv("GREPNEST_SEARCH_BACKEND", "other")
+	if _, err := Load(); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
+
 func TestLoadReadsDurableConfiguration(t *testing.T) {
 	setValidEnvironment(t)
 	setDurableEnvironment(t)
@@ -189,29 +72,20 @@ func TestLoadReadsDurableConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Break caught: a durable server still loading static bearer credentials.
-	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" || got.GitHub.WebURL != "https://ghe.example.com" || got.GitHub.APIURL != "https://ghe.example.com/api/v3" || got.GitHub.UploadURL != "https://ghe.example.com/uploads" || got.GitHub.GitURL != "https://ghe.example.com" || got.GitHub.AppID != 123 || got.GitHub.PrivateKeyFile != "/run/secrets/key.pem" || got.GitHub.WebhookSecretFile != "/run/secrets/webhook" || got.GitHub.CAFile != "/run/secrets/ca.pem" || got.GitHub.APIVersion != "2022-11-28" || got.UserToken != "" || got.AdminToken != "" || got.UserInstallationID != 0 || len(got.UserRepositoryIDs) != 0 || got.AdminInstallationID != 0 || len(got.AdminRepositoryIDs) != 0 || !reflect.DeepEqual(got.Indexer, Indexer{}) || got.Graph.URL != "http://127.0.0.1:8081" || string(got.Graph.InternalSecret) != "graph-secret" || got.Graph.MaxRequestBytes != 64<<10 || got.Graph.MaxResponseBytes != 256<<10 {
+	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" || got.GitHub.WebURL != "https://ghe.example.com" || got.GitHub.APIURL != "https://ghe.example.com/api/v3" || got.GitHub.UploadURL != "https://ghe.example.com/uploads" || got.GitHub.GitURL != "https://ghe.example.com" || got.GitHub.AppID != 123 || got.GitHub.PrivateKeyFile != "/run/secrets/key.pem" || got.GitHub.WebhookSecretFile != "/run/secrets/webhook" || got.GitHub.CAFile != "/run/secrets/ca.pem" || got.GitHub.APIVersion != "2022-11-28" || got.UserToken != "" || got.AdminToken != "" || got.UserInstallationID != 0 || len(got.UserRepositoryIDs) != 0 || got.AdminInstallationID != 0 || len(got.AdminRepositoryIDs) != 0 || !reflect.DeepEqual(got.Indexer, Indexer{}) || got.Graph.MaxRequestBytes != 64<<10 || got.Graph.MaxResponseBytes != 256<<10 {
 		t.Fatalf("configuration = %#v", got)
 	}
 }
 
 func TestLoadRejectsInvalidServerGraphConfiguration(t *testing.T) {
-	for _, test := range []struct{ name, value string }{
-		{"missing URL", ""},
-		{"invalid URL", "postgres://graph"},
-		{"URL with credentials", "http://user:secret@graph"},
-		{"request cap", "http://graph"},
-		{"response cap", "http://graph"},
+	for _, test := range []struct{ name, env, value string }{
+		{"request cap", "GREPNEST_GRAPH_MAX_REQUEST_BYTES", "65537"},
+		{"response cap", "GREPNEST_GRAPH_MAX_RESPONSE_BYTES", "262145"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			setValidEnvironment(t)
 			setDurableEnvironment(t)
-			t.Setenv("GREPNEST_GRAPH_URL", test.value)
-			if test.name == "request cap" {
-				t.Setenv("GREPNEST_GRAPH_MAX_REQUEST_BYTES", "65537")
-			}
-			if test.name == "response cap" {
-				t.Setenv("GREPNEST_GRAPH_MAX_RESPONSE_BYTES", "262145")
-			}
+			t.Setenv(test.env, test.value)
 			if _, err := Load(); !errors.Is(err, ErrInvalid) {
 				t.Fatalf("Load() error = %v", err)
 			}
@@ -317,6 +191,65 @@ func TestLoadIndexerRejectsZeroFreeSpaceFloor(t *testing.T) {
 	t.Setenv("GREPNEST_MIN_FREE_BYTES", "0")
 	if _, err := LoadIndexer(); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("LoadIndexer() error = %v", err)
+	}
+}
+
+func TestLoadIndexerSourceProviderAndArchiveLimits(t *testing.T) {
+	setValidEnvironment(t)
+	setDurableEnvironment(t)
+	t.Setenv("GREPNEST_SOURCE_PROVIDER", "archive")
+	t.Setenv("GREPNEST_GITHUB_ARCHIVE_URL", "https://archives.example.com")
+	t.Setenv("GREPNEST_ARCHIVE_MAX_DOWNLOAD_BYTES", "11")
+	t.Setenv("GREPNEST_ARCHIVE_MAX_EXTRACTED_BYTES", "12")
+	t.Setenv("GREPNEST_ARCHIVE_MAX_FILE_BYTES", "13")
+	t.Setenv("GREPNEST_ARCHIVE_MAX_FILES", "14")
+	t.Setenv("GREPNEST_ARCHIVE_MAX_PATH_BYTES", "15")
+	got, err := LoadIndexer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SourceProvider != "archive" || got.GitHub.ArchiveURL != "https://archives.example.com" || got.ArchiveLimits != (ArchiveLimits{MaxDownloadBytes: 11, MaxExtractedBytes: 12, MaxFileBytes: 13, MaxFiles: 14, MaxPathBytes: 15}) {
+		t.Fatalf("configuration = %#v", got)
+	}
+}
+
+func TestLoadIndexerDefaultsToArchiveAndRejectsInvalidArchiveConfiguration(t *testing.T) {
+	setValidEnvironment(t)
+	setDurableEnvironment(t)
+	got, err := LoadIndexer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SourceProvider != "archive" {
+		t.Fatalf("source provider = %q", got.SourceProvider)
+	}
+	for _, test := range []struct{ name, env, value string }{
+		{"provider", "GREPNEST_SOURCE_PROVIDER", "other"},
+		{"archive URL", "GREPNEST_GITHUB_ARCHIVE_URL", "http://archives.example.com"},
+		{"download limit", "GREPNEST_ARCHIVE_MAX_DOWNLOAD_BYTES", "0"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			setValidEnvironment(t)
+			setDurableEnvironment(t)
+			t.Setenv(test.env, test.value)
+			if _, err := LoadIndexer(); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("LoadIndexer() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadIndexerArchiveModeDoesNotRequireGitRuntime(t *testing.T) {
+	setValidEnvironment(t)
+	setDurableEnvironment(t)
+	t.Setenv("GREPNEST_SOURCE_PROVIDER", "archive")
+	t.Setenv("GREPNEST_GIT_PATH", "")
+	if _, err := LoadIndexer(); err != nil {
+		t.Fatalf("LoadIndexer() error = %v", err)
+	}
+	t.Setenv("GREPNEST_SOURCE_PROVIDER", "git")
+	if _, err := LoadIndexer(); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("git LoadIndexer() error = %v", err)
 	}
 }
 
@@ -572,8 +505,6 @@ func setDurableEnvironment(t *testing.T) {
 	t.Setenv("GREPNEST_GITHUB_GIT_URL", "https://ghe.example.com")
 	t.Setenv("GREPNEST_GITHUB_APP_ID", "123")
 	t.Setenv("GREPNEST_GITHUB_PRIVATE_KEY_FILE", "/run/secrets/key.pem")
-	t.Setenv("GREPNEST_GRAPH_SECRET_FILE", writeGraphSecret(t, 0o600))
-	t.Setenv("GREPNEST_GRAPH_URL", "http://127.0.0.1:8081")
 	t.Setenv("GREPNEST_GITHUB_WEBHOOK_SECRET_FILE", "/run/secrets/webhook")
 	t.Setenv("GREPNEST_GITHUB_CA_FILE", "/run/secrets/ca.pem")
 	t.Setenv("GREPNEST_USER_INSTALLATION_ID", "10")

@@ -8,8 +8,7 @@ metadata:
 data:
   GREPNEST_LISTEN_ADDRESS: {{ printf ":%v" .Values.server.port | quote }}
   GREPNEST_ZOEKT_URL: {{ printf "http://%s:%v" (include "grepnest.zoektName" .) .Values.node.service.port | quote }}
-  GREPNEST_GRAPH_URL: {{ printf "http://%s:%v" (include "grepnest.graphName" .) .Values.graph.port | quote }}
-  GREPNEST_GRAPH_SECRET_FILE: /var/run/secrets/grepnest/graph/secret
+  GREPNEST_SEARCH_BACKEND: {{ .Values.server.config.searchBackend | quote }}
   GREPNEST_GITHUB_WEB_URL: {{ .Values.server.config.githubWebURL | quote }}
   GREPNEST_GITHUB_API_URL: {{ .Values.server.config.githubAPIURL | quote }}
   GREPNEST_GITHUB_UPLOAD_URL: {{ .Values.server.config.githubUploadURL | quote }}
@@ -79,43 +78,10 @@ data:
   {{- if .Values.secrets.customCA.name }}
   GREPNEST_GITHUB_CA_FILE: /var/run/secrets/grepnest/ca/ca.crt
   {{- end }}
-  GREPNEST_DATA_DIR: {{ .Values.node.paths.data | quote }}
+  GREPNEST_DATA_DIR: {{ .Values.node.paths.workspace | quote }}
   GREPNEST_INDEX_DIR: {{ .Values.node.paths.indexes | quote }}
-  GREPNEST_GIT_PATH: {{ .Values.node.indexer.gitExecutable | quote }}
-  GREPNEST_ZOEKT_GIT_INDEX: {{ .Values.node.indexer.zoektGitIndexExecutable | quote }}
+  GREPNEST_SOURCE_PROVIDER: archive
+  GREPNEST_ZOEKT_INDEX: {{ .Values.node.indexer.zoektIndexExecutable | quote }}
   GREPNEST_MIN_FREE_BYTES: {{ printf "%d" (int64 .Values.node.indexer.minFreeBytes) | quote }}
   GREPNEST_MAX_REPOSITORY_BYTES: {{ printf "%d" (int64 .Values.node.indexer.maxRepositoryBytes) | quote }}
   GREPNEST_METRICS_LISTEN_ADDRESS: {{ printf ":%v" .Values.node.indexer.metricsPort | quote }}
-  GREPNEST_GRAPH_MODE: {{ .Values.graph.mode | quote }}
-  {{- if eq .Values.graph.mode "embedded" }}
-  GREPNEST_GRAPH_DATA_DIR: {{ .Values.graph.dataPath | quote }}
-  GREPNEST_GRAPH_LISTEN_ADDRESS: {{ printf ":%v" .Values.graph.port | quote }}
-  GREPNEST_GRAPH_SECRET_FILE: /var/run/secrets/grepnest/graph/secret
-  {{- end }}
-{{- if .Values.scanner.enabled }}
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ include "grepnest.scannerName" . }}
-  labels:
-    {{- include "grepnest.labels" . | nindent 4 }}
-    app.kubernetes.io/component: scanner
-data:
-  GREPNEST_GITHUB_WEB_URL: {{ .Values.server.config.githubWebURL | quote }}
-  GREPNEST_GITHUB_API_URL: {{ .Values.server.config.githubAPIURL | quote }}
-  GREPNEST_GITHUB_UPLOAD_URL: {{ .Values.server.config.githubUploadURL | quote }}
-  GREPNEST_GITHUB_GIT_URL: {{ .Values.server.config.githubGitURL | quote }}
-  GREPNEST_GITHUB_API_VERSION: {{ .Values.server.config.githubAPIVersion | quote }}
-  GREPNEST_GITHUB_APP_ID: {{ .Values.server.config.githubAppID | quote }}
-  GREPNEST_GITHUB_PRIVATE_KEY_FILE: /var/run/secrets/grepnest/github/private-key.pem
-  {{- if .Values.secrets.customCA.name }}
-  GREPNEST_GITHUB_CA_FILE: /var/run/secrets/grepnest/ca/ca.crt
-  {{- end }}
-  GREPNEST_DATA_DIR: {{ .Values.scanner.dataPath | quote }}
-  GREPNEST_GIT_PATH: {{ .Values.scanner.gitExecutable | quote }}
-  GREPNEST_MAX_REPOSITORY_BYTES: {{ printf "%d" (int64 .Values.scanner.maxRepositoryBytes) | quote }}
-  GREPNEST_MIN_FREE_BYTES: {{ printf "%d" (int64 .Values.scanner.minFreeBytes) | quote }}
-  GREPNEST_GRAPH_SCAN_TIMEOUT: {{ .Values.scanner.scanTimeout | quote }}
-  GREPNEST_METRICS_LISTEN_ADDRESS: {{ printf ":%v" .Values.scanner.metricsPort | quote }}
-{{- end }}

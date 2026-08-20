@@ -17,9 +17,14 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/observability"
+	"github.com/grepnest/grepnest/pkg/api"
 )
 
-const githubMediaType = "application/vnd.github+json"
+const (
+	githubMediaType          = "application/vnd.github+json"
+	githubTextMatchMediaType = "application/vnd.github.text-match+json"
+	maxGitHubPreviewRunes    = 2048
+)
 
 type Client struct {
 	endpoints  Endpoints
@@ -69,7 +74,7 @@ func (c *Client) InstallationToken(ctx context.Context, installationID int64, re
 		Value     string    `json:"token"`
 		ExpiresAt time.Time `json:"expires_at"`
 	}
-	_, err = c.doJSON(ctx, "installation_token", http.MethodPost, c.apiURL("app", "installations", strconv.FormatInt(installationID, 10), "access_tokens"), body, "Bearer "+jwt, c.maxBytes, &response)
+	_, err = c.doJSON(ctx, "installation_token", http.MethodPost, c.apiURL("app", "installations", strconv.FormatInt(installationID, 10), "access_tokens"), body, "Bearer "+jwt, githubMediaType, c.maxBytes, &response)
 	if err != nil {
 		return Token{}, err
 	}
@@ -100,7 +105,7 @@ func (c *Client) Installations(ctx context.Context) ([]Installation, error) {
 		if err != nil {
 			return nil, fmt.Errorf("sign GitHub App JWT: %w", err)
 		}
-		link, err := c.doJSON(ctx, "installations", http.MethodGet, next, nil, "Bearer "+jwt, c.maxBytes, &page)
+		link, err := c.doJSON(ctx, "installations", http.MethodGet, next, nil, "Bearer "+jwt, githubMediaType, c.maxBytes, &page)
 		if err != nil {
 			return nil, err
 		}
@@ -185,13 +190,152 @@ func (c *Client) ReadContents(ctx context.Context, installationID int64, owner, 
 	return content, err
 }
 
+// SearchCode performs a deliberately best-effort installation-scoped code
+// search. GitHub does not provide an exact-commit consistency guarantee here.
+func (c *Client) SearchCode(ctx context.Context, installationID int64, query string, repositoryIDs []int64) (api.SearchResponse, error) {
+	endpoint := c.apiURL("search", "code")
+	values := endpoint.Query()
+	values.Set("q", query)
+	values.Set("per_page", "100")
+	endpoint.RawQuery = values.Encode()
+	var wire struct {
+		TotalCount        int  `json:"total_count"`
+		IncompleteResults bool `json:"incomplete_results"`
+		Items             []struct {
+			Path       string `json:"path"`
+			SHA        string `json:"sha"`
+			Repository struct {
+				ID       int64  `json:"id"`
+				FullName string `json:"full_name"`
+				HTMLURL  string `json:"html_url"`
+			} `json:"repository"`
+			TextMatches []struct {
+				Property string `json:"property"`
+				Fragment string `json:"fragment"`
+				Matches  []struct {
+					Indices [2]int `json:"indices"`
+				} `json:"matches"`
+			} `json:"text_matches"`
+		} `json:"items"`
+	}
+	ids := append([]int64(nil), repositoryIDs...)
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	for attempt := 0; attempt < 2; attempt++ {
+		token, err := c.InstallationToken(ctx, installationID, ids)
+		if err != nil {
+			return api.SearchResponse{}, err
+		}
+		_, err = c.doJSON(ctx, "search_code", http.MethodGet, endpoint, nil, "Bearer "+token.Value, githubTextMatchMediaType, c.maxBytes, &wire)
+		var statusErr HTTPStatusError
+		if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusUnauthorized || attempt == 1 {
+			if err != nil {
+				return api.SearchResponse{}, err
+			}
+			break
+		}
+		c.mu.Lock()
+		delete(c.tokens, tokenKey(installationID, ids))
+		c.mu.Unlock()
+	}
+	response := api.SearchResponse{Matches: make([]api.SearchMatch, 0, len(wire.Items)), Truncated: wire.IncompleteResults || wire.TotalCount > len(wire.Items), Consistency: &api.SearchConsistency{Backend: "github", Partial: true}}
+	for _, item := range wire.Items {
+		match := api.SearchMatch{Path: item.Path, SHA: item.SHA, Repository: api.Repository{ID: item.Repository.ID, Name: item.Repository.FullName, WebURL: item.Repository.HTMLURL}, Preview: item.Path}
+		for _, textMatch := range item.TextMatches {
+			if textMatch.Property != "content" || textMatch.Fragment == "" || len(textMatch.Matches) == 0 {
+				continue
+			}
+			match.Preview, match.LineStart, match.LineEnd, response.Truncated = boundedGitHubTextMatch(textMatch.Fragment, textMatch.Matches[0].Indices, response.Truncated)
+			break
+		}
+		response.Matches = append(response.Matches, match)
+	}
+	return response, nil
+}
+
+func boundedGitHubTextMatch(fragment string, indices [2]int, truncated bool) (string, int, int, bool) {
+	value := []rune(fragment)
+	start, end := indices[0], indices[1]
+	if start < 0 || start > len(value) || end < start || end > len(value) {
+		start, end = 0, 0
+	}
+	windowStart, windowEnd := 0, len(value)
+	if windowEnd > maxGitHubPreviewRunes {
+		windowStart = max(0, start-maxGitHubPreviewRunes/2)
+		windowEnd = min(len(value), windowStart+maxGitHubPreviewRunes)
+		windowStart = max(0, windowEnd-maxGitHubPreviewRunes)
+		truncated = true
+	}
+	return string(value[windowStart:windowEnd]), 0, 0, truncated
+}
+
+func (c *Client) DownloadArchive(ctx context.Context, owner, repository, sha, token string) (io.ReadCloser, error) {
+	if c == nil || c.http == nil || c.endpoints.API == nil || c.endpoints.Archive == nil || owner == "" || repository == "" || !archiveSHA(sha) || token == "" {
+		return nil, errors.New("invalid GitHub archive request")
+	}
+	endpoint := c.apiURL("repos", owner, repository, "tarball", sha)
+	httpClient := *c.http
+	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	for redirects := 0; redirects <= 5; redirects++ {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+		if err != nil {
+			return nil, errors.New("create GitHub archive request")
+		}
+		SetAPIHeaders(request.Header, c.apiVersion)
+		request.Header.Set("Accept", githubMediaType)
+		if sameOrigin(endpoint, c.endpoints.API) {
+			request.Header.Set("Authorization", "Bearer "+token)
+		}
+		response, err := httpClient.Do(request)
+		if err != nil {
+			return nil, errors.New("GitHub archive request failed")
+		}
+		if response.StatusCode >= 200 && response.StatusCode < 300 {
+			return response.Body, nil
+		}
+		if response.StatusCode < 300 || response.StatusCode >= 400 || redirects == 5 {
+			_ = response.Body.Close()
+			return nil, HTTPStatusError{StatusCode: response.StatusCode}
+		}
+		location, err := response.Location()
+		_ = response.Body.Close()
+		if err != nil || !allowedArchiveURL(location, c.endpoints) {
+			return nil, errors.New("GitHub archive redirect rejected")
+		}
+		endpoint = location
+	}
+	return nil, errors.New("too many GitHub archive redirects")
+}
+
+func archiveSHA(value string) bool {
+	if len(value) != 40 {
+		return false
+	}
+	for _, character := range value {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func allowedArchiveURL(candidate *url.URL, endpoints Endpoints) bool {
+	if candidate == nil || candidate.Scheme != "https" || candidate.User != nil || candidate.Host == "" {
+		return false
+	}
+	return sameOrigin(candidate, endpoints.API) || sameOrigin(candidate, endpoints.Archive)
+}
+
+func sameOrigin(left, right *url.URL) bool {
+	return left != nil && right != nil && left.Scheme == right.Scheme && left.Host == right.Host
+}
+
 func (c *Client) doInstallationJSON(ctx context.Context, operation string, installationID int64, endpoint *url.URL, limit int64, target any) (string, error) {
 	for attempt := 0; attempt < 2; attempt++ {
 		token, err := c.InstallationToken(ctx, installationID, nil)
 		if err != nil {
 			return "", err
 		}
-		link, err := c.doJSON(ctx, operation, http.MethodGet, endpoint, nil, "Bearer "+token.Value, limit, target)
+		link, err := c.doJSON(ctx, operation, http.MethodGet, endpoint, nil, "Bearer "+token.Value, githubMediaType, limit, target)
 		var statusError HTTPStatusError
 		if !errors.As(err, &statusError) || statusError.StatusCode != http.StatusUnauthorized || attempt == 1 {
 			return link, err
@@ -204,14 +348,18 @@ func (c *Client) doInstallationJSON(ctx context.Context, operation string, insta
 }
 
 type HTTPStatusError struct {
-	StatusCode int
+	StatusCode  int
+	RateLimited bool
 }
 
 func (err HTTPStatusError) Error() string {
 	return fmt.Sprintf("GitHub API status %d", err.StatusCode)
 }
 
-func (c *Client) doJSON(ctx context.Context, operation, method string, endpoint *url.URL, body []byte, authorization string, limit int64, target any) (link string, resultErr error) {
+func (err HTTPStatusError) HTTPStatus() int     { return err.StatusCode }
+func (err HTTPStatusError) IsRateLimited() bool { return err.RateLimited }
+
+func (c *Client) doJSON(ctx context.Context, operation, method string, endpoint *url.URL, body []byte, authorization, mediaType string, limit int64, target any) (link string, resultErr error) {
 	result := "error"
 	if c.metrics != nil {
 		defer func() { c.metrics.ObserveGitHub(operation, result) }()
@@ -221,6 +369,7 @@ func (c *Client) doJSON(ctx context.Context, operation, method string, endpoint 
 		return "", err
 	}
 	SetAPIHeaders(request.Header, c.apiVersion)
+	request.Header.Set("Accept", mediaType)
 	request.Header.Set("Authorization", authorization)
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
@@ -231,7 +380,7 @@ func (c *Client) doJSON(ctx context.Context, operation, method string, endpoint 
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", HTTPStatusError{StatusCode: response.StatusCode}
+		return "", HTTPStatusError{StatusCode: response.StatusCode, RateLimited: response.StatusCode == http.StatusTooManyRequests || response.Header.Get("X-RateLimit-Remaining") == "0" || response.Header.Get("Retry-After") != ""}
 	}
 	reader := io.LimitReader(response.Body, limit+1)
 	data, err := io.ReadAll(reader)

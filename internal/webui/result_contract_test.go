@@ -16,7 +16,8 @@ func TestConsoleRendersGroupedCodeResults(t *testing.T) {
 		`gutter.className="line-gutter"`,
 		`viewport.className="code-viewport"`,
 		`preview.replace(/\n$/,"").split("\n")`,
-		`gutter.textContent=String(match.line_number+offset)`,
+		`gutter.textContent=match.line_number?match.line_number+offset:""`,
+		`l?` + "`#L${l}`" + `:""`,
 		`link.textContent="Open indexed source"`,
 	} {
 		if !bytes.Contains(document, []byte(want)) {

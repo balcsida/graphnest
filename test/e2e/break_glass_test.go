@@ -41,7 +41,6 @@ const (
 	scimE2EToken      = "break-glass-scim-token-32-bytes!"
 	oidcClientSecret  = "break-glass-oidc-client-secret"
 	webhookTestSecret = "break-glass-webhook-secret"
-	graphTestSecret   = "break-glass-graph-secret"
 )
 
 func TestBreakGlassRecoveryAcrossRealReplicas(t *testing.T) {
@@ -131,7 +130,7 @@ func TestBreakGlassRecoveryAcrossRealReplicas(t *testing.T) {
 }
 
 type serverSecretFiles struct {
-	privateKey, webhook, oidcSecret, oidcCA, scimToken, graphSecret string
+	privateKey, webhook, oidcSecret, oidcCA, scimToken string
 }
 
 func writeServerSecrets(t *testing.T, root string, idp *oidcTestProvider) serverSecretFiles {
@@ -150,9 +149,7 @@ func writeServerSecrets(t *testing.T, root string, idp *oidcTestProvider) server
 	writeE2EFile(t, oidcCA, idp.caPEM())
 	scimToken := filepath.Join(root, "scim-token")
 	writeE2EFile(t, scimToken, []byte(scimE2EToken))
-	graphSecret := filepath.Join(root, "graph-secret")
-	writeE2EFile(t, graphSecret, []byte(graphTestSecret))
-	return serverSecretFiles{privateKey, webhook, oidcSecret, oidcCA, scimToken, graphSecret}
+	return serverSecretFiles{privateKey, webhook, oidcSecret, oidcCA, scimToken}
 }
 
 func writeE2EFile(t *testing.T, path string, value []byte) {
@@ -265,8 +262,6 @@ func startRealServer(t *testing.T, binary, address, databaseURL, publicOrigin, i
 		"GREPNEST_OIDC_LINK_CLAIM=directory_id",
 		"GREPNEST_OIDC_DISPLAY_NAME_CLAIM=name",
 		"GREPNEST_SCIM_TOKEN_FILE="+files.scimToken,
-		"GREPNEST_GRAPH_URL=http://127.0.0.1:8081",
-		"GREPNEST_GRAPH_SECRET_FILE="+files.graphSecret,
 		fmt.Sprintf("GREPNEST_BREAK_GLASS_ENABLED=%t", breakGlass),
 	)
 	return startProcess(t, command)

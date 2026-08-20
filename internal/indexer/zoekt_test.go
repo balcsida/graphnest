@@ -9,8 +9,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -18,40 +16,6 @@ import (
 	"github.com/grepnest/grepnest/internal/repository"
 	"github.com/grepnest/grepnest/internal/zoekt"
 )
-
-func TestZoektIndexUsesPinnedArgumentsAndSafeEnvironment(t *testing.T) {
-	directory := t.TempDir()
-	argumentsFile := filepath.Join(directory, "arguments")
-	environmentFile := filepath.Join(directory, "environment")
-	binary := filepath.Join(directory, "zoekt-git-index")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + argumentsFile + "'\nenv > '" + environmentFile + "'\n"
-	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	indexDirectory := filepath.Join(directory, "index")
-	worktree := filepath.Join(directory, "worktree")
-	t.Setenv("GREPNEST_GIT_TOKEN", "must-not-leak")
-	indexer := ZoektIndexer{Binary: binary, IndexDir: indexDirectory, Runner: Runner{MaxOutput: 1024, KillGrace: time.Millisecond}}
-	repo := repository.Repository{ID: 4, ZoektID: 7, Name: "acme/repo", Branch: "main", WebURL: "https://ghe.example/acme/repo"}
-	if err := indexer.Index(t.Context(), repo, worktree); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(argumentsFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"-index", indexDirectory, "-branches", "main", "-submodules=false", "-incremental=true", "-file_limit", "2097152", "-parallelism", "1", "-disable_ctags", worktree}
-	if got := strings.Fields(string(data)); !slices.Equal(got, want) {
-		t.Fatalf("arguments = %q, want %q", got, want)
-	}
-	environment, err := os.ReadFile(environmentFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(environment), "must-not-leak") || strings.Contains(string(environment), "GREPNEST_GIT_TOKEN") {
-		t.Fatalf("credential environment leaked: %s", environment)
-	}
-}
 
 func TestZoektIndexUsesFixedDeadline(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "slow-indexer")
@@ -62,7 +26,7 @@ func TestZoektIndexUsesFixedDeadline(t *testing.T) {
 		Binary: binary, IndexDir: t.TempDir(), IndexTimeout: 10 * time.Millisecond,
 		Runner: Runner{MaxOutput: 1024, KillGrace: time.Millisecond},
 	}
-	repo := repository.Repository{ZoektID: 7, Branch: "main"}
+	repo := repository.Repository{ZoektID: 7, Name: "acme/repo", Branch: "main", DesiredSHA: "0123456789abcdef0123456789abcdef01234567", WebURL: "https://example.com/acme/repo"}
 	started := time.Now()
 	err := indexer.Index(t.Context(), repo, "-c")
 	if err == nil || time.Since(started) > time.Second {

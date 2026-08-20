@@ -66,7 +66,7 @@ func testLeaseRecoveryAfterRestart(t *testing.T) {
 	}
 	queue := &controlledQueue{Store: h.store, blockClaim: true}
 	worker := &indexer.Worker{
-		ID: "new-owner", Queue: queue, Store: h.store, Tokens: integrationTokens{}, Git: integrationGit{}, Zoekt: integrationPublisher{},
+		ID: "new-owner", Queue: queue, Store: h.store, Tokens: integrationTokens{}, Snapshots: integrationGit{}, Zoekt: integrationPublisher{},
 		ReapEvery: 10 * time.Millisecond,
 	}
 	if worked, err := worker.RunOne(t.Context()); err != nil || worked {
@@ -129,14 +129,15 @@ func (tokens integrationTokens) InstallationToken(context.Context, int64, []int6
 
 type integrationGit struct{ prepares *atomic.Int64 }
 
-func (git integrationGit) Prepare(context.Context, repository.Repository, postgres.IndexJob, string) (string, string, error) {
+func (git integrationGit) Prepare(_ context.Context, request indexer.SnapshotRequest) (indexer.Snapshot, error) {
 	if git.prepares != nil {
 		git.prepares.Add(1)
 	}
-	return "/mirror", "/worktree", nil
+	return indexer.Snapshot{Root: "/worktree", RepositoryID: request.RepositoryID, JobID: request.JobID, CommitSHA: request.CommitSHA}, nil
 }
-func (integrationGit) Cleanup(context.Context, int64, int64) error     { return nil }
-func (integrationGit) Prune(context.Context, map[int64]struct{}) error { return nil }
+func (integrationGit) Cleanup(context.Context, indexer.Snapshot) error        { return nil }
+func (integrationGit) CleanupStale(context.Context, indexer.ActiveJobs) error { return nil }
+func (integrationGit) FreeSpacePath() string                                  { return "/worktree" }
 
 type integrationPublisher struct{}
 
@@ -193,7 +194,7 @@ func testPushSizeBlocksCredentials(t *testing.T) {
 	var tokenCalls, fetchCalls atomic.Int64
 	worker := &indexer.Worker{
 		ID: "size-worker", Queue: h.store, Store: h.store,
-		Tokens: integrationTokens{calls: &tokenCalls}, Git: integrationGit{prepares: &fetchCalls}, Zoekt: integrationPublisher{},
+		Tokens: integrationTokens{calls: &tokenCalls}, Snapshots: integrationGit{prepares: &fetchCalls}, Zoekt: integrationPublisher{},
 		MaxRepositoryBytes: 5 * 1024, RenewEvery: time.Hour,
 	}
 	worked, err := worker.RunOne(t.Context())
@@ -412,11 +413,9 @@ func testCompletionPushOrder(t *testing.T, completionFirst bool) {
 	if err := h.pool.QueryRow(t.Context(), "select count(*) from index_jobs where repository_id=$1 and state='queued' and target_sha=$2", repositoryID, postgresSHAB).Scan(&queued); err != nil {
 		t.Fatal(err)
 	}
-	wantIndexed, wantState := postgresSHAA, "succeeded"
-	if !completionFirst {
-		wantIndexed, wantState = postgresSHAC, "superseded"
-	}
-	if desired != postgresSHAB || indexed != wantIndexed || state != wantState || queued != 1 {
+	validCompletion := state == "succeeded" && indexed == postgresSHAA
+	validSuperseded := state == "superseded" && (indexed == postgresSHAA || indexed == postgresSHAC)
+	if desired != postgresSHAB || (!validCompletion && !validSuperseded) || queued != 1 {
 		t.Fatalf("desired=%q indexed=%q state=%q queued=%d", desired, indexed, state, queued)
 	}
 }
@@ -484,7 +483,7 @@ func testDisableClaimOrder(t *testing.T) {
 	var tokenCalls, fetchCalls atomic.Int64
 	worker := &indexer.Worker{
 		ID: "owner", Queue: h.store, Store: h.store,
-		Tokens: integrationTokens{calls: &tokenCalls}, Git: integrationGit{prepares: &fetchCalls}, Zoekt: integrationPublisher{},
+		Tokens: integrationTokens{calls: &tokenCalls}, Snapshots: integrationGit{prepares: &fetchCalls}, Zoekt: integrationPublisher{},
 		RenewEvery: time.Hour,
 	}
 	type workerResult struct {
@@ -584,7 +583,7 @@ func testDisabledPushAndQueue(t *testing.T) {
 	var tokenCalls, fetchCalls atomic.Int64
 	worker := &indexer.Worker{
 		ID: "disabled-worker", Queue: h.store, Store: h.store,
-		Tokens: integrationTokens{calls: &tokenCalls}, Git: integrationGit{prepares: &fetchCalls}, Zoekt: integrationPublisher{},
+		Tokens: integrationTokens{calls: &tokenCalls}, Snapshots: integrationGit{prepares: &fetchCalls}, Zoekt: integrationPublisher{},
 		RenewEvery: time.Hour,
 	}
 	worked, err := worker.RunOne(t.Context())

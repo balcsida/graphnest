@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -72,11 +73,57 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		if _, err := tx.Exec(ctx, string(sql)); err != nil {
 			return fmt.Errorf("migration %q: %w", migration.name, err)
 		}
+		if version == 19 {
+			if err := backfillLegacySCIPGraphs(ctx, tx); err != nil {
+				return fmt.Errorf("migration %q: %w", migration.name, err)
+			}
+		}
 		if _, err := tx.Exec(ctx, "insert into schema_migrations (version) values ($1)", version); err != nil {
 			return err
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+func backfillLegacySCIPGraphs(ctx context.Context, tx pgx.Tx) error {
+	rows, err := tx.Query(ctx, `select scip.repository_id, scip.id, scip.commit
+		from scip_uploads scip
+		join repositories on repositories.id=scip.repository_id and repositories.indexed_sha=scip.commit
+		left join graph_uploads graph on graph.repository_id=scip.repository_id
+		where graph.id is null or graph.source='scip'
+		order by scip.repository_id`)
+	if err != nil {
+		return err
+	}
+	type upload struct {
+		repositoryID, uploadID int64
+		commit                 string
+	}
+	uploads := []upload{}
+	for rows.Next() {
+		var item upload
+		if err := rows.Scan(&item.repositoryID, &item.uploadID, &item.commit); err != nil {
+			rows.Close()
+			return err
+		}
+		uploads = append(uploads, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	store := New(nil)
+	for _, item := range uploads {
+		artifact, err := store.scipArtifact(ctx, tx, item.repositoryID, item.uploadID, item.commit)
+		if err != nil {
+			return err
+		}
+		if _, err := replaceGraph(ctx, tx, item.repositoryID, GraphSourceSCIP, artifact); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func migrationDescriptors(entries []fs.DirEntry) ([]migration, error) {

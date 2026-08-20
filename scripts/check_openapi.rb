@@ -68,7 +68,7 @@ resolve_local_references(document, document_path, documents)
 upload = document.dig("paths", "/v1/scip/uploads", "post", "requestBody", "content", "application/vnd.scip+protobuf", "schema")
 graph_upload = document.dig("paths", "/v1/graph/uploads", "post", "requestBody", "content", "application/vnd.grepnest.graph.v1+protobuf", "schema")
 graph_status = document.dig("paths", "/v1/graph/repositories/{id}/status", "get", "responses", "200", "content", "application/json", "schema")
-graph_queries = %w[context impact trace cypher].to_h do |name|
+graph_queries = %w[context impact trace].to_h do |name|
   [name, document.dig("paths", "/v1/graph/#{name}", "post")]
 end
 locations = document.dig("components", "schemas", "SCIPNavigationResponse", "properties", "locations")
@@ -93,8 +93,6 @@ graph_queries.each do |name, query|
   require_value(response["$ref"], "#/components/schemas/Graph#{name.capitalize}Response", "graph #{name} response schema")
   raise OpenAPIError, "graph #{name} timeout response is missing" unless query.dig("responses", "504").is_a?(Hash)
 end
-raise OpenAPIError, "graph cypher forbidden response is missing" unless graph_queries.fetch("cypher").dig("responses", "403").is_a?(Hash)
-
 schemas = document.fetch("components").fetch("schemas")
 audit_event = schemas.fetch("AuditEvent").fetch("properties")
 raise OpenAPIError, "AuditEvent.authentication_method omits oauth" unless audit_event.fetch("authentication_method").fetch("enum").include?("oauth")
@@ -145,9 +143,7 @@ end
   ["GraphImpactRequest", "max_depth"] => [3, 32],
   ["GraphTraceRequest", "max_depth"] => [10, 30],
   ["GraphContextRequest", "per_category_limit"] => [100, 100],
-  ["GraphImpactRequest", "limit"] => [100, 100],
-  ["GraphCypherRequest", "max_rows"] => [100, 100],
-  ["GraphCypherRequest", "max_bytes"] => [262_144, 262_144]
+  ["GraphImpactRequest", "limit"] => [100, 100]
 }.each do |(schema_name, property_name), (default, cap)|
   property = schemas.fetch(schema_name).fetch("properties").fetch(property_name)
   require_value(property["default"], default, "#{schema_name}.#{property_name} default") unless default.nil?

@@ -1,0 +1,37 @@
+{
+  "ContextIncomingCalls": [
+    "root"
+  ],
+  "ContextIncomingReferences": [
+    "duplicate-a"
+  ],
+  "ContextOutgoingCalls": [
+    "last"
+  ],
+  "ImpactDepth1": [
+    "next"
+  ],
+  "ImpactDepth2": [
+    "last"
+  ],
+  "ImpactMinimumDepth1": [
+    "next"
+  ],
+  "Trace": [
+    "root",
+    "next",
+    "last"
+  ],
+  "Ambiguous": [
+    "duplicate-a",
+    "duplicate-b"
+  ],
+  "StaleBoundaries": [
+    "graph_not_ready"
+  ],
+  "MissingBoundaries": [
+    "graph_missing"
+  ],
+  "Commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "UnauthorizedStatus": "not_found"
+}

@@ -1,0 +1,2 @@
+-- The Go migration runner materializes current legacy SCIP uploads with the
+-- same converter used by new uploads.

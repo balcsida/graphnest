@@ -4,8 +4,10 @@ package indexer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -22,12 +24,36 @@ type ZoektIndexer struct {
 	VisibilityTimeout time.Duration
 }
 
-func (indexer *ZoektIndexer) Index(ctx context.Context, repo repository.Repository, worktree string) error {
-	if indexer == nil || indexer.Binary == "" || indexer.IndexDir == "" || worktree == "" || repo.ZoektID == 0 || repo.Branch == "" {
+func (indexer *ZoektIndexer) Index(ctx context.Context, repo repository.Repository, source string) (resultErr error) {
+	if indexer == nil || indexer.Binary == "" || indexer.IndexDir == "" || source == "" || repo.ZoektID == 0 || repo.Name == "" || repo.WebURL == "" || repo.Branch == "" || !validSHA(repo.DesiredSHA) {
 		return errors.New("invalid Zoekt indexing job")
 	}
-	arguments := []string{"-index", indexer.IndexDir, "-branches", repo.Branch, "-submodules=false", "-incremental=true", "-file_limit", "2097152", "-parallelism", "1", "-disable_ctags", worktree}
-	environment := []string{"LANG=C", "LC_ALL=C", "PATH=" + os.Getenv("PATH"), "TMPDIR=" + os.TempDir()}
+	temporaryDirectory, err := os.MkdirTemp(filepath.Dir(indexer.IndexDir), "."+filepath.Base(indexer.IndexDir)+"-tmp-")
+	if err != nil {
+		return err
+	}
+	defer func() { resultErr = errors.Join(resultErr, os.RemoveAll(temporaryDirectory)) }()
+	metadata, err := os.CreateTemp(temporaryDirectory, "metadata-*.json")
+	if err != nil {
+		return err
+	}
+	metadataPath := metadata.Name()
+	description := struct {
+		ID       uint32
+		Name     string
+		URL      string
+		Metadata map[string]string
+		Branches []struct{ Name, Version string }
+	}{ID: repo.ZoektID, Name: repo.Name, URL: repo.WebURL, Metadata: map[string]string{"grepnest_repository_id": strconv.FormatUint(uint64(repo.ZoektID), 10)}, Branches: []struct{ Name, Version string }{{repo.Branch, repo.DesiredSHA}}}
+	if err := json.NewEncoder(metadata).Encode(description); err != nil {
+		_ = metadata.Close()
+		return err
+	}
+	if err := metadata.Close(); err != nil {
+		return err
+	}
+	arguments := []string{"-index", indexer.IndexDir, "-meta", metadataPath, "-file_limit", "2097152", "-parallelism", "1", "-disable_ctags", source}
+	environment := []string{"LANG=C", "LC_ALL=C", "PATH=" + os.Getenv("PATH"), "TMPDIR=" + temporaryDirectory}
 	timeout := indexer.IndexTimeout
 	if timeout <= 0 {
 		timeout = 10 * time.Minute

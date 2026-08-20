@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -90,6 +91,27 @@ func TestSearchErrorUsesRequestContextID(t *testing.T) {
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil || envelope.Error.RequestID != "trusted-request" {
 		t.Fatalf("request ID=%q err=%v body=%s", envelope.Error.RequestID, err, response.Body.String())
+	}
+}
+
+func TestSearchHTTPPreservesGitHubMatchText(t *testing.T) {
+	want := api.SearchMatch{Repository: api.Repository{ID: 1, Name: "acme/one"}, Path: "main.go", SHA: "blob", Preview: "before\nneedle\nafter"}
+	handler := testHandler(t, &stubBackend{response: api.SearchResponse{Matches: []api.SearchMatch{want}, Consistency: &api.SearchConsistency{Backend: "github", Partial: true}}}, 4096)
+	request := httptest.NewRequest(http.MethodPost, "/v1/search", strings.NewReader(`{"query":"needle"}`))
+	request.Header.Set("Authorization", "Bearer secret")
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	var got api.SearchResponse
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if err := json.NewDecoder(response.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Matches) != 1 || !reflect.DeepEqual(got.Matches[0], want) || got.Consistency == nil || got.Consistency.Backend != "github" || !got.Consistency.Partial {
+		t.Fatalf("response=%#v", got)
 	}
 }
 

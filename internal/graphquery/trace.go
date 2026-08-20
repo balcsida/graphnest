@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/grepnest/grepnest/internal/graphprotocol"
-	"github.com/grepnest/grepnest/internal/ladybug"
 )
 
 func (service *Service) Trace(ctx context.Context, request graphprotocol.TraceRequest) (graphprotocol.TraceResponse, error) {
@@ -68,47 +67,48 @@ func (service *Service) Trace(ctx context.Context, request graphprotocol.TraceRe
 	}
 	edgeCount := 0
 	via := map[nodeKey]graphprotocol.Relationship{}
-	err = service.Database.View(ctx, func(session *ladybug.Session) error {
-		for currentDepth := 1; currentDepth <= depth && len(frontier) > 0 && !foundOK; currentDepth++ {
-			result, queryErr := session.Execute(ctx, relationQueries["calls"].outgoing, map[string]any{
-				"scope": ready.parameters, "frontier": frontierParameters(frontier),
-				"depth": int64(currentDepth), "min_confidence": float64(0),
-				"offset": int64(0), "limit": int64(limits.MaxFanout + 1),
-			}, ladybug.QueryLimits{MaxRows: limits.MaxFanout + 1})
-			if queryErr != nil {
-				return queryErr
-			}
-			if len(result.Rows) > limits.MaxFanout {
-				result.Rows = result.Rows[:limits.MaxFanout]
-				response.Boundaries = appendBoundary(response.Boundaries, "fanout_limit", currentDepth)
-			}
-			next := []nodeKey{}
-			for _, row := range result.Rows {
-				symbol := symbolFromRow(row)
-				key := keyFromRow(row)
-				edgeCount++
-				if edgeCount > limits.MaxEdges || len(parents)-len(sources) >= limits.MaxNodes {
-					response.Boundaries = appendBoundary(response.Boundaries, "traversal_limit", currentDepth)
-					return nil
-				}
-				if _, seen := parents[key]; seen {
-					continue
-				}
-				parent := keyFromStorageUID(row[11].(string))
-				parents[key], symbols[key] = parent, symbol
-				via[key] = relationshipFromRow(row, "calls", "downstream")
-				next = append(next, key)
-				if _, ok := targetKeys[key]; ok {
-					found, foundOK = key, true
-					break
-				}
-			}
-			frontier = next
+	store := service.queryStore()
+	for currentDepth := 1; currentDepth <= depth && len(frontier) > 0 && !foundOK; currentDepth++ {
+		refs := make([]SymbolRef, 0, len(frontier))
+		for _, key := range frontier {
+			refs = append(refs, SymbolRef{RepositoryID: key.repositoryID, UID: key.uid})
 		}
-		return nil
-	})
-	if err != nil || !foundOK {
-		return response, err
+		neighbors, queryErr := store.Neighbors(ctx, NeighborQuery{
+			Snapshots: ready.querySnapshots(false), Frontier: refs, Relation: "calls", Direction: "outgoing",
+			Limit: limits.MaxFanout + 1,
+		})
+		if queryErr != nil {
+			return response, queryErr
+		}
+		if len(neighbors) > limits.MaxFanout {
+			neighbors = neighbors[:limits.MaxFanout]
+			response.Boundaries = appendBoundary(response.Boundaries, "fanout_limit", currentDepth)
+		}
+		next := []nodeKey{}
+		for _, neighbor := range neighbors {
+			symbol := neighbor.Symbol
+			key := nodeKey{repositoryID: symbol.RepositoryID, uid: symbol.UID}
+			edgeCount++
+			if edgeCount > limits.MaxEdges || len(parents)-len(sources) >= limits.MaxNodes {
+				response.Boundaries = appendBoundary(response.Boundaries, "traversal_limit", currentDepth)
+				return response, nil
+			}
+			if _, seen := parents[key]; seen {
+				continue
+			}
+			parent := nodeKey{repositoryID: neighbor.Parent.RepositoryID, uid: neighbor.Parent.UID}
+			parents[key], symbols[key] = parent, symbol
+			via[key] = neighbor.Edge
+			next = append(next, key)
+			if _, ok := targetKeys[key]; ok {
+				found, foundOK = key, true
+				break
+			}
+		}
+		frontier = next
+	}
+	if !foundOK {
+		return response, nil
 	}
 	path := []nodeKey{found}
 	for {
@@ -142,18 +142,5 @@ func (service *Service) lookupSymbols(ctx context.Context, ready readyScope, uid
 	if len(snapshots) == 0 {
 		return nil, nil
 	}
-	var symbols []graphprotocol.Symbol
-	err := service.Database.View(ctx, func(session *ladybug.Session) error {
-		result, err := session.Execute(ctx, selectSymbols, map[string]any{
-			"scope": ready.parameters, "use_uid": true, "uids": selectorUIDs(snapshots, uid),
-			"name": "", "path": "", "kind": "", "limit": int64(len(snapshots)),
-		}, ladybug.QueryLimits{MaxRows: len(snapshots)})
-		if err == nil {
-			for _, row := range result.Rows {
-				symbols = append(symbols, symbolFromRow(row))
-			}
-		}
-		return err
-	})
-	return symbols, err
+	return service.queryStore().Symbols(ctx, SymbolQuery{Snapshots: ready.querySnapshots(selected), UID: uid, Limit: len(snapshots)})
 }

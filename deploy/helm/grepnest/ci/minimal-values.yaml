@@ -5,9 +5,6 @@ images:
   node:
     repository: registry.example.invalid/grepnest/node
     digest: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-  scanner:
-    repository: registry.example.invalid/grepnest/scanner
-    digest: sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 secrets:
   runtime: {name: grepnest-runtime}
   githubApp: {name: grepnest-github-app}

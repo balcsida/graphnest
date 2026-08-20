@@ -3,6 +3,7 @@
 package indexer
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -19,13 +20,21 @@ import (
 type Runner struct {
 	MaxOutput int64
 	KillGrace time.Duration
+	Capture   io.Writer
+}
+
+func (runner Runner) Output(ctx context.Context, binary string, args, environment []string, directory string) ([]byte, error) {
+	var output bytes.Buffer
+	runner.Capture = &output
+	err := runner.Run(ctx, binary, args, environment, directory)
+	return output.Bytes(), err
 }
 
 func (runner Runner) Run(ctx context.Context, binary string, args, environment []string, directory string) error {
 	if runner.MaxOutput <= 0 || runner.KillGrace <= 0 {
 		return errors.New("runner limits must be positive")
 	}
-	output := &boundedWriter{remaining: runner.MaxOutput}
+	output := &boundedWriter{remaining: runner.MaxOutput, destination: runner.Capture}
 	command := exec.CommandContext(ctx, binary, args...)
 	command.Env, command.Dir = environment, directory
 	command.Stdout, command.Stderr = output, output
@@ -60,14 +69,19 @@ func (runner Runner) Run(ctx context.Context, binary string, args, environment [
 		<-killDone
 	}
 	if err == nil {
+		if runner.Capture != nil && output.truncated {
+			return errors.New("command output exceeded limit")
+		}
 		return nil
 	}
 	return fmt.Errorf("run %s: %w", filepath.Base(binary), err)
 }
 
 type boundedWriter struct {
-	mu        sync.Mutex
-	remaining int64
+	mu          sync.Mutex
+	remaining   int64
+	destination io.Writer
+	truncated   bool
 }
 
 func (writer *boundedWriter) Write(data []byte) (int, error) {
@@ -76,8 +90,14 @@ func (writer *boundedWriter) Write(data []byte) (int, error) {
 	written := len(data)
 	if int64(written) > writer.remaining {
 		written = int(writer.remaining)
+		writer.truncated = true
 	}
 	writer.remaining -= int64(written)
+	if writer.destination != nil {
+		if _, err := writer.destination.Write(data[:written]); err != nil {
+			return written, err
+		}
+	}
 	return len(data), nil
 }
 
