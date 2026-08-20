@@ -44,27 +44,6 @@ node:
   tolerations: [{key: grepnest.example.invalid/dedicated, operator: Equal, value: node, effect: NoSchedule}]
   topologySpreadConstraints:
     - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: DoNotSchedule, labelSelector: {matchLabels: {app.kubernetes.io/component: node}}}
-scanner:
-  enabled: true
-  replicas: 3
-  maxRepositoryBytes: 4294967296
-  minFreeBytes: 2147483648
-  scanTimeout: 20m
-  nodeSelector: {grepnest.example.invalid/pool: scanner}
-  affinity:
-    nodeAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        nodeSelectorTerms:
-          - matchExpressions: [{key: grepnest.example.invalid/tier, operator: In, values: [scanner]}]
-  tolerations: [{key: grepnest.example.invalid/dedicated, operator: Equal, value: scanner, effect: NoSchedule}]
-graph:
-  nodeSelector: {grepnest.example.invalid/pool: graph}
-  affinity:
-    nodeAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        nodeSelectorTerms:
-          - matchExpressions: [{key: grepnest.example.invalid/tier, operator: In, values: [graph]}]
-  tolerations: [{key: grepnest.example.invalid/dedicated, operator: Equal, value: graph, effect: NoSchedule}]
 migration:
   nodeSelector: {grepnest.example.invalid/pool: migration}
   affinity:

@@ -231,6 +231,7 @@ func TestCompleteGraphPublishesManagedArtifact(t *testing.T) {
 	if err := store.CompleteIndex(t.Context(), index.ID, index.LeaseOwner); err != nil {
 		t.Fatal(err)
 	}
+	queueLegacyGraph(t, store, index.RepositoryID)
 	job, err := store.ClaimGraph(t.Context(), "scanner-1")
 	if err != nil {
 		t.Fatal(err)
@@ -256,6 +257,7 @@ func TestCompleteGraphExternalArtifactWins(t *testing.T) {
 	if err := store.CompleteIndex(t.Context(), index.ID, index.LeaseOwner); err != nil {
 		t.Fatal(err)
 	}
+	queueLegacyGraph(t, store, index.RepositoryID)
 	external := artifactFor(index.RepositoryID, index.TargetSHA, "external")
 	if got, err := store.ReplaceGraph(t.Context(), index.RepositoryID, GraphSourceExternal, external); err != nil || !got.Applied {
 		t.Fatalf("external=%#v err=%v", got, err)
@@ -282,6 +284,7 @@ func TestCompleteGraphSupersedesStaleArtifact(t *testing.T) {
 	if err := store.CompleteIndex(t.Context(), index.ID, index.LeaseOwner); err != nil {
 		t.Fatal(err)
 	}
+	queueLegacyGraph(t, store, index.RepositoryID)
 	job, err := store.ClaimGraph(t.Context(), "scanner-1")
 	if err != nil {
 		t.Fatal(err)
@@ -310,6 +313,7 @@ func TestCompleteGraphRollsBackReplacementWhenLeaseCompletionFails(t *testing.T)
 	if err := store.CompleteIndex(t.Context(), index.ID, index.LeaseOwner); err != nil {
 		t.Fatal(err)
 	}
+	queueLegacyGraph(t, store, index.RepositoryID)
 	job, err := store.ClaimGraph(t.Context(), "scanner-1")
 	if err != nil {
 		t.Fatal(err)
@@ -351,6 +355,14 @@ func artifactFor(repositoryID int64, commit, analyzer string) graphartifact.Arti
 			{UID: "symbol", Kind: graphartifact.NodeSymbol, Path: "a.go", Language: "go", QualifiedName: "Thing", Range: graphartifact.Range{EndCharacter: 1}},
 		},
 		Edges: []graphartifact.Edge{{SourceUID: "repository", TargetUID: "symbol", Kind: graphartifact.EdgeContains, Path: "a.go", Confidence: 1}},
+	}
+}
+
+func queueLegacyGraph(t *testing.T, store *Store, repositoryID int64) {
+	t.Helper()
+	if _, err := store.pool.Exec(t.Context(), `update graph_jobs set state='queued',lease_owner=null,lease_expires_at=null
+		where repository_id=$1 and target_sha=(select indexed_sha from repositories where id=$1)`, repositoryID); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -3,10 +3,9 @@ fullnameOverride: ""
 images:
   application: {repository: "", digest: "", tag: "", pullPolicy: IfNotPresent}
   node: {repository: "", digest: "", tag: "", pullPolicy: IfNotPresent}
-  scanner: {repository: "", digest: "", tag: "", pullPolicy: IfNotPresent}
   pullSecrets: []
 secrets:
-  runtime: {name: "", databaseURLKey: database-url, graphSecretKey: graph-secret}
+  runtime: {name: "", databaseURLKey: database-url}
   githubApp: {name: "", privateKeyKey: private-key.pem, webhookSecretKey: webhook-secret}
   customCA: {name: "", key: ca.crt}
   oidc: {name: "", clientSecretKey: client-secret}
@@ -19,6 +18,7 @@ server:
   port: 8080
   service: {port: 8080, annotations: {}}
   config:
+    searchBackend: zoekt
     githubWebURL: https://github.example.invalid
     githubAPIURL: https://github.example.invalid/api/v3
     githubUploadURL: https://github.example.invalid/api/uploads
@@ -64,48 +64,20 @@ node:
     resources: {requests: {cpu: "2", memory: 8Gi}, limits: {cpu: "8", memory: 24Gi}}
   indexer:
     executable: /usr/local/bin/grepnest-indexer
-    gitExecutable: /usr/bin/git
-    zoektGitIndexExecutable: /usr/local/bin/zoekt-git-index
-    minFreeBytes: 10737418240
+    zoektIndexExecutable: /usr/local/bin/zoekt-index
+    workspaceSizeLimit: 6Gi
+    minFreeBytes: 1073741824
     maxRepositoryBytes: 5368709120
     metricsPort: 9090
     resources: {requests: {cpu: "1", memory: 2Gi}, limits: {cpu: "4", memory: 8Gi}}
-  paths: {data: /data, indexes: /data/index}
+  paths: {workspace: /var/lib/grepnest/work, indexes: /data/index}
   service: {port: 6070, annotations: {}}
   storage: {size: 250Gi, accessModes: [ReadWriteOnce], storageClassName: "", annotations: {}}
   nodeSelector: {}
   affinity: {}
   tolerations: []
   topologySpreadConstraints: []
-  podSecurityContext: {}
-  podAnnotations: {}
-graph:
-  mode: embedded
-  executable: /usr/local/bin/grepnest-graph
-  port: 8081
-  dataPath: /data/graph
-  resources: {requests: {cpu: 500m, memory: 1Gi}, limits: {cpu: "2", memory: 4Gi}}
-  storage: {size: 50Gi, accessModes: [ReadWriteOnce], storageClassName: "", annotations: {}}
-  nodeSelector: {}
-  affinity: {}
-  tolerations: []
-  podSecurityContext: {}
-  podAnnotations: {}
-scanner:
-  enabled: false
-  replicas: 2
-  maxRepositoryBytes: 5368709120
-  minFreeBytes: 1073741824
-  scanTimeout: 15m
-  executable: /usr/local/bin/grepnest-scanner
-  dataPath: /data
-  gitExecutable: /usr/bin/git
-  metricsPort: 9090
-  resources: {requests: {cpu: 500m, memory: 512Mi}, limits: {cpu: "2", memory: 2Gi}}
-  nodeSelector: {}
-  affinity: {}
-  tolerations: []
-  podSecurityContext: {}
+  podSecurityContext: {fsGroup: 65532}
   podAnnotations: {}
 migration:
   executable: /usr/local/bin/grepnest-migrate

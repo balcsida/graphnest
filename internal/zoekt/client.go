@@ -88,7 +88,48 @@ func (client *Client) Search(ctx context.Context, request search.BackendRequest)
 	if err != nil {
 		return api.SearchResponse{}, err
 	}
-	return normalize(result.Files, client.maxBytes), nil
+	response := normalize(result.Files, client.maxBytes)
+	needsMetadata := false
+	for _, match := range response.Matches {
+		if match.SHA == "" && len(match.Branches) == 0 {
+			needsMetadata = true
+			break
+		}
+	}
+	if !needsMetadata {
+		return response, nil
+	}
+	repositories, err := client.list(ctx, request.RepositoryIDs, scopedMetadataQuery(request.RepositoryIDs))
+	if err != nil {
+		return api.SearchResponse{}, err
+	}
+	metadata := make(map[uint32]IndexedRepository, len(repositories))
+	ambiguous := make(map[uint32]bool)
+	for _, repo := range repositories {
+		if _, found := metadata[repo.RepoID]; found {
+			ambiguous[repo.RepoID] = true
+		}
+		metadata[repo.RepoID] = repo
+	}
+	matches := response.Matches[:0]
+	for _, match := range response.Matches {
+		if match.SHA != "" && len(match.Branches) != 0 {
+			matches = append(matches, match)
+			continue
+		}
+		if match.SHA != "" || len(match.Branches) != 0 {
+			continue
+		}
+		repo, found := metadata[match.ZoektID]
+		if !found || ambiguous[match.ZoektID] || repo.Branch == "" || repo.Version == "" {
+			continue
+		}
+		match.SHA = repo.Version
+		match.Branches = []string{repo.Branch}
+		matches = append(matches, match)
+	}
+	response.Matches = matches
+	return response, nil
 }
 
 func (client *Client) Health(ctx context.Context) error {
@@ -99,7 +140,32 @@ func (client *Client) Health(ctx context.Context) error {
 }
 
 func (client *Client) List(ctx context.Context, repositoryID uint32) ([]IndexedRepository, error) {
-	body, err := json.Marshal(listRequest{Q: "", Opts: listOptions{Field: 2}})
+	if repositoryID == 0 {
+		return nil, fmt.Errorf("%w: invalid repository ID", ErrUnavailable)
+	}
+	return client.list(ctx, []uint32{repositoryID}, "")
+}
+
+func scopedMetadataQuery(repositoryIDs []uint32) string {
+	terms := make([]string, len(repositoryIDs))
+	for index, repositoryID := range repositoryIDs {
+		terms[index] = "meta.grepnest_repository_id:" + strconv.FormatUint(uint64(repositoryID), 10)
+	}
+	return strings.Join(terms, " or ")
+}
+
+func (client *Client) list(ctx context.Context, repositoryIDs []uint32, query string) ([]IndexedRepository, error) {
+	if len(repositoryIDs) == 0 {
+		return nil, nil
+	}
+	allowed := make(map[uint32]bool, len(repositoryIDs))
+	for _, repositoryID := range repositoryIDs {
+		if repositoryID == 0 {
+			return nil, fmt.Errorf("%w: invalid repository ID", ErrUnavailable)
+		}
+		allowed[repositoryID] = true
+	}
+	body, err := json.Marshal(listRequest{Q: query, Opts: listOptions{Field: 2}})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
@@ -137,7 +203,7 @@ func (client *Client) List(ctx context.Context, repositoryID uint32) ([]IndexedR
 		if err != nil || parsedID == 0 {
 			return nil, fmt.Errorf("%w: invalid repository ID", ErrUnavailable)
 		}
-		if uint32(parsedID) != repositoryID {
+		if !allowed[uint32(parsedID)] {
 			continue
 		}
 		for _, branch := range entry.Branches {

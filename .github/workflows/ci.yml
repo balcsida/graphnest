@@ -23,7 +23,8 @@ jobs:
         with:
           go-version: "1.26.6"
       - run: make compose-test openapi-check
-      - run: make makefile-test native-link-test abi-test ladybug-test
+      - run: make makefile-test abi-test tools-check
+      - run: make scanner-build scanner-test scanner-vulncheck
       - run: make fmt lint test-race build staticcheck govulncheck
 
   ui-smoke:

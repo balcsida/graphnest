@@ -9,10 +9,12 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +22,139 @@ import (
 
 	"github.com/grepnest/grepnest/internal/observability"
 )
+
+func TestDownloadArchiveRequestsExactSHAAndStripsRedirectAuthorization(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	var archiveAuthorization string
+	archive := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		archiveAuthorization = request.Header.Get("Authorization")
+		_, _ = io.WriteString(writer, "archive")
+	}))
+	defer archive.Close()
+	archiveURL, _ := url.Parse(archive.URL)
+	api := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.EscapedPath() != "/repos/acme/repo/tarball/"+sha || request.Header.Get("Authorization") != "Bearer secret" {
+			t.Fatalf("request = %s, authorization = %q", request.URL.EscapedPath(), request.Header.Get("Authorization"))
+		}
+		http.Redirect(writer, request, archive.URL+"/download", http.StatusFound)
+	}))
+	defer api.Close()
+	apiURL, _ := url.Parse(api.URL)
+	client := NewClient(Endpoints{Web: apiURL, API: apiURL, Upload: apiURL, Git: apiURL, Archive: archiveURL}, api.Client(), nil, "2022-11-28", 1024, nil)
+	body, err := client.DownloadArchive(t.Context(), "acme", "repo", sha, "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer body.Close()
+	data, err := io.ReadAll(body)
+	if err != nil || string(data) != "archive" {
+		t.Fatalf("body = %q, %v", data, err)
+	}
+	if archiveAuthorization != "" {
+		t.Fatalf("redirect leaked authorization: %q", archiveAuthorization)
+	}
+}
+
+func TestDownloadArchiveRejectsUnsafeRedirects(t *testing.T) {
+	tests := []string{"http://example.com/archive", "https://user:secret@example.com/archive", "https://example.com/archive"}
+	for _, location := range tests {
+		t.Run(location, func(t *testing.T) {
+			api := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Location", location)
+				writer.WriteHeader(http.StatusFound)
+			}))
+			defer api.Close()
+			apiURL, _ := url.Parse(api.URL)
+			client := NewClient(Endpoints{Web: apiURL, API: apiURL, Upload: apiURL, Git: apiURL, Archive: apiURL}, api.Client(), nil, "2022-11-28", 1024, nil)
+			if _, err := client.DownloadArchive(t.Context(), "acme", "repo", strings.Repeat("a", 40), "secret"); err == nil || strings.Contains(err.Error(), "secret") {
+				t.Fatalf("error = %v", err)
+			}
+		})
+	}
+}
+
+func TestDownloadArchiveRejectsNonSHARef(t *testing.T) {
+	called := false
+	httpClient := &http.Client{Transport: archiveRoundTrip(func(*http.Request) (*http.Response, error) {
+		called = true
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("archive"))}, nil
+	})}
+	client := NewClient(Endpoints{API: &url.URL{Scheme: "https", Host: "api.example.com"}, Archive: &url.URL{Scheme: "https", Host: "archives.example.com"}}, httpClient, nil, "2022-11-28", 1024, nil)
+	if _, err := client.DownloadArchive(t.Context(), "acme", "repo", "main", "secret"); err == nil || called {
+		t.Fatal("DownloadArchive() accepted branch name")
+	}
+}
+
+func TestDownloadArchiveKeepsAuthorizationForExplicitGHESOrigin(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	requests := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests++
+		if request.Header.Get("Authorization") != "Bearer secret" {
+			t.Fatalf("authorization = %q", request.Header.Get("Authorization"))
+		}
+		if requests == 1 {
+			http.Redirect(writer, request, "/archive", http.StatusFound)
+			return
+		}
+		_, _ = io.WriteString(writer, "archive")
+	}))
+	defer server.Close()
+	endpoint, _ := url.Parse(server.URL)
+	client := NewClient(Endpoints{Web: endpoint, API: endpoint, Upload: endpoint, Git: endpoint, Archive: endpoint}, server.Client(), nil, "2022-11-28", 1024, nil)
+	body, err := client.DownloadArchive(t.Context(), "acme", "repo", sha, "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = body.Close()
+	if requests != 2 {
+		t.Fatalf("requests = %d", requests)
+	}
+}
+
+func TestDownloadArchiveCapsRedirectsAndRedactsFailures(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	requests := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests++
+		writer.Header().Set("Location", fmt.Sprintf("/redirect/%d?signature=secret-query", requests))
+		writer.WriteHeader(http.StatusFound)
+	}))
+	defer server.Close()
+	endpoint, _ := url.Parse(server.URL)
+	client := NewClient(Endpoints{Web: endpoint, API: endpoint, Upload: endpoint, Git: endpoint, Archive: endpoint}, server.Client(), nil, "2022-11-28", 1024, nil)
+	_, err := client.DownloadArchive(t.Context(), "acme", "repo", sha, "secret-token")
+	if err == nil || requests != 6 {
+		t.Fatalf("error = %v, requests = %d", err, requests)
+	}
+	for _, secret := range []string{"secret-token", "secret-query", server.URL} {
+		if strings.Contains(err.Error(), secret) {
+			t.Fatalf("error leaked %q: %v", secret, err)
+		}
+	}
+}
+
+func TestDownloadArchiveReturnsRetryableHTTPStatuses(t *testing.T) {
+	for _, status := range []int{http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusServiceUnavailable} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) { writer.WriteHeader(status) }))
+			defer server.Close()
+			endpoint, _ := url.Parse(server.URL)
+			client := NewClient(Endpoints{Web: endpoint, API: endpoint, Upload: endpoint, Git: endpoint, Archive: endpoint}, server.Client(), nil, "2022-11-28", 1024, nil)
+			_, err := client.DownloadArchive(t.Context(), "acme", "repo", strings.Repeat("a", 40), "secret")
+			var statusErr HTTPStatusError
+			if !errors.As(err, &statusErr) || statusErr.StatusCode != status {
+				t.Fatalf("error = %v", err)
+			}
+		})
+	}
+}
+
+type archiveRoundTrip func(*http.Request) (*http.Response, error)
+
+func (roundTrip archiveRoundTrip) RoundTrip(request *http.Request) (*http.Response, error) {
+	return roundTrip(request)
+}
 
 func TestClientRecordsBoundedRequestMetrics(t *testing.T) {
 	now := time.Date(2026, time.July, 18, 12, 0, 0, 0, time.UTC)
@@ -37,6 +172,46 @@ func TestClientRecordsBoundedRequestMetrics(t *testing.T) {
 	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	if want := `grepnest_github_requests_total{operation="installations",result="success"} 1`; !strings.Contains(recorder.Body.String(), want) {
 		t.Fatalf("metrics missing %q:\n%s", want, recorder.Body.String())
+	}
+}
+
+func TestSearchCodeRequestsAndReturnsBoundedTextMatches(t *testing.T) {
+	now := time.Date(2026, time.August, 19, 12, 0, 0, 0, time.UTC)
+	fragment := "before\nneedle here\nafter"
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.EscapedPath(), "/access_tokens"):
+			fmt.Fprintf(w, `{"token":"opaque","expires_at":%q}`, now.Add(10*time.Minute).Format(time.RFC3339))
+		case strings.HasSuffix(r.URL.EscapedPath(), "/search/code"):
+			if r.Header.Get("Accept") != "application/vnd.github.text-match+json" || r.Header.Get("Authorization") != "Bearer opaque" {
+				t.Fatalf("accept=%q authorization=%q", r.Header.Get("Accept"), r.Header.Get("Authorization"))
+			}
+			fmt.Fprintf(w, `{"total_count":1,"incomplete_results":false,"items":[{"path":"main.go","sha":"blob","repository":{"id":101,"full_name":"acme/one","html_url":"https://example.com/acme/one"},"text_matches":[{"property":"content","fragment":%q,"matches":[{"indices":[7,13]}]}]}]}`, fragment)
+		default:
+			t.Fatalf("unexpected path %q", r.URL.EscapedPath())
+		}
+	}))
+	defer server.Close()
+	client := testClient(t, server, &now, 32<<10)
+
+	response, err := client.SearchCode(t.Context(), 9, "needle repo:acme/one", []int64{101})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Truncated || response.Consistency == nil || !response.Consistency.Partial || len(response.Matches) != 1 {
+		t.Fatalf("response=%#v", response)
+	}
+	match := response.Matches[0]
+	if match.LineNumber != 0 || match.LineStart != 0 || match.LineEnd != 0 || match.Preview != fragment {
+		t.Fatalf("match=%#v", match)
+	}
+}
+
+func TestBoundedGitHubTextMatchKeepsMatchInPreview(t *testing.T) {
+	fragment := strings.Repeat("x", 3000) + "\nneedle"
+	preview, lineStart, lineEnd, truncated := boundedGitHubTextMatch(fragment, [2]int{3001, 3007}, false)
+	if len([]rune(preview)) != maxGitHubPreviewRunes || lineStart != 0 || lineEnd != 0 || !strings.Contains(preview, "needle") || !truncated {
+		t.Fatalf("preview runes=%d lines=%d-%d contains=%v truncated=%v", len([]rune(preview)), lineStart, lineEnd, strings.Contains(preview, "needle"), truncated)
 	}
 }
 

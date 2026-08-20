@@ -23,11 +23,13 @@ type Limits struct {
 }
 
 type BackendRequest struct {
-	Query         string
-	RepositoryIDs []uint32
-	Limit         int
-	ContextLines  int
-	Timeout       time.Duration
+	Query            string
+	RepositoryIDs    []uint32
+	RepositoryScopes []RepositoryScope
+	InstallationID   int64
+	Limit            int
+	ContextLines     int
+	Timeout          time.Duration
 }
 
 type SearchBackend interface {
@@ -58,7 +60,7 @@ func (service *Service) Search(ctx context.Context, principal authn.Principal, r
 	}
 	maxResponseBytes := clampInt64(request.MaxResponseBytes, service.limits.MaxResponseBytes)
 	backendRequest := BackendRequest{
-		Query: request.Query, RepositoryIDs: make([]uint32, len(repositories)),
+		Query: request.Query, InstallationID: principal.InstallationID, RepositoryIDs: make([]uint32, len(repositories)), RepositoryScopes: make([]RepositoryScope, len(repositories)),
 		Limit:        clamp(request.Limit, service.limits.DefaultResults, service.limits.MaxResults),
 		ContextLines: clamp(request.ContextLines, service.limits.DefaultContextLines, service.limits.MaxContextLines),
 		Timeout:      clampDuration(request.Timeout, service.limits.DefaultTimeout, service.limits.MaxTimeout),
@@ -66,6 +68,7 @@ func (service *Service) Search(ctx context.Context, principal authn.Principal, r
 	metadata := make(map[uint32]api.Repository, len(repositories))
 	for index, repository := range repositories {
 		backendRequest.RepositoryIDs[index] = repository.ZoektID
+		backendRequest.RepositoryScopes[index] = RepositoryScope{ID: repository.ID, GitHubID: repository.GitHubID, InstallationID: repository.InstallationID, Name: repository.Name, IndexedSHA: repository.IndexedSHA}
 		publicID := repository.GitHubID
 		if publicID == 0 {
 			publicID = repository.ID
@@ -76,8 +79,27 @@ func (service *Service) Search(ctx context.Context, principal authn.Principal, r
 	if err != nil {
 		return api.SearchResponse{}, err
 	}
-	response.Matches = enrich(response.Matches, metadata)
+	if response.Consistency != nil && response.Consistency.Backend == "github" {
+		response.Matches = enrichGitHub(response.Matches, metadata)
+	} else {
+		response.Matches = enrich(response.Matches, metadata)
+	}
 	return limitResponse(response, backendRequest.Limit, maxResponseBytes), nil
+}
+
+func enrichGitHub(matches []api.SearchMatch, metadata map[uint32]api.Repository) []api.SearchMatch {
+	byID := make(map[int64]api.Repository, len(metadata))
+	for _, repository := range metadata {
+		byID[repository.ID] = repository
+	}
+	result := matches[:0]
+	for _, match := range matches {
+		if repository, ok := byID[match.Repository.ID]; ok {
+			match.Repository = repository
+			result = append(result, match)
+		}
+	}
+	return result
 }
 
 func limitResponse(response api.SearchResponse, maxMatches int, maxBytes int64) api.SearchResponse {
@@ -86,7 +108,7 @@ func limitResponse(response api.SearchResponse, maxMatches int, maxBytes int64) 
 		response.Truncated = true
 	}
 	matches := response.Matches
-	limited := api.SearchResponse{Matches: []api.SearchMatch{}, Truncated: response.Truncated || len(matches) > 0}
+	limited := api.SearchResponse{Matches: []api.SearchMatch{}, Truncated: response.Truncated || len(matches) > 0, Consistency: response.Consistency}
 	if !fits(limited, maxBytes) {
 		// The empty truncated JSON envelope is the response floor even when the caller requests fewer bytes.
 		return limited
@@ -94,8 +116,9 @@ func limitResponse(response api.SearchResponse, maxMatches int, maxBytes int64) 
 	// ponytail: O(n²) marshaling is bounded by 100 matches; stream/count once if that cap grows.
 	for index, match := range matches {
 		candidate := api.SearchResponse{
-			Matches:   append(limited.Matches, match),
-			Truncated: response.Truncated || index+1 < len(matches),
+			Matches:     append(limited.Matches, match),
+			Truncated:   response.Truncated || index+1 < len(matches),
+			Consistency: response.Consistency,
 		}
 		if !fits(candidate, maxBytes) {
 			limited.Truncated = true

@@ -63,7 +63,6 @@ func TestGraphMCPMatchesService(t *testing.T) {
 		"context": "Inspect a symbol's incoming and outgoing code relationships.",
 		"impact":  "Analyze the upstream or downstream impact of a code symbol.",
 		"trace":   "Trace code relationships between two symbols.",
-		"cypher":  "Run an administrator-only read query against the code graph.",
 	} {
 		schema := repositoryToolSchema(t, tools.Tools, name)
 		if schema["additionalProperties"] != false {
@@ -93,16 +92,6 @@ func TestGraphMCPMatchesService(t *testing.T) {
 	if property := traceProperties["max_depth"].(map[string]any); property["default"] == nil || !strings.Contains(property["description"].(string), "default: 10; values above 30 are capped") {
 		t.Fatalf("trace.max_depth schema = %#v", property)
 	}
-	cypherProperties := repositoryToolSchema(t, tools.Tools, "cypher")["properties"].(map[string]any)
-	for field, want := range map[string]string{
-		"max_rows":  "default: 100; values above 100 are capped",
-		"max_bytes": "default: 262144; values above 262144 are capped",
-	} {
-		property := cypherProperties[field].(map[string]any)
-		if property["default"] == nil || !strings.Contains(property["description"].(string), want) {
-			t.Fatalf("cypher.%s schema = %#v", field, property)
-		}
-	}
 	contextSchema := repositoryToolSchema(t, tools.Tools, "context")
 	if contextSchema["properties"].(map[string]any)["uid"] == nil || contextSchema["properties"].(map[string]any)["name"] == nil {
 		t.Fatalf("context schema = %#v", contextSchema)
@@ -114,7 +103,7 @@ func TestGraphMCPMatchesService(t *testing.T) {
 	if contextLimit["minimum"] != float64(0) || contextLimit["default"] != float64(100) || !strings.Contains(contextLimit["description"].(string), "default: 100; values above 100 are capped") {
 		t.Fatalf("context.per_category_limit schema = %#v", contextLimit)
 	}
-	for _, properties := range []map[string]any{impactProperties, traceProperties, cypherProperties} {
+	for _, properties := range []map[string]any{impactProperties, traceProperties} {
 		for _, property := range properties {
 			schema, ok := property.(map[string]any)
 			if ok && schema["default"] != nil && schema["minimum"] != float64(0) {
@@ -137,20 +126,6 @@ func TestGraphMCPMatchesService(t *testing.T) {
 		t.Fatalf("principal=%#v want=%#v", store.principal, principal)
 	}
 
-	result, err = session.CallTool(t.Context(), &mcp.CallToolParams{Name: "cypher", Arguments: map[string]any{"repo": 101, "statement": "RETURN 1"}})
-	if err != nil || !result.IsError || backend.cypherCalls != 0 {
-		t.Fatalf("non-admin cypher result=%#v err=%v calls=%d", result, err, backend.cypherCalls)
-	}
-
-	adminSession, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: httpServer.URL, HTTPClient: bearerClient(httpServer.Client(), "admin"), DisableStandaloneSSE: true}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer adminSession.Close()
-	result, err = adminSession.CallTool(t.Context(), &mcp.CallToolParams{Name: "cypher", Arguments: map[string]any{"repo": 101, "statement": "RETURN 1", "max_rows": 999, "max_bytes": 999 << 10}})
-	if err != nil || result.IsError || backend.cypherCalls != 1 || backend.cypherRequest.MaxRows != 100 || backend.cypherRequest.MaxBytes != 256<<10 {
-		t.Fatalf("admin cypher result=%#v err=%v request=%#v calls=%d", result, err, backend.cypherRequest, backend.cypherCalls)
-	}
 }
 
 func TestGraphOutputBudgetIsSmallerWithoutChangingOtherTools(t *testing.T) {
@@ -179,10 +154,7 @@ func (store *mcpGraphStore) GraphRepositories(_ context.Context, principal authn
 	return []repository.Repository{store.repository}, nil
 }
 
-type mcpGraphBackend struct {
-	cypherCalls   int
-	cypherRequest graphprotocol.CypherRequest
-}
+type mcpGraphBackend struct{}
 
 func (mcpGraphBackend) Context(context.Context, graphprotocol.ContextRequest) (graphprotocol.ContextResponse, error) {
 	return graphprotocol.ContextResponse{}, nil
@@ -195,12 +167,6 @@ func (mcpGraphBackend) Impact(_ context.Context, request graphprotocol.ImpactReq
 func (mcpGraphBackend) Trace(context.Context, graphprotocol.TraceRequest) (graphprotocol.TraceResponse, error) {
 	return graphprotocol.TraceResponse{}, nil
 }
-func (backend *mcpGraphBackend) Cypher(_ context.Context, request graphprotocol.CypherRequest) (graphprotocol.CypherResponse, error) {
-	backend.cypherCalls++
-	backend.cypherRequest = request
-	return graphprotocol.CypherResponse{Columns: []string{"value"}, Rows: [][]any{{1}}, Commits: map[string]string{"acme/one": request.Scope.Repositories[0].Commit}}, nil
-}
-
 func TestRepositoryToolsUseAuthenticatedService(t *testing.T) {
 	repositoryService := mcpRepositoryService()
 	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}

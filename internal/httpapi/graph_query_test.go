@@ -26,7 +26,6 @@ func TestGraphQueryContracts(t *testing.T) {
 		{"/v1/graph/context", api.GraphContextRequest{GraphSymbolSelector: api.GraphSymbolSelector{UID: "symbol:a"}}},
 		{"/v1/graph/impact", api.GraphImpactRequest{TargetUID: "symbol:a", Direction: "downstream"}},
 		{"/v1/graph/trace", api.GraphTraceRequest{SourceUID: "symbol:a", TargetUID: "symbol:b"}},
-		{"/v1/graph/cypher", api.GraphCypherRequest{Statement: "RETURN 1"}},
 	}
 	for _, route := range routes {
 		t.Run(route.path, func(t *testing.T) {
@@ -58,14 +57,6 @@ func TestGraphQueryContracts(t *testing.T) {
 				})
 			}
 		})
-	}
-}
-
-func TestCypherRequiresAdministrator(t *testing.T) {
-	handler := graphQueryHandler(&graphQueryStore{repositories: []repository.Repository{graphQueryRepository("acme/one")}}, graphQueryEngine{}, 1024, 1024)
-	response := graphQueryRequest(handler, http.MethodPost, "/v1/graph/cypher", []byte(`{"statement":"RETURN 1"}`), "user", "application/json")
-	if response.Code != http.StatusForbidden {
-		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -101,13 +92,12 @@ func TestGraphQueryErrorClassificationIsSafe(t *testing.T) {
 		retryable bool
 	}{
 		{graphservice.ErrInvalidRequest, http.StatusBadRequest, "invalid_request", false},
-		{graphservice.ErrAdminRequired, http.StatusForbidden, "forbidden", false},
 		{graphservice.ErrRepositoryNotFound, http.StatusNotFound, "not_found", false},
 		{graphservice.ErrRepositoryRequired, http.StatusConflict, "ambiguous", false},
 		{graphservice.ErrBranchNotIndexed, http.StatusConflict, "branch_not_indexed", false},
 		{graphservice.ErrGraphNotReady, http.StatusConflict, "graph_not_ready", true},
 		{context.DeadlineExceeded, http.StatusGatewayTimeout, "timeout", true},
-		{errors.New("LadybugDB password=secret"), http.StatusServiceUnavailable, "unavailable", true},
+		{errors.New("PostgreSQL password=secret"), http.StatusServiceUnavailable, "unavailable", true},
 	} {
 		t.Run(test.code, func(t *testing.T) {
 			response := httptest.NewRecorder()
@@ -180,10 +170,6 @@ func (graphQueryEngine) Impact(context.Context, graphprotocol.ImpactRequest) (gr
 func (graphQueryEngine) Trace(context.Context, graphprotocol.TraceRequest) (graphprotocol.TraceResponse, error) {
 	return graphprotocol.TraceResponse{Status: graphprotocol.StatusNoPath, Commits: graphQueryCommits()}, nil
 }
-func (graphQueryEngine) Cypher(context.Context, graphprotocol.CypherRequest) (graphprotocol.CypherResponse, error) {
-	return graphprotocol.CypherResponse{Columns: []string{}, Rows: [][]any{}, Commits: graphQueryCommits()}, nil
-}
-
 func graphQueryRepository(name string) repository.Repository {
 	return repository.Repository{ID: 1, GitHubID: 101, Name: name, Branch: "main", IndexedSHA: graphTestSHA}
 }

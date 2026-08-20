@@ -18,11 +18,9 @@ import (
 	"time"
 
 	"github.com/grepnest/grepnest/internal/config"
+	"github.com/grepnest/grepnest/internal/enrichment"
 	"github.com/grepnest/grepnest/internal/githubapp"
-	"github.com/grepnest/grepnest/internal/graphquery"
-	"github.com/grepnest/grepnest/internal/graphruntime"
 	"github.com/grepnest/grepnest/internal/indexer"
-	"github.com/grepnest/grepnest/internal/ladybug"
 	"github.com/grepnest/grepnest/internal/observability"
 	"github.com/grepnest/grepnest/internal/postgres"
 	"github.com/grepnest/grepnest/internal/zoekt"
@@ -39,17 +37,8 @@ const (
 )
 
 type indexRuntime struct {
-	ping, migrate, upsertNode, reapExpired, pruneHistory, runWorker, runMetrics, runGraph func(context.Context) error
-	close                                                                                 func()
-}
-
-var startGraphRuntime = func(ctx context.Context, settings graphruntime.Config, source ladybug.SnapshotSource, logger *slog.Logger) error {
-	runtime, err := graphruntime.New(ctx, settings, source, logger)
-	if err != nil {
-		return err
-	}
-	defer runtime.Close()
-	return runtime.Run(ctx)
+	ping, migrate, upsertNode, reapExpired, pruneHistory, runWorker, runMetrics func(context.Context) error
+	close                                                                       func()
 }
 
 func main() {
@@ -65,6 +54,7 @@ func main() {
 		logger.Error("configuration failed", "error", err)
 		os.Exit(1)
 	}
+	warnIgnoredGitSettings(logger, settings)
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	runtime, err := newIndexRuntime(ctx, settings)
@@ -74,6 +64,15 @@ func main() {
 	if err != nil {
 		logger.Error("indexer stopped", "error", err)
 		os.Exit(1)
+	}
+}
+
+func warnIgnoredGitSettings(logger *slog.Logger, settings config.Indexer) {
+	if settings.ZoektGitIndexDeprecated {
+		logger.Warn("deprecated Zoekt indexer setting", "setting", "GREPNEST_ZOEKT_GIT_INDEX", "replacement", "GREPNEST_ZOEKT_INDEX")
+	}
+	if settings.SourceProvider == "archive" && settings.GitPath != "" {
+		logger.Warn("deprecated Git runtime setting ignored in archive mode", "setting", "GREPNEST_GIT_PATH")
 	}
 }
 
@@ -133,12 +132,6 @@ func (runtime indexRuntime) run(ctx context.Context) error {
 			name string
 			run  func(context.Context) error
 		}{"metrics", runtime.runMetrics})
-	}
-	if runtime.runGraph != nil {
-		services = append(services, struct {
-			name string
-			run  func(context.Context) error
-		}{"graph", runtime.runGraph})
 	}
 	results := make(chan result, len(services))
 	for _, service := range services {
@@ -206,8 +199,9 @@ func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime
 		WorktreesDir: filepath.Join(settings.DataDir, "worktrees"), Runner: runner, CommandTimeout: 2 * time.Minute,
 	}
 	worker := &indexer.Worker{
-		ID: settings.WorkerID, Queue: store, Store: store, Tokens: githubClient, Git: git,
-		Zoekt:        &indexer.ZoektIndexer{Binary: settings.ZoektGitIndex, IndexDir: settings.IndexDir, Runner: runner, Client: zoektClient, IndexTimeout: 10 * time.Minute, VisibilityTimeout: 2 * time.Minute},
+		ID: settings.WorkerID, Queue: store, Store: store, Tokens: githubClient, Snapshots: newSnapshotProvider(settings, githubClient, git, metrics),
+		Zoekt:        &indexer.ZoektIndexer{Binary: settings.ZoektIndex, IndexDir: settings.IndexDir, Runner: runner, Client: zoektClient, IndexTimeout: 10 * time.Minute, VisibilityTimeout: 2 * time.Minute},
+		Enricher:     newEnricher(os.Getenv("GREPNEST_SCANNER_PATH")),
 		MinFreeBytes: uint64(settings.MinFreeBytes), MaxRepositoryBytes: settings.MaxRepositoryBytes, Metrics: metrics,
 	}
 	listener, err := net.Listen("tcp", settings.MetricsListenAddress)
@@ -225,34 +219,30 @@ func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime
 		pruneHistory: func(ctx context.Context) error { _, _, err := store.Prune(ctx); return err },
 		runWorker:    worker.Run,
 		runMetrics:   func(ctx context.Context) error { return serveMetrics(ctx, listener, metricsMux) },
-		runGraph:     graphService(settings.Graph, store, slog.Default()),
 		close:        func() { _ = listener.Close(); pool.Close() },
 	}, nil
 }
 
-func graphService(settings config.Graph, source ladybug.SnapshotSource, logger *slog.Logger) func(context.Context) error {
-	if settings.Mode != "embedded" {
+func newEnricher(binary string) indexer.Enricher {
+	if binary == "" {
 		return nil
 	}
-	runtimeConfig := graphruntime.Config{
-		DatabasePath:  filepath.Join(settings.DataDir, "grepnest.lbug"),
-		ListenAddress: settings.ListenAddress, InternalSecret: settings.InternalSecret,
-		ReadConnections: settings.ReadConnections, SyncInterval: settings.SyncInterval,
-		QueryTimeout: settings.QueryTimeout, InterruptGrace: settings.InterruptGrace,
-		QueryLimits: graphquery.Limits{
-			PerCategory:        settings.QueryLimits.PerCategory,
-			DefaultImpactDepth: settings.QueryLimits.DefaultImpactDepth,
-			MaxDepth:           settings.QueryLimits.MaxDepth,
-			DefaultTraceDepth:  settings.QueryLimits.DefaultTraceDepth,
-			MaxTraceDepth:      settings.QueryLimits.MaxTraceDepth,
-			MaxRows:            settings.QueryLimits.MaxRows,
-			MaxNodes:           settings.QueryLimits.MaxNodes, MaxEdges: settings.QueryLimits.MaxEdges,
-			MaxFanout: settings.QueryLimits.MaxFanout,
-		},
+	return enrichment.Runner{
+		Binary:  binary,
+		Process: indexer.Runner{MaxOutput: 64 << 20, KillGrace: 5 * time.Second},
+		Timeout: 2 * time.Minute,
 	}
-	return func(ctx context.Context) error {
-		return startGraphRuntime(ctx, runtimeConfig, source, logger)
+}
+
+func newSnapshotProvider(settings config.Indexer, client *githubapp.Client, git *indexer.Git, metrics *observability.Metrics) indexer.SnapshotProvider {
+	if settings.SourceProvider == "archive" {
+		limits := settings.ArchiveLimits
+		return indexer.ArchiveSnapshotProvider{
+			Client: client, WorkspacesDir: filepath.Join(settings.DataDir, "archives"), Metrics: metrics,
+			Limits: indexer.ArchiveLimits{MaxDownloadBytes: limits.MaxDownloadBytes, MaxExtractedBytes: limits.MaxExtractedBytes, MaxFileBytes: limits.MaxFileBytes, MaxFiles: limits.MaxFiles, MaxPathBytes: limits.MaxPathBytes},
+		}
 	}
+	return indexer.GitSnapshotProvider{Git: git}
 }
 
 func serveMetrics(ctx context.Context, listener net.Listener, handler http.Handler) error {
@@ -283,7 +273,7 @@ func serveMetrics(ctx context.Context, listener net.Listener, handler http.Handl
 }
 
 func parseGitHubEndpoints(settings config.GitHub) (githubapp.Endpoints, error) {
-	values := []string{settings.WebURL, settings.APIURL, settings.UploadURL, settings.GitURL}
+	values := []string{settings.WebURL, settings.APIURL, settings.UploadURL, settings.GitURL, settings.ArchiveURL}
 	parsed := make([]*url.URL, len(values))
 	for index, value := range values {
 		var err error
@@ -291,7 +281,7 @@ func parseGitHubEndpoints(settings config.GitHub) (githubapp.Endpoints, error) {
 			return githubapp.Endpoints{}, errors.New("invalid GitHub endpoint")
 		}
 	}
-	return githubapp.Endpoints{Web: parsed[0], API: parsed[1], Upload: parsed[2], Git: parsed[3]}, nil
+	return githubapp.Endpoints{Web: parsed[0], API: parsed[1], Upload: parsed[2], Git: parsed[3], Archive: parsed[4]}, nil
 }
 
 func readBoundedFile(path string, maxBytes int64) ([]byte, error) {

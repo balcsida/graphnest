@@ -1,14 +1,3 @@
-{{- $dataPath := trimSuffix "/" .Values.node.paths.data -}}
-{{- $dataPrefix := printf "%s/" $dataPath -}}
-{{- if eq $dataPath "" }}{{- $dataPrefix = "/" -}}{{- end -}}
-{{- if not (hasPrefix $dataPrefix .Values.node.paths.indexes) -}}
-{{- fail "node.paths.indexes must be a child of node.paths.data so both containers share the same PVC subpath" -}}
-{{- end -}}
-{{- $indexSubPath := trimPrefix $dataPrefix .Values.node.paths.indexes -}}
-{{- $graphSubPath := trimPrefix $dataPrefix .Values.graph.dataPath -}}
-{{- if and (eq .Values.graph.mode "embedded") (not (hasPrefix $dataPrefix .Values.graph.dataPath)) -}}
-{{- fail "graph.dataPath must be a child of node.paths.data in embedded mode" -}}
-{{- end -}}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -72,10 +61,6 @@ spec:
       topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if eq .Values.graph.mode "embedded" }}
-      initContainers:
-        {{- include "grepnest.graphSecretInit" (dict "image" .Values.images.node "executable" .Values.graph.executable) | nindent 8 }}
-      {{- end }}
       containers:
         - name: zoekt-webserver
           image: {{ include "grepnest.image" .Values.images.node | quote }}
@@ -105,7 +90,7 @@ spec:
           resources:
             {{- toYaml .Values.node.zoekt.resources | nindent 12 }}
           volumeMounts:
-            - {name: data, mountPath: {{ .Values.node.paths.indexes | quote }}, subPath: {{ $indexSubPath | quote }}, readOnly: true}
+            - {name: data, mountPath: {{ .Values.node.paths.indexes | quote }}, readOnly: true}
             - {name: zoekt-tmp, mountPath: /tmp}
             - {name: zoekt-home, mountPath: /var/run/grepnest}
         - name: grepnest-indexer
@@ -120,9 +105,6 @@ spec:
             seccompProfile: {type: RuntimeDefault}
           ports:
             - {name: metrics, containerPort: {{ .Values.node.indexer.metricsPort }}, protocol: TCP}
-            {{- if eq .Values.graph.mode "embedded" }}
-            - {name: graph, containerPort: {{ .Values.graph.port }}, protocol: TCP}
-            {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "grepnest.nodeName" . }}
@@ -137,11 +119,8 @@ spec:
           resources:
             {{- toYaml .Values.node.indexer.resources | nindent 12 }}
           volumeMounts:
-            - {name: data, mountPath: {{ .Values.node.paths.data | quote }}}
-            {{- if eq .Values.graph.mode "embedded" }}
-            - {name: data, mountPath: {{ .Values.graph.dataPath | quote }}, subPath: {{ $graphSubPath | quote }}}
-            - {name: graph-secret-runtime, mountPath: /var/run/secrets/grepnest/graph, readOnly: true}
-            {{- end }}
+            - {name: archive-workspace, mountPath: {{ .Values.node.paths.workspace | quote }}}
+            - {name: data, mountPath: {{ .Values.node.paths.indexes | quote }}}
             - {name: indexer-tmp, mountPath: /tmp}
             - {name: indexer-home, mountPath: /var/run/grepnest}
             - {name: github-app, mountPath: /var/run/secrets/grepnest/github, readOnly: true}
@@ -153,20 +132,14 @@ spec:
         - {name: zoekt-home, emptyDir: {}}
         - {name: indexer-tmp, emptyDir: {}}
         - {name: indexer-home, emptyDir: {}}
+        - name: archive-workspace
+          emptyDir:
+            sizeLimit: {{ .Values.node.indexer.workspaceSizeLimit }}
         - name: github-app
           secret:
             secretName: {{ .Values.secrets.githubApp.name }}
             items:
               - {key: {{ .Values.secrets.githubApp.privateKeyKey }}, path: private-key.pem}
-        {{- if eq .Values.graph.mode "embedded" }}
-        - {name: graph-secret-runtime, emptyDir: {}}
-        - name: graph-secret-source
-          secret:
-            secretName: {{ .Values.secrets.runtime.name }}
-            defaultMode: 0440
-            items:
-              - {key: {{ .Values.secrets.runtime.graphSecretKey }}, path: secret}
-        {{- end }}
         {{- if .Values.secrets.customCA.name }}
         - name: custom-ca
           secret:

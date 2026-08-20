@@ -6,55 +6,35 @@ GREPNEST_TEST_POSTGRES_DSN ?= $(GREPNEST_TEST_DATABASE_URL)
 IMAGE_PLATFORM ?= linux/amd64
 APPLICATION_IMAGE ?= grepnest-application:dev
 NODE_IMAGE ?= grepnest-node:dev
-LADYBUG_VERSION := 0.18.3
-LADYBUG_LIB_DIR ?= $(CURDIR)/.cache/ladybug/v$(LADYBUG_VERSION)
-LADYBUG_OS ?= $(shell uname -s)
-LADYBUG_ARCH ?= $(shell uname -m)
 
-ifeq ($(LADYBUG_OS)/$(LADYBUG_ARCH),Darwin/arm64)
-LADYBUG_LIBRARY := liblbug.dylib
-LADYBUG_ARCHIVE := liblbug-osx-arm64.tar.gz
-LADYBUG_ARCHIVE_SHA256 := f626987fe10f6520146793575677d004962b4c6a0dea71cbbca75e73ab673622
-LADYBUG_RUNTIME_ENV := DYLD_LIBRARY_PATH=$(LADYBUG_LIB_DIR)
-else ifeq ($(LADYBUG_OS)/$(LADYBUG_ARCH),Linux/x86_64)
-LADYBUG_LIBRARY := liblbug.so
-LADYBUG_ARCHIVE := liblbug-linux-x86_64.tar.gz
-LADYBUG_ARCHIVE_SHA256 := 1fa1297620cd7bb05975ced5e41be751b236dae91244979d3502d39295655d70
-LADYBUG_RUNTIME_ENV := LD_LIBRARY_PATH=$(LADYBUG_LIB_DIR)
-else
-$(error unsupported Ladybug platform: $(LADYBUG_OS)/$(LADYBUG_ARCH))
-endif
-
-LADYBUG_ARCHIVE_URL := https://github.com/LadybugDB/ladybug/releases/download/v$(LADYBUG_VERSION)/$(LADYBUG_ARCHIVE)
-LADYBUG_ENV := CGO_ENABLED=1 LBUG_VERSION=$(LADYBUG_VERSION) GOCACHE=$(CURDIR)/.cache/go-build XDG_CACHE_HOME=$(CURDIR)/.cache $(LADYBUG_RUNTIME_ENV) CGO_CFLAGS="-I$(LADYBUG_LIB_DIR)" CGO_LDFLAGS="-L$(LADYBUG_LIB_DIR)"
-LADYBUG_GO := $(LADYBUG_ENV) go
-LADYBUG_TAGS := -tags=system_ladybug
-LADYBUG_RPATH := -ldflags=-extldflags=-Wl,-rpath,$(LADYBUG_LIB_DIR)
-NATIVE_BIN_DIR := $(CURDIR)/.cache/native
-
-.PHONY: fmt lint staticcheck govulncheck test test-race makefile-test scanner-test abi-test ladybug-test native-link-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test ui-smoke
+.PHONY: fmt lint staticcheck govulncheck test test-race makefile-test scanner-build scanner-test scanner-vulncheck abi-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test tools-check ui-smoke
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
 
-lint: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-	$(LADYBUG_GO) vet $(LADYBUG_TAGS) ./...
+lint:
+	go vet ./...
 
-staticcheck: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
+staticcheck:
 	mkdir -p .cache/bin
 	GOBIN=$$(pwd)/.cache/bin go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)
-	$(LADYBUG_ENV) .cache/bin/staticcheck $(LADYBUG_TAGS) ./...
+	.cache/bin/staticcheck ./...
 
-govulncheck: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
+govulncheck:
 	mkdir -p .cache/bin
 	GOBIN=$$(pwd)/.cache/bin go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
-	$(LADYBUG_ENV) .cache/bin/govulncheck $(LADYBUG_TAGS) ./...
+	.cache/bin/govulncheck ./...
 
-test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-	$(LADYBUG_GO) test $(LADYBUG_TAGS) ./...
+test:
+	CGO_ENABLED=0 go test ./...
 
-test-race: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-	$(LADYBUG_GO) test -race $(LADYBUG_TAGS) ./...
+test-race:
+	go test -race ./...
+
+tools-check:
+	@tool=$$(cd tools && go tool -n buf); \
+	"$$tool" generate; \
+	git diff --exit-code
 
 makefile-test:
 	@for target in lint test test-race build; do \
@@ -63,50 +43,25 @@ makefile-test:
 		fi; \
 	done
 
+scanner-build:
+	go -C scanner build ./...
+
 scanner-test:
-	CGO_ENABLED=1 go test -race ./internal/graphscan/... ./internal/graphscanner ./cmd/grepnest-scanner
+	CGO_ENABLED=1 go -C scanner test -race ./...
+
+scanner-vulncheck:
+	go -C scanner run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
 abi-test:
-	CGO_ENABLED=1 go test ./internal/graphscan -run '^TestGrammarMatrix$$' -count=1
-
-ladybug-test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-	$(LADYBUG_GO) test $(LADYBUG_TAGS) ./internal/ladybug ./internal/graphcommand ./internal/graphquery ./internal/graphruntime
-
-native-link-test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-	mkdir -p $(NATIVE_BIN_DIR)
-	$(LADYBUG_GO) build $(LADYBUG_TAGS) $(LADYBUG_RPATH) -o $(NATIVE_BIN_DIR)/grepnest-scanner ./cmd/grepnest-scanner
-	$(LADYBUG_GO) build $(LADYBUG_TAGS) $(LADYBUG_RPATH) -o $(NATIVE_BIN_DIR)/grepnest-indexer ./cmd/grepnest-indexer
-	$(LADYBUG_GO) build $(LADYBUG_TAGS) $(LADYBUG_RPATH) -o $(NATIVE_BIN_DIR)/grepnest-graph ./cmd/grepnest-graph
-ifeq ($(LADYBUG_OS),Darwin)
-	@set -e; for binary in grepnest-indexer grepnest-graph; do \
-		otool -L $(NATIVE_BIN_DIR)/$$binary | rg 'liblbug'; \
-		otool -l $(NATIVE_BIN_DIR)/$$binary | rg -F 'path $(LADYBUG_LIB_DIR) (offset'; \
-	done
-else
-	@set -e; for binary in grepnest-indexer grepnest-graph; do \
-		ldd $(NATIVE_BIN_DIR)/$$binary | grep -E 'liblbug.*=>.*$(LADYBUG_LIB_DIR)'; \
-	done
-endif
-
-$(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY):
-	mkdir -p $(LADYBUG_LIB_DIR)
-	env -u HTTPS_PROXY -u HTTP_PROXY -u https_proxy -u http_proxy curl -fsSL $(LADYBUG_ARCHIVE_URL) -o $(LADYBUG_LIB_DIR)/$(LADYBUG_ARCHIVE)
-	echo "$(LADYBUG_ARCHIVE_SHA256)  $(LADYBUG_LIB_DIR)/$(LADYBUG_ARCHIVE)" | shasum -a 256 -c -
-	tar xzf $(LADYBUG_LIB_DIR)/$(LADYBUG_ARCHIVE) -C $(LADYBUG_LIB_DIR)
-ifeq ($(LADYBUG_OS),Darwin)
-	ln -sf liblbug.$(LADYBUG_VERSION).dylib $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-else
-	test -f $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-endif
-	rm $(LADYBUG_LIB_DIR)/$(LADYBUG_ARCHIVE)
+	CGO_ENABLED=1 go -C scanner test ./graphscan -run '^TestGrammarMatrix$$' -count=1
 
 openapi-check:
 	ruby scripts/check_openapi.rb
 
 integration: postgres-integration
 
-postgres-test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' $(LADYBUG_GO) test -count=1 -tags='integration system_ladybug' ./internal/postgres ./internal/authz ./internal/webhook ./test/integration ./cmd/grepnest-indexer
+postgres-test:
+	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' go test -count=1 -tags=integration ./internal/postgres ./internal/authz ./internal/webhook ./test/integration ./cmd/grepnest-indexer
 
 postgres-integration:
 	$(POSTGRES_COMPOSE) -f deploy/compose/compose.yml up -d --wait postgres
@@ -121,6 +76,7 @@ postgres-integration:
 
 tools:
 	mkdir -p .cache/bin
+	GOBIN=$$(pwd)/.cache/bin go install github.com/sourcegraph/zoekt/cmd/zoekt-index@$(ZOEKT_VERSION)
 	GOBIN=$$(pwd)/.cache/bin go install github.com/sourcegraph/zoekt/cmd/zoekt-git-index@$(ZOEKT_VERSION)
 	GOBIN=$$(pwd)/.cache/bin go install github.com/sourcegraph/zoekt/cmd/zoekt-webserver@$(ZOEKT_VERSION)
 
@@ -135,14 +91,15 @@ e2e: tools
 	esac; \
 	$(MAKE) e2e-test GREPNEST_TEST_POSTGRES_DSN="postgres://grepnest:grepnest@$$address/grepnest?sslmode=disable"
 
-e2e-test: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' GREPNEST_REQUIRE_POSTGRES=1 ZOEKT_GIT_INDEX=$$(pwd)/.cache/bin/zoekt-git-index ZOEKT_WEBSERVER=$$(pwd)/.cache/bin/zoekt-webserver $(LADYBUG_GO) test -v -tags='e2e system_ladybug' ./test/e2e
+e2e-test:
+	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' GREPNEST_REQUIRE_POSTGRES=1 ZOEKT_INDEX=$$(pwd)/.cache/bin/zoekt-index ZOEKT_GIT_INDEX=$$(pwd)/.cache/bin/zoekt-git-index ZOEKT_WEBSERVER=$$(pwd)/.cache/bin/zoekt-webserver go test -v -tags=e2e ./test/e2e
+	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' GREPNEST_REQUIRE_POSTGRES=1 CGO_ENABLED=1 go -C scanner test -v -tags=e2e ./test/e2e
 
-build: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-	$(LADYBUG_GO) build $(LADYBUG_TAGS) $(LADYBUG_RPATH) ./cmd/...
+build:
+	go build ./cmd/...
 
-server: $(LADYBUG_LIB_DIR)/$(LADYBUG_LIBRARY)
-	$(LADYBUG_GO) run $(LADYBUG_TAGS) ./cmd/grepnest-server
+server:
+	go run ./cmd/grepnest-server
 
 zoekt-version:
 	@printf '%s\n' '$(ZOEKT_VERSION)'
