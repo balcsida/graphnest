@@ -234,7 +234,7 @@ The chart under [`deploy/helm/graphnest`](deploy/helm/graphnest) targets Kuberne
 
 Released OCI charts embed immutable application and node image digests. For the current chart version:
 
-A pre-rename GrepNest deployment is a clean-break boundary: it requires fresh GraphNest configuration and a fresh GraphNest installation. This is not an in-place upgrade; GraphNest does not automatically discover or mutate previous deployment state. The `helm upgrade --install` example below applies only to upgrades between GraphNest releases.
+Deployments created before the GraphNest rename require fresh GraphNest configuration and a fresh GraphNest installation. This is not an in-place upgrade; GraphNest does not automatically discover or mutate previous deployment state. The `helm upgrade --install` example below applies only to upgrades between GraphNest releases.
 
 ```sh
 helm pull oci://ghcr.io/balcsida/graphnest/charts/graphnest --version 0.2.0
