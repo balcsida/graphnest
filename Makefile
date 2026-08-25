@@ -10,8 +10,10 @@ NODE_IMAGE ?= graphnest-node:dev
 .PHONY: brand-check fmt lint staticcheck govulncheck test test-race makefile-test scanner-build scanner-test scanner-vulncheck abi-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test tools-check ui-smoke
 
 brand-check:
-	@! git grep -I -i -E 'grep[-_]?nest|graph[-_]nest' -- .
-	@! git ls-files | grep -Eiq 'grep[-_]?nest|graph[-_]nest'
+	@status=0; git grep -I -i -E 'grep[-_]?nest|graph[-_]nest' -- . || status=$$?; test $$status -eq 1
+	@paths=$$(git ls-files) || exit $$?; \
+	status=0; printf '%s\n' "$$paths" | grep -Eiq 'grep[-_]?nest|graph[-_]nest' || status=$$?; \
+	test $$status -eq 1
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
