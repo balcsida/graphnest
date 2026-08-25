@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/repository"
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/pkg/api"
 )
 
 var (

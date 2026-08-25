@@ -17,13 +17,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/config"
-	"github.com/grepnest/grepnest/internal/enrichment"
-	"github.com/grepnest/grepnest/internal/githubapp"
-	"github.com/grepnest/grepnest/internal/indexer"
-	"github.com/grepnest/grepnest/internal/observability"
-	"github.com/grepnest/grepnest/internal/postgres"
-	"github.com/grepnest/grepnest/internal/zoekt"
+	"github.com/balcsida/graphnest/internal/config"
+	"github.com/balcsida/graphnest/internal/enrichment"
+	"github.com/balcsida/graphnest/internal/githubapp"
+	"github.com/balcsida/graphnest/internal/indexer"
+	"github.com/balcsida/graphnest/internal/observability"
+	"github.com/balcsida/graphnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/zoekt"
 )
 
 const (

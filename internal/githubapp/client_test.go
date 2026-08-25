@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/observability"
+	"github.com/balcsida/graphnest/internal/observability"
 )
 
 func TestDownloadArchiveRequestsExactSHAAndStripsRedirectAuthorization(t *testing.T) {

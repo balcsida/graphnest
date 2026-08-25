@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/enrichment"
+	"github.com/balcsida/graphnest/internal/enrichment"
 )
 
 func TestRunEnrichmentScansProvidedSnapshot(t *testing.T) {

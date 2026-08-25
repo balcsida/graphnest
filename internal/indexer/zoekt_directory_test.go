@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/repository"
 )
 
 func TestZoektIndexWritesDirectoryMetadataOutsideSource(t *testing.T) {

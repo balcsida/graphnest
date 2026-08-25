@@ -18,11 +18,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/githubapp"
-	"github.com/grepnest/grepnest/internal/indexer"
-	"github.com/grepnest/grepnest/internal/repository"
-	"github.com/grepnest/grepnest/internal/search"
-	"github.com/grepnest/grepnest/internal/zoekt"
+	"github.com/balcsida/graphnest/internal/githubapp"
+	"github.com/balcsida/graphnest/internal/indexer"
+	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/search"
+	"github.com/balcsida/graphnest/internal/zoekt"
 )
 
 func TestSnapshotProvidersProduceEquivalentDirectoryIndexes(t *testing.T) {

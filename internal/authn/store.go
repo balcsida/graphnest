@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/audit"
+	"github.com/balcsida/graphnest/internal/audit"
 )
 
 type LoginFlow struct {

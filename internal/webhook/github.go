@@ -10,8 +10,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/grepnest/grepnest/internal/observability"
-	"github.com/grepnest/grepnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/observability"
+	"github.com/balcsida/graphnest/internal/postgres"
 	"github.com/jackc/pgx/v5"
 )
 

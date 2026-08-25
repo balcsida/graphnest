@@ -13,10 +13,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/config"
+	"github.com/balcsida/graphnest/internal/httpclient"
 	coreoidc "github.com/coreos/go-oidc/v3/oidc"
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/config"
-	"github.com/grepnest/grepnest/internal/httpclient"
 	"golang.org/x/oauth2"
 )
 

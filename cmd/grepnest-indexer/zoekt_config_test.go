@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/config"
+	"github.com/balcsida/graphnest/internal/config"
 )
 
 func TestWarnsForLegacyZoektIndexerSetting(t *testing.T) {

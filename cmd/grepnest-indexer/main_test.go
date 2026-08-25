@@ -11,11 +11,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/config"
-	"github.com/grepnest/grepnest/internal/githubapp"
-	"github.com/grepnest/grepnest/internal/indexer"
-	"github.com/grepnest/grepnest/internal/postgres"
-	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/config"
+	"github.com/balcsida/graphnest/internal/githubapp"
+	"github.com/balcsida/graphnest/internal/indexer"
+	"github.com/balcsida/graphnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/repository"
 )
 
 func TestAskPass(t *testing.T) {

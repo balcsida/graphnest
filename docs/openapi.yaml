@@ -384,7 +384,7 @@ paths:
       requestBody:
         required: true
         content:
-          application/vnd.grepnest.graph.v1+protobuf:
+          application/vnd.graphnest.graph.v1+protobuf:
             schema:
               type: string
               format: binary

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/audit"
+	"github.com/balcsida/graphnest/internal/audit"
 	"github.com/jackc/pgx/v5"
 )
 

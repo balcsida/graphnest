@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/pkg/api"
 )
 
 // GitHubSearchClient is deliberately limited to installation-scoped search.

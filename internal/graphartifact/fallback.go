@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/grepnest/grepnest/internal/scipgraph"
+	"github.com/balcsida/graphnest/internal/scipgraph"
 )
 
 type Manifest struct {

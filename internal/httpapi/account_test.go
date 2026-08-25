@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/account"
-	"github.com/grepnest/grepnest/internal/audit"
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/account"
+	"github.com/balcsida/graphnest/internal/audit"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/repository"
 )
 
 type failingAuthorizer struct{ err error }

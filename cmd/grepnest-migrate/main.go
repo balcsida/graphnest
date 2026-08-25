@@ -9,7 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/grepnest/grepnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/postgres"
 )
 
 type migrationRuntime struct {

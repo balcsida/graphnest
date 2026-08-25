@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/agentskills"
+	"github.com/balcsida/graphnest/internal/agentskills"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

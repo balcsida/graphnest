@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/grepnest/grepnest/internal/graphservice"
-	"github.com/grepnest/grepnest/internal/httpapi"
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/internal/graphservice"
+	"github.com/balcsida/graphnest/internal/httpapi"
+	"github.com/balcsida/graphnest/pkg/api"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

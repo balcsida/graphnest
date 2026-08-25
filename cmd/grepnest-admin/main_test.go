@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/audit"
-	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/audit"
+	"github.com/balcsida/graphnest/internal/authn"
 )
 
 type fakeTTY struct {

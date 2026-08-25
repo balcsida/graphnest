@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/authz"
-	"github.com/grepnest/grepnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/authz"
+	"github.com/balcsida/graphnest/internal/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )

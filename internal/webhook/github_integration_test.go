@@ -19,9 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/githubapp"
-	"github.com/grepnest/grepnest/internal/observability"
-	"github.com/grepnest/grepnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/githubapp"
+	"github.com/balcsida/graphnest/internal/observability"
+	"github.com/balcsida/graphnest/internal/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )

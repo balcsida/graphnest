@@ -3,8 +3,8 @@ package postgres
 import (
 	"context"
 
-	"github.com/grepnest/grepnest/internal/admin"
-	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/admin"
+	"github.com/balcsida/graphnest/internal/repository"
 	"github.com/jackc/pgx/v5"
 )
 

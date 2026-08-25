@@ -1,4 +1,4 @@
-module github.com/grepnest/grepnest
+module github.com/balcsida/graphnest
 
 go 1.26.6
 

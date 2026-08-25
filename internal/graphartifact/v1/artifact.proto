@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package grepnest.graph.v1;
+package graphnest.graph.v1;
 
-option go_package = "github.com/grepnest/grepnest/internal/graphartifact/v1;graphv1";
+option go_package = "github.com/balcsida/graphnest/internal/graphartifact/v1;graphv1";
 
 message Artifact {
   uint32 schema_version = 1;

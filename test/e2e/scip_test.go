@@ -10,11 +10,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/httpapi"
-	"github.com/grepnest/grepnest/internal/postgres"
-	"github.com/grepnest/grepnest/internal/scipgraph"
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/httpapi"
+	"github.com/balcsida/graphnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/scipgraph"
+	"github.com/balcsida/graphnest/pkg/api"
 	"github.com/scip-code/scip/bindings/go/scip"
 	"google.golang.org/protobuf/proto"
 )

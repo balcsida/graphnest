@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/config"
-	oidcclient "github.com/grepnest/grepnest/internal/sso/oidc"
+	"github.com/balcsida/graphnest/internal/config"
+	oidcclient "github.com/balcsida/graphnest/internal/sso/oidc"
 	"golang.org/x/oauth2"
 )
 

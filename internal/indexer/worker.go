@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/githubapp"
-	"github.com/grepnest/grepnest/internal/observability"
-	"github.com/grepnest/grepnest/internal/postgres"
-	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/githubapp"
+	"github.com/balcsida/graphnest/internal/observability"
+	"github.com/balcsida/graphnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/repository"
 	"golang.org/x/sys/unix"
 )
 

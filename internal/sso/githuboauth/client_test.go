@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/githubapp"
+	"github.com/balcsida/graphnest/internal/githubapp"
 	"golang.org/x/oauth2"
 )
 

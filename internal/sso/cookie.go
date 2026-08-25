@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/authn"
 )
 
 const OIDCLoginCookieName = "__Host-grepnest_oidc_login"

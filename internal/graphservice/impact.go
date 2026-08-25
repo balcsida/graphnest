@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/graphprotocol"
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/graphprotocol"
+	"github.com/balcsida/graphnest/pkg/api"
 )
 
 func (s *Service) Impact(ctx context.Context, principal authn.Principal, request api.GraphImpactRequest) (result api.GraphImpactResponse, err error) {

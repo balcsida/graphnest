@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/observability"
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/internal/observability"
+	"github.com/balcsida/graphnest/pkg/api"
 )
 
 const (
