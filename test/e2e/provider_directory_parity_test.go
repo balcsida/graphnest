@@ -62,8 +62,8 @@ func TestSnapshotProvidersProduceEquivalentDirectoryIndexes(t *testing.T) {
 		}
 	}
 	run(t, ctx, gitBinary, "init", "--initial-branch=main", work)
-	run(t, ctx, gitBinary, "-C", work, "config", "user.name", "GrepNest Test")
-	run(t, ctx, gitBinary, "-C", work, "config", "user.email", "test@grepnest.invalid")
+	run(t, ctx, gitBinary, "-C", work, "config", "user.name", "GraphNest Test")
+	run(t, ctx, gitBinary, "-C", work, "config", "user.email", "test@graphnest.invalid")
 	run(t, ctx, gitBinary, "-C", work, "add", ".")
 	run(t, ctx, gitBinary, "-C", work, "-c", "commit.gpgsign=false", "commit", "-m", "fixture")
 	sha := strings.TrimSpace(run(t, ctx, gitBinary, "-C", work, "rev-parse", "HEAD"))
@@ -112,7 +112,7 @@ func TestSnapshotProvidersProduceEquivalentDirectoryIndexes(t *testing.T) {
 		t.Fatal(err)
 	}
 	askPass := filepath.Join(root, "askpass")
-	if err := os.WriteFile(askPass, []byte("#!/bin/sh\ncase \"$1\" in *Username*) printf '%s\\n' x-access-token;; *Password*) printf '%s\\n' \"$GREPNEST_GIT_TOKEN\";; *) exit 1;; esac\n"), 0o700); err != nil {
+	if err := os.WriteFile(askPass, []byte("#!/bin/sh\ncase \"$1\" in *Username*) printf '%s\\n' x-access-token;; *Password*) printf '%s\\n' \"$GRAPHNEST_GIT_TOKEN\";; *) exit 1;; esac\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	base, err := url.Parse(server.URL)

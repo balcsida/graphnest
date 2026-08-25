@@ -16,7 +16,7 @@ func TestNewProviderUsesFixedGitHubMetadataAndRoutes(t *testing.T) {
 	if metadata.ID != "github" || metadata.Label != "Sign in with GitHub" || metadata.LoginURL != "/auth/oauth/github/login" {
 		t.Fatalf("metadata = %#v", metadata)
 	}
-	if provider.Spec.LoginPath != "/auth/oauth/github/login" || provider.Spec.CallbackPath != "/auth/oauth/github/callback" || provider.Spec.FlowProvider != "github" || provider.Spec.IdentityProvider != authn.ProviderOAuth || provider.Spec.CookieName != "__Host-grepnest_oauth_github_login" || provider.Spec.Method != authn.ProviderOAuth || provider.Spec.SuccessOperation != audit.OperationOAuthLoginSucceeded || provider.Spec.DeniedOperation != audit.OperationOAuthLoginDenied {
+	if provider.Spec.LoginPath != "/auth/oauth/github/login" || provider.Spec.CallbackPath != "/auth/oauth/github/callback" || provider.Spec.FlowProvider != "github" || provider.Spec.IdentityProvider != authn.ProviderOAuth || provider.Spec.CookieName != "__Host-graphnest_oauth_github_login" || provider.Spec.Method != authn.ProviderOAuth || provider.Spec.SuccessOperation != audit.OperationOAuthLoginSucceeded || provider.Spec.DeniedOperation != audit.OperationOAuthLoginDenied {
 		t.Fatalf("spec = %#v", provider.Spec)
 	}
 

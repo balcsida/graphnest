@@ -195,7 +195,7 @@ func TestOIDCProviderLoginCreatesBoundFlowAndRedirects(t *testing.T) {
 }
 
 func TestProviderUsesSpecifiedLoginCookieForLoginAndCallback(t *testing.T) {
-	const cookieName = "__Host-grepnest_test_browserflow_login"
+	const cookieName = "__Host-graphnest_test_browserflow_login"
 	spec := oidcSpec
 	spec.CookieName = cookieName
 

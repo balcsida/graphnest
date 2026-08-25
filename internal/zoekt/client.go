@@ -149,7 +149,7 @@ func (client *Client) List(ctx context.Context, repositoryID uint32) ([]IndexedR
 func scopedMetadataQuery(repositoryIDs []uint32) string {
 	terms := make([]string, len(repositoryIDs))
 	for index, repositoryID := range repositoryIDs {
-		terms[index] = "meta.grepnest_repository_id:" + strconv.FormatUint(uint64(repositoryID), 10)
+		terms[index] = "meta.graphnest_repository_id:" + strconv.FormatUint(uint64(repositoryID), 10)
 	}
 	return strings.Join(terms, " or ")
 }

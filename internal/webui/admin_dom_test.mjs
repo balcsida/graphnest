@@ -57,7 +57,7 @@ globalThis.location = {hash: ""};
 globalThis.window = {confirm: () => true};
 let refresh;
 globalThis.setInterval = callback => { refresh = callback; return 0; };
-const storage = new Map([["grepnest_admin_token", "admin"]]);
+const storage = new Map([["graphnest_admin_token", "admin"]]);
 const storageUnavailable = true;
 let storageRemovals = 0;
 globalThis.sessionStorage = {
@@ -325,7 +325,7 @@ mutationDenial = 403;
 await ids.get("github-reconcile").dispatch("click");
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(ids.get("admin-shell").hidden, false);
-assert.equal(sessionStorage.has("grepnest_admin_token"), true);
+assert.equal(sessionStorage.has("graphnest_admin_token"), true);
 mutationDenial = 0;
 bearerIdentityDenied = false;
 

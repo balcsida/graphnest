@@ -170,7 +170,7 @@ func TestClientRecordsBoundedRequestMetrics(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
-	if want := `grepnest_github_requests_total{operation="installations",result="success"} 1`; !strings.Contains(recorder.Body.String(), want) {
+	if want := `graphnest_github_requests_total{operation="installations",result="success"} 1`; !strings.Contains(recorder.Body.String(), want) {
 		t.Fatalf("metrics missing %q:\n%s", want, recorder.Body.String())
 	}
 }
@@ -252,7 +252,7 @@ func TestClientRecordsEveryFixedOperationResultOnce(t *testing.T) {
 				}
 
 				body := scrapeClientMetrics(t, metrics)
-				want := fmt.Sprintf(`grepnest_github_requests_total{operation=%q,result=%q} 1`, operation, result)
+				want := fmt.Sprintf(`graphnest_github_requests_total{operation=%q,result=%q} 1`, operation, result)
 				if strings.Count(body, want) != 1 {
 					t.Fatalf("metric %q not recorded exactly once:\n%s", want, body)
 				}
@@ -572,7 +572,7 @@ func TestSharedAPIHelpersPreserveBasePathAndHeaders(t *testing.T) {
 	}
 	header := make(http.Header)
 	SetAPIHeaders(header, "2022-11-28")
-	if header.Get("Accept") != "application/vnd.github+json" || header.Get("User-Agent") != "GrepNest" || header.Get("X-GitHub-Api-Version") != "2022-11-28" {
+	if header.Get("Accept") != "application/vnd.github+json" || header.Get("User-Agent") != "GraphNest" || header.Get("X-GitHub-Api-Version") != "2022-11-28" {
 		t.Fatalf("headers = %#v", header)
 	}
 }

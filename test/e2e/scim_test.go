@@ -103,7 +103,7 @@ func newSCIME2EHandler(t *testing.T, database milestoneDatabase, idp *oidcTestPr
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := oidcclient.New(t.Context(), config.OIDC{IssuerURL: idp.server.URL, ClientID: "grepnest-e2e", Scopes: []string{"openid"}, LinkClaim: "directory_id", DisplayNameClaim: "name"}, public, []byte("oidc-e2e-secret"), idp.caPEM())
+	client, err := oidcclient.New(t.Context(), config.OIDC{IssuerURL: idp.server.URL, ClientID: "graphnest-e2e", Scopes: []string{"openid"}, LinkClaim: "directory_id", DisplayNameClaim: "name"}, public, []byte("oidc-e2e-secret"), idp.caPEM())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,15 +10,28 @@ import (
 	"time"
 )
 
+func TestLoadUsesGraphNestEnvironmentPrefix(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("GRAPHNEST_LISTEN_ADDRESS", "127.0.0.1:0")
+
+	got, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ListenAddress != "127.0.0.1:0" {
+		t.Fatalf("listen address = %q", got.ListenAddress)
+	}
+}
+
 func TestLoadGraphQueryOverrides(t *testing.T) {
 	setValidEnvironment(t)
 	setDurableEnvironment(t)
 	for name, value := range map[string]string{
-		"GREPNEST_GRAPH_DEFAULT_IMPACT_DEPTH": "2",
-		"GREPNEST_GRAPH_MAX_IMPACT_DEPTH":     "7",
-		"GREPNEST_GRAPH_DEFAULT_TRACE_DEPTH":  "4",
-		"GREPNEST_GRAPH_MAX_TRACE_DEPTH":      "9",
-		"GREPNEST_GRAPH_MAX_ROWS":             "321",
+		"GRAPHNEST_GRAPH_DEFAULT_IMPACT_DEPTH": "2",
+		"GRAPHNEST_GRAPH_MAX_IMPACT_DEPTH":     "7",
+		"GRAPHNEST_GRAPH_DEFAULT_TRACE_DEPTH":  "4",
+		"GRAPHNEST_GRAPH_MAX_TRACE_DEPTH":      "9",
+		"GRAPHNEST_GRAPH_MAX_ROWS":             "321",
 	} {
 		t.Setenv(name, value)
 	}
@@ -52,12 +65,12 @@ func TestLoadSelectsZoektByDefaultAndGitHubExplicitly(t *testing.T) {
 	if err != nil || got.SearchBackend != "zoekt" {
 		t.Fatalf("configuration=%#v error=%v", got, err)
 	}
-	t.Setenv("GREPNEST_SEARCH_BACKEND", "github")
+	t.Setenv("GRAPHNEST_SEARCH_BACKEND", "github")
 	got, err = Load()
 	if err != nil || got.SearchBackend != "github" {
 		t.Fatalf("configuration=%#v error=%v", got, err)
 	}
-	t.Setenv("GREPNEST_SEARCH_BACKEND", "other")
+	t.Setenv("GRAPHNEST_SEARCH_BACKEND", "other")
 	if _, err := Load(); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -72,15 +85,15 @@ func TestLoadReadsDurableConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Break caught: a durable server still loading static bearer credentials.
-	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" || got.GitHub.WebURL != "https://ghe.example.com" || got.GitHub.APIURL != "https://ghe.example.com/api/v3" || got.GitHub.UploadURL != "https://ghe.example.com/uploads" || got.GitHub.GitURL != "https://ghe.example.com" || got.GitHub.AppID != 123 || got.GitHub.PrivateKeyFile != "/run/secrets/key.pem" || got.GitHub.WebhookSecretFile != "/run/secrets/webhook" || got.GitHub.CAFile != "/run/secrets/ca.pem" || got.GitHub.APIVersion != "2022-11-28" || got.UserToken != "" || got.AdminToken != "" || got.UserInstallationID != 0 || len(got.UserRepositoryIDs) != 0 || got.AdminInstallationID != 0 || len(got.AdminRepositoryIDs) != 0 || !reflect.DeepEqual(got.Indexer, Indexer{}) || got.Graph.MaxRequestBytes != 64<<10 || got.Graph.MaxResponseBytes != 256<<10 {
+	if got.DatabaseURL != "postgres://graphnest:secret@db/graphnest" || got.GitHub.WebURL != "https://ghe.example.com" || got.GitHub.APIURL != "https://ghe.example.com/api/v3" || got.GitHub.UploadURL != "https://ghe.example.com/uploads" || got.GitHub.GitURL != "https://ghe.example.com" || got.GitHub.AppID != 123 || got.GitHub.PrivateKeyFile != "/run/secrets/key.pem" || got.GitHub.WebhookSecretFile != "/run/secrets/webhook" || got.GitHub.CAFile != "/run/secrets/ca.pem" || got.GitHub.APIVersion != "2022-11-28" || got.UserToken != "" || got.AdminToken != "" || got.UserInstallationID != 0 || len(got.UserRepositoryIDs) != 0 || got.AdminInstallationID != 0 || len(got.AdminRepositoryIDs) != 0 || !reflect.DeepEqual(got.Indexer, Indexer{}) || got.Graph.MaxRequestBytes != 64<<10 || got.Graph.MaxResponseBytes != 256<<10 {
 		t.Fatalf("configuration = %#v", got)
 	}
 }
 
 func TestLoadRejectsInvalidServerGraphConfiguration(t *testing.T) {
 	for _, test := range []struct{ name, env, value string }{
-		{"request cap", "GREPNEST_GRAPH_MAX_REQUEST_BYTES", "65537"},
-		{"response cap", "GREPNEST_GRAPH_MAX_RESPONSE_BYTES", "262145"},
+		{"request cap", "GRAPHNEST_GRAPH_MAX_REQUEST_BYTES", "65537"},
+		{"response cap", "GRAPHNEST_GRAPH_MAX_RESPONSE_BYTES", "262145"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			setValidEnvironment(t)
@@ -97,9 +110,9 @@ func TestLoadDurableServerDoesNotRequireStaticOrIndexerConfiguration(t *testing.
 	setValidEnvironment(t)
 	setDurableEnvironment(t)
 	for _, name := range []string{
-		"GREPNEST_REPOSITORIES_FILE", "GREPNEST_USER_REPOSITORIES", "GREPNEST_ADMIN_REPOSITORIES",
-		"GREPNEST_DATA_DIR", "GREPNEST_INDEX_DIR", "GREPNEST_GIT_PATH",
-		"GREPNEST_ZOEKT_GIT_INDEX", "GREPNEST_WORKER_ID", "GREPNEST_MIN_FREE_BYTES",
+		"GRAPHNEST_REPOSITORIES_FILE", "GRAPHNEST_USER_REPOSITORIES", "GRAPHNEST_ADMIN_REPOSITORIES",
+		"GRAPHNEST_DATA_DIR", "GRAPHNEST_INDEX_DIR", "GRAPHNEST_GIT_PATH",
+		"GRAPHNEST_ZOEKT_GIT_INDEX", "GRAPHNEST_WORKER_ID", "GRAPHNEST_MIN_FREE_BYTES",
 	} {
 		t.Setenv(name, "")
 	}
@@ -120,14 +133,14 @@ func TestLoadSCIMConfiguration(t *testing.T) {
 	if err := os.WriteFile(tokenFile, []byte(strings.Repeat("s", 32)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("GREPNEST_SCIM_TOKEN_FILE", tokenFile)
-	t.Setenv("GREPNEST_PUBLIC_URL", "https://grepnest.example")
+	t.Setenv("GRAPHNEST_SCIM_TOKEN_FILE", tokenFile)
+	t.Setenv("GRAPHNEST_PUBLIC_URL", "https://graphnest.example")
 
 	got, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.SCIM.Enabled || got.SCIM.TokenFile != tokenFile || got.SCIM.PublicURL.String() != "https://grepnest.example/" {
+	if !got.SCIM.Enabled || got.SCIM.TokenFile != tokenFile || got.SCIM.PublicURL.String() != "https://graphnest.example/" {
 		t.Fatalf("SCIM = %#v", got.SCIM)
 	}
 }
@@ -136,11 +149,11 @@ func TestLoadRejectsInvalidSCIMConfiguration(t *testing.T) {
 	for _, test := range []struct {
 		name, database, tokenFile, tokenValue, publicURL string
 	}{
-		{"static mode", "", "token", "", "https://grepnest.example"},
+		{"static mode", "", "token", "", "https://graphnest.example"},
 		{"token value environment", "durable", "", strings.Repeat("s", 32), ""},
-		{"directory token file", "durable", "directory", "", "https://grepnest.example"},
+		{"directory token file", "durable", "directory", "", "https://graphnest.example"},
 		{"missing public origin", "durable", "token", "", ""},
-		{"HTTP public origin", "durable", "token", "", "http://grepnest.example"},
+		{"HTTP public origin", "durable", "token", "", "http://graphnest.example"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			setValidEnvironment(t)
@@ -157,9 +170,9 @@ func TestLoadRejectsInvalidSCIMConfiguration(t *testing.T) {
 			case "directory":
 				tokenFile = t.TempDir()
 			}
-			t.Setenv("GREPNEST_SCIM_TOKEN_FILE", tokenFile)
-			t.Setenv("GREPNEST_SCIM_TOKEN", test.tokenValue)
-			t.Setenv("GREPNEST_PUBLIC_URL", test.publicURL)
+			t.Setenv("GRAPHNEST_SCIM_TOKEN_FILE", tokenFile)
+			t.Setenv("GRAPHNEST_SCIM_TOKEN", test.tokenValue)
+			t.Setenv("GRAPHNEST_PUBLIC_URL", test.publicURL)
 			if _, err := Load(); !errors.Is(err, ErrInvalid) {
 				t.Fatalf("Load() error = %v", err)
 			}
@@ -171,9 +184,9 @@ func TestLoadRejectsUnsafeDurableConfiguration(t *testing.T) {
 	for _, test := range []struct {
 		name, env, value string
 	}{
-		{"HTTP GitHub API", "GREPNEST_GITHUB_API_URL", "http://ghe.example.com/api/v3"},
-		{"missing private key path", "GREPNEST_GITHUB_PRIVATE_KEY_FILE", ""},
-		{"missing webhook secret path", "GREPNEST_GITHUB_WEBHOOK_SECRET_FILE", ""},
+		{"HTTP GitHub API", "GRAPHNEST_GITHUB_API_URL", "http://ghe.example.com/api/v3"},
+		{"missing private key path", "GRAPHNEST_GITHUB_PRIVATE_KEY_FILE", ""},
+		{"missing webhook secret path", "GRAPHNEST_GITHUB_WEBHOOK_SECRET_FILE", ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			setValidEnvironment(t)
@@ -188,7 +201,7 @@ func TestLoadRejectsUnsafeDurableConfiguration(t *testing.T) {
 
 func TestLoadIndexerRejectsZeroFreeSpaceFloor(t *testing.T) {
 	setDurableEnvironment(t)
-	t.Setenv("GREPNEST_MIN_FREE_BYTES", "0")
+	t.Setenv("GRAPHNEST_MIN_FREE_BYTES", "0")
 	if _, err := LoadIndexer(); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("LoadIndexer() error = %v", err)
 	}
@@ -197,13 +210,13 @@ func TestLoadIndexerRejectsZeroFreeSpaceFloor(t *testing.T) {
 func TestLoadIndexerSourceProviderAndArchiveLimits(t *testing.T) {
 	setValidEnvironment(t)
 	setDurableEnvironment(t)
-	t.Setenv("GREPNEST_SOURCE_PROVIDER", "archive")
-	t.Setenv("GREPNEST_GITHUB_ARCHIVE_URL", "https://archives.example.com")
-	t.Setenv("GREPNEST_ARCHIVE_MAX_DOWNLOAD_BYTES", "11")
-	t.Setenv("GREPNEST_ARCHIVE_MAX_EXTRACTED_BYTES", "12")
-	t.Setenv("GREPNEST_ARCHIVE_MAX_FILE_BYTES", "13")
-	t.Setenv("GREPNEST_ARCHIVE_MAX_FILES", "14")
-	t.Setenv("GREPNEST_ARCHIVE_MAX_PATH_BYTES", "15")
+	t.Setenv("GRAPHNEST_SOURCE_PROVIDER", "archive")
+	t.Setenv("GRAPHNEST_GITHUB_ARCHIVE_URL", "https://archives.example.com")
+	t.Setenv("GRAPHNEST_ARCHIVE_MAX_DOWNLOAD_BYTES", "11")
+	t.Setenv("GRAPHNEST_ARCHIVE_MAX_EXTRACTED_BYTES", "12")
+	t.Setenv("GRAPHNEST_ARCHIVE_MAX_FILE_BYTES", "13")
+	t.Setenv("GRAPHNEST_ARCHIVE_MAX_FILES", "14")
+	t.Setenv("GRAPHNEST_ARCHIVE_MAX_PATH_BYTES", "15")
 	got, err := LoadIndexer()
 	if err != nil {
 		t.Fatal(err)
@@ -224,9 +237,9 @@ func TestLoadIndexerDefaultsToArchiveAndRejectsInvalidArchiveConfiguration(t *te
 		t.Fatalf("source provider = %q", got.SourceProvider)
 	}
 	for _, test := range []struct{ name, env, value string }{
-		{"provider", "GREPNEST_SOURCE_PROVIDER", "other"},
-		{"archive URL", "GREPNEST_GITHUB_ARCHIVE_URL", "http://archives.example.com"},
-		{"download limit", "GREPNEST_ARCHIVE_MAX_DOWNLOAD_BYTES", "0"},
+		{"provider", "GRAPHNEST_SOURCE_PROVIDER", "other"},
+		{"archive URL", "GRAPHNEST_GITHUB_ARCHIVE_URL", "http://archives.example.com"},
+		{"download limit", "GRAPHNEST_ARCHIVE_MAX_DOWNLOAD_BYTES", "0"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			setValidEnvironment(t)
@@ -242,12 +255,12 @@ func TestLoadIndexerDefaultsToArchiveAndRejectsInvalidArchiveConfiguration(t *te
 func TestLoadIndexerArchiveModeDoesNotRequireGitRuntime(t *testing.T) {
 	setValidEnvironment(t)
 	setDurableEnvironment(t)
-	t.Setenv("GREPNEST_SOURCE_PROVIDER", "archive")
-	t.Setenv("GREPNEST_GIT_PATH", "")
+	t.Setenv("GRAPHNEST_SOURCE_PROVIDER", "archive")
+	t.Setenv("GRAPHNEST_GIT_PATH", "")
 	if _, err := LoadIndexer(); err != nil {
 		t.Fatalf("LoadIndexer() error = %v", err)
 	}
-	t.Setenv("GREPNEST_SOURCE_PROVIDER", "git")
+	t.Setenv("GRAPHNEST_SOURCE_PROVIDER", "git")
 	if _, err := LoadIndexer(); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("git LoadIndexer() error = %v", err)
 	}
@@ -257,11 +270,11 @@ func TestLoadIndexerRequiresOnlyIndexerConfiguration(t *testing.T) {
 	setValidEnvironment(t)
 	setDurableEnvironment(t)
 	for _, name := range []string{
-		"GREPNEST_USER_TOKEN", "GREPNEST_ADMIN_TOKEN",
-		"GREPNEST_LISTEN_ADDRESS", "GREPNEST_REPOSITORIES_FILE",
-		"GREPNEST_USER_REPOSITORIES", "GREPNEST_ADMIN_REPOSITORIES",
-		"GREPNEST_USER_INSTALLATION_ID", "GREPNEST_USER_REPOSITORY_IDS",
-		"GREPNEST_ADMIN_INSTALLATION_ID", "GREPNEST_ADMIN_REPOSITORY_IDS",
+		"GRAPHNEST_USER_TOKEN", "GRAPHNEST_ADMIN_TOKEN",
+		"GRAPHNEST_LISTEN_ADDRESS", "GRAPHNEST_REPOSITORIES_FILE",
+		"GRAPHNEST_USER_REPOSITORIES", "GRAPHNEST_ADMIN_REPOSITORIES",
+		"GRAPHNEST_USER_INSTALLATION_ID", "GRAPHNEST_USER_REPOSITORY_IDS",
+		"GRAPHNEST_ADMIN_INSTALLATION_ID", "GRAPHNEST_ADMIN_REPOSITORY_IDS",
 	} {
 		t.Setenv(name, "")
 	}
@@ -270,7 +283,7 @@ func TestLoadIndexerRequiresOnlyIndexerConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" || got.ZoektURL != "http://127.0.0.1:6070" || got.MetricsListenAddress != ":9090" || got.GitHub.AppID != 123 || got.GitHub.PrivateKeyFile != "/run/secrets/key.pem" || got.GitHub.WebhookSecretFile != "" || got.WorkerID != "worker-1" || got.MaxRepositoryBytes != 5<<30 {
+	if got.DatabaseURL != "postgres://graphnest:secret@db/graphnest" || got.ZoektURL != "http://127.0.0.1:6070" || got.MetricsListenAddress != ":9090" || got.GitHub.AppID != 123 || got.GitHub.PrivateKeyFile != "/run/secrets/key.pem" || got.GitHub.WebhookSecretFile != "" || got.WorkerID != "worker-1" || got.MaxRepositoryBytes != 5<<30 {
 		t.Fatalf("configuration = %#v", got)
 	}
 }
@@ -279,7 +292,7 @@ func TestLoadIndexerRejectsInvalidMetricsAddress(t *testing.T) {
 	for _, value := range []string{"9090", ":0", ":65536"} {
 		t.Run(value, func(t *testing.T) {
 			setDurableEnvironment(t)
-			t.Setenv("GREPNEST_METRICS_LISTEN_ADDRESS", value)
+			t.Setenv("GRAPHNEST_METRICS_LISTEN_ADDRESS", value)
 			if _, err := LoadIndexer(); !errors.Is(err, ErrInvalid) {
 				t.Fatalf("LoadIndexer() error = %v", err)
 			}
@@ -288,10 +301,10 @@ func TestLoadIndexerRejectsInvalidMetricsAddress(t *testing.T) {
 }
 
 func TestLoadIndexerRejectsMissingCredentials(t *testing.T) {
-	for _, name := range []string{"GREPNEST_DATABASE_URL", "GREPNEST_ZOEKT_URL", "GREPNEST_GITHUB_PRIVATE_KEY_FILE"} {
+	for _, name := range []string{"GRAPHNEST_DATABASE_URL", "GRAPHNEST_ZOEKT_URL", "GRAPHNEST_GITHUB_PRIVATE_KEY_FILE"} {
 		t.Run(name, func(t *testing.T) {
 			setDurableEnvironment(t)
-			t.Setenv("GREPNEST_ZOEKT_URL", "http://127.0.0.1:6070")
+			t.Setenv("GRAPHNEST_ZOEKT_URL", "http://127.0.0.1:6070")
 			t.Setenv(name, "")
 			if _, err := LoadIndexer(); !errors.Is(err, ErrInvalid) {
 				t.Fatalf("LoadIndexer() error = %v", err)
@@ -307,8 +320,8 @@ func TestLoadScannerDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.DatabaseURL != "postgres://grepnest:secret@db/grepnest" ||
-		got.DataDir != "/var/lib/grepnest/data" || got.GitPath != "/usr/bin/git" ||
+	if got.DatabaseURL != "postgres://graphnest:secret@db/graphnest" ||
+		got.DataDir != "/var/lib/graphnest/data" || got.GitPath != "/usr/bin/git" ||
 		got.WorkerID != "worker-1" || got.MetricsListenAddress != ":9090" ||
 		got.GitHub.AppID != 123 || got.GitHub.WebhookSecretFile != "" ||
 		got.MaxRepositoryBytes != 5<<30 || got.MinFreeBytes != 1<<30 || got.ScanTimeout != 15*time.Minute {
@@ -326,16 +339,16 @@ func TestLoadScannerDefaults(t *testing.T) {
 
 func TestLoadScannerAcceptsBoundedOverrides(t *testing.T) {
 	setDurableEnvironment(t)
-	t.Setenv("GREPNEST_GRAPH_SCAN_MAX_FILE_BYTES", "1")
-	t.Setenv("GREPNEST_GRAPH_SCAN_MAX_TOTAL_BYTES", "2")
-	t.Setenv("GREPNEST_GRAPH_SCAN_MAX_FILES", "3")
-	t.Setenv("GREPNEST_GRAPH_SCAN_MAX_NODES", "4")
-	t.Setenv("GREPNEST_GRAPH_SCAN_MAX_EDGES", "5")
-	t.Setenv("GREPNEST_GRAPH_SCAN_PARSE_TIMEOUT", "6ms")
-	t.Setenv("GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", " vendor,dist,vendor,.cache ")
-	t.Setenv("GREPNEST_MAX_REPOSITORY_BYTES", "7")
-	t.Setenv("GREPNEST_MIN_FREE_BYTES", "8")
-	t.Setenv("GREPNEST_GRAPH_SCAN_TIMEOUT", "20m")
+	t.Setenv("GRAPHNEST_GRAPH_SCAN_MAX_FILE_BYTES", "1")
+	t.Setenv("GRAPHNEST_GRAPH_SCAN_MAX_TOTAL_BYTES", "2")
+	t.Setenv("GRAPHNEST_GRAPH_SCAN_MAX_FILES", "3")
+	t.Setenv("GRAPHNEST_GRAPH_SCAN_MAX_NODES", "4")
+	t.Setenv("GRAPHNEST_GRAPH_SCAN_MAX_EDGES", "5")
+	t.Setenv("GRAPHNEST_GRAPH_SCAN_PARSE_TIMEOUT", "6ms")
+	t.Setenv("GRAPHNEST_GRAPH_SCAN_SKIP_DIRECTORIES", " vendor,dist,vendor,.cache ")
+	t.Setenv("GRAPHNEST_MAX_REPOSITORY_BYTES", "7")
+	t.Setenv("GRAPHNEST_MIN_FREE_BYTES", "8")
+	t.Setenv("GRAPHNEST_GRAPH_SCAN_TIMEOUT", "20m")
 
 	got, err := LoadScanner()
 	if err != nil {
@@ -358,22 +371,22 @@ func TestLoadScannerAcceptsBoundedOverrides(t *testing.T) {
 
 func TestLoadScannerRejectsInvalidLimitsAndSkips(t *testing.T) {
 	tests := []struct{ name, env, value string }{
-		{"zero file bytes", "GREPNEST_GRAPH_SCAN_MAX_FILE_BYTES", "0"},
-		{"file bytes over cap", "GREPNEST_GRAPH_SCAN_MAX_FILE_BYTES", "2097153"},
-		{"total bytes over cap", "GREPNEST_GRAPH_SCAN_MAX_TOTAL_BYTES", "1073741825"},
-		{"files over cap", "GREPNEST_GRAPH_SCAN_MAX_FILES", "100001"},
-		{"nodes over cap", "GREPNEST_GRAPH_SCAN_MAX_NODES", "500001"},
-		{"edges over cap", "GREPNEST_GRAPH_SCAN_MAX_EDGES", "2000001"},
-		{"timeout over cap", "GREPNEST_GRAPH_SCAN_PARSE_TIMEOUT", "31s"},
-		{"zero repository bytes", "GREPNEST_MAX_REPOSITORY_BYTES", "0"},
-		{"zero free bytes", "GREPNEST_MIN_FREE_BYTES", "0"},
-		{"zero scan timeout", "GREPNEST_GRAPH_SCAN_TIMEOUT", "0s"},
-		{"scan timeout over cap", "GREPNEST_GRAPH_SCAN_TIMEOUT", "31m"},
-		{"empty skip", "GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", "vendor,,dist"},
-		{"slash skip", "GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", "vendor/a"},
-		{"backslash skip", "GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", `vendor\a`},
-		{"dot skip", "GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", "."},
-		{"dotdot skip", "GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES", ".."},
+		{"zero file bytes", "GRAPHNEST_GRAPH_SCAN_MAX_FILE_BYTES", "0"},
+		{"file bytes over cap", "GRAPHNEST_GRAPH_SCAN_MAX_FILE_BYTES", "2097153"},
+		{"total bytes over cap", "GRAPHNEST_GRAPH_SCAN_MAX_TOTAL_BYTES", "1073741825"},
+		{"files over cap", "GRAPHNEST_GRAPH_SCAN_MAX_FILES", "100001"},
+		{"nodes over cap", "GRAPHNEST_GRAPH_SCAN_MAX_NODES", "500001"},
+		{"edges over cap", "GRAPHNEST_GRAPH_SCAN_MAX_EDGES", "2000001"},
+		{"timeout over cap", "GRAPHNEST_GRAPH_SCAN_PARSE_TIMEOUT", "31s"},
+		{"zero repository bytes", "GRAPHNEST_MAX_REPOSITORY_BYTES", "0"},
+		{"zero free bytes", "GRAPHNEST_MIN_FREE_BYTES", "0"},
+		{"zero scan timeout", "GRAPHNEST_GRAPH_SCAN_TIMEOUT", "0s"},
+		{"scan timeout over cap", "GRAPHNEST_GRAPH_SCAN_TIMEOUT", "31m"},
+		{"empty skip", "GRAPHNEST_GRAPH_SCAN_SKIP_DIRECTORIES", "vendor,,dist"},
+		{"slash skip", "GRAPHNEST_GRAPH_SCAN_SKIP_DIRECTORIES", "vendor/a"},
+		{"backslash skip", "GRAPHNEST_GRAPH_SCAN_SKIP_DIRECTORIES", `vendor\a`},
+		{"dot skip", "GRAPHNEST_GRAPH_SCAN_SKIP_DIRECTORIES", "."},
+		{"dotdot skip", "GRAPHNEST_GRAPH_SCAN_SKIP_DIRECTORIES", ".."},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -388,8 +401,8 @@ func TestLoadScannerRejectsInvalidLimitsAndSkips(t *testing.T) {
 
 func TestLoadScannerRejectsMissingRequiredSettingsWithoutSecrets(t *testing.T) {
 	for _, name := range []string{
-		"GREPNEST_DATABASE_URL", "GREPNEST_DATA_DIR", "GREPNEST_GIT_PATH",
-		"GREPNEST_WORKER_ID", "GREPNEST_GITHUB_PRIVATE_KEY_FILE",
+		"GRAPHNEST_DATABASE_URL", "GRAPHNEST_DATA_DIR", "GRAPHNEST_GIT_PATH",
+		"GRAPHNEST_WORKER_ID", "GRAPHNEST_GITHUB_PRIVATE_KEY_FILE",
 	} {
 		t.Run(name, func(t *testing.T) {
 			setDurableEnvironment(t)
@@ -398,7 +411,7 @@ func TestLoadScannerRejectsMissingRequiredSettingsWithoutSecrets(t *testing.T) {
 			if !errors.Is(err, ErrInvalid) {
 				t.Fatalf("LoadScanner() error = %v", err)
 			}
-			if strings.Contains(err.Error(), "grepnest:secret") {
+			if strings.Contains(err.Error(), "graphnest:secret") {
 				t.Fatalf("error exposed credential: %v", err)
 			}
 		})
@@ -407,7 +420,7 @@ func TestLoadScannerRejectsMissingRequiredSettingsWithoutSecrets(t *testing.T) {
 
 func TestLoadRejectsMissingToken(t *testing.T) {
 	setValidEnvironment(t)
-	t.Setenv("GREPNEST_USER_TOKEN", "")
+	t.Setenv("GRAPHNEST_USER_TOKEN", "")
 
 	_, err := Load()
 	if !errors.Is(err, ErrInvalid) {
@@ -430,7 +443,7 @@ func TestLoadClampsDefaults(t *testing.T) {
 
 func TestLoadSCIPUploadLimitIsIndependent(t *testing.T) {
 	setValidEnvironment(t)
-	t.Setenv("GREPNEST_SCIP_MAX_UPLOAD_BYTES", "1048576")
+	t.Setenv("GRAPHNEST_SCIP_MAX_UPLOAD_BYTES", "1048576")
 	got, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -442,7 +455,7 @@ func TestLoadSCIPUploadLimitIsIndependent(t *testing.T) {
 
 func TestLoadGraphUploadLimitIsIndependent(t *testing.T) {
 	setValidEnvironment(t)
-	t.Setenv("GREPNEST_GRAPH_MAX_UPLOAD_BYTES", "1048576")
+	t.Setenv("GRAPHNEST_GRAPH_MAX_UPLOAD_BYTES", "1048576")
 	got, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -459,13 +472,13 @@ func TestLoadEnforcesSafetyCaps(t *testing.T) {
 		boundary string
 		over     string
 	}{
-		{"results", "GREPNEST_MAX_RESULTS", "100", "101"},
-		{"context lines", "GREPNEST_MAX_CONTEXT_LINES", "20", "21"},
-		{"timeout", "GREPNEST_MAX_TIMEOUT", "5s", "6s"},
-		{"response bytes", "GREPNEST_MAX_RESPONSE_BYTES", "262144", "262145"},
-		{"request bytes", "GREPNEST_MAX_REQUEST_BYTES", "65536", "65537"},
-		{"SCIP upload bytes", "GREPNEST_SCIP_MAX_UPLOAD_BYTES", "268435456", "268435457"},
-		{"graph upload bytes", "GREPNEST_GRAPH_MAX_UPLOAD_BYTES", "268435456", "268435457"},
+		{"results", "GRAPHNEST_MAX_RESULTS", "100", "101"},
+		{"context lines", "GRAPHNEST_MAX_CONTEXT_LINES", "20", "21"},
+		{"timeout", "GRAPHNEST_MAX_TIMEOUT", "5s", "6s"},
+		{"response bytes", "GRAPHNEST_MAX_RESPONSE_BYTES", "262144", "262145"},
+		{"request bytes", "GRAPHNEST_MAX_REQUEST_BYTES", "65536", "65537"},
+		{"SCIP upload bytes", "GRAPHNEST_SCIP_MAX_UPLOAD_BYTES", "268435456", "268435457"},
+		{"graph upload bytes", "GRAPHNEST_GRAPH_MAX_UPLOAD_BYTES", "268435456", "268435457"},
 	}
 	for _, test := range cases {
 		t.Run(test.name+" boundary", func(t *testing.T) {
@@ -487,34 +500,34 @@ func TestLoadEnforcesSafetyCaps(t *testing.T) {
 
 func setValidEnvironment(t *testing.T) {
 	t.Helper()
-	t.Setenv("GREPNEST_LISTEN_ADDRESS", "127.0.0.1:8080")
-	t.Setenv("GREPNEST_ZOEKT_URL", "http://127.0.0.1:6070")
-	t.Setenv("GREPNEST_REPOSITORIES_FILE", "repositories.json")
-	t.Setenv("GREPNEST_USER_TOKEN", "user-token")
-	t.Setenv("GREPNEST_ADMIN_TOKEN", "admin-token")
-	t.Setenv("GREPNEST_USER_REPOSITORIES", "acme/one, acme/two")
-	t.Setenv("GREPNEST_ADMIN_REPOSITORIES", "acme/one,acme/two,acme/three")
+	t.Setenv("GRAPHNEST_LISTEN_ADDRESS", "127.0.0.1:8080")
+	t.Setenv("GRAPHNEST_ZOEKT_URL", "http://127.0.0.1:6070")
+	t.Setenv("GRAPHNEST_REPOSITORIES_FILE", "repositories.json")
+	t.Setenv("GRAPHNEST_USER_TOKEN", "user-token")
+	t.Setenv("GRAPHNEST_ADMIN_TOKEN", "admin-token")
+	t.Setenv("GRAPHNEST_USER_REPOSITORIES", "acme/one, acme/two")
+	t.Setenv("GRAPHNEST_ADMIN_REPOSITORIES", "acme/one,acme/two,acme/three")
 }
 
 func setDurableEnvironment(t *testing.T) {
 	t.Helper()
-	t.Setenv("GREPNEST_DATABASE_URL", "postgres://grepnest:secret@db/grepnest")
-	t.Setenv("GREPNEST_GITHUB_WEB_URL", "https://ghe.example.com")
-	t.Setenv("GREPNEST_GITHUB_API_URL", "https://ghe.example.com/api/v3")
-	t.Setenv("GREPNEST_GITHUB_UPLOAD_URL", "https://ghe.example.com/uploads")
-	t.Setenv("GREPNEST_GITHUB_GIT_URL", "https://ghe.example.com")
-	t.Setenv("GREPNEST_GITHUB_APP_ID", "123")
-	t.Setenv("GREPNEST_GITHUB_PRIVATE_KEY_FILE", "/run/secrets/key.pem")
-	t.Setenv("GREPNEST_GITHUB_WEBHOOK_SECRET_FILE", "/run/secrets/webhook")
-	t.Setenv("GREPNEST_GITHUB_CA_FILE", "/run/secrets/ca.pem")
-	t.Setenv("GREPNEST_USER_INSTALLATION_ID", "10")
-	t.Setenv("GREPNEST_USER_REPOSITORY_IDS", "101,102")
-	t.Setenv("GREPNEST_ADMIN_INSTALLATION_ID", "10")
-	t.Setenv("GREPNEST_ADMIN_REPOSITORY_IDS", "101,102,103")
-	t.Setenv("GREPNEST_DATA_DIR", "/var/lib/grepnest/data")
-	t.Setenv("GREPNEST_INDEX_DIR", "/var/lib/grepnest/index")
-	t.Setenv("GREPNEST_GIT_PATH", "/usr/bin/git")
-	t.Setenv("GREPNEST_ZOEKT_GIT_INDEX", "/usr/local/bin/zoekt-git-index")
-	t.Setenv("GREPNEST_WORKER_ID", "worker-1")
-	t.Setenv("GREPNEST_MIN_FREE_BYTES", "1073741824")
+	t.Setenv("GRAPHNEST_DATABASE_URL", "postgres://graphnest:secret@db/graphnest")
+	t.Setenv("GRAPHNEST_GITHUB_WEB_URL", "https://ghe.example.com")
+	t.Setenv("GRAPHNEST_GITHUB_API_URL", "https://ghe.example.com/api/v3")
+	t.Setenv("GRAPHNEST_GITHUB_UPLOAD_URL", "https://ghe.example.com/uploads")
+	t.Setenv("GRAPHNEST_GITHUB_GIT_URL", "https://ghe.example.com")
+	t.Setenv("GRAPHNEST_GITHUB_APP_ID", "123")
+	t.Setenv("GRAPHNEST_GITHUB_PRIVATE_KEY_FILE", "/run/secrets/key.pem")
+	t.Setenv("GRAPHNEST_GITHUB_WEBHOOK_SECRET_FILE", "/run/secrets/webhook")
+	t.Setenv("GRAPHNEST_GITHUB_CA_FILE", "/run/secrets/ca.pem")
+	t.Setenv("GRAPHNEST_USER_INSTALLATION_ID", "10")
+	t.Setenv("GRAPHNEST_USER_REPOSITORY_IDS", "101,102")
+	t.Setenv("GRAPHNEST_ADMIN_INSTALLATION_ID", "10")
+	t.Setenv("GRAPHNEST_ADMIN_REPOSITORY_IDS", "101,102,103")
+	t.Setenv("GRAPHNEST_DATA_DIR", "/var/lib/graphnest/data")
+	t.Setenv("GRAPHNEST_INDEX_DIR", "/var/lib/graphnest/index")
+	t.Setenv("GRAPHNEST_GIT_PATH", "/usr/bin/git")
+	t.Setenv("GRAPHNEST_ZOEKT_GIT_INDEX", "/usr/local/bin/zoekt-git-index")
+	t.Setenv("GRAPHNEST_WORKER_ID", "worker-1")
+	t.Setenv("GRAPHNEST_MIN_FREE_BYTES", "1073741824")
 }

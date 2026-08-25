@@ -123,7 +123,7 @@ func newOIDCClient(t *testing.T, idp *oidcTestProvider, publicURL string) *oidcc
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := oidcclient.New(t.Context(), config.OIDC{IssuerURL: idp.server.URL, ClientID: "grepnest-e2e", Scopes: []string{"openid"}, LinkClaim: "directory_id", DisplayNameClaim: "name"}, public, []byte("oidc-e2e-secret"), idp.caPEM())
+	client, err := oidcclient.New(t.Context(), config.OIDC{IssuerURL: idp.server.URL, ClientID: "graphnest-e2e", Scopes: []string{"openid"}, LinkClaim: "directory_id", DisplayNameClaim: "name"}, public, []byte("oidc-e2e-secret"), idp.caPEM())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,7 @@ func (provider *oidcTestProvider) token(issuer, nonce string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	claims, err := json.Marshal(map[string]any{"iss": issuer, "sub": "subject-42", "aud": "grepnest-e2e", "exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(), "nonce": nonce, "directory_id": oidcDirectoryID, "name": provider.displayName})
+	claims, err := json.Marshal(map[string]any{"iss": issuer, "sub": "subject-42", "aud": "graphnest-e2e", "exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(), "nonce": nonce, "directory_id": oidcDirectoryID, "name": provider.displayName})
 	if err != nil {
 		return "", err
 	}

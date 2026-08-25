@@ -210,15 +210,15 @@ type milestoneDatabase struct {
 
 func newMilestoneDatabase(t *testing.T) milestoneDatabase {
 	t.Helper()
-	dsn := os.Getenv("GREPNEST_TEST_POSTGRES_DSN")
+	dsn := os.Getenv("GRAPHNEST_TEST_POSTGRES_DSN")
 	if dsn == "" {
-		t.Fatal("GREPNEST_TEST_POSTGRES_DSN is required for Milestone 2 E2E")
+		t.Fatal("GRAPHNEST_TEST_POSTGRES_DSN is required for Milestone 2 E2E")
 	}
 	random := make([]byte, 8)
 	if _, err := rand.Read(random); err != nil {
 		t.Fatal(err)
 	}
-	schema := "grepnest_e2e_" + hex.EncodeToString(random)
+	schema := "graphnest_e2e_" + hex.EncodeToString(random)
 	connection, err := pgx.Connect(t.Context(), dsn)
 	if err != nil {
 		t.Fatal(err)

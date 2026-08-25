@@ -106,7 +106,7 @@ func TestParseRejectsInvalidArtifacts(t *testing.T) {
 func validWireArtifact() *graphv1.Artifact {
 	return &graphv1.Artifact{
 		SchemaVersion: 1, RepositoryId: 101, Commit: strings.Repeat("a", 40), ContentHash: bytes.Repeat([]byte{1}, sha256.Size),
-		Analyzer: &graphv1.Analyzer{Name: "grepnest-scanner", Version: "1"},
+		Analyzer: &graphv1.Analyzer{Name: "graphnest-scanner", Version: "1"},
 		Nodes: []*graphv1.Node{
 			{Uid: "repository:101", Kind: graphv1.NodeKind_NODE_KIND_REPOSITORY},
 			{Uid: "file:a.go", Kind: graphv1.NodeKind_NODE_KIND_FILE, Path: "a.go"},

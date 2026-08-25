@@ -72,10 +72,10 @@ func realRuntime() commandRuntime {
 func (runtime commandRuntime) run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) != 3 || args[0] != "break-glass" || args[1] != "set-password" ||
 		args[2] == "" || strings.HasPrefix(args[2], "-") {
-		fmt.Fprintln(stderr, "Usage: grepnest-admin break-glass set-password USERNAME")
+		fmt.Fprintln(stderr, "Usage: graphnest-admin break-glass set-password USERNAME")
 		return 2
 	}
-	databaseURL := runtime.getenv("GREPNEST_DATABASE_URL")
+	databaseURL := runtime.getenv("GRAPHNEST_DATABASE_URL")
 	if !validDatabaseURL(databaseURL) {
 		fmt.Fprintln(stderr, "Configuration is invalid.")
 		return 1
@@ -110,7 +110,7 @@ func (runtime commandRuntime) run(ctx context.Context, args []string, stdin io.R
 	defer clear(credential.Hash)
 	credential.ForceRotation = true
 	event := audit.Event{
-		ActorType: "operator", ActorID: "grepnest-admin", TargetType: "user",
+		ActorType: "operator", ActorID: "graphnest-admin", TargetType: "user",
 		TargetID: auditTarget(args[2]), AuthenticationMethod: "operator",
 		Operation: "break_glass_password_set", Outcome: "success",
 	}

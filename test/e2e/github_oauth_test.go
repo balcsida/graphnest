@@ -54,7 +54,7 @@ func TestGitHubOAuthCrossReplicaPreservesCredentialBoundaries(t *testing.T) {
 
 	oidcLogin := startBrowserLogin(t, oidcBrowser, public.URL+"/auth/oidc/login", "A")
 	githubLogin := startBrowserLogin(t, oidcBrowser, public.URL+"/auth/oauth/github/login", "A")
-	githubCookie := loginCookie(t, oidcJar, public.URL, "__Host-grepnest_oauth_github_login")
+	githubCookie := loginCookie(t, oidcJar, public.URL, "__Host-graphnest_oauth_github_login")
 	assertBrowserCallbackFails(t, database, oidcBrowser, public.URL+"/auth/oauth/github/callback", oidcLogin.state, "B", public.URL)
 	completeOIDCLogin(t, oidcBrowser, oidcLogin.authorize, "B")
 	assertOIDCRepositoryStatus(t, oidcBrowser, public.URL, "B", http.StatusOK)
@@ -71,7 +71,7 @@ func TestGitHubOAuthCrossReplicaPreservesCredentialBoundaries(t *testing.T) {
 
 	assertGitHubOAuthFlowPersistence(t, database, githubLogin.state, githubCookie)
 	startBrowserLogin(t, githubBrowser, public.URL+"/auth/oidc/login", "A")
-	loginCookie(t, githubJar, public.URL, "__Host-grepnest_oidc_login")
+	loginCookie(t, githubJar, public.URL, "__Host-graphnest_oidc_login")
 	assertBrowserCallbackFails(t, database, githubBrowser, public.URL+"/auth/oidc/callback", githubLogin.state, "B", public.URL)
 	githubCallback := completeGitHubOAuthLogin(t, githubBrowser, githubLogin.authorize, "B")
 	assertOIDCRepositoryStatus(t, githubBrowser, public.URL, "B", http.StatusOK)

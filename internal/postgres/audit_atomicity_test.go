@@ -192,7 +192,7 @@ func TestSCIMAuditExcludesProvisioningSecretsAndProfiles(t *testing.T) {
 
 func TestSCIMServiceRecordsFixedLifecycleOperations(t *testing.T) {
 	store := migratedStore(t)
-	service := scim.Service{Store: store, BaseURL: "https://grepnest.example", MaxResults: 100}
+	service := scim.Service{Store: store, BaseURL: "https://graphnest.example", MaxResults: 100}
 	user, err := service.CreateUser(t.Context(), scim.User{
 		Schemas: []string{scim.UserSchema}, ExternalID: "lifecycle-user", UserName: "lifecycle-user",
 	})

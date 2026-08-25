@@ -11,7 +11,7 @@ func TestAdminDocumentContract(t *testing.T) {
 		t.Fatalf("admin document bytes=%d", len(adminDocument))
 	}
 	for _, want := range []string{
-		`data-grepnest-admin`, `id="admin-shell"`, `id="access-panel"`,
+		`data-graphnest-admin`, `id="admin-shell"`, `id="access-panel"`,
 		`data-screen="overview"`, `data-screen="repositories"`, `data-screen="queue"`,
 		`data-screen="scip"`, `data-screen="webhooks"`, `data-screen="github"`,
 		`id="repo-filter"`, `id="repo-statuses"`, `id="reconcile"`, `id="reindex-selected"`,
@@ -99,7 +99,7 @@ func TestAdminRendersTrustedProviderMetadataGenerically(t *testing.T) {
 	harness := `
 const links=[],host={children:[],append(link){this.children.push(link);links.push(link)}},
 $=()=>host,clear=target=>target.children=[],el=(_tag,text)=>({textContent:text}),
-location={origin:"https://grepnest.example"};
+location={origin:"https://graphnest.example"};
 ` + render + `
 renderProviders([
   {label:"Corporate identity",login_url:"/auth/oidc/login"},
@@ -125,7 +125,7 @@ func TestAdminPrefersSameOriginBrowserSessionBeforeBearerFallback(t *testing.T) 
 			t.Errorf("admin document missing OIDC session behavior %q", want)
 		}
 	}
-	for _, forbidden := range []string{`localStorage`, `sessionStorage.setItem("grepnest_session`} {
+	for _, forbidden := range []string{`localStorage`, `sessionStorage.setItem("graphnest_session`} {
 		if bytes.Contains(adminDocument, []byte(forbidden)) {
 			t.Errorf("admin stores a session credential %q", forbidden)
 		}

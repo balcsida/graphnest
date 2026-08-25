@@ -17,9 +17,9 @@ func TestLoadIndexerUsesZoektIndexAndLegacyAlias(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			setDurableEnvironment(t)
-			t.Setenv("GREPNEST_ZOEKT_URL", "http://127.0.0.1:6070")
-			t.Setenv("GREPNEST_ZOEKT_INDEX", test.current)
-			t.Setenv("GREPNEST_ZOEKT_GIT_INDEX", test.legacy)
+			t.Setenv("GRAPHNEST_ZOEKT_URL", "http://127.0.0.1:6070")
+			t.Setenv("GRAPHNEST_ZOEKT_INDEX", test.current)
+			t.Setenv("GRAPHNEST_ZOEKT_GIT_INDEX", test.legacy)
 			got, err := LoadIndexer()
 			if err != nil {
 				t.Fatal(err)
@@ -33,12 +33,12 @@ func TestLoadIndexerUsesZoektIndexAndLegacyAlias(t *testing.T) {
 
 func TestLoadIndexerRejectsLegacyNonstandardZoektGitIndex(t *testing.T) {
 	setDurableEnvironment(t)
-	t.Setenv("GREPNEST_ZOEKT_URL", "http://127.0.0.1:6070")
-	t.Setenv("GREPNEST_ZOEKT_INDEX", "")
-	t.Setenv("GREPNEST_ZOEKT_GIT_INDEX", filepath.Join(t.TempDir(), "custom-indexer"))
+	t.Setenv("GRAPHNEST_ZOEKT_URL", "http://127.0.0.1:6070")
+	t.Setenv("GRAPHNEST_ZOEKT_INDEX", "")
+	t.Setenv("GRAPHNEST_ZOEKT_GIT_INDEX", filepath.Join(t.TempDir(), "custom-indexer"))
 
 	_, err := LoadIndexer()
-	if err == nil || !strings.Contains(err.Error(), "GREPNEST_ZOEKT_INDEX") {
+	if err == nil || !strings.Contains(err.Error(), "GRAPHNEST_ZOEKT_INDEX") {
 		t.Fatalf("LoadIndexer error = %v", err)
 	}
 }

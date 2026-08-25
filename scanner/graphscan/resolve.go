@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	analyzerName    = "grepnest-scanner"
+	analyzerName    = "graphnest-scanner"
 	analyzerVersion = "1"
 )
 

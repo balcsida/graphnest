@@ -2,7 +2,7 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-tmp=$(mktemp -d "${TMPDIR:-/tmp}/grepnest-ui-smoke.XXXXXX")
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/graphnest-ui-smoke.XXXXXX")
 hello_sha=7fd1a60b01f91b314f59955a4e4d4e80d8edf11d
 spoon_sha=d0dd1f61b33d64e29d8bc1372a94ef6a2fee76a9
 zoekt_pid=
@@ -74,7 +74,7 @@ test -x .cache/bin/zoekt-webserver
 
 # Build rather than `go run`: `go run` does not reliably reap the compiled
 # child, which would leave 127.0.0.1:18080 bound after a failed local run.
-go build -o "$tmp/grepnest-server" ./cmd/grepnest-server
+go build -o "$tmp/graphnest-server" ./cmd/graphnest-server
 
 mkdir "$tmp/git-home"
 fetch_repository https://github.com/octocat/Hello-World.git "$hello_sha" master 101 octocat/Hello-World "$tmp/hello"
@@ -94,17 +94,17 @@ EOF
 zoekt_pid=$!
 wait_zoekt
 
-GREPNEST_LISTEN_ADDRESS=127.0.0.1:18080 \
-GREPNEST_ZOEKT_URL=http://127.0.0.1:16070 \
-GREPNEST_REPOSITORIES_FILE="$tmp/repositories.json" \
-GREPNEST_USER_TOKEN=grepnest-public-user \
-GREPNEST_ADMIN_TOKEN=grepnest-public-admin \
-GREPNEST_USER_REPOSITORIES=octocat/Hello-World,octocat/Spoon-Knife \
-GREPNEST_ADMIN_REPOSITORIES=octocat/Hello-World,octocat/Spoon-Knife \
-  "$tmp/grepnest-server" >"$tmp/server.log" 2>&1 &
+GRAPHNEST_LISTEN_ADDRESS=127.0.0.1:18080 \
+GRAPHNEST_ZOEKT_URL=http://127.0.0.1:16070 \
+GRAPHNEST_REPOSITORIES_FILE="$tmp/repositories.json" \
+GRAPHNEST_USER_TOKEN=graphnest-public-user \
+GRAPHNEST_ADMIN_TOKEN=graphnest-public-admin \
+GRAPHNEST_USER_REPOSITORIES=octocat/Hello-World,octocat/Spoon-Knife \
+GRAPHNEST_ADMIN_REPOSITORIES=octocat/Hello-World,octocat/Spoon-Knife \
+  "$tmp/graphnest-server" >"$tmp/server.log" 2>&1 &
 server_pid=$!
 wait_http http://127.0.0.1:18080/healthz
 
-GREPNEST_UI_SMOKE_URL=http://127.0.0.1:18080 \
-GREPNEST_UI_SMOKE_TOKEN=grepnest-public-user \
+GRAPHNEST_UI_SMOKE_URL=http://127.0.0.1:18080 \
+GRAPHNEST_UI_SMOKE_TOKEN=graphnest-public-user \
   ./node_modules/.bin/playwright test test/smoke/public-ui.spec.mjs --workers=1

@@ -19,8 +19,12 @@ func TestRunInstallsSkillsOnlyForExplicitSubcommand(t *testing.T) {
 	if err := run(t.Context(), []string{"install-skills", "--root", root}, "", "", clientTransport); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".claude", "skills", "grepnest-guide", "SKILL.md")); err != nil {
+	paths, err := filepath.Glob(filepath.Join(root, ".claude", "skills", "*", "SKILL.md"))
+	if err != nil {
 		t.Fatal(err)
+	}
+	if len(paths) != 4 {
+		t.Fatalf("installed skills = %d, want 4", len(paths))
 	}
 }
 
