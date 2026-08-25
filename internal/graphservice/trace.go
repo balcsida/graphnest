@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/graphprotocol"
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/graphprotocol"
+	"github.com/balcsida/graphnest/pkg/api"
 )
 
 func (s *Service) Trace(ctx context.Context, principal authn.Principal, request api.GraphTraceRequest) (result api.GraphTraceResponse, err error) {

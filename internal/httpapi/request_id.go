@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/grepnest/grepnest/internal/audit"
+	"github.com/balcsida/graphnest/internal/audit"
 )
 
 func RequestIDs(random io.Reader, next http.Handler) http.Handler {

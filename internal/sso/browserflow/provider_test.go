@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/audit"
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/sso"
+	"github.com/balcsida/graphnest/internal/audit"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/sso"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -195,7 +195,7 @@ func TestOIDCProviderLoginCreatesBoundFlowAndRedirects(t *testing.T) {
 }
 
 func TestProviderUsesSpecifiedLoginCookieForLoginAndCallback(t *testing.T) {
-	const cookieName = "__Host-grepnest_test_browserflow_login"
+	const cookieName = "__Host-graphnest_test_browserflow_login"
 	spec := oidcSpec
 	spec.CookieName = cookieName
 

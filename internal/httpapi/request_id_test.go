@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/audit"
+	"github.com/balcsida/graphnest/internal/audit"
 )
 
 func TestRequestIDBoundaryGeneratesAndIgnoresIncomingHeader(t *testing.T) {

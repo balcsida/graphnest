@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/observability"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/observability"
 )
 
 type httpSession struct{ principal authn.Principal }
@@ -53,8 +53,8 @@ func TestAuthenticateRequestWritesGenericErrorAndAttachesPrincipalOnce(t *testin
 	metricsResponse := httptest.NewRecorder()
 	metrics.Handler().ServeHTTP(metricsResponse, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	for _, want := range []string{
-		`grepnest_auth_events_total{event="session_auth",provider="session",result="success"} 1`,
-		`grepnest_auth_events_total{event="session_auth",provider="unknown",result="invalid"} 1`,
+		`graphnest_auth_events_total{event="session_auth",provider="session",result="success"} 1`,
+		`graphnest_auth_events_total{event="session_auth",provider="unknown",result="invalid"} 1`,
 	} {
 		if !strings.Contains(metricsResponse.Body.String(), want) {
 			t.Errorf("metrics missing %q:\n%s", want, metricsResponse.Body.String())

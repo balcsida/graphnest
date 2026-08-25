@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make GrepNest safe to publish as source while preserving a practical solo-maintainer workflow.
+**Goal:** Make GraphNest safe to publish as source while preserving a practical solo-maintainer workflow.
 
 **Architecture:** Reuse the two fixes already proven by PR #1, add only the missing local secret and reporting safeguards, then enable GitHub security settings. Keep visibility private until the owner changes it; immediately afterward, create one `main` ruleset and enable public-only security features.
 
@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Keep `balcsida/grep-nest` private until the owner changes visibility.
+- Keep `balcsida/graphnest` private until the owner changes visibility.
 - Commit directly to `main` as explicitly authorized.
 - Every commit must be signed, atomic, conventional, single-line, and at most 72 characters.
 - Keep Helm pinned to v4.2.3.
@@ -68,7 +68,7 @@ and `main` is ahead only by committed changes.
 ### Task 2: Remove the undeclared Helm-test dependency
 
 **Files:**
-- Modify: `deploy/helm/grepnest/tests/render.sh`
+- Modify: `deploy/helm/graphnest/tests/render.sh`
 
 **Interfaces:**
 - Consumes: existing signed commit `ace5e683868badb21820bd2124fd5ad3d5dc3afd`
@@ -78,7 +78,7 @@ and `main` is ahead only by committed changes.
 
 Read GitHub Actions job `88348866859` from run `29741435806`.
 
-Expected: `deploy/helm/grepnest/tests/render.sh: 16: rg: not found` and exit 127.
+Expected: `deploy/helm/graphnest/tests/render.sh: 16: rg: not found` and exit 127.
 
 - [ ] **Step 2: Apply the existing signed fix**
 
@@ -96,10 +96,10 @@ the Helm render test.
 Run:
 
 ```bash
-sh -n deploy/helm/grepnest/tests/render.sh
+sh -n deploy/helm/graphnest/tests/render.sh
 make helm-lint helm-test
 rg -n 'version: v4\.2\.3' .github/workflows/ci.yml
-! rg -n '\brg\b' deploy/helm/grepnest/tests/render.sh
+! rg -n '\brg\b' deploy/helm/graphnest/tests/render.sh
 git diff HEAD^ --check
 ```
 
@@ -194,7 +194,7 @@ Set `SECURITY.md` to:
 # Security
 
 Report suspected vulnerabilities through
-[GitHub private vulnerability reporting](https://github.com/balcsida/grep-nest/security/advisories/new).
+[GitHub private vulnerability reporting](https://github.com/balcsida/graphnest/security/advisories/new).
 Do not file public issues for vulnerabilities until a fix and disclosure plan
 exist.
 ```
@@ -288,7 +288,7 @@ Expected: `verify`, `integration`, `e2e`, and `helm` all complete successfully.
 ### Task 6: Enable private-repository security updates
 
 **Files:**
-- Remote settings: `balcsida/grep-nest`
+- Remote settings: `balcsida/graphnest`
 
 **Interfaces:**
 - Consumes: authenticated `gh` access to `github.com`
@@ -311,7 +311,7 @@ than exposing or replacing credentials.
 Run:
 
 ```bash
-gh api --method PUT repos/balcsida/grep-nest/vulnerability-alerts
+gh api --method PUT repos/balcsida/graphnest/vulnerability-alerts
 ```
 
 Expected: HTTP 204.
@@ -321,7 +321,7 @@ Expected: HTTP 204.
 Run:
 
 ```bash
-gh api --method PUT repos/balcsida/grep-nest/automated-security-fixes
+gh api --method PUT repos/balcsida/graphnest/automated-security-fixes
 ```
 
 Expected: HTTP 204.
@@ -331,8 +331,8 @@ Expected: HTTP 204.
 Run:
 
 ```bash
-gh api repos/balcsida/grep-nest/vulnerability-alerts --include
-gh api repos/balcsida/grep-nest/automated-security-fixes
+gh api repos/balcsida/graphnest/vulnerability-alerts --include
+gh api repos/balcsida/graphnest/automated-security-fixes
 ```
 
 Expected: alerts return HTTP 204 and automated security fixes report
@@ -341,8 +341,8 @@ Expected: alerts return HTTP 204 and automated security fixes report
 ### Task 7: Apply public-only protections after visibility changes
 
 **Files:**
-- Remote ruleset: `balcsida/grep-nest`
-- Remote security settings: `balcsida/grep-nest`
+- Remote ruleset: `balcsida/graphnest`
+- Remote security settings: `balcsida/graphnest`
 
 **Interfaces:**
 - Consumes: public repository visibility and authenticated `gh` administration
@@ -353,7 +353,7 @@ Expected: alerts return HTTP 204 and automated security fixes report
 Run:
 
 ```bash
-gh repo view balcsida/grep-nest --json visibility --jq .visibility
+gh repo view balcsida/graphnest --json visibility --jq .visibility
 ```
 
 Expected: `PUBLIC`. Do not change visibility in this plan.
@@ -410,7 +410,7 @@ Save this request body in a temporary file outside the repository:
 Run:
 
 ```bash
-gh api --method POST repos/balcsida/grep-nest/rulesets --input /tmp/grepnest-main-ruleset.json
+gh api --method POST repos/balcsida/graphnest/rulesets --input /tmp/graphnest-main-ruleset.json
 ```
 
 Expected: HTTP 201 with `name: Protect main`, `enforcement: active`, and no
@@ -421,11 +421,11 @@ bypass actors.
 Run:
 
 ```bash
-gh api --method PATCH repos/balcsida/grep-nest \
+gh api --method PATCH repos/balcsida/graphnest \
   -F security_and_analysis[secret_scanning][status]=enabled \
   -F security_and_analysis[secret_scanning_push_protection][status]=enabled
-gh api --method PUT repos/balcsida/grep-nest/private-vulnerability-reporting
-gh api --method PATCH repos/balcsida/grep-nest/code-scanning/default-setup \
+gh api --method PUT repos/balcsida/graphnest/private-vulnerability-reporting
+gh api --method PATCH repos/balcsida/graphnest/code-scanning/default-setup \
   -f state=configured \
   -f query_suite=default \
   -f languages[]=go
@@ -440,10 +440,10 @@ enabled, private reporting returns HTTP 204, and CodeQL default setup reports
 Run:
 
 ```bash
-gh api repos/balcsida/grep-nest/rulesets
-gh api repos/balcsida/grep-nest
-gh api repos/balcsida/grep-nest/private-vulnerability-reporting
-gh api repos/balcsida/grep-nest/code-scanning/default-setup
+gh api repos/balcsida/graphnest/rulesets
+gh api repos/balcsida/graphnest
+gh api repos/balcsida/graphnest/private-vulnerability-reporting
+gh api repos/balcsida/graphnest/code-scanning/default-setup
 ```
 
 Expected: one active `Protect main` ruleset with the four required checks,

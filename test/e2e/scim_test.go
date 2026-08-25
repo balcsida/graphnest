@@ -14,20 +14,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/account"
-	"github.com/grepnest/grepnest/internal/admin"
-	"github.com/grepnest/grepnest/internal/audit"
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/authz"
-	"github.com/grepnest/grepnest/internal/config"
-	"github.com/grepnest/grepnest/internal/httpapi"
-	"github.com/grepnest/grepnest/internal/mcpserver"
-	"github.com/grepnest/grepnest/internal/postgres"
-	"github.com/grepnest/grepnest/internal/repository"
-	"github.com/grepnest/grepnest/internal/scim"
-	"github.com/grepnest/grepnest/internal/search"
-	"github.com/grepnest/grepnest/internal/sso"
-	oidcclient "github.com/grepnest/grepnest/internal/sso/oidc"
+	"github.com/balcsida/graphnest/internal/account"
+	"github.com/balcsida/graphnest/internal/admin"
+	"github.com/balcsida/graphnest/internal/audit"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/authz"
+	"github.com/balcsida/graphnest/internal/config"
+	"github.com/balcsida/graphnest/internal/httpapi"
+	"github.com/balcsida/graphnest/internal/mcpserver"
+	"github.com/balcsida/graphnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/scim"
+	"github.com/balcsida/graphnest/internal/search"
+	"github.com/balcsida/graphnest/internal/sso"
+	oidcclient "github.com/balcsida/graphnest/internal/sso/oidc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -103,7 +103,7 @@ func newSCIME2EHandler(t *testing.T, database milestoneDatabase, idp *oidcTestPr
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := oidcclient.New(t.Context(), config.OIDC{IssuerURL: idp.server.URL, ClientID: "grepnest-e2e", Scopes: []string{"openid"}, LinkClaim: "directory_id", DisplayNameClaim: "name"}, public, []byte("oidc-e2e-secret"), idp.caPEM())
+	client, err := oidcclient.New(t.Context(), config.OIDC{IssuerURL: idp.server.URL, ClientID: "graphnest-e2e", Scopes: []string{"openid"}, LinkClaim: "directory_id", DisplayNameClaim: "name"}, public, []byte("oidc-e2e-secret"), idp.caPEM())
 	if err != nil {
 		t.Fatal(err)
 	}

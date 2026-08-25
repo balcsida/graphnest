@@ -4,10 +4,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/authn"
 )
 
-const OIDCLoginCookieName = "__Host-grepnest_oidc_login"
+const OIDCLoginCookieName = "__Host-graphnest_oidc_login"
 
 func SessionCookie(value string, expires, now time.Time) *http.Cookie {
 	return liveCookie(authn.SessionCookieName, value, expires, now, http.SameSiteStrictMode)

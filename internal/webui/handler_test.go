@@ -32,8 +32,8 @@ func TestRegisterServesBoundedConsoleAtExactPaths(t *testing.T) {
 			}
 		}
 		body := response.Body.Bytes()
-		if len(body) >= 40<<10 || !bytes.Contains(body, []byte(`data-grepnest-app`)) {
-			t.Fatalf("document bytes=%d shell=%t", len(body), bytes.Contains(body, []byte(`data-grepnest-app`)))
+		if len(body) >= 40<<10 || !bytes.Contains(body, []byte(`data-graphnest-app`)) {
+			t.Fatalf("document bytes=%d shell=%t", len(body), bytes.Contains(body, []byte(`data-graphnest-app`)))
 		}
 		policy := response.Header().Get("Content-Security-Policy")
 		if !strings.Contains(policy, "script-src 'sha256-") || !strings.Contains(policy, "style-src 'sha256-") || strings.Contains(policy, "unsafe-inline") {

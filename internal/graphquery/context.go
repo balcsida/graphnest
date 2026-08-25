@@ -3,7 +3,7 @@ package graphquery
 import (
 	"context"
 
-	"github.com/grepnest/grepnest/internal/graphprotocol"
+	"github.com/balcsida/graphnest/internal/graphprotocol"
 )
 
 func (service *Service) Context(ctx context.Context, request graphprotocol.ContextRequest) (graphprotocol.ContextResponse, error) {

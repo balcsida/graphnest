@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/graphingest"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/graphingest"
 	"github.com/jackc/pgx/v5"
 )
 
-const graphContentType = "application/vnd.grepnest.graph.v1+protobuf"
+const graphContentType = "application/vnd.graphnest.graph.v1+protobuf"
 
 func RegisterGraphIngestion(mux *http.ServeMux, authenticator authn.Authenticator, service *graphingest.Service, maxUploadBytes, maxResponseBytes int64) {
 	mux.Handle("/v1/graph/uploads", exactMethod(http.MethodPost, AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

@@ -4,7 +4,7 @@
 > execute this plan milestone by milestone with two-stage review.
 
 **Goal:** Make exact-SHA archive snapshots, Zoekt, GitHub App access, and
-PostgreSQL the default GrepNest runtime while removing persistent source,
+PostgreSQL the default GraphNest runtime while removing persistent source,
 LadybugDB, and optional scanner/tool dependencies from the core distribution.
 
 **Architecture:** Preserve the current PostgreSQL queue, desired/indexed SHA
@@ -72,7 +72,7 @@ present; this is an environment limitation, not a repository failure.
 ## Task 1: Milestone 1 — Add the snapshot seam
 
 **Files:** Modify `internal/indexer/worker.go`, `worker_test.go`, `git.go`,
-`git_test.go`, `cmd/grepnest-indexer/main.go`, and `main_test.go`.
+`git_test.go`, `cmd/graphnest-indexer/main.go`, and `main_test.go`.
 
 1. Write failing worker tests for exact target propagation, provider workspace
    disk admission, desired-SHA checks before expensive work and publication,
@@ -83,7 +83,7 @@ present; this is an environment limitation, not a repository failure.
    directory without exposing provider type.
 3. Adapt current Git mirror/worktree behavior as `GitSnapshotProvider` and wire
    it as the explicit legacy provider.
-4. Run `go test -race ./internal/indexer ./cmd/grepnest-indexer`, `make
+4. Run `go test -race ./internal/indexer ./cmd/graphnest-indexer`, `make
    test-race`, and `git diff --check`.
 5. Commit `refactor(indexer): add snapshot provider`.
 
@@ -92,7 +92,7 @@ present; this is an environment limitation, not a repository failure.
 **Files:** Add `internal/indexer/archive.go` and `archive_test.go`; modify
 `internal/githubapp/client.go`, `client_test.go`, `internal/config/config.go`,
 `config_test.go`, `internal/observability/metrics.go`, `metrics_test.go`,
-`cmd/grepnest-indexer/main.go`, and `main_test.go`.
+`cmd/graphnest-indexer/main.go`, and `main_test.go`.
 
 1. Write table and fuzz tests for safe tar.gz extraction: prefix validation,
    traversal/absolute/NUL paths, duplicate outputs, links/special files,
@@ -114,7 +114,7 @@ present; this is an environment limitation, not a repository failure.
 ## Task 3: Milestone 3 — Index ordinary directories with Zoekt
 
 **Files:** Modify `internal/indexer/zoekt.go`, `zoekt_test.go`,
-`cmd/grepnest-indexer/main.go`, `test/e2e/milestone2_test.go`, configuration,
+`cmd/graphnest-indexer/main.go`, `test/e2e/milestone2_test.go`, configuration,
 deployment examples, and their tests.
 
 1. Record the pinned Zoekt directory-index API and metadata fields; do not fake
@@ -142,7 +142,7 @@ deployment examples, and their tests.
 **Files:** Add `internal/enrichment/runner.go`, `runner_test.go`, and
 `protocol.go`; modify `internal/indexer/worker.go`, `worker_test.go`,
 `internal/postgres/queue.go`, `queue_test.go`, `internal/graphscanner/worker.go`,
-`cmd/grepnest-indexer/main.go`, `cmd/grepnest-scanner/main.go`, and the graph
+`cmd/graphnest-indexer/main.go`, `cmd/graphnest-scanner/main.go`, and the graph
 job integration/E2E tests. Deployment removal waits for milestone 7.
 
 **Interface:** `Enricher.Enrich(ctx, Snapshot, repository.Repository,
@@ -182,7 +182,7 @@ checkout queue.
 `test/fixtures/graph/query/`, and extend `test/integration/graph_contract_test.go`.
 After parity, remove `internal/graphquery/cypher.go`, `internal/ladybug`,
 `internal/graphruntime`, `internal/graphclient`, `internal/graphtransport`,
-`internal/graphcommand`, and `cmd/grepnest-graph`; remove Cypher together from
+`internal/graphcommand`, and `cmd/graphnest-graph`; remove Cypher together from
 `pkg/api`, `internal/httpapi`, `internal/mcpserver`, `internal/webui`, and
 `docs/openapi.yaml`. This milestone also removes Ladybug/graph-owner references
 from Docker, Compose, Helm, CI, and image tests so every commit remains runnable;
@@ -215,7 +215,7 @@ cycle detection, deterministic assembly, and all existing result bounds.
 ## Task 6: Milestone 6 — Isolate optional dependencies
 
 **Files:** Add `tools/go.mod` and `tools/tools.go`; add `scanner/go.mod`,
-`scanner/go.sum`, `scanner/cmd/grepnest-scanner`, and `scanner/graphscan`; add
+`scanner/go.sum`, `scanner/cmd/graphnest-scanner`, and `scanner/graphscan`; add
 root `go.work` for development. Modify root `go.mod`, `go.sum`, `Makefile`,
 `.github/workflows/ci.yml`, `.github/dependabot.yml`, `Dockerfile`,
 `deploy/images/test.sh`, and `.github/workflows/release.yml`. The scanner module

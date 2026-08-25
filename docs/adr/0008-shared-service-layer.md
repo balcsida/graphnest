@@ -15,5 +15,5 @@ small.
 
 ## Consequences
 
-`grepnest-server` hosts REST and Streamable HTTP MCP. `grepnest-mcp` is a stdio
+`graphnest-server` hosts REST and Streamable HTTP MCP. `graphnest-mcp` is a stdio
 client of the server and cannot bypass it to contact Zoekt.

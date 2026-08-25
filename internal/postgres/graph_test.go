@@ -7,8 +7,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/graphartifact"
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/internal/graphartifact"
+	"github.com/balcsida/graphnest/pkg/api"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -78,8 +78,8 @@ func TestGraphSnapshotIDsReserveTheSCIPManifestRange(t *testing.T) {
 
 func TestGraphManifestsUsesOneFallbackSnapshot(t *testing.T) {
 	store, repositoryID := readyGraphStore(t, testSHA('a'))
-	oldSymbol := "scip go example.com/grepnest v1 pkg/Old#"
-	newSymbol := "scip go example.com/grepnest v1 pkg/New#"
+	oldSymbol := "scip go example.com/graphnest v1 pkg/Old#"
+	newSymbol := "scip go example.com/graphnest v1 pkg/New#"
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("old.go", oldSymbol, definitionRole)); err != nil {
 		t.Fatal(err)
 	}

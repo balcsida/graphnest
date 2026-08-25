@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/config"
-	oidcclient "github.com/grepnest/grepnest/internal/sso/oidc"
+	"github.com/balcsida/graphnest/internal/config"
+	oidcclient "github.com/balcsida/graphnest/internal/sso/oidc"
 	"golang.org/x/oauth2"
 )
 
@@ -167,7 +167,7 @@ func (fixture *providerFixture) caPEM() []byte {
 
 func (fixture *providerFixture) client(t *testing.T) *oidcclient.Client {
 	t.Helper()
-	publicURL, _ := url.Parse("https://grepnest.example/")
+	publicURL, _ := url.Parse("https://graphnest.example/")
 	client, err := oidcclient.New(t.Context(), config.OIDC{
 		IssuerURL: fixture.issuer, ClientID: "client-id",
 		Scopes:    []string{"openid", "profile", "email"},
@@ -188,7 +188,7 @@ func TestClientDiscoveryAndAuthorizationURL(t *testing.T) {
 	}
 	query := authorizationURL.Query()
 	expected := map[string]string{
-		"client_id": "client-id", "redirect_uri": "https://grepnest.example/auth/oidc/callback",
+		"client_id": "client-id", "redirect_uri": "https://graphnest.example/auth/oidc/callback",
 		"scope": "openid profile email", "state": "state-value", "nonce": "expected-nonce",
 		"response_type": "code", "code_challenge_method": "S256",
 		"code_challenge": oauth2.S256ChallengeFromVerifier("verifier-value"),
@@ -215,7 +215,7 @@ func TestClientConstructorRejectsInvalidDiscovery(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := newProvider(t)
 			test.change(fixture)
-			publicURL, _ := url.Parse("https://grepnest.example/")
+			publicURL, _ := url.Parse("https://graphnest.example/")
 			if _, err := oidcclient.New(t.Context(), config.OIDC{
 				IssuerURL: fixture.issuer, ClientID: "client-id", Scopes: []string{"openid"},
 			}, publicURL, []byte("secret"), fixture.caPEM()); err == nil {
@@ -225,7 +225,7 @@ func TestClientConstructorRejectsInvalidDiscovery(t *testing.T) {
 	}
 	t.Run("untrusted CA", func(t *testing.T) {
 		fixture := newProvider(t)
-		publicURL, _ := url.Parse("https://grepnest.example/")
+		publicURL, _ := url.Parse("https://graphnest.example/")
 		if _, err := oidcclient.New(t.Context(), config.OIDC{
 			IssuerURL: fixture.issuer, ClientID: "client-id", Scopes: []string{"openid"},
 		}, publicURL, []byte("secret"), nil); err == nil {
@@ -234,7 +234,7 @@ func TestClientConstructorRejectsInvalidDiscovery(t *testing.T) {
 	})
 	t.Run("offline access", func(t *testing.T) {
 		fixture := newProvider(t)
-		publicURL, _ := url.Parse("https://grepnest.example/")
+		publicURL, _ := url.Parse("https://graphnest.example/")
 		if _, err := oidcclient.New(t.Context(), config.OIDC{
 			IssuerURL: fixture.issuer, ClientID: "client-id",
 			Scopes: []string{"openid", "offline_access"},
@@ -260,7 +260,7 @@ func TestClientExchange(t *testing.T) {
 	request := fixture.tokenRequest
 	fixture.mu.Unlock()
 	if request.Get("code_verifier") != "verifier-value" ||
-		request.Get("redirect_uri") != "https://grepnest.example/auth/oidc/callback" {
+		request.Get("redirect_uri") != "https://graphnest.example/auth/oidc/callback" {
 		t.Fatalf("token request = %v", request)
 	}
 }

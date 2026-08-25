@@ -15,7 +15,7 @@ GREEN:
   include/link paths, runtime library lookup, writable caches, and build rpath.
 - `build`, `test`, `test-race`, `lint`, `staticcheck`, `govulncheck`, `server`,
   and `ladybug-test` use the shared native contract.
-- A fresh `/private/tmp/grepnest-ladybug-final.vJlJ5h` provision downloaded the
+- A fresh `/private/tmp/graphnest-ladybug-final.vJlJ5h` provision downloaded the
   v0.18.3 Darwin/arm64 archive, verified SHA-256
   `f626987fe10f6520146793575677d004962b4c6a0dea71cbbca75e73ab673622`,
   and passed the native Ladybug, graph query, and runtime packages.
@@ -122,13 +122,13 @@ RED:
 - The original parity test constructed two identical `graphruntime.New`
   instances, so neither command initialization path participated.
 - The reshaped contract initially failed to compile because no callable
-  standalone command seam existed outside `cmd/grepnest-graph`.
+  standalone command seam existed outside `cmd/graphnest-graph`.
 
 GREEN:
 
 - `graphcommand.RunStandalone` now contains the production standalone
   PostgreSQL ping, migration, runtime creation, run, and close sequence; the
-  real `grepnest-graph` main calls it.
+  real `graphnest-graph` main calls it.
 - The integration contract runs `newIndexRuntime` plus `indexRuntime.run`, so
   embedded Ladybug starts only after normal indexer ping, migration, search-node
   upsert, lease reap, and history prune initialization.
@@ -146,7 +146,7 @@ Verification:
 - `make ladybug-test` — pass
 - Uncached native command/runtime/query race — pass, 59 tests in five packages
 - `make fmt lint test-race build staticcheck` — pass
-- `make postgres-integration` — pass, including `cmd/grepnest-indexer`
+- `make postgres-integration` — pass, including `cmd/graphnest-indexer`
 - `go mod tidy -diff` — pass, no diff
 - `go mod verify` — pass, all modules verified
 - `make govulncheck` — pass, no vulnerabilities found

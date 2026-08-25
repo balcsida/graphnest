@@ -13,7 +13,7 @@
   candidates.
 - `make e2e` failed in `TestMilestone2Vertical` with
   `queued/git_failed`. Bounded diagnostic output identified dyld aborting the
-  Ladybug-linked `grepnest-indexer` askpass binary because its build lacked the
+  Ladybug-linked `graphnest-indexer` askpass binary because its build lacked the
   Ladybug runtime rpath. The diagnostic changes were reverted before the fix.
 - MCP schema tests failed on `anyOf` and minimum `1`. The Helm render test
   failed until graph/scanner scheduling assertions were scoped to their own

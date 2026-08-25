@@ -4,13 +4,13 @@ import (
 	"context"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/graphartifact"
-	"github.com/grepnest/grepnest/scanner/graphscan"
-	"github.com/grepnest/grepnest/scanner/graphscan/golang"
-	"github.com/grepnest/grepnest/scanner/graphscan/java"
-	"github.com/grepnest/grepnest/scanner/graphscan/javascript"
-	"github.com/grepnest/grepnest/scanner/graphscan/kotlin"
-	"github.com/grepnest/grepnest/scanner/graphscan/rust"
+	"github.com/balcsida/graphnest/internal/graphartifact"
+	"github.com/balcsida/graphnest/scanner/graphscan"
+	"github.com/balcsida/graphnest/scanner/graphscan/golang"
+	"github.com/balcsida/graphnest/scanner/graphscan/java"
+	"github.com/balcsida/graphnest/scanner/graphscan/javascript"
+	"github.com/balcsida/graphnest/scanner/graphscan/kotlin"
+	"github.com/balcsida/graphnest/scanner/graphscan/rust"
 )
 
 func Scan(ctx context.Context, request graphscan.Request) (graphartifact.Artifact, error) {

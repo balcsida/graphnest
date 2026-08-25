@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/scim"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/scim"
 )
 
 const (

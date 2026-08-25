@@ -19,21 +19,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/authz"
-	"github.com/grepnest/grepnest/internal/httpapi"
-	"github.com/grepnest/grepnest/internal/mcpserver"
-	"github.com/grepnest/grepnest/internal/observability"
-	"github.com/grepnest/grepnest/internal/repository"
-	"github.com/grepnest/grepnest/internal/search"
-	"github.com/grepnest/grepnest/internal/zoekt"
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/authz"
+	"github.com/balcsida/graphnest/internal/httpapi"
+	"github.com/balcsida/graphnest/internal/mcpserver"
+	"github.com/balcsida/graphnest/internal/observability"
+	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/search"
+	"github.com/balcsida/graphnest/internal/zoekt"
+	"github.com/balcsida/graphnest/pkg/api"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const (
 	fixtureName = "fixture/repository"
-	needle      = "GrepNestFixtureNeedle"
+	needle      = "GraphNestFixtureNeedle"
 	token       = "e2e-secret"
 )
 
@@ -49,8 +49,8 @@ func TestPinnedFixtureSearch(t *testing.T) {
 	}
 	copyFixture(t, repo)
 	run(t, ctx, "git", "init", "--initial-branch=main", repo)
-	run(t, ctx, "git", "-C", repo, "config", "user.name", "GrepNest Test")
-	run(t, ctx, "git", "-C", repo, "config", "user.email", "test@grepnest.invalid")
+	run(t, ctx, "git", "-C", repo, "config", "user.name", "GraphNest Test")
+	run(t, ctx, "git", "-C", repo, "config", "user.email", "test@graphnest.invalid")
 	run(t, ctx, "git", "-C", repo, "config", "zoekt.repoid", "7")
 	run(t, ctx, "git", "-C", repo, "config", "zoekt.name", fixtureName)
 	run(t, ctx, "git", "-C", repo, "add", ".")
@@ -326,7 +326,7 @@ func assertFixtureMatch(t *testing.T, matches []api.SearchMatch, sha string) {
 		t.Fatalf("matches = %#v, want one", matches)
 	}
 	match := matches[0]
-	if match.Repository.ID != 1 || match.Repository.Name != fixtureName || match.Repository.Branch != "main" || match.Repository.IndexedSHA != sha || match.Path != "main.go" || match.SHA != sha || match.LineNumber != 3 || match.Preview != "const Needle = \"GrepNestFixtureNeedle\"\n" {
+	if match.Repository.ID != 1 || match.Repository.Name != fixtureName || match.Repository.Branch != "main" || match.Repository.IndexedSHA != sha || match.Path != "main.go" || match.SHA != sha || match.LineNumber != 3 || match.Preview != "const Needle = \"GraphNestFixtureNeedle\"\n" {
 		t.Fatalf("match = %#v", match)
 	}
 }

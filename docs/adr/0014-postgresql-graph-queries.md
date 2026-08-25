@@ -11,7 +11,7 @@ readiness directly from the existing PostgreSQL graph uploads, nodes, edges,
 and manifests. Every query is scoped by authorized repositories and exact
 commits, uses bounded parameterized operations, and returns stable ordering.
 
-After normalized parity is established, GrepNest removes the LadybugDB replica,
+After normalized parity is established, GraphNest removes the LadybugDB replica,
 its synchronization/runtime/client topology, and the raw Cypher API. PostgreSQL
 remains the sole graph authority and query store.
 

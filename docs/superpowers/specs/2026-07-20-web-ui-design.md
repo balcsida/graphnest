@@ -1,11 +1,11 @@
-# GrepNest Web UI Design
+# GraphNest Web UI Design
 
 **Date:** 2026-07-20
 **Status:** Approved
 
 ## Goal
 
-Add a fast, keyboard-friendly code-search console to the existing GrepNest
+Add a fast, keyboard-friendly code-search console to the existing GraphNest
 server. The page's single job is to search authorized repositories and make
 matches easy to scan and open at the indexed revision.
 
@@ -33,7 +33,7 @@ The alternatives were:
 
 The selected direction is a dense search console:
 
-- a compact top bar with the GrepNest wordmark, persistent query input,
+- a compact top bar with the GraphNest wordmark, persistent query input,
   repository picker, search action, and keyboard hint;
 - a narrow context rail showing result count, active repository count, and
   concise query help;

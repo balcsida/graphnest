@@ -5,9 +5,9 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/graphservice"
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/graphservice"
+	"github.com/balcsida/graphnest/pkg/api"
 )
 
 func RegisterGraphQueries(mux *http.ServeMux, authenticator authn.Authenticator, service *graphservice.Service, maxRequestBytes, maxResponseBytes int64) {

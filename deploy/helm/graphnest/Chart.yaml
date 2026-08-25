@@ -1,0 +1,7 @@
+apiVersion: v2
+name: graphnest
+description: Generic Kubernetes chart for the GraphNest single-node pilot
+type: application
+version: 0.3.0
+appVersion: 0.3.0
+kubeVersion: ">=1.25.0-0"

@@ -93,7 +93,7 @@ helper ignored context cancellation until the adapter returned to `Scan`.
 The regression was added first and run with:
 
 ```text
-GOCACHE=/private/tmp/grepnest-final-fix-gocache go test ./internal/graphscan -run '^TestBudgetErrorReturnsContextCancellation$' -count=1 -v
+GOCACHE=/private/tmp/graphnest-final-fix-gocache go test ./internal/graphscan -run '^TestBudgetErrorReturnsContextCancellation$' -count=1 -v
 === RUN   TestBudgetErrorReturnsContextCancellation
     budget_test.go:14: BudgetError() = <nil>, want context.Canceled
 --- FAIL: TestBudgetErrorReturnsContextCancellation (0.00s)
@@ -108,7 +108,7 @@ per-adapter changes. The same focused command then passed:
 === RUN   TestBudgetErrorReturnsContextCancellation
 --- PASS: TestBudgetErrorReturnsContextCancellation (0.00s)
 PASS
-ok github.com/grepnest/grepnest/internal/graphscan
+ok github.com/balcsida/graphnest/internal/graphscan
 ```
 
 Fresh full verification passed:

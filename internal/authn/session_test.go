@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/audit"
+	"github.com/balcsida/graphnest/internal/audit"
 )
 
 type sessionStoreStub struct {

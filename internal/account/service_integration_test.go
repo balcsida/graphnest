@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/account"
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/authz"
-	"github.com/grepnest/grepnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/account"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/authz"
+	"github.com/balcsida/graphnest/internal/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -62,9 +62,9 @@ func TestCreateAdminTokenUsesLiveGlobalCeiling(t *testing.T) {
 
 func accountStore(t *testing.T) (*postgres.Store, *pgxpool.Pool) {
 	t.Helper()
-	dsn := os.Getenv("GREPNEST_TEST_POSTGRES_DSN")
+	dsn := os.Getenv("GRAPHNEST_TEST_POSTGRES_DSN")
 	if dsn == "" {
-		t.Skip("GREPNEST_TEST_POSTGRES_DSN is not set")
+		t.Skip("GRAPHNEST_TEST_POSTGRES_DSN is not set")
 	}
 	admin, err := pgxpool.New(t.Context(), dsn)
 	if err != nil {
@@ -75,7 +75,7 @@ func accountStore(t *testing.T) (*postgres.Store, *pgxpool.Pool) {
 	if _, err := rand.Read(b); err != nil {
 		t.Fatal(err)
 	}
-	schema := "grepnest_account_" + hex.EncodeToString(b)
+	schema := "graphnest_account_" + hex.EncodeToString(b)
 	if _, err := admin.Exec(t.Context(), "create schema "+schema); err != nil {
 		t.Fatal(err)
 	}

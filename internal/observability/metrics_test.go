@@ -17,11 +17,11 @@ func TestMilestone2MetricsRecordFixedLabels(t *testing.T) {
 
 	body := scrape(t, metrics)
 	for _, want := range []string{
-		`grepnest_github_requests_total{operation="installations",result="success"} 1`,
-		`grepnest_webhook_deliveries_total{event="push",result="accepted"} 1`,
-		`grepnest_index_queue_depth{state="queued"} 3`,
-		`grepnest_index_phase_total{phase="fetch",result="success"} 1`,
-		`grepnest_index_phase_duration_seconds_count{phase="fetch",result="success"} 1`,
+		`graphnest_github_requests_total{operation="installations",result="success"} 1`,
+		`graphnest_webhook_deliveries_total{event="push",result="accepted"} 1`,
+		`graphnest_index_queue_depth{state="queued"} 3`,
+		`graphnest_index_phase_total{phase="fetch",result="success"} 1`,
+		`graphnest_index_phase_duration_seconds_count{phase="fetch",result="success"} 1`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("metrics missing %q:\n%s", want, body)
@@ -35,9 +35,9 @@ func TestArchiveMetricsUseOnlyFixedLabels(t *testing.T) {
 	metrics.ObserveArchive("repository-123", strings.Repeat("a", 40), time.Second)
 	body := scrape(t, metrics)
 	for _, want := range []string{
-		`grepnest_archive_operations_total{operation="download",result="success"} 1`,
-		`grepnest_archive_operations_total{operation="unknown",result="error"} 1`,
-		`grepnest_archive_operation_duration_seconds_count{operation="download",result="success"} 1`,
+		`graphnest_archive_operations_total{operation="download",result="success"} 1`,
+		`graphnest_archive_operations_total{operation="unknown",result="error"} 1`,
+		`graphnest_archive_operation_duration_seconds_count{operation="download",result="success"} 1`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("metrics missing %q:\n%s", want, body)
@@ -78,10 +78,10 @@ func TestGraphMetricsRecordFixedLabels(t *testing.T) {
 
 	body := scrape(t, metrics)
 	for _, want := range []string{
-		`grepnest_graph_queue_depth{state="running"} 2`,
-		`grepnest_graph_scan_phase_total{phase="scan",result="success"} 1`,
-		`grepnest_graph_scan_phase_duration_seconds_count{phase="scan",result="success"} 1`,
-		`grepnest_graph_scan_phase_total{phase="publish",result="error"} 1`,
+		`graphnest_graph_queue_depth{state="running"} 2`,
+		`graphnest_graph_scan_phase_total{phase="scan",result="success"} 1`,
+		`graphnest_graph_scan_phase_duration_seconds_count{phase="scan",result="success"} 1`,
+		`graphnest_graph_scan_phase_total{phase="publish",result="error"} 1`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("metrics missing %q:\n%s", want, body)
@@ -97,9 +97,9 @@ func TestAuthMetricsUseOnlyFixedLabels(t *testing.T) {
 
 	body := scrape(t, metrics)
 	for _, want := range []string{
-		`grepnest_auth_events_total{event="callback",provider="oidc",result="denied"} 1`,
-		`grepnest_auth_events_total{event="callback",provider="oauth",result="success"} 1`,
-		`grepnest_auth_events_total{event="unknown",provider="unknown",result="error"} 1`,
+		`graphnest_auth_events_total{event="callback",provider="oidc",result="denied"} 1`,
+		`graphnest_auth_events_total{event="callback",provider="oauth",result="success"} 1`,
+		`graphnest_auth_events_total{event="unknown",provider="unknown",result="error"} 1`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("metrics missing %q:\n%s", want, body)
@@ -119,9 +119,9 @@ func TestGraphMetricsIgnoreInvalidLabels(t *testing.T) {
 
 	body := scrape(t, metrics)
 	for _, name := range []string{
-		"grepnest_graph_queue_depth",
-		"grepnest_graph_scan_phase_total",
-		"grepnest_graph_scan_phase_duration_seconds",
+		"graphnest_graph_queue_depth",
+		"graphnest_graph_scan_phase_total",
+		"graphnest_graph_scan_phase_duration_seconds",
 	} {
 		if strings.Contains(body, name) {
 			t.Errorf("invalid graph label emitted %q:\n%s", name, body)
@@ -136,8 +136,8 @@ func TestGraphQueryMetricsUseFixedLabels(t *testing.T) {
 
 	body := scrape(t, metrics)
 	for _, want := range []string{
-		`grepnest_graph_query_total{operation="context",result="success"} 1`,
-		`grepnest_graph_query_total{operation="unknown",result="error"} 1`,
+		`graphnest_graph_query_total{operation="context",result="success"} 1`,
+		`graphnest_graph_query_total{operation="unknown",result="error"} 1`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("metrics missing %q:\n%s", want, body)
@@ -161,7 +161,7 @@ func TestWrapHTTPRecordsRequests(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
-	if !strings.Contains(recorder.Body.String(), "grepnest_http_requests_total") {
+	if !strings.Contains(recorder.Body.String(), "graphnest_http_requests_total") {
 		t.Fatalf("metrics = %s", recorder.Body.String())
 	}
 }
@@ -174,7 +174,7 @@ func TestWrapHTTPBoundsUnknownMethods(t *testing.T) {
 	}
 
 	body := scrape(t, metrics)
-	if strings.Count(body, `grepnest_http_requests_total{method="unknown",path="unknown",status="200"} 3`) != 1 {
+	if strings.Count(body, `graphnest_http_requests_total{method="unknown",path="unknown",status="200"} 3`) != 1 {
 		t.Fatalf("metrics missing one unknown-method series:\n%s", body)
 	}
 	for _, method := range []string{"CUSTOM-1", "CUSTOM-2", "CUSTOM-3"} {

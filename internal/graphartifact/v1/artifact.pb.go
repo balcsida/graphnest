@@ -349,7 +349,7 @@ func (x *Range) GetEndCharacter() int32 {
 type Node struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Uid           string                 `protobuf:"bytes,1,opt,name=uid,proto3" json:"uid,omitempty"`
-	Kind          NodeKind               `protobuf:"varint,2,opt,name=kind,proto3,enum=grepnest.graph.v1.NodeKind" json:"kind,omitempty"`
+	Kind          NodeKind               `protobuf:"varint,2,opt,name=kind,proto3,enum=graphnest.graph.v1.NodeKind" json:"kind,omitempty"`
 	Path          string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
 	Language      string                 `protobuf:"bytes,4,opt,name=language,proto3" json:"language,omitempty"`
 	SymbolKind    string                 `protobuf:"bytes,5,opt,name=symbol_kind,json=symbolKind,proto3" json:"symbol_kind,omitempty"`
@@ -458,7 +458,7 @@ type Edge struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	SourceUid        string                 `protobuf:"bytes,1,opt,name=source_uid,json=sourceUid,proto3" json:"source_uid,omitempty"`
 	TargetUid        string                 `protobuf:"bytes,2,opt,name=target_uid,json=targetUid,proto3" json:"target_uid,omitempty"`
-	Kind             EdgeKind               `protobuf:"varint,3,opt,name=kind,proto3,enum=grepnest.graph.v1.EdgeKind" json:"kind,omitempty"`
+	Kind             EdgeKind               `protobuf:"varint,3,opt,name=kind,proto3,enum=graphnest.graph.v1.EdgeKind" json:"kind,omitempty"`
 	Path             string                 `protobuf:"bytes,4,opt,name=path,proto3" json:"path,omitempty"`
 	Range            *Range                 `protobuf:"bytes,5,opt,name=range,proto3" json:"range,omitempty"`
 	Confidence       float32                `protobuf:"fixed32,6,opt,name=confidence,proto3" json:"confidence,omitempty"`
@@ -550,15 +550,15 @@ var File_artifact_proto protoreflect.FileDescriptor
 
 const file_artifact_proto_rawDesc = "" +
 	"\n" +
-	"\x0eartifact.proto\x12\x11grepnest.graph.v1\"\xa8\x02\n" +
+	"\x0eartifact.proto\x12\x12graphnest.graph.v1\"\xab\x02\n" +
 	"\bArtifact\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12#\n" +
 	"\rrepository_id\x18\x02 \x01(\x03R\frepositoryId\x12\x16\n" +
 	"\x06commit\x18\x03 \x01(\tR\x06commit\x12!\n" +
-	"\fcontent_hash\x18\x04 \x01(\fR\vcontentHash\x127\n" +
-	"\banalyzer\x18\x05 \x01(\v2\x1b.grepnest.graph.v1.AnalyzerR\banalyzer\x12-\n" +
-	"\x05nodes\x18\x06 \x03(\v2\x17.grepnest.graph.v1.NodeR\x05nodes\x12-\n" +
-	"\x05edges\x18\a \x03(\v2\x17.grepnest.graph.v1.EdgeR\x05edges\"8\n" +
+	"\fcontent_hash\x18\x04 \x01(\fR\vcontentHash\x128\n" +
+	"\banalyzer\x18\x05 \x01(\v2\x1c.graphnest.graph.v1.AnalyzerR\banalyzer\x12.\n" +
+	"\x05nodes\x18\x06 \x03(\v2\x18.graphnest.graph.v1.NodeR\x05nodes\x12.\n" +
+	"\x05edges\x18\a \x03(\v2\x18.graphnest.graph.v1.EdgeR\x05edges\"8\n" +
 	"\bAnalyzer\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\"\x8f\x01\n" +
@@ -567,10 +567,10 @@ const file_artifact_proto_rawDesc = "" +
 	"start_line\x18\x01 \x01(\x05R\tstartLine\x12'\n" +
 	"\x0fstart_character\x18\x02 \x01(\x05R\x0estartCharacter\x12\x19\n" +
 	"\bend_line\x18\x03 \x01(\x05R\aendLine\x12#\n" +
-	"\rend_character\x18\x04 \x01(\x05R\fendCharacter\"\xb0\x02\n" +
+	"\rend_character\x18\x04 \x01(\x05R\fendCharacter\"\xb2\x02\n" +
 	"\x04Node\x12\x10\n" +
-	"\x03uid\x18\x01 \x01(\tR\x03uid\x12/\n" +
-	"\x04kind\x18\x02 \x01(\x0e2\x1b.grepnest.graph.v1.NodeKindR\x04kind\x12\x12\n" +
+	"\x03uid\x18\x01 \x01(\tR\x03uid\x120\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x1c.graphnest.graph.v1.NodeKindR\x04kind\x12\x12\n" +
 	"\x04path\x18\x03 \x01(\tR\x04path\x12\x1a\n" +
 	"\blanguage\x18\x04 \x01(\tR\blanguage\x12\x1f\n" +
 	"\vsymbol_kind\x18\x05 \x01(\tR\n" +
@@ -578,16 +578,16 @@ const file_artifact_proto_rawDesc = "" +
 	"\x0equalified_name\x18\x06 \x01(\tR\rqualifiedName\x12\x1c\n" +
 	"\tsignature\x18\a \x01(\tR\tsignature\x12\x1f\n" +
 	"\vscip_symbol\x18\b \x01(\tR\n" +
-	"scipSymbol\x12.\n" +
-	"\x05range\x18\t \x01(\v2\x18.grepnest.graph.v1.RangeR\x05range\"\x86\x02\n" +
+	"scipSymbol\x12/\n" +
+	"\x05range\x18\t \x01(\v2\x19.graphnest.graph.v1.RangeR\x05range\"\x88\x02\n" +
 	"\x04Edge\x12\x1d\n" +
 	"\n" +
 	"source_uid\x18\x01 \x01(\tR\tsourceUid\x12\x1d\n" +
 	"\n" +
-	"target_uid\x18\x02 \x01(\tR\ttargetUid\x12/\n" +
-	"\x04kind\x18\x03 \x01(\x0e2\x1b.grepnest.graph.v1.EdgeKindR\x04kind\x12\x12\n" +
-	"\x04path\x18\x04 \x01(\tR\x04path\x12.\n" +
-	"\x05range\x18\x05 \x01(\v2\x18.grepnest.graph.v1.RangeR\x05range\x12\x1e\n" +
+	"target_uid\x18\x02 \x01(\tR\ttargetUid\x120\n" +
+	"\x04kind\x18\x03 \x01(\x0e2\x1c.graphnest.graph.v1.EdgeKindR\x04kind\x12\x12\n" +
+	"\x04path\x18\x04 \x01(\tR\x04path\x12/\n" +
+	"\x05range\x18\x05 \x01(\v2\x19.graphnest.graph.v1.RangeR\x05range\x12\x1e\n" +
 	"\n" +
 	"confidence\x18\x06 \x01(\x02R\n" +
 	"confidence\x12+\n" +
@@ -604,7 +604,7 @@ const file_artifact_proto_rawDesc = "" +
 	"\x14EDGE_KIND_REFERENCES\x10\x03\x12\x13\n" +
 	"\x0fEDGE_KIND_CALLS\x10\x04\x12\x15\n" +
 	"\x11EDGE_KIND_EXTENDS\x10\x05\x12\x18\n" +
-	"\x14EDGE_KIND_IMPLEMENTS\x10\x06B@Z>github.com/grepnest/grepnest/internal/graphartifact/v1;graphv1b\x06proto3"
+	"\x14EDGE_KIND_IMPLEMENTS\x10\x06BAZ?github.com/balcsida/graphnest/internal/graphartifact/v1;graphv1b\x06proto3"
 
 var (
 	file_artifact_proto_rawDescOnce sync.Once
@@ -621,22 +621,22 @@ func file_artifact_proto_rawDescGZIP() []byte {
 var file_artifact_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_artifact_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_artifact_proto_goTypes = []any{
-	(NodeKind)(0),    // 0: grepnest.graph.v1.NodeKind
-	(EdgeKind)(0),    // 1: grepnest.graph.v1.EdgeKind
-	(*Artifact)(nil), // 2: grepnest.graph.v1.Artifact
-	(*Analyzer)(nil), // 3: grepnest.graph.v1.Analyzer
-	(*Range)(nil),    // 4: grepnest.graph.v1.Range
-	(*Node)(nil),     // 5: grepnest.graph.v1.Node
-	(*Edge)(nil),     // 6: grepnest.graph.v1.Edge
+	(NodeKind)(0),    // 0: graphnest.graph.v1.NodeKind
+	(EdgeKind)(0),    // 1: graphnest.graph.v1.EdgeKind
+	(*Artifact)(nil), // 2: graphnest.graph.v1.Artifact
+	(*Analyzer)(nil), // 3: graphnest.graph.v1.Analyzer
+	(*Range)(nil),    // 4: graphnest.graph.v1.Range
+	(*Node)(nil),     // 5: graphnest.graph.v1.Node
+	(*Edge)(nil),     // 6: graphnest.graph.v1.Edge
 }
 var file_artifact_proto_depIdxs = []int32{
-	3, // 0: grepnest.graph.v1.Artifact.analyzer:type_name -> grepnest.graph.v1.Analyzer
-	5, // 1: grepnest.graph.v1.Artifact.nodes:type_name -> grepnest.graph.v1.Node
-	6, // 2: grepnest.graph.v1.Artifact.edges:type_name -> grepnest.graph.v1.Edge
-	0, // 3: grepnest.graph.v1.Node.kind:type_name -> grepnest.graph.v1.NodeKind
-	4, // 4: grepnest.graph.v1.Node.range:type_name -> grepnest.graph.v1.Range
-	1, // 5: grepnest.graph.v1.Edge.kind:type_name -> grepnest.graph.v1.EdgeKind
-	4, // 6: grepnest.graph.v1.Edge.range:type_name -> grepnest.graph.v1.Range
+	3, // 0: graphnest.graph.v1.Artifact.analyzer:type_name -> graphnest.graph.v1.Analyzer
+	5, // 1: graphnest.graph.v1.Artifact.nodes:type_name -> graphnest.graph.v1.Node
+	6, // 2: graphnest.graph.v1.Artifact.edges:type_name -> graphnest.graph.v1.Edge
+	0, // 3: graphnest.graph.v1.Node.kind:type_name -> graphnest.graph.v1.NodeKind
+	4, // 4: graphnest.graph.v1.Node.range:type_name -> graphnest.graph.v1.Range
+	1, // 5: graphnest.graph.v1.Edge.kind:type_name -> graphnest.graph.v1.EdgeKind
+	4, // 6: graphnest.graph.v1.Edge.range:type_name -> graphnest.graph.v1.Range
 	7, // [7:7] is the sub-list for method output_type
 	7, // [7:7] is the sub-list for method input_type
 	7, // [7:7] is the sub-list for extension type_name

@@ -9,14 +9,14 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/scipgraph"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/scipgraph"
 	"github.com/jackc/pgx/v5"
 )
 
 const (
-	globalSymbol         = "scip go example.com/grepnest v1 pkg/Item#"
-	implementationSymbol = "scip go example.com/grepnest v1 pkg/Concrete#"
+	globalSymbol         = "scip go example.com/graphnest v1 pkg/Item#"
+	implementationSymbol = "scip go example.com/graphnest v1 pkg/Concrete#"
 	localSymbol          = "local 0"
 	definitionRole       = int32(1)
 )
@@ -100,7 +100,7 @@ func TestSCIPTablesCascadeWithRepository(t *testing.T) {
 	}
 	if _, err := store.pool.Exec(t.Context(), `insert into repository_packages
 		(repository_id, source, relation, purl, manager, name, version)
-		values ($1, 'manual', 'provides', 'pkg:golang/example.com/grepnest@v1', 'gomod', 'example.com/grepnest', 'v1')`, repositoryID); err != nil {
+		values ($1, 'manual', 'provides', 'pkg:golang/example.com/graphnest@v1', 'gomod', 'example.com/graphnest', 'v1')`, repositoryID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.pool.Exec(t.Context(), "delete from repositories where id=$1", repositoryID); err != nil {
@@ -215,10 +215,10 @@ func TestSCIPRelationshipsNavigateDefinitionsAndReferences(t *testing.T) {
 	store := migratedStore(t)
 	repositoryID := seedReadyRepository(t, store, 101, testSHA('a'))
 	const (
-		definitionSource = "scip go example.com/grepnest v1 pkg/Source#"
-		definition       = "scip go example.com/grepnest v1 pkg/Definition#"
-		referenceSource  = "scip go example.com/grepnest v1 pkg/Reference#"
-		referenceTarget  = "scip go example.com/grepnest v1 pkg/Target#"
+		definitionSource = "scip go example.com/graphnest v1 pkg/Source#"
+		definition       = "scip go example.com/graphnest v1 pkg/Definition#"
+		referenceSource  = "scip go example.com/graphnest v1 pkg/Reference#"
+		referenceTarget  = "scip go example.com/graphnest v1 pkg/Target#"
 	)
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), scipgraph.Upload{
 		Occurrences: []scipgraph.Occurrence{
@@ -356,9 +356,9 @@ func TestSCIPLocationsUseDeterministicTotalOrder(t *testing.T) {
 	store := migratedStore(t)
 	repositoryID := seedReadyRepository(t, store, 101, testSHA('a'))
 	const (
-		firstImplementation  = "scip go example.com/grepnest v1 pkg/A#"
-		secondImplementation = "scip go example.com/grepnest v1 pkg/B#"
-		lastImplementation   = "scip go example.com/grepnest v1 pkg/Z#"
+		firstImplementation  = "scip go example.com/graphnest v1 pkg/A#"
+		secondImplementation = "scip go example.com/graphnest v1 pkg/B#"
+		lastImplementation   = "scip go example.com/graphnest v1 pkg/Z#"
 	)
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), scipgraph.Upload{
 		Occurrences: []scipgraph.Occurrence{

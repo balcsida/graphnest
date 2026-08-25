@@ -13,14 +13,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/authz"
-	"github.com/grepnest/grepnest/internal/indexer"
-	"github.com/grepnest/grepnest/internal/observability"
-	"github.com/grepnest/grepnest/internal/repository"
-	"github.com/grepnest/grepnest/internal/search"
-	"github.com/grepnest/grepnest/internal/zoekt"
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/authz"
+	"github.com/balcsida/graphnest/internal/indexer"
+	"github.com/balcsida/graphnest/internal/observability"
+	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/search"
+	"github.com/balcsida/graphnest/internal/zoekt"
+	"github.com/balcsida/graphnest/pkg/api"
 )
 
 func TestZoektDirectoryMatchesGitIndex(t *testing.T) {
@@ -62,8 +62,8 @@ func TestZoektDirectoryMatchesGitIndex(t *testing.T) {
 		}
 	}
 	run(t, ctx, "git", "init", "--initial-branch=main", gitSource)
-	run(t, ctx, "git", "-C", gitSource, "config", "user.name", "GrepNest Test")
-	run(t, ctx, "git", "-C", gitSource, "config", "user.email", "test@grepnest.invalid")
+	run(t, ctx, "git", "-C", gitSource, "config", "user.name", "GraphNest Test")
+	run(t, ctx, "git", "-C", gitSource, "config", "user.email", "test@graphnest.invalid")
 	run(t, ctx, "git", "-C", gitSource, "config", "zoekt.repoid", "7001")
 	run(t, ctx, "git", "-C", gitSource, "config", "zoekt.name", "fixture/parity")
 	run(t, ctx, "git", "-C", gitSource, "config", "zoekt.web-url", "https://example.test/fixture/parity")

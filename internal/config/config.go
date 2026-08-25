@@ -94,17 +94,17 @@ type SCIM struct {
 }
 
 func Load() (Config, error) {
-	zoektURL := os.Getenv("GREPNEST_ZOEKT_URL")
+	zoektURL := os.Getenv("GRAPHNEST_ZOEKT_URL")
 	parsedURL, err := url.Parse(zoektURL)
 	if err != nil || parsedURL.Host == "" || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
-		return Config{}, invalid("GREPNEST_ZOEKT_URL must be an HTTP(S) URL")
+		return Config{}, invalid("GRAPHNEST_ZOEKT_URL must be an HTTP(S) URL")
 	}
 
 	config := Config{
-		ListenAddress:    valueOr("GREPNEST_LISTEN_ADDRESS", ":8080"),
+		ListenAddress:    valueOr("GRAPHNEST_LISTEN_ADDRESS", ":8080"),
 		ZoektURL:         zoektURL,
-		SearchBackend:    valueOr("GREPNEST_SEARCH_BACKEND", "zoekt"),
-		RepositoriesFile: os.Getenv("GREPNEST_REPOSITORIES_FILE"),
+		SearchBackend:    valueOr("GRAPHNEST_SEARCH_BACKEND", "zoekt"),
+		RepositoriesFile: os.Getenv("GRAPHNEST_REPOSITORIES_FILE"),
 		Limits: Limits{
 			DefaultResults:      25,
 			MaxResults:          100,
@@ -119,15 +119,15 @@ func Load() (Config, error) {
 		},
 	}
 	if config.SearchBackend != "zoekt" && config.SearchBackend != "github" {
-		return Config{}, invalid("GREPNEST_SEARCH_BACKEND must be zoekt or github")
+		return Config{}, invalid("GRAPHNEST_SEARCH_BACKEND must be zoekt or github")
 	}
 	if err := loadLimits(&config.Limits); err != nil {
 		return Config{}, err
 	}
-	if databaseURL := os.Getenv("GREPNEST_DATABASE_URL"); databaseURL != "" {
+	if databaseURL := os.Getenv("GRAPHNEST_DATABASE_URL"); databaseURL != "" {
 		parsed, err := url.Parse(databaseURL)
 		if err != nil || parsed.Host == "" || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") {
-			return Config{}, invalid("GREPNEST_DATABASE_URL must be a PostgreSQL URL")
+			return Config{}, invalid("GRAPHNEST_DATABASE_URL must be a PostgreSQL URL")
 		}
 		config.DatabaseURL = databaseURL
 		if config.GitHub, err = loadGitHub(true); err != nil {
@@ -138,12 +138,12 @@ func Load() (Config, error) {
 		}
 	} else {
 		if config.SearchBackend == "github" {
-			return Config{}, invalid("GREPNEST_SEARCH_BACKEND=github requires durable configuration")
+			return Config{}, invalid("GRAPHNEST_SEARCH_BACKEND=github requires durable configuration")
 		}
-		config.UserToken = os.Getenv("GREPNEST_USER_TOKEN")
-		config.AdminToken = os.Getenv("GREPNEST_ADMIN_TOKEN")
-		config.UserRepositories = split(os.Getenv("GREPNEST_USER_REPOSITORIES"))
-		config.AdminRepositories = split(os.Getenv("GREPNEST_ADMIN_REPOSITORIES"))
+		config.UserToken = os.Getenv("GRAPHNEST_USER_TOKEN")
+		config.AdminToken = os.Getenv("GRAPHNEST_ADMIN_TOKEN")
+		config.UserRepositories = split(os.Getenv("GRAPHNEST_USER_REPOSITORIES"))
+		config.AdminRepositories = split(os.Getenv("GRAPHNEST_ADMIN_REPOSITORIES"))
 		if config.RepositoriesFile == "" {
 			return Config{}, invalid("repository file is required in static mode")
 		}
@@ -161,21 +161,21 @@ func Load() (Config, error) {
 }
 
 func loadSCIM(databaseURL string) (SCIM, error) {
-	tokenFile, token := os.Getenv("GREPNEST_SCIM_TOKEN_FILE"), os.Getenv("GREPNEST_SCIM_TOKEN")
+	tokenFile, token := os.Getenv("GRAPHNEST_SCIM_TOKEN_FILE"), os.Getenv("GRAPHNEST_SCIM_TOKEN")
 	if token != "" {
-		return SCIM{}, invalid("GREPNEST_SCIM_TOKEN is not supported; use GREPNEST_SCIM_TOKEN_FILE")
+		return SCIM{}, invalid("GRAPHNEST_SCIM_TOKEN is not supported; use GRAPHNEST_SCIM_TOKEN_FILE")
 	}
 	if tokenFile == "" {
 		return SCIM{}, nil
 	}
 	if databaseURL == "" {
-		return SCIM{}, invalid("GREPNEST_DATABASE_URL is required for SCIM")
+		return SCIM{}, invalid("GRAPHNEST_DATABASE_URL is required for SCIM")
 	}
 	info, err := os.Stat(tokenFile)
 	if err != nil || !info.Mode().IsRegular() {
-		return SCIM{}, invalid("GREPNEST_SCIM_TOKEN_FILE must be a regular file")
+		return SCIM{}, invalid("GRAPHNEST_SCIM_TOKEN_FILE must be a regular file")
 	}
-	publicURL, err := parseHTTPSOrigin("GREPNEST_PUBLIC_URL", os.Getenv("GREPNEST_PUBLIC_URL"))
+	publicURL, err := parseHTTPSOrigin("GRAPHNEST_PUBLIC_URL", os.Getenv("GRAPHNEST_PUBLIC_URL"))
 	if err != nil {
 		return SCIM{}, err
 	}
@@ -184,15 +184,15 @@ func loadSCIM(databaseURL string) (SCIM, error) {
 
 func loadGitHub(requireWebhookSecret bool) (GitHub, error) {
 	github := GitHub{
-		WebURL:         os.Getenv("GREPNEST_GITHUB_WEB_URL"),
-		APIURL:         os.Getenv("GREPNEST_GITHUB_API_URL"),
-		UploadURL:      os.Getenv("GREPNEST_GITHUB_UPLOAD_URL"),
-		GitURL:         os.Getenv("GREPNEST_GITHUB_GIT_URL"),
-		PrivateKeyFile: os.Getenv("GREPNEST_GITHUB_PRIVATE_KEY_FILE"),
-		APIVersion:     valueOr("GREPNEST_GITHUB_API_VERSION", "2022-11-28"),
-		CAFile:         os.Getenv("GREPNEST_GITHUB_CA_FILE"),
+		WebURL:         os.Getenv("GRAPHNEST_GITHUB_WEB_URL"),
+		APIURL:         os.Getenv("GRAPHNEST_GITHUB_API_URL"),
+		UploadURL:      os.Getenv("GRAPHNEST_GITHUB_UPLOAD_URL"),
+		GitURL:         os.Getenv("GRAPHNEST_GITHUB_GIT_URL"),
+		PrivateKeyFile: os.Getenv("GRAPHNEST_GITHUB_PRIVATE_KEY_FILE"),
+		APIVersion:     valueOr("GRAPHNEST_GITHUB_API_VERSION", "2022-11-28"),
+		CAFile:         os.Getenv("GRAPHNEST_GITHUB_CA_FILE"),
 	}
-	github.ArchiveURL = os.Getenv("GREPNEST_GITHUB_ARCHIVE_URL")
+	github.ArchiveURL = os.Getenv("GRAPHNEST_GITHUB_ARCHIVE_URL")
 	if github.ArchiveURL == "" {
 		if parsed, _ := url.Parse(github.WebURL); parsed != nil && parsed.Hostname() == "github.com" {
 			github.ArchiveURL = "https://codeload.github.com"
@@ -201,16 +201,16 @@ func loadGitHub(requireWebhookSecret bool) (GitHub, error) {
 		}
 	}
 	if requireWebhookSecret {
-		github.WebhookSecretFile = os.Getenv("GREPNEST_GITHUB_WEBHOOK_SECRET_FILE")
+		github.WebhookSecretFile = os.Getenv("GRAPHNEST_GITHUB_WEBHOOK_SECRET_FILE")
 	}
 	var err error
-	if github.AppID, err = requiredInt64("GREPNEST_GITHUB_APP_ID"); err != nil {
+	if github.AppID, err = requiredInt64("GRAPHNEST_GITHUB_APP_ID"); err != nil {
 		return GitHub{}, err
 	}
 	for _, endpoint := range []struct{ name, value string }{
-		{"GREPNEST_GITHUB_WEB_URL", github.WebURL}, {"GREPNEST_GITHUB_API_URL", github.APIURL},
-		{"GREPNEST_GITHUB_UPLOAD_URL", github.UploadURL}, {"GREPNEST_GITHUB_GIT_URL", github.GitURL},
-		{"GREPNEST_GITHUB_ARCHIVE_URL", github.ArchiveURL},
+		{"GRAPHNEST_GITHUB_WEB_URL", github.WebURL}, {"GRAPHNEST_GITHUB_API_URL", github.APIURL},
+		{"GRAPHNEST_GITHUB_UPLOAD_URL", github.UploadURL}, {"GRAPHNEST_GITHUB_GIT_URL", github.GitURL},
+		{"GRAPHNEST_GITHUB_ARCHIVE_URL", github.ArchiveURL},
 	} {
 		parsed, err := url.Parse(endpoint.value)
 		if err != nil || parsed.Host == "" || parsed.Scheme != "https" || parsed.User != nil {
@@ -225,24 +225,24 @@ func loadGitHub(requireWebhookSecret bool) (GitHub, error) {
 
 func LoadIndexer() (Indexer, error) {
 	indexer := Indexer{
-		DatabaseURL:          os.Getenv("GREPNEST_DATABASE_URL"),
-		ZoektURL:             os.Getenv("GREPNEST_ZOEKT_URL"),
-		MetricsListenAddress: valueOr("GREPNEST_METRICS_LISTEN_ADDRESS", ":9090"),
-		DataDir:              os.Getenv("GREPNEST_DATA_DIR"),
-		IndexDir:             os.Getenv("GREPNEST_INDEX_DIR"),
-		GitPath:              os.Getenv("GREPNEST_GIT_PATH"),
-		ZoektIndex:           os.Getenv("GREPNEST_ZOEKT_INDEX"),
-		ZoektGitIndex:        os.Getenv("GREPNEST_ZOEKT_GIT_INDEX"),
-		WorkerID:             os.Getenv("GREPNEST_WORKER_ID"),
-		SourceProvider:       valueOr("GREPNEST_SOURCE_PROVIDER", "archive"),
+		DatabaseURL:          os.Getenv("GRAPHNEST_DATABASE_URL"),
+		ZoektURL:             os.Getenv("GRAPHNEST_ZOEKT_URL"),
+		MetricsListenAddress: valueOr("GRAPHNEST_METRICS_LISTEN_ADDRESS", ":9090"),
+		DataDir:              os.Getenv("GRAPHNEST_DATA_DIR"),
+		IndexDir:             os.Getenv("GRAPHNEST_INDEX_DIR"),
+		GitPath:              os.Getenv("GRAPHNEST_GIT_PATH"),
+		ZoektIndex:           os.Getenv("GRAPHNEST_ZOEKT_INDEX"),
+		ZoektGitIndex:        os.Getenv("GRAPHNEST_ZOEKT_GIT_INDEX"),
+		WorkerID:             os.Getenv("GRAPHNEST_WORKER_ID"),
+		SourceProvider:       valueOr("GRAPHNEST_SOURCE_PROVIDER", "archive"),
 	}
 	parsedDatabase, databaseErr := url.Parse(indexer.DatabaseURL)
 	if databaseErr != nil || parsedDatabase.Host == "" || (parsedDatabase.Scheme != "postgres" && parsedDatabase.Scheme != "postgresql") {
-		return Indexer{}, invalid("GREPNEST_DATABASE_URL must be a PostgreSQL URL")
+		return Indexer{}, invalid("GRAPHNEST_DATABASE_URL must be a PostgreSQL URL")
 	}
 	parsedZoekt, zoektErr := url.Parse(indexer.ZoektURL)
 	if zoektErr != nil || parsedZoekt.Host == "" || (parsedZoekt.Scheme != "http" && parsedZoekt.Scheme != "https") {
-		return Indexer{}, invalid("GREPNEST_ZOEKT_URL must be an HTTP(S) URL")
+		return Indexer{}, invalid("GRAPHNEST_ZOEKT_URL must be an HTTP(S) URL")
 	}
 	var err error
 	if indexer.GitHub, err = loadGitHub(false); err != nil {
@@ -252,7 +252,7 @@ func LoadIndexer() (Indexer, error) {
 	if indexer.ZoektIndex == "" {
 		if indexer.ZoektGitIndex != "" {
 			if filepath.Base(indexer.ZoektGitIndex) != "zoekt-git-index" {
-				return Indexer{}, invalid("GREPNEST_ZOEKT_INDEX is required when GREPNEST_ZOEKT_GIT_INDEX is not zoekt-git-index")
+				return Indexer{}, invalid("GRAPHNEST_ZOEKT_INDEX is required when GRAPHNEST_ZOEKT_GIT_INDEX is not zoekt-git-index")
 			}
 			indexer.ZoektIndex = filepath.Join(filepath.Dir(indexer.ZoektGitIndex), "zoekt-index")
 		}
@@ -260,36 +260,36 @@ func LoadIndexer() (Indexer, error) {
 	if indexer.DataDir == "" || indexer.IndexDir == "" || indexer.ZoektIndex == "" || indexer.WorkerID == "" || (indexer.SourceProvider == "git" && indexer.GitPath == "") {
 		return Indexer{}, invalid("indexer paths and worker ID are required")
 	}
-	if indexer.MinFreeBytes, err = requiredInt64("GREPNEST_MIN_FREE_BYTES"); err != nil {
+	if indexer.MinFreeBytes, err = requiredInt64("GRAPHNEST_MIN_FREE_BYTES"); err != nil {
 		return Indexer{}, err
 	}
-	if indexer.MaxRepositoryBytes, err = strconv.ParseInt(valueOr("GREPNEST_MAX_REPOSITORY_BYTES", "5368709120"), 10, 64); err != nil || indexer.MaxRepositoryBytes <= 0 {
-		return Indexer{}, invalid("GREPNEST_MAX_REPOSITORY_BYTES must be a positive integer")
+	if indexer.MaxRepositoryBytes, err = strconv.ParseInt(valueOr("GRAPHNEST_MAX_REPOSITORY_BYTES", "5368709120"), 10, 64); err != nil || indexer.MaxRepositoryBytes <= 0 {
+		return Indexer{}, invalid("GRAPHNEST_MAX_REPOSITORY_BYTES must be a positive integer")
 	}
 	if indexer.SourceProvider != "git" && indexer.SourceProvider != "archive" {
-		return Indexer{}, invalid("GREPNEST_SOURCE_PROVIDER must be archive or git")
+		return Indexer{}, invalid("GRAPHNEST_SOURCE_PROVIDER must be archive or git")
 	}
 	archiveValues := []struct {
 		name        string
 		value       string
 		destination *int64
 	}{
-		{"GREPNEST_ARCHIVE_MAX_DOWNLOAD_BYTES", "1073741824", &indexer.ArchiveLimits.MaxDownloadBytes},
-		{"GREPNEST_ARCHIVE_MAX_EXTRACTED_BYTES", "5368709120", &indexer.ArchiveLimits.MaxExtractedBytes},
-		{"GREPNEST_ARCHIVE_MAX_FILE_BYTES", "536870912", &indexer.ArchiveLimits.MaxFileBytes},
+		{"GRAPHNEST_ARCHIVE_MAX_DOWNLOAD_BYTES", "1073741824", &indexer.ArchiveLimits.MaxDownloadBytes},
+		{"GRAPHNEST_ARCHIVE_MAX_EXTRACTED_BYTES", "5368709120", &indexer.ArchiveLimits.MaxExtractedBytes},
+		{"GRAPHNEST_ARCHIVE_MAX_FILE_BYTES", "536870912", &indexer.ArchiveLimits.MaxFileBytes},
 	}
 	for _, setting := range archiveValues {
 		if *setting.destination, err = strconv.ParseInt(valueOr(setting.name, setting.value), 10, 64); err != nil || *setting.destination <= 0 {
 			return Indexer{}, invalid(setting.name + " must be a positive integer")
 		}
 	}
-	if value, parseErr := strconv.Atoi(valueOr("GREPNEST_ARCHIVE_MAX_FILES", "200000")); parseErr != nil || value <= 0 {
-		return Indexer{}, invalid("GREPNEST_ARCHIVE_MAX_FILES must be a positive integer")
+	if value, parseErr := strconv.Atoi(valueOr("GRAPHNEST_ARCHIVE_MAX_FILES", "200000")); parseErr != nil || value <= 0 {
+		return Indexer{}, invalid("GRAPHNEST_ARCHIVE_MAX_FILES must be a positive integer")
 	} else {
 		indexer.ArchiveLimits.MaxFiles = value
 	}
-	if value, parseErr := strconv.Atoi(valueOr("GREPNEST_ARCHIVE_MAX_PATH_BYTES", "4096")); parseErr != nil || value <= 0 {
-		return Indexer{}, invalid("GREPNEST_ARCHIVE_MAX_PATH_BYTES must be a positive integer")
+	if value, parseErr := strconv.Atoi(valueOr("GRAPHNEST_ARCHIVE_MAX_PATH_BYTES", "4096")); parseErr != nil || value <= 0 {
+		return Indexer{}, invalid("GRAPHNEST_ARCHIVE_MAX_PATH_BYTES must be a positive integer")
 	} else {
 		indexer.ArchiveLimits.MaxPathBytes = value
 	}
@@ -315,20 +315,20 @@ func loadGraph() (Graph, error) {
 			MaxNodes: 1_000, MaxEdges: 5_000, MaxFanout: 100,
 		},
 	}
-	if err := int64Value("GREPNEST_GRAPH_MAX_REQUEST_BYTES", &graph.MaxRequestBytes); err != nil {
+	if err := int64Value("GRAPHNEST_GRAPH_MAX_REQUEST_BYTES", &graph.MaxRequestBytes); err != nil {
 		return Graph{}, err
 	}
-	if err := int64Value("GREPNEST_GRAPH_MAX_RESPONSE_BYTES", &graph.MaxResponseBytes); err != nil {
+	if err := int64Value("GRAPHNEST_GRAPH_MAX_RESPONSE_BYTES", &graph.MaxResponseBytes); err != nil {
 		return Graph{}, err
 	}
 	for name, target := range map[string]*int{
-		"GREPNEST_GRAPH_DEFAULT_IMPACT_DEPTH": &graph.DefaultImpactDepth,
-		"GREPNEST_GRAPH_MAX_IMPACT_DEPTH":     &graph.MaxImpactDepth,
-		"GREPNEST_GRAPH_DEFAULT_TRACE_DEPTH":  &graph.DefaultTraceDepth,
-		"GREPNEST_GRAPH_MAX_TRACE_DEPTH":      &graph.MaxTraceDepth,
-		"GREPNEST_GRAPH_MAX_ROWS":             &graph.MaxRows,
-		"GREPNEST_GRAPH_MAX_NODES":            &graph.MaxNodes,
-		"GREPNEST_GRAPH_MAX_EDGES":            &graph.MaxEdges,
+		"GRAPHNEST_GRAPH_DEFAULT_IMPACT_DEPTH": &graph.DefaultImpactDepth,
+		"GRAPHNEST_GRAPH_MAX_IMPACT_DEPTH":     &graph.MaxImpactDepth,
+		"GRAPHNEST_GRAPH_DEFAULT_TRACE_DEPTH":  &graph.DefaultTraceDepth,
+		"GRAPHNEST_GRAPH_MAX_TRACE_DEPTH":      &graph.MaxTraceDepth,
+		"GRAPHNEST_GRAPH_MAX_ROWS":             &graph.MaxRows,
+		"GRAPHNEST_GRAPH_MAX_NODES":            &graph.MaxNodes,
+		"GRAPHNEST_GRAPH_MAX_EDGES":            &graph.MaxEdges,
 	} {
 		if err := intValue(name, target); err != nil {
 			return Graph{}, err
@@ -354,11 +354,11 @@ func loadGraph() (Graph, error) {
 
 func LoadScanner() (Scanner, error) {
 	scanner := Scanner{
-		DatabaseURL:          os.Getenv("GREPNEST_DATABASE_URL"),
-		DataDir:              os.Getenv("GREPNEST_DATA_DIR"),
-		GitPath:              os.Getenv("GREPNEST_GIT_PATH"),
-		WorkerID:             os.Getenv("GREPNEST_WORKER_ID"),
-		MetricsListenAddress: valueOr("GREPNEST_METRICS_LISTEN_ADDRESS", ":9090"),
+		DatabaseURL:          os.Getenv("GRAPHNEST_DATABASE_URL"),
+		DataDir:              os.Getenv("GRAPHNEST_DATA_DIR"),
+		GitPath:              os.Getenv("GRAPHNEST_GIT_PATH"),
+		WorkerID:             os.Getenv("GRAPHNEST_WORKER_ID"),
+		MetricsListenAddress: valueOr("GRAPHNEST_METRICS_LISTEN_ADDRESS", ":9090"),
 		ScanTimeout:          15 * time.Minute,
 		Limits: GraphScanLimits{
 			MaxFileBytes: 2 << 20, MaxTotalBytes: 1 << 30, MaxFiles: 100_000,
@@ -368,7 +368,7 @@ func LoadScanner() (Scanner, error) {
 	}
 	parsed, err := url.Parse(scanner.DatabaseURL)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") {
-		return Scanner{}, invalid("GREPNEST_DATABASE_URL must be a PostgreSQL URL")
+		return Scanner{}, invalid("GRAPHNEST_DATABASE_URL must be a PostgreSQL URL")
 	}
 	if scanner.GitHub, err = loadGitHub(false); err != nil {
 		return Scanner{}, err
@@ -379,11 +379,11 @@ func LoadScanner() (Scanner, error) {
 	if err := loadStorageLimits(&scanner.MinFreeBytes, &scanner.MaxRepositoryBytes); err != nil {
 		return Scanner{}, err
 	}
-	if err := durationValue("GREPNEST_GRAPH_SCAN_TIMEOUT", &scanner.ScanTimeout); err != nil {
+	if err := durationValue("GRAPHNEST_GRAPH_SCAN_TIMEOUT", &scanner.ScanTimeout); err != nil {
 		return Scanner{}, err
 	}
 	if scanner.ScanTimeout > 30*time.Minute {
-		return Scanner{}, invalid("GREPNEST_GRAPH_SCAN_TIMEOUT exceeds safety cap")
+		return Scanner{}, invalid("GRAPHNEST_GRAPH_SCAN_TIMEOUT exceeds safety cap")
 	}
 	if err := loadGraphScanLimits(&scanner.Limits); err != nil {
 		return Scanner{}, err
@@ -396,39 +396,39 @@ func LoadScanner() (Scanner, error) {
 
 func loadStorageLimits(minFreeBytes, maxRepositoryBytes *int64) error {
 	var err error
-	if *minFreeBytes, err = strconv.ParseInt(valueOr("GREPNEST_MIN_FREE_BYTES", "1073741824"), 10, 64); err != nil || *minFreeBytes <= 0 {
-		return invalid("GREPNEST_MIN_FREE_BYTES must be a positive integer")
+	if *minFreeBytes, err = strconv.ParseInt(valueOr("GRAPHNEST_MIN_FREE_BYTES", "1073741824"), 10, 64); err != nil || *minFreeBytes <= 0 {
+		return invalid("GRAPHNEST_MIN_FREE_BYTES must be a positive integer")
 	}
-	if *maxRepositoryBytes, err = strconv.ParseInt(valueOr("GREPNEST_MAX_REPOSITORY_BYTES", "5368709120"), 10, 64); err != nil || *maxRepositoryBytes <= 0 {
-		return invalid("GREPNEST_MAX_REPOSITORY_BYTES must be a positive integer")
+	if *maxRepositoryBytes, err = strconv.ParseInt(valueOr("GRAPHNEST_MAX_REPOSITORY_BYTES", "5368709120"), 10, 64); err != nil || *maxRepositoryBytes <= 0 {
+		return invalid("GRAPHNEST_MAX_REPOSITORY_BYTES must be a positive integer")
 	}
 	return nil
 }
 
 func loadGraphScanLimits(limits *GraphScanLimits) error {
-	if err := int64Value("GREPNEST_GRAPH_SCAN_MAX_FILE_BYTES", &limits.MaxFileBytes); err != nil {
+	if err := int64Value("GRAPHNEST_GRAPH_SCAN_MAX_FILE_BYTES", &limits.MaxFileBytes); err != nil {
 		return err
 	}
-	if err := int64Value("GREPNEST_GRAPH_SCAN_MAX_TOTAL_BYTES", &limits.MaxTotalBytes); err != nil {
+	if err := int64Value("GRAPHNEST_GRAPH_SCAN_MAX_TOTAL_BYTES", &limits.MaxTotalBytes); err != nil {
 		return err
 	}
-	if err := intValue("GREPNEST_GRAPH_SCAN_MAX_FILES", &limits.MaxFiles); err != nil {
+	if err := intValue("GRAPHNEST_GRAPH_SCAN_MAX_FILES", &limits.MaxFiles); err != nil {
 		return err
 	}
-	if err := intValue("GREPNEST_GRAPH_SCAN_MAX_NODES", &limits.MaxNodes); err != nil {
+	if err := intValue("GRAPHNEST_GRAPH_SCAN_MAX_NODES", &limits.MaxNodes); err != nil {
 		return err
 	}
-	if err := intValue("GREPNEST_GRAPH_SCAN_MAX_EDGES", &limits.MaxEdges); err != nil {
+	if err := intValue("GRAPHNEST_GRAPH_SCAN_MAX_EDGES", &limits.MaxEdges); err != nil {
 		return err
 	}
-	if err := durationValue("GREPNEST_GRAPH_SCAN_PARSE_TIMEOUT", &limits.ParseTimeout); err != nil {
+	if err := durationValue("GRAPHNEST_GRAPH_SCAN_PARSE_TIMEOUT", &limits.ParseTimeout); err != nil {
 		return err
 	}
 	if limits.MaxFileBytes > 2<<20 || limits.MaxTotalBytes > 1<<30 || limits.MaxFiles > 100_000 ||
 		limits.MaxNodes > 500_000 || limits.MaxEdges > 2_000_000 || limits.ParseTimeout > 30*time.Second {
 		return invalid("graph scan limits exceed safety caps")
 	}
-	if value, present := os.LookupEnv("GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES"); present {
+	if value, present := os.LookupEnv("GRAPHNEST_GRAPH_SCAN_SKIP_DIRECTORIES"); present {
 		var err error
 		if limits.SkipDirectories, err = skipDirectories(value); err != nil {
 			return err
@@ -443,7 +443,7 @@ func skipDirectories(value string) ([]string, error) {
 	for _, part := range strings.Split(value, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" || part == "." || part == ".." || strings.ContainsAny(part, `/\`) {
-			return nil, invalid("GREPNEST_GRAPH_SCAN_SKIP_DIRECTORIES must contain directory names")
+			return nil, invalid("GRAPHNEST_GRAPH_SCAN_SKIP_DIRECTORIES must contain directory names")
 		}
 		if !seen[part] {
 			seen[part] = true
@@ -457,40 +457,40 @@ func validListenAddress(address string) error {
 	_, port, err := net.SplitHostPort(address)
 	portNumber, portErr := strconv.Atoi(port)
 	if err != nil || portErr != nil || portNumber < 1 || portNumber > 65535 {
-		return invalid("GREPNEST_METRICS_LISTEN_ADDRESS must be a host:port address")
+		return invalid("GRAPHNEST_METRICS_LISTEN_ADDRESS must be a host:port address")
 	}
 	return nil
 }
 
 func loadLimits(limits *Limits) error {
-	if err := intValue("GREPNEST_DEFAULT_RESULTS", &limits.DefaultResults); err != nil {
+	if err := intValue("GRAPHNEST_DEFAULT_RESULTS", &limits.DefaultResults); err != nil {
 		return err
 	}
-	if err := intValue("GREPNEST_MAX_RESULTS", &limits.MaxResults); err != nil {
+	if err := intValue("GRAPHNEST_MAX_RESULTS", &limits.MaxResults); err != nil {
 		return err
 	}
-	if err := intValue("GREPNEST_DEFAULT_CONTEXT_LINES", &limits.DefaultContextLines); err != nil {
+	if err := intValue("GRAPHNEST_DEFAULT_CONTEXT_LINES", &limits.DefaultContextLines); err != nil {
 		return err
 	}
-	if err := intValue("GREPNEST_MAX_CONTEXT_LINES", &limits.MaxContextLines); err != nil {
+	if err := intValue("GRAPHNEST_MAX_CONTEXT_LINES", &limits.MaxContextLines); err != nil {
 		return err
 	}
-	if err := durationValue("GREPNEST_DEFAULT_TIMEOUT", &limits.DefaultTimeout); err != nil {
+	if err := durationValue("GRAPHNEST_DEFAULT_TIMEOUT", &limits.DefaultTimeout); err != nil {
 		return err
 	}
-	if err := durationValue("GREPNEST_MAX_TIMEOUT", &limits.MaxTimeout); err != nil {
+	if err := durationValue("GRAPHNEST_MAX_TIMEOUT", &limits.MaxTimeout); err != nil {
 		return err
 	}
-	if err := int64Value("GREPNEST_MAX_REQUEST_BYTES", &limits.MaxRequestBytes); err != nil {
+	if err := int64Value("GRAPHNEST_MAX_REQUEST_BYTES", &limits.MaxRequestBytes); err != nil {
 		return err
 	}
-	if err := int64Value("GREPNEST_MAX_RESPONSE_BYTES", &limits.MaxResponseBytes); err != nil {
+	if err := int64Value("GRAPHNEST_MAX_RESPONSE_BYTES", &limits.MaxResponseBytes); err != nil {
 		return err
 	}
-	if err := int64Value("GREPNEST_SCIP_MAX_UPLOAD_BYTES", &limits.SCIPMaxUploadBytes); err != nil {
+	if err := int64Value("GRAPHNEST_SCIP_MAX_UPLOAD_BYTES", &limits.SCIPMaxUploadBytes); err != nil {
 		return err
 	}
-	if err := int64Value("GREPNEST_GRAPH_MAX_UPLOAD_BYTES", &limits.GraphMaxUploadBytes); err != nil {
+	if err := int64Value("GRAPHNEST_GRAPH_MAX_UPLOAD_BYTES", &limits.GraphMaxUploadBytes); err != nil {
 		return err
 	}
 	if limits.MaxResults > 100 || limits.MaxContextLines > 20 || limits.MaxTimeout > 5*time.Second || limits.MaxRequestBytes > 64<<10 ||

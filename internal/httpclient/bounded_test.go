@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/httpclient"
+	"github.com/balcsida/graphnest/internal/httpclient"
 )
 
 func TestNewRejectsOversizedResponses(t *testing.T) {

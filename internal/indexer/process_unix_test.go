@@ -42,7 +42,7 @@ func TestRunnerOutputReturnsBoundedStdout(t *testing.T) {
 }
 
 func TestRunnerTerminatesProcessGroup(t *testing.T) {
-	if os.Getenv("GREPNEST_RUNNER_HELPER") != "" {
+	if os.Getenv("GRAPHNEST_RUNNER_HELPER") != "" {
 		runnerHelper()
 		return
 	}
@@ -52,7 +52,7 @@ func TestRunnerTerminatesProcessGroup(t *testing.T) {
 	defer cancel()
 	runner := Runner{MaxOutput: 64, KillGrace: 100 * time.Millisecond}
 	err := runner.Run(ctx, os.Args[0], []string{"-test.run=^TestRunnerTerminatesProcessGroup$"}, []string{
-		"GREPNEST_RUNNER_HELPER=parent", "GREPNEST_RUNNER_PID=" + pidFile, "GREPNEST_RUNNER_TERM=" + termFile,
+		"GRAPHNEST_RUNNER_HELPER=parent", "GRAPHNEST_RUNNER_PID=" + pidFile, "GRAPHNEST_RUNNER_TERM=" + termFile,
 	}, "")
 	var exit *exec.ExitError
 	if !errors.As(err, &exit) && !errors.Is(err, context.DeadlineExceeded) {
@@ -87,7 +87,7 @@ func TestRunnerReturnsWhenTermEndsProcess(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 	defer cancel()
 	err := (Runner{MaxOutput: 64, KillGrace: 5 * time.Second}).Run(ctx, os.Args[0], []string{"-test.run=^TestRunnerTerminatesProcessGroup$"}, []string{
-		"GREPNEST_RUNNER_HELPER=term-exit", "GREPNEST_RUNNER_TERM=" + t.TempDir() + "/term",
+		"GRAPHNEST_RUNNER_HELPER=term-exit", "GRAPHNEST_RUNNER_TERM=" + t.TempDir() + "/term",
 	}, "")
 	if err == nil {
 		t.Fatal("expected cancellation error")
@@ -98,19 +98,19 @@ func TestRunnerReturnsWhenTermEndsProcess(t *testing.T) {
 }
 
 func runnerHelper() {
-	if os.Getenv("GREPNEST_RUNNER_HELPER") == "parent" {
+	if os.Getenv("GRAPHNEST_RUNNER_HELPER") == "parent" {
 		command := exec.Command(os.Args[0], "-test.run=^TestRunnerTerminatesProcessGroup$")
 		command.Env = []string{
-			"GREPNEST_RUNNER_HELPER=grandchild",
-			"GREPNEST_RUNNER_PID=" + os.Getenv("GREPNEST_RUNNER_PID"),
-			"GREPNEST_RUNNER_TERM=" + os.Getenv("GREPNEST_RUNNER_TERM"),
+			"GRAPHNEST_RUNNER_HELPER=grandchild",
+			"GRAPHNEST_RUNNER_PID=" + os.Getenv("GRAPHNEST_RUNNER_PID"),
+			"GRAPHNEST_RUNNER_TERM=" + os.Getenv("GRAPHNEST_RUNNER_TERM"),
 		}
 		if err := command.Start(); err != nil {
 			panic(err)
 		}
 	}
-	if os.Getenv("GREPNEST_RUNNER_HELPER") == "grandchild" {
-		if err := os.WriteFile(os.Getenv("GREPNEST_RUNNER_PID"), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+	if os.Getenv("GRAPHNEST_RUNNER_HELPER") == "grandchild" {
+		if err := os.WriteFile(os.Getenv("GRAPHNEST_RUNNER_PID"), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
 			panic(err)
 		}
 	}
@@ -119,8 +119,8 @@ func runnerHelper() {
 	for {
 		select {
 		case <-signals:
-			_ = os.WriteFile(os.Getenv("GREPNEST_RUNNER_TERM"), []byte("term"), 0o600)
-			if mode := os.Getenv("GREPNEST_RUNNER_HELPER"); mode == "parent" || mode == "term-exit" {
+			_ = os.WriteFile(os.Getenv("GRAPHNEST_RUNNER_TERM"), []byte("term"), 0o600)
+			if mode := os.Getenv("GRAPHNEST_RUNNER_HELPER"); mode == "parent" || mode == "term-exit" {
 				os.Exit(0)
 			}
 		case <-time.After(10 * time.Millisecond):

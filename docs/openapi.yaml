@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: GrepNest REST API
+  title: GraphNest REST API
   version: 0.1.0
 paths:
   /v1/account/api-tokens:
@@ -384,7 +384,7 @@ paths:
       requestBody:
         required: true
         content:
-          application/vnd.grepnest.graph.v1+protobuf:
+          application/vnd.graphnest.graph.v1+protobuf:
             schema:
               type: string
               format: binary
@@ -607,7 +607,7 @@ paths:
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer}
-    sessionCookie: {type: apiKey, in: cookie, name: __Host-grepnest_session, description: Browser session; unsafe methods require the exact configured public Origin.}
+    sessionCookie: {type: apiKey, in: cookie, name: __Host-graphnest_session, description: Browser session; unsafe methods require the exact configured public Origin.}
   responses:
     InvalidRequest: {description: Invalid request, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     GraphConflict: {description: Graph request conflict; error code is ambiguous, branch_not_indexed, or graph_not_ready, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}

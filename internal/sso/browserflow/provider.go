@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/audit"
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/sso"
+	"github.com/balcsida/graphnest/internal/audit"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/sso"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/oauth2"
 )

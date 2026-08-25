@@ -70,7 +70,7 @@ func TestParseArtifactV1(t *testing.T) {
 		RepositoryId:  101,
 		Commit:        strings.Repeat("a", 40),
 		ContentHash:   bytes.Repeat([]byte{1}, sha256.Size),
-		Analyzer:      &graphv1.Analyzer{Name: "grepnest-scanner", Version: "1"},
+		Analyzer:      &graphv1.Analyzer{Name: "graphnest-scanner", Version: "1"},
 		Nodes: []*graphv1.Node{
 			{Uid: "repository:101", Kind: graphv1.NodeKind_NODE_KIND_REPOSITORY},
 			{Uid: "file:a.go", Kind: graphv1.NodeKind_NODE_KIND_FILE, Path: "a.go"},
@@ -107,8 +107,8 @@ Use this wire shape; enum zero values remain invalid so missing values fail vali
 
 ```protobuf
 syntax = "proto3";
-package grepnest.graph.v1;
-option go_package = "github.com/grepnest/grepnest/internal/graphartifact/v1;graphv1";
+package graphnest.graph.v1;
+option go_package = "github.com/balcsida/graphnest/internal/graphartifact/v1;graphv1";
 
 message Artifact {
   uint32 schema_version = 1;
@@ -523,8 +523,8 @@ git commit -S -m "feat(graph): authorize graph ingestion"
 - Create: `internal/httpapi/graph_test.go`
 - Modify: `internal/config/config.go`
 - Modify: `internal/config/config_test.go`
-- Modify: `cmd/grepnest-server/main.go`
-- Modify: `cmd/grepnest-server/main_test.go`
+- Modify: `cmd/graphnest-server/main.go`
+- Modify: `cmd/graphnest-server/main_test.go`
 - Modify: `docs/openapi.yaml`
 - Modify: `scripts/check_openapi.rb`
 
@@ -539,7 +539,7 @@ func TestGraphUploadRejectsUnauthorizedBodyBeforeRead(t *testing.T) {
 	body := &countingReader{Reader: bytes.NewReader(validArtifactBytes(t, 101))}
 	request := httptest.NewRequest(http.MethodPost,
 		"/v1/graph/uploads?repository_id=101&commit="+strings.Repeat("a", 40), body)
-	request.Header.Set("Content-Type", "application/vnd.grepnest.graph.v1+protobuf")
+	request.Header.Set("Content-Type", "application/vnd.graphnest.graph.v1+protobuf")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusUnauthorized || body.reads != 0 {
@@ -555,7 +555,7 @@ Cover exact method/content type/query parsing, 64 MiB default and 256 MiB hard c
 Run:
 
 ```bash
-go test ./internal/httpapi ./internal/config ./cmd/grepnest-server -count=1
+go test ./internal/httpapi ./internal/config ./cmd/graphnest-server -count=1
 make openapi-check
 ```
 
@@ -573,15 +573,15 @@ func RegisterGraphIngestion(mux *http.ServeMux, authenticator authn.Authenticato
 }
 ```
 
-Follow the proven SCIP upload deadline sequence rather than adding middleware abstraction. Add `GREPNEST_GRAPH_MAX_UPLOAD_BYTES`, default `67108864`, hard cap `268435456`.
+Follow the proven SCIP upload deadline sequence rather than adding middleware abstraction. Add `GRAPHNEST_GRAPH_MAX_UPLOAD_BYTES`, default `67108864`, hard cap `268435456`.
 
 - [ ] **Step 4: Run focused and full verification**
 
 Run:
 
 ```bash
-gofmt -w internal/httpapi internal/config cmd/grepnest-server pkg/api
-go test ./internal/httpapi ./internal/config ./cmd/grepnest-server -count=1
+gofmt -w internal/httpapi internal/config cmd/graphnest-server pkg/api
+go test ./internal/httpapi ./internal/config ./cmd/graphnest-server -count=1
 make openapi-check
 make test-race
 git diff --check
@@ -593,7 +593,7 @@ Expected: PASS.
 
 ```bash
 git status --short
-git add internal/httpapi/graph.go internal/httpapi/graph_test.go internal/config/config.go internal/config/config_test.go cmd/grepnest-server/main.go cmd/grepnest-server/main_test.go docs/openapi.yaml scripts/check_openapi.rb
+git add internal/httpapi/graph.go internal/httpapi/graph_test.go internal/config/config.go internal/config/config_test.go cmd/graphnest-server/main.go cmd/graphnest-server/main_test.go docs/openapi.yaml scripts/check_openapi.rb
 git commit -S -m "feat(graph): expose ingestion API"
 ```
 

@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/graphartifact"
-	"github.com/grepnest/grepnest/internal/indexer"
-	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/graphartifact"
+	"github.com/balcsida/graphnest/internal/indexer"
+	"github.com/balcsida/graphnest/internal/repository"
 )
 
 type fakeProcess struct {
@@ -34,7 +34,7 @@ func validResponse(t *testing.T) []byte {
 		SchemaVersion: 1,
 		RepositoryID:  4,
 		Commit:        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		Analyzer:      graphartifact.Analyzer{Name: "grepnest-scanner", Version: "1"},
+		Analyzer:      graphartifact.Analyzer{Name: "graphnest-scanner", Version: "1"},
 		ContentHash:   bytes.Repeat([]byte{1}, sha256.Size),
 	}
 	output, err := json.Marshal(Response{Version: ProtocolVersion, Artifact: artifact})

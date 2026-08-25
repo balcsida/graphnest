@@ -132,7 +132,7 @@ func TestReplaceSCIPIsAtomicAndCurrent(t *testing.T) {
 
 - [ ] **Step 2: Run the PostgreSQL test and observe missing tables/methods**
 
-Run: `GREPNEST_TEST_POSTGRES_DSN="$GREPNEST_TEST_POSTGRES_DSN" go test ./internal/postgres -run 'TestMigrate|TestReplaceSCIP|TestSCIPLocations' -count=1`
+Run: `GRAPHNEST_TEST_POSTGRES_DSN="$GRAPHNEST_TEST_POSTGRES_DSN" go test ./internal/postgres -run 'TestMigrate|TestReplaceSCIP|TestSCIPLocations' -count=1`
 
 Expected: FAIL because migration `003` and store methods do not exist.
 
@@ -164,7 +164,7 @@ Lock the repository row, require `indexed_sha=commit`, delete the old upload, in
 
 - [ ] **Step 5: Run integration and full tests**
 
-Run: `GREPNEST_TEST_POSTGRES_DSN="$GREPNEST_TEST_POSTGRES_DSN" go test ./internal/postgres ./...`
+Run: `GRAPHNEST_TEST_POSTGRES_DSN="$GRAPHNEST_TEST_POSTGRES_DSN" go test ./internal/postgres ./...`
 
 Expected: PASS.
 
@@ -348,8 +348,8 @@ git commit -S -m "feat(scip): import GitHub dependencies"
 - Create: `internal/httpapi/scip_test.go`
 - Modify: `internal/mcpserver/server.go`
 - Modify: `internal/mcpserver/server_test.go`
-- Modify: `cmd/grepnest-server/main.go`
-- Modify: `cmd/grepnest-server/main_test.go`
+- Modify: `cmd/graphnest-server/main.go`
+- Modify: `cmd/graphnest-server/main_test.go`
 - Modify: `internal/config/config.go`
 - Modify: `internal/config/config_test.go`
 
@@ -373,13 +373,13 @@ func TestSCIPUploadRequiresAdministrator(t *testing.T) {
 
 - [ ] **Step 2: Run adapter tests and observe missing registration**
 
-Run: `go test ./internal/httpapi ./internal/mcpserver ./cmd/grepnest-server -run SCIP -count=1`
+Run: `go test ./internal/httpapi ./internal/mcpserver ./cmd/graphnest-server -run SCIP -count=1`
 
 Expected: FAIL because routes, MCP tool, and service wiring do not exist.
 
 - [ ] **Step 3: Add the dedicated upload limit**
 
-Add `Limits.SCIPMaxUploadBytes`, default `64<<20`, environment variable `GREPNEST_SCIP_MAX_UPLOAD_BYTES`, and safety cap `256<<20`. Do not raise the existing 64 KiB JSON/search cap.
+Add `Limits.SCIPMaxUploadBytes`, default `64<<20`, environment variable `GRAPHNEST_SCIP_MAX_UPLOAD_BYTES`, and safety cap `256<<20`. Do not raise the existing 64 KiB JSON/search cap.
 
 - [ ] **Step 4: Implement thin REST adapters**
 
@@ -391,7 +391,7 @@ Pass the service optionally to `NewWithLimits`, as repository service is today. 
 
 - [ ] **Step 6: Run adapter and full tests**
 
-Run: `go test ./internal/httpapi ./internal/mcpserver ./cmd/grepnest-server ./...`
+Run: `go test ./internal/httpapi ./internal/mcpserver ./cmd/graphnest-server ./...`
 
 Expected: PASS.
 
@@ -399,7 +399,7 @@ Expected: PASS.
 
 ```bash
 git status --short
-git add internal/httpapi/scip.go internal/httpapi/scip_test.go internal/mcpserver/server.go internal/mcpserver/server_test.go cmd/grepnest-server/main.go cmd/grepnest-server/main_test.go internal/config/config.go internal/config/config_test.go
+git add internal/httpapi/scip.go internal/httpapi/scip_test.go internal/mcpserver/server.go internal/mcpserver/server_test.go cmd/graphnest-server/main.go cmd/graphnest-server/main_test.go internal/config/config.go internal/config/config_test.go
 git commit -S -m "feat(scip): expose navigation APIs"
 ```
 
@@ -408,16 +408,16 @@ git commit -S -m "feat(scip): expose navigation APIs"
 **Files:**
 - Modify: `README.md`
 - Modify: `deploy/compose/compose.yml`
-- Modify: `deploy/helm/grepnest/values.yaml`
-- Modify: `deploy/helm/grepnest/templates/configmaps.yaml`
-- Modify: `deploy/helm/grepnest/values.schema.json`
-- Modify: `deploy/helm/grepnest/tests/render.sh`
+- Modify: `deploy/helm/graphnest/values.yaml`
+- Modify: `deploy/helm/graphnest/templates/configmaps.yaml`
+- Modify: `deploy/helm/graphnest/values.schema.json`
+- Modify: `deploy/helm/graphnest/tests/render.sh`
 - Create: `test/e2e/scip_test.go`
 - Modify: `docs/implementation-report.md`
 
 **Interfaces:**
 - Consumes all public contracts from Task 6.
-- Produces deployment configuration for `GREPNEST_SCIP_MAX_UPLOAD_BYTES` and a runnable upload/navigation example.
+- Produces deployment configuration for `GRAPHNEST_SCIP_MAX_UPLOAD_BYTES` and a runnable upload/navigation example.
 
 - [ ] **Step 1: Write the failing E2E and chart assertions**
 
@@ -427,7 +427,7 @@ Build two tiny SCIP indexes in Go: repository A defines a symbol and repository 
 
 Run: `go test -tags=e2e ./test/e2e -run TestSCIPCrossRepository -count=1`
 
-Run: `deploy/helm/grepnest/tests/render.sh`
+Run: `deploy/helm/graphnest/tests/render.sh`
 
 Expected: the E2E fails until its server fixture registers SCIP; the chart check fails until the value is rendered.
 
@@ -445,9 +445,9 @@ Run: `git diff --check`
 
 Run: `make test-race`
 
-Run: `GREPNEST_TEST_POSTGRES_DSN="$GREPNEST_TEST_POSTGRES_DSN" go test -race ./internal/postgres ./test/e2e -tags=e2e -count=1`
+Run: `GRAPHNEST_TEST_POSTGRES_DSN="$GRAPHNEST_TEST_POSTGRES_DSN" go test -race ./internal/postgres ./test/e2e -tags=e2e -count=1`
 
-Run: `deploy/helm/grepnest/tests/render.sh`
+Run: `deploy/helm/graphnest/tests/render.sh`
 
 Expected: every command exits 0; no race, PostgreSQL, real SCIP/Zoekt, or Helm failures.
 
@@ -455,7 +455,7 @@ Expected: every command exits 0; no race, PostgreSQL, real SCIP/Zoekt, or Helm f
 
 ```bash
 git status --short
-git add README.md deploy/compose/compose.yml deploy/helm/grepnest/values.yaml deploy/helm/grepnest/templates/configmaps.yaml deploy/helm/grepnest/values.schema.json deploy/helm/grepnest/tests/render.sh test/e2e/scip_test.go docs/implementation-report.md
+git add README.md deploy/compose/compose.yml deploy/helm/graphnest/values.yaml deploy/helm/graphnest/templates/configmaps.yaml deploy/helm/graphnest/values.schema.json deploy/helm/graphnest/tests/render.sh test/e2e/scip_test.go docs/implementation-report.md
 git commit -S -m "docs: explain SCIP graph setup"
 ```
 
