@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/scim"
+	"github.com/balcsida/graphnest/internal/scim"
 	"github.com/jackc/pgx/v5"
 )
 

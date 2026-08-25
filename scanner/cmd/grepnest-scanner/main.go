@@ -15,9 +15,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/grepnest/grepnest/internal/enrichment"
-	"github.com/grepnest/grepnest/scanner/graphscan"
-	"github.com/grepnest/grepnest/scanner/graphscanner"
+	"github.com/balcsida/graphnest/internal/enrichment"
+	"github.com/balcsida/graphnest/scanner/graphscan"
+	"github.com/balcsida/graphnest/scanner/graphscanner"
 )
 
 func main() {

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/grepnest/grepnest/internal/observability"
+	"github.com/balcsida/graphnest/internal/observability"
 )
 
 const SessionCookieName = "__Host-grepnest_session"

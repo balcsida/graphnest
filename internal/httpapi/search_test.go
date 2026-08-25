@@ -10,12 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/audit"
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/authz"
-	"github.com/grepnest/grepnest/internal/repository"
-	"github.com/grepnest/grepnest/internal/search"
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/internal/audit"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/authz"
+	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/search"
+	"github.com/balcsida/graphnest/pkg/api"
 )
 
 func TestSearchHTTP(t *testing.T) {

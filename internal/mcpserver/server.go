@@ -6,13 +6,13 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/grepnest/grepnest/internal/graphservice"
-	"github.com/grepnest/grepnest/internal/httpapi"
-	"github.com/grepnest/grepnest/internal/repository"
-	"github.com/grepnest/grepnest/internal/scipgraph"
-	"github.com/grepnest/grepnest/internal/search"
-	"github.com/grepnest/grepnest/internal/zoekt"
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/internal/graphservice"
+	"github.com/balcsida/graphnest/internal/httpapi"
+	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/scipgraph"
+	"github.com/balcsida/graphnest/internal/search"
+	"github.com/balcsida/graphnest/internal/zoekt"
+	"github.com/balcsida/graphnest/pkg/api"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

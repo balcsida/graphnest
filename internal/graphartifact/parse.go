@@ -9,7 +9,7 @@ import (
 	"path"
 	"strings"
 
-	graphv1 "github.com/grepnest/grepnest/internal/graphartifact/v1"
+	graphv1 "github.com/balcsida/graphnest/internal/graphartifact/v1"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )

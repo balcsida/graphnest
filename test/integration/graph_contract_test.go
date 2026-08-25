@@ -11,13 +11,13 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/graphartifact"
-	"github.com/grepnest/grepnest/internal/graphquery"
-	"github.com/grepnest/grepnest/internal/graphservice"
-	"github.com/grepnest/grepnest/internal/httpapi"
-	"github.com/grepnest/grepnest/internal/mcpserver"
-	"github.com/grepnest/grepnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/graphartifact"
+	"github.com/balcsida/graphnest/internal/graphquery"
+	"github.com/balcsida/graphnest/internal/graphservice"
+	"github.com/balcsida/graphnest/internal/httpapi"
+	"github.com/balcsida/graphnest/internal/mcpserver"
+	"github.com/balcsida/graphnest/internal/postgres"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

@@ -3,8 +3,8 @@ package admin
 import (
 	"context"
 
-	"github.com/grepnest/grepnest/internal/audit"
-	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/audit"
+	"github.com/balcsida/graphnest/internal/authn"
 )
 
 func (service *Service) AuditEvents(ctx context.Context, principal authn.Principal) ([]audit.Event, bool, error) {

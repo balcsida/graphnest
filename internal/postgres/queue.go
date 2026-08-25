@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/admin"
-	"github.com/grepnest/grepnest/internal/graphartifact"
+	"github.com/balcsida/graphnest/internal/admin"
+	"github.com/balcsida/graphnest/internal/graphartifact"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )

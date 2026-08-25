@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/graphartifact"
-	graphv1 "github.com/grepnest/grepnest/internal/graphartifact/v1"
-	"github.com/grepnest/grepnest/internal/graphingest"
-	"github.com/grepnest/grepnest/internal/postgres"
-	"github.com/grepnest/grepnest/internal/repository"
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/graphartifact"
+	graphv1 "github.com/balcsida/graphnest/internal/graphartifact/v1"
+	"github.com/balcsida/graphnest/internal/graphingest"
+	"github.com/balcsida/graphnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/pkg/api"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/proto"
 )
@@ -34,15 +34,15 @@ func TestGraphUploadContract(t *testing.T) {
 		max                                      int64
 		want                                     int
 	}{
-		{"exact method", http.MethodPut, graphUploadTarget(graphTestSHA), "admin", "application/vnd.grepnest.graph.v1+protobuf", data, int64(len(data)), http.StatusMethodNotAllowed},
-		{"administrator required", http.MethodPost, graphUploadTarget(graphTestSHA), "user", "application/vnd.grepnest.graph.v1+protobuf", data, int64(len(data)), http.StatusForbidden},
-		{"exact content type", http.MethodPost, graphUploadTarget(graphTestSHA), "admin", "application/vnd.grepnest.graph.v1+protobuf; charset=binary", data, int64(len(data)), http.StatusUnsupportedMediaType},
-		{"missing repository", http.MethodPost, "/v1/graph/uploads?commit=" + graphTestSHA, "admin", "application/vnd.grepnest.graph.v1+protobuf", data, int64(len(data)), http.StatusBadRequest},
-		{"duplicate repository", http.MethodPost, "/v1/graph/uploads?repository_id=101&repository_id=101&commit=" + graphTestSHA, "admin", "application/vnd.grepnest.graph.v1+protobuf", data, int64(len(data)), http.StatusBadRequest},
-		{"unknown query", http.MethodPost, graphUploadTarget(graphTestSHA) + "&extra=1", "admin", "application/vnd.grepnest.graph.v1+protobuf", data, int64(len(data)), http.StatusBadRequest},
-		{"uppercase commit", http.MethodPost, graphUploadTarget(strings.ToUpper(graphTestSHA)), "admin", "application/vnd.grepnest.graph.v1+protobuf", data, int64(len(data)), http.StatusBadRequest},
-		{"exact body limit", http.MethodPost, graphUploadTarget(graphTestSHA), "admin", "application/vnd.grepnest.graph.v1+protobuf", data, int64(len(data)), http.StatusNoContent},
-		{"body over limit", http.MethodPost, graphUploadTarget(graphTestSHA), "admin", "application/vnd.grepnest.graph.v1+protobuf", data, int64(len(data) - 1), http.StatusRequestEntityTooLarge},
+		{"exact method", http.MethodPut, graphUploadTarget(graphTestSHA), "admin", "application/vnd.graphnest.graph.v1+protobuf", data, int64(len(data)), http.StatusMethodNotAllowed},
+		{"administrator required", http.MethodPost, graphUploadTarget(graphTestSHA), "user", "application/vnd.graphnest.graph.v1+protobuf", data, int64(len(data)), http.StatusForbidden},
+		{"exact content type", http.MethodPost, graphUploadTarget(graphTestSHA), "admin", "application/vnd.graphnest.graph.v1+protobuf; charset=binary", data, int64(len(data)), http.StatusUnsupportedMediaType},
+		{"missing repository", http.MethodPost, "/v1/graph/uploads?commit=" + graphTestSHA, "admin", "application/vnd.graphnest.graph.v1+protobuf", data, int64(len(data)), http.StatusBadRequest},
+		{"duplicate repository", http.MethodPost, "/v1/graph/uploads?repository_id=101&repository_id=101&commit=" + graphTestSHA, "admin", "application/vnd.graphnest.graph.v1+protobuf", data, int64(len(data)), http.StatusBadRequest},
+		{"unknown query", http.MethodPost, graphUploadTarget(graphTestSHA) + "&extra=1", "admin", "application/vnd.graphnest.graph.v1+protobuf", data, int64(len(data)), http.StatusBadRequest},
+		{"uppercase commit", http.MethodPost, graphUploadTarget(strings.ToUpper(graphTestSHA)), "admin", "application/vnd.graphnest.graph.v1+protobuf", data, int64(len(data)), http.StatusBadRequest},
+		{"exact body limit", http.MethodPost, graphUploadTarget(graphTestSHA), "admin", "application/vnd.graphnest.graph.v1+protobuf", data, int64(len(data)), http.StatusNoContent},
+		{"body over limit", http.MethodPost, graphUploadTarget(graphTestSHA), "admin", "application/vnd.graphnest.graph.v1+protobuf", data, int64(len(data) - 1), http.StatusRequestEntityTooLarge},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -60,7 +60,7 @@ func TestGraphUploadContract(t *testing.T) {
 func TestGraphUploadRejectsUnauthorizedBodyBeforeRead(t *testing.T) {
 	body := &countingReader{Reader: bytes.NewReader(graphArtifactBytes(t, 101))}
 	request := httptest.NewRequest(http.MethodPost, graphUploadTarget(graphTestSHA), body)
-	request.Header.Set("Content-Type", "application/vnd.grepnest.graph.v1+protobuf")
+	request.Header.Set("Content-Type", "application/vnd.graphnest.graph.v1+protobuf")
 	recorder := httptest.NewRecorder()
 	graphHandler(&graphStoreStub{}, 1<<20, 1024).ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusUnauthorized || body.reads != 0 {
@@ -72,7 +72,7 @@ func TestGraphUploadRejectsStaleCommitBeforeRead(t *testing.T) {
 	body := &countingReader{Reader: bytes.NewReader(graphArtifactBytes(t, 101))}
 	request := httptest.NewRequest(http.MethodPost, graphUploadTarget(strings.Repeat("b", 40)), body)
 	request.Header.Set("Authorization", "Bearer admin")
-	request.Header.Set("Content-Type", "application/vnd.grepnest.graph.v1+protobuf")
+	request.Header.Set("Content-Type", "application/vnd.graphnest.graph.v1+protobuf")
 	recorder := httptest.NewRecorder()
 	graphHandler(&graphStoreStub{}, 1<<20, 1024).ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusConflict || body.reads != 0 {
@@ -87,7 +87,7 @@ func TestGraphUploadDeadlineSequence(t *testing.T) {
 	store.writeDeadlineSet = &recorder.writeDeadlineSet
 	request := httptest.NewRequest(http.MethodPost, graphUploadTarget(graphTestSHA), bytes.NewReader(graphArtifactBytes(t, 101)))
 	request.Header.Set("Authorization", "Bearer admin")
-	request.Header.Set("Content-Type", "application/vnd.grepnest.graph.v1+protobuf")
+	request.Header.Set("Content-Type", "application/vnd.graphnest.graph.v1+protobuf")
 	graphHandler(store, 1<<20, 1024).ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusNoContent || !store.authorizedBeforeDeadlineClear.Load() || store.authorizedCalls.Load() != 3 {
 		t.Fatalf("status=%d authorizedBeforeClear=%t calls=%d", recorder.Code, store.authorizedBeforeDeadlineClear.Load(), store.authorizedCalls.Load())

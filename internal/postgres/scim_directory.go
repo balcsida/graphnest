@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/admin"
-	"github.com/grepnest/grepnest/internal/audit"
-	"github.com/grepnest/grepnest/internal/scim"
+	"github.com/balcsida/graphnest/internal/admin"
+	"github.com/balcsida/graphnest/internal/audit"
+	"github.com/balcsida/graphnest/internal/scim"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )

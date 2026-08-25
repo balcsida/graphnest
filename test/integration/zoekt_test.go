@@ -9,13 +9,13 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/authz"
-	"github.com/grepnest/grepnest/internal/observability"
-	"github.com/grepnest/grepnest/internal/repository"
-	"github.com/grepnest/grepnest/internal/search"
-	"github.com/grepnest/grepnest/internal/zoekt"
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/authz"
+	"github.com/balcsida/graphnest/internal/observability"
+	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/search"
+	"github.com/balcsida/graphnest/internal/zoekt"
+	"github.com/balcsida/graphnest/pkg/api"
 )
 
 func TestServiceSendsOnlyAuthorizedRepoIDsToZoekt(t *testing.T) {

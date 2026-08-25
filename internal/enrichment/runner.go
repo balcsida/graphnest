@@ -12,9 +12,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/graphartifact"
-	"github.com/grepnest/grepnest/internal/indexer"
-	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/graphartifact"
+	"github.com/balcsida/graphnest/internal/indexer"
+	"github.com/balcsida/graphnest/internal/repository"
 )
 
 type Process interface {

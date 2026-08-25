@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/audit"
+	"github.com/balcsida/graphnest/internal/audit"
 )
 
 const maxLoginRetryAfter = 15 * time.Minute

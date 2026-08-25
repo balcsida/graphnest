@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/graphartifact"
+	"github.com/balcsida/graphnest/internal/graphartifact"
 )
 
 var (

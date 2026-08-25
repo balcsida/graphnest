@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/graphprotocol"
-	"github.com/grepnest/grepnest/internal/graphquery"
-	"github.com/grepnest/grepnest/internal/scipgraph"
+	"github.com/balcsida/graphnest/internal/graphprotocol"
+	"github.com/balcsida/graphnest/internal/graphquery"
+	"github.com/balcsida/graphnest/internal/scipgraph"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )

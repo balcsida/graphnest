@@ -3,8 +3,8 @@ package authz
 import (
 	"context"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/repository"
 )
 
 type RepositorySelection struct{ Names []string }

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/scipgraph"
+	"github.com/balcsida/graphnest/internal/scipgraph"
 )
 
 func TestFromSCIPBuildsDeterministicExplicitGraph(t *testing.T) {

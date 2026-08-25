@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/grepnest/grepnest/internal/graphartifact"
-	"github.com/grepnest/grepnest/internal/graphprotocol"
-	"github.com/grepnest/grepnest/internal/graphquery"
+	"github.com/balcsida/graphnest/internal/graphartifact"
+	"github.com/balcsida/graphnest/internal/graphprotocol"
+	"github.com/balcsida/graphnest/internal/graphquery"
 	"github.com/jackc/pgx/v5"
 )
 

@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/authz"
-	"github.com/grepnest/grepnest/internal/repository"
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/authz"
+	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/pkg/api"
 )
 
 func TestSearchPassesOnlyAuthorizedZoektIDs(t *testing.T) {

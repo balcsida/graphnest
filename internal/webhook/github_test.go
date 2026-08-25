@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/observability"
+	"github.com/balcsida/graphnest/internal/observability"
 )
 
 func TestGitHubProcessorRecordsBoundedDeliveryMetrics(t *testing.T) {

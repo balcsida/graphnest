@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/scipgraph"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/scipgraph"
 	"github.com/jackc/pgx/v5"
 )
 

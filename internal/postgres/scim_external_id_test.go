@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/scim"
+	"github.com/balcsida/graphnest/internal/scim"
 )
 
 func TestSCIMGroupExternalIDLifecycle(t *testing.T) {

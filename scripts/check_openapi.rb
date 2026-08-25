@@ -66,7 +66,7 @@ document = load_document(document_path, documents)
 resolve_local_references(document, document_path, documents)
 
 upload = document.dig("paths", "/v1/scip/uploads", "post", "requestBody", "content", "application/vnd.scip+protobuf", "schema")
-graph_upload = document.dig("paths", "/v1/graph/uploads", "post", "requestBody", "content", "application/vnd.grepnest.graph.v1+protobuf", "schema")
+graph_upload = document.dig("paths", "/v1/graph/uploads", "post", "requestBody", "content", "application/vnd.graphnest.graph.v1+protobuf", "schema")
 graph_status = document.dig("paths", "/v1/graph/repositories/{id}/status", "get", "responses", "200", "content", "application/json", "schema")
 graph_queries = %w[context impact trace].to_h do |name|
   [name, document.dig("paths", "/v1/graph/#{name}", "post")]

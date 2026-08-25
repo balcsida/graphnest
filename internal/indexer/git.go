@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/postgres"
-	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/repository"
 	"golang.org/x/sys/unix"
 )
 

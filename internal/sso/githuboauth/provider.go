@@ -3,10 +3,10 @@ package githuboauth
 import (
 	"time"
 
-	"github.com/grepnest/grepnest/internal/audit"
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/sso"
-	"github.com/grepnest/grepnest/internal/sso/browserflow"
+	"github.com/balcsida/graphnest/internal/audit"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/sso"
+	"github.com/balcsida/graphnest/internal/sso/browserflow"
 )
 
 func NewProvider(client browserflow.Client, store authn.SessionStore, sessions *authn.SessionManager, recorder audit.Recorder, loginTTL time.Duration) *browserflow.Provider {

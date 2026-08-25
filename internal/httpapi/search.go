@@ -8,10 +8,10 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/search"
-	"github.com/grepnest/grepnest/internal/zoekt"
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/search"
+	"github.com/balcsida/graphnest/internal/zoekt"
+	"github.com/balcsida/graphnest/pkg/api"
 )
 
 type principalContextKey struct{}

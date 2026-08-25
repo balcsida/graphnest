@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/audit"
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/scim"
+	"github.com/balcsida/graphnest/internal/audit"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/scim"
 	"github.com/jackc/pgx/v5"
 )
 

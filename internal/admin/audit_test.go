@@ -3,7 +3,7 @@ package admin
 import (
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/authn"
 )
 
 func TestAuditEventsRequireDurableIdentityAdministrator(t *testing.T) {

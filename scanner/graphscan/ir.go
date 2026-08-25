@@ -1,6 +1,6 @@
 package graphscan
 
-import "github.com/grepnest/grepnest/internal/graphartifact"
+import "github.com/balcsida/graphnest/internal/graphartifact"
 
 type Language string
 
