@@ -49,9 +49,9 @@ boundary when fixture contents change.
 
 ## Two-image durable deployment
 
-The builder will compile `grepnest-scanner` and `grepnest-graph`, and the node
+The builder will compile `graphnest-scanner` and `graphnest-graph`, and the node
 image will contain them alongside the indexer and Zoekt tools. Durable Compose
-will run scanner replicas from `GREPNEST_NODE_IMAGE`; the separate graph mode
+will run scanner replicas from `GRAPHNEST_NODE_IMAGE`; the separate graph mode
 already uses that image. Documentation and Compose assertions will describe
 only application and node images.
 

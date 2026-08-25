@@ -4,7 +4,7 @@
 
 **Goal:** Build the derived LadybugDB graph, bounded query engine, authenticated internal transport, and identical embedded-indexer and standalone runtime modes.
 
-**Architecture:** One runtime process owns the writable LadybugDB handle, serialized updates, and a bounded reader pool. It synchronizes authoritative enriched artifacts or current SCIP fallback facts from PostgreSQL, rebuilds incompatible databases beside the live file, and exposes only authenticated internal graph operations. The same runtime is started inside `grepnest-indexer` or by `grepnest-graph`.
+**Architecture:** One runtime process owns the writable LadybugDB handle, serialized updates, and a bounded reader pool. It synchronizes authoritative enriched artifacts or current SCIP fallback facts from PostgreSQL, rebuilds incompatible databases beside the live file, and exposes only authenticated internal graph operations. The same runtime is started inside `graphnest-indexer` or by `graphnest-graph`.
 
 **Tech Stack:** Go 1.26.5, cgo, `github.com/LadybugDB/go-ladybug v0.17.0`, `liblbug v0.18.3`, PostgreSQL/pgx, `net/http`, existing metrics and lifecycle patterns.
 
@@ -15,7 +15,7 @@
 - Pin Go binding `v0.17.0` and native `liblbug v0.18.3`; never download an unpinned latest library during build.
 - PostgreSQL remains authoritative; deleting the LadybugDB files must be recoverable by rebuilding.
 - One process owns the writable database; serialize writers and use separate reader connections.
-- Open no LadybugDB handle in `grepnest-server`, `grepnest-mcp`, or `grepnest-migrate`.
+- Open no LadybugDB handle in `graphnest-server`, `graphnest-mcp`, or `graphnest-migrate`.
 - Use prepared parameters for values; never interpolate artifact or user values into Cypher.
 - Close every LadybugDB query result before returning a connection to its pool.
 - Curated queries require a nonempty repository allowlist and exact current commits.
@@ -43,7 +43,7 @@
 - `internal/graphtransport/`: authenticated internal HTTP handler.
 - `internal/graphclient/`: bounded internal HTTP client.
 - `internal/graphruntime/runtime.go`: common lifecycle used by both modes.
-- `cmd/grepnest-graph`: standalone runtime command.
+- `cmd/graphnest-graph`: standalone runtime command.
 
 ### Task 1: Pin LadybugDB and create the physical schema
 
@@ -495,10 +495,10 @@ git commit -S -m "feat(graph): secure internal queries"
 **Files:**
 - Create: `internal/graphruntime/runtime.go`
 - Create: `internal/graphruntime/runtime_test.go`
-- Create: `cmd/grepnest-graph/main.go`
-- Create: `cmd/grepnest-graph/main_test.go`
-- Modify: `cmd/grepnest-indexer/main.go`
-- Modify: `cmd/grepnest-indexer/main_test.go`
+- Create: `cmd/graphnest-graph/main.go`
+- Create: `cmd/graphnest-graph/main_test.go`
+- Modify: `cmd/graphnest-indexer/main.go`
+- Modify: `cmd/graphnest-indexer/main_test.go`
 - Modify: `internal/config/config.go`
 - Modify: `internal/config/config_test.go`
 - Modify: `internal/observability/metrics.go`
@@ -514,7 +514,7 @@ Assert embedded mode starts runtime beside a healthy index worker, separate mode
 
 - [ ] **Step 2: Run focused tests and observe missing runtime**
 
-Run: `go test ./internal/graphruntime ./internal/config ./cmd/grepnest-indexer ./cmd/grepnest-graph -count=1`
+Run: `go test ./internal/graphruntime ./internal/config ./cmd/graphnest-indexer ./cmd/graphnest-graph -count=1`
 
 Expected: FAIL because shared runtime/config/standalone command do not exist.
 
@@ -536,16 +536,16 @@ Use one private config loader so embedded and separate defaults/caps cannot drif
 
 - [ ] **Step 4: Wire both commands and low-cardinality metrics**
 
-Indexer starts graph runtime only in embedded mode. `grepnest-graph` always starts it. Add fixed-label query/sync/readiness metrics; repository IDs and commits belong only in structured logs.
+Indexer starts graph runtime only in embedded mode. `graphnest-graph` always starts it. Add fixed-label query/sync/readiness metrics; repository IDs and commits belong only in structured logs.
 
 - [ ] **Step 5: Run phase verification**
 
 Run:
 
 ```bash
-gofmt -w internal/graphruntime cmd/grepnest-graph cmd/grepnest-indexer internal/config internal/observability
+gofmt -w internal/graphruntime cmd/graphnest-graph cmd/graphnest-indexer internal/config internal/observability
 make ladybug-test
-go test -race ./internal/graphtransport ./internal/graphclient ./internal/graphruntime ./cmd/grepnest-indexer ./cmd/grepnest-graph
+go test -race ./internal/graphtransport ./internal/graphclient ./internal/graphruntime ./cmd/graphnest-indexer ./cmd/graphnest-graph
 make fmt lint test-race build staticcheck govulncheck
 git diff --check
 ```
@@ -556,7 +556,7 @@ Expected: PASS.
 
 ```bash
 git status --short
-git add internal/graphruntime cmd/grepnest-graph cmd/grepnest-indexer internal/config internal/observability
+git add internal/graphruntime cmd/graphnest-graph cmd/graphnest-indexer internal/config internal/observability
 git commit -S -m "feat(graph): run embedded or standalone"
 ```
 
@@ -565,6 +565,6 @@ git commit -S -m "feat(graph): run embedded or standalone"
 - [ ] Run all commands from Task 8 Step 5.
 - [ ] Run `make postgres-integration` with a real snapshot source.
 - [ ] Delete the temporary Ladybug database and prove rebuild restores identical manifests.
-- [ ] Run the internal contract once through embedded mode and once through `grepnest-graph`.
+- [ ] Run the internal contract once through embedded mode and once through `graphnest-graph`.
 - [ ] Verify signatures with `git log --show-signature --format='%h %G? %s' origin/main..HEAD`.
 - [ ] Confirm `git status --short --branch` is clean before starting the tools/deployment plan.

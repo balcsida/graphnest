@@ -42,7 +42,7 @@
 - `internal/graphscan/scan.go`: secure bounded tree walk and parser dispatch.
 - `internal/graphscan/<language>/`: embedded Tree-sitter queries and language adapters.
 - `internal/graphscanner/worker.go`: graph queue lease, exact checkout, scan, publish, cleanup.
-- `cmd/grepnest-scanner`: standalone scalable worker command.
+- `cmd/graphnest-scanner`: standalone scalable worker command.
 
 ### Task 1: Add the shared IR and deterministic resolver
 
@@ -313,7 +313,7 @@ Expected: FAIL because parser packages do not exist.
 
 - [ ] **Step 3: Implement embedded queries and adapters**
 
-Compile GrepNest-owned S-expression queries once with `sync.Once`, create and close a parser/tree/query cursor per parse, convert byte/point ranges directly, and emit ordered candidate names rather than resolving imports locally.
+Compile GraphNest-owned S-expression queries once with `sync.Once`, create and close a parser/tree/query cursor per parse, convert byte/point ranges directly, and emit ordered candidate names rather than resolving imports locally.
 
 - [ ] **Step 4: Run parser and shared resolver tests**
 
@@ -487,8 +487,8 @@ git commit -S -m "feat(scanner): process graph jobs"
 ### Task 8: Add the standalone scanner command and configuration
 
 **Files:**
-- Create: `cmd/grepnest-scanner/main.go`
-- Create: `cmd/grepnest-scanner/main_test.go`
+- Create: `cmd/graphnest-scanner/main.go`
+- Create: `cmd/graphnest-scanner/main_test.go`
 - Modify: `internal/config/config.go`
 - Modify: `internal/config/config_test.go`
 - Modify: `internal/observability/metrics.go`
@@ -505,7 +505,7 @@ Assert required PostgreSQL/GitHub/Git paths/worker ID, secure positive limits, d
 
 - [ ] **Step 2: Run focused tests and observe missing command**
 
-Run: `go test ./internal/config ./internal/observability ./cmd/grepnest-scanner -count=1`
+Run: `go test ./internal/config ./internal/observability ./cmd/graphnest-scanner -count=1`
 
 Expected: FAIL because scanner config and command do not exist.
 
@@ -526,8 +526,8 @@ Construct PostgreSQL, GitHub signer/client, exact checkout, parser map, analyzer
 Run:
 
 ```bash
-gofmt -w cmd/grepnest-scanner internal/config internal/observability
-CGO_ENABLED=1 go test -race ./internal/graphscan/... ./internal/graphscanner ./cmd/grepnest-scanner
+gofmt -w cmd/graphnest-scanner internal/config internal/observability
+CGO_ENABLED=1 go test -race ./internal/graphscan/... ./internal/graphscanner ./cmd/graphnest-scanner
 make fmt lint test-race build staticcheck govulncheck
 go mod tidy -diff
 git diff --check
@@ -539,7 +539,7 @@ Expected: PASS.
 
 ```bash
 git status --short
-git add cmd/grepnest-scanner internal/config internal/observability Makefile
+git add cmd/graphnest-scanner internal/config internal/observability Makefile
 git commit -S -m "feat(scanner): run managed workers"
 ```
 

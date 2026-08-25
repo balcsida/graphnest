@@ -7,11 +7,11 @@
 | 0 | `go.mod`, `Makefile`, `docs/adr/0001-go.md` through `0010-no-jvm.md`, `deploy/compose/compose.yml` | Go, pinned Zoekt, Compose, and no JVM dependency established. |
 | 1 | `internal/config`, `internal/authn`, `internal/authz`, `internal/repository`, `internal/observability` | Configuration rejects missing or equal tokens; static repository authorization and metrics are covered by tests. |
 | 2 | `pkg/api/search.go`, `internal/search`, `internal/zoekt`, `test/integration/zoekt_test.go` | One shared service authorizes before server-selected `RepoIDs`; the integration test proves only authorized ID `7` reaches Zoekt. |
-| 3 | `internal/httpapi`, `cmd/grepnest-server` | Bearer-protected `POST /v1/search`, health, readiness, and metrics are wired through the server. |
-| 4 | `internal/mcpserver`, `cmd/grepnest-mcp`, `docs/adr/0011-mcp-go-sdk.md` | Hosted bearer-protected `/mcp` exposes `search_code` and `find_files`; stdio proxy uses only server URL and token. |
+| 3 | `internal/httpapi`, `cmd/graphnest-server` | Bearer-protected `POST /v1/search`, health, readiness, and metrics are wired through the server. |
+| 4 | `internal/mcpserver`, `cmd/graphnest-mcp`, `docs/adr/0011-mcp-go-sdk.md` | Hosted bearer-protected `/mcp` exposes `search_code` and `find_files`; stdio proxy uses only server URL and token. |
 | 5 | `test/e2e/search_test.go`, fixture repository, Compose fixture index | Real local Zoekt indexes the fixture; REST, MCP, and authorization isolation are exercised. |
 | 6 | `internal/postgres`, `internal/githubapp`, `internal/webhook` | Embedded migrations, durable numeric identity, verified deliveries, reconciliation, coalescing, leases, and retention are covered against real PostgreSQL. |
-| 7 | `internal/indexer`, `cmd/grepnest-indexer` | Bounded HTTPS Git fetches use fixed askpass, numeric paths, one leased worker, real Zoekt indexing, and exact `/api/list` publication checks. |
+| 7 | `internal/indexer`, `cmd/graphnest-indexer` | Bounded HTTPS Git fetches use fixed askpass, numeric paths, one leased worker, real Zoekt indexing, and exact `/api/list` publication checks. |
 | 8 | repository REST/MCP services and `test/e2e/milestone2_test.go` | A GHES-compatible TLS fixture proves signed webhook through indexed-SHA search/read/list/status, including stale suppression, rename isolation, disablement, and an empty-tree repository. |
 | 9 | `internal/scipgraph`, SCIP HTTP/MCP adapters, PostgreSQL graph storage, and `test/e2e/scip_test.go` | Pre-generated indexes provide exact-SHA cross-repository navigation while suppressing unauthorized targets; no managed indexer was added. |
 | 10 | managed graph scanner, PostgreSQL graph storage and queries, and REST/MCP graph tools | PostgreSQL-backed contracts cover exact-checkout Go, JavaScript, TypeScript/TSX, Java, Kotlin, and Rust fixtures through managed scan, status, REST, and MCP. |

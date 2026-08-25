@@ -1,10 +1,10 @@
-# GrepNest Milestones 0-1 Design
+# GraphNest Milestones 0-1 Design
 
 ## Scope
 
 This pass delivers only the foundation and a manually indexed search path:
 
-`fixture Git repository -> zoekt-git-index -> zoekt-webserver -> GrepNest search service -> REST and MCP`
+`fixture Git repository -> zoekt-git-index -> zoekt-webserver -> GraphNest search service -> REST and MCP`
 
 GitHub App integration, PostgreSQL-backed indexing, file reading, outlines,
 containers for OpenShift, and Helm resources remain design-only work for later
@@ -12,21 +12,21 @@ milestones.
 
 ## Architecture
 
-One `grepnest-server` process owns authentication, repository authorization,
+One `graphnest-server` process owns authentication, repository authorization,
 the application search service, `POST /v1/search`, health and metrics endpoints,
-and Streamable HTTP MCP at `/mcp`. A separate `grepnest-mcp` executable exposes
+and Streamable HTTP MCP at `/mcp`. A separate `graphnest-mcp` executable exposes
 stdio MCP and forwards authenticated requests to the server; it never talks to
 Zoekt directly.
 
-The application service depends on a GrepNest-owned `SearchBackend` interface.
+The application service depends on a GraphNest-owned `SearchBackend` interface.
 The first adapter calls the pinned Zoekt JSON HTTP API and converts responses to
-stable GrepNest models. Transport handlers are thin wrappers around the same
+stable GraphNest models. Transport handlers are thin wrappers around the same
 application service.
 
 ## Repository and Authorization Model
 
 Development configuration contains a static repository registry with the
-repository's public name, stable GrepNest ID, Zoekt repository ID, branch,
+repository's public name, stable GraphNest ID, Zoekt repository ID, branch,
 indexed SHA, and web URL. Static bearer tokens map to principals and allowed
 repository IDs. Tokens are compared in constant time.
 
@@ -44,7 +44,7 @@ intersection returns no matches without issuing an unrestricted Zoekt query.
 ## Foundation
 
 The empty repository becomes a Go module using the temporary documented module
-path `github.com/grepnest/grepnest`, because no Git remote exists. Milestone 0
+path `github.com/balcsida/graphnest`, because no Git remote exists. Milestone 0
 adds `log/slog` JSON logging, environment configuration with startup validation,
 `/healthz`, dependency-aware `/readyz`, Prometheus metrics, graceful shutdown,
 Make targets, CI, Apache-2.0 licensing, and the documentation skeleton required
@@ -63,7 +63,7 @@ envelope and never include secrets.
 Milestone 1 exposes `search_code` and `find_files` through the official MCP Go
 SDK. `find_files` uses the same search service with a path-oriented Zoekt query;
 both tools return deterministic, bounded, structured output. Streamable HTTP MCP
-is hosted by `grepnest-server`; the stdio command is a protocol proxy to that
+is hosted by `graphnest-server`; the stdio command is a protocol proxy to that
 endpoint.
 
 ## Zoekt Integration

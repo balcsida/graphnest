@@ -1,8 +1,8 @@
-# GrepNest Full-Pilot Helm Chart Implementation Plan
+# GraphNest Full-Pilot Helm Chart Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add one generic Kubernetes Helm chart that renders GrepNest's complete single-node pilot topology from operator-supplied digest-pinned images and existing Secrets.
+**Goal:** Add one generic Kubernetes Helm chart that renders GraphNest's complete single-node pilot topology from operator-supplied digest-pinned images and existing Secrets.
 
 **Architecture:** One dependency-free Helm application chart owns the server, one two-container Zoekt node, migration hook, internal services, configuration, policies, and optional integrations. A shell render harness treats `helm lint` and `helm template` output as the test boundary, validating both positive structure and forbidden security/scope regressions without contacting a cluster.
 
@@ -10,13 +10,13 @@
 
 ## Global Constraints
 
-- Implement only the generic Kubernetes full-pilot chart at `deploy/helm/grepnest`; do not add OpenShift APIs or resources.
+- Implement only the generic Kubernetes full-pilot chart at `deploy/helm/graphnest`; do not add OpenShift APIs or resources.
 - Do not build or publish images, install PostgreSQL, create Kubernetes Secrets, contact a cluster, or resume Milestone 2 application work.
 - Use one Helm application chart with no subcharts, library chart, or new dependency.
 - Require operator-supplied application and node image repositories plus `sha256:` digests; never render a tag-only image or `latest`.
 - Treat image tags as optional metadata only; every rendered image is `<repository>@<digest>`.
 - Read credentials only from named existing Secrets; values and templates accept no plaintext credential material.
-- Fix `grepnest-node` at one replica with two containers sharing one `ReadWriteOnce` PVC through the configured data/index paths.
+- Fix `graphnest-node` at one replica with two containers sharing one `ReadWriteOnce` PVC through the configured data/index paths.
 - Keep Zoekt internal: one ClusterIP Service, no Ingress, NodePort, LoadBalancer, or external service mode.
 - Run migrations as a blocking `pre-install,pre-upgrade` Helm hook using the application image.
 - Disable service-account token automounting and apply the approved non-root, read-only-root-filesystem, capability-drop, RuntimeDefault security defaults to every pod and container.
@@ -29,24 +29,24 @@
 
 ## File Map
 
-- `deploy/helm/grepnest/Chart.yaml`: application chart metadata and Helm/Kubernetes compatibility.
-- `deploy/helm/grepnest/values.yaml`: the complete public operator interface and safe defaults.
-- `deploy/helm/grepnest/values.schema.json`: render-time validation and enabled-feature requirements.
-- `deploy/helm/grepnest/ci/minimal-values.yaml`: non-routable image names and dummy existing-Secret references for lint/render tests.
-- `deploy/helm/grepnest/ci/optional-values.yaml`: Ingress, PDB, monitoring, custom CA, scheduling, and external-egress test inputs.
-- `deploy/helm/grepnest/templates/_helpers.tpl`: shared names, labels, image construction, and required-input helpers only.
-- `deploy/helm/grepnest/templates/serviceaccounts.yaml`: release-managed server ServiceAccount with token automount disabled.
-- `deploy/helm/grepnest/templates/configmaps.yaml`: non-secret server and node environment.
-- `deploy/helm/grepnest/templates/server.yaml`: server Deployment and ClusterIP Service.
-- `deploy/helm/grepnest/templates/node.yaml`: one-replica node StatefulSet, internal Zoekt Service, and RWO claim template.
-- `deploy/helm/grepnest/templates/migration-job.yaml`: blocking migration hook using runtime Secret references.
-- `deploy/helm/grepnest/templates/ingress.yaml`: optional generic Kubernetes Ingress only.
-- `deploy/helm/grepnest/templates/pdb.yaml`: optional server PodDisruptionBudget.
-- `deploy/helm/grepnest/templates/servicemonitor.yaml`: optional CRD-gated Prometheus Operator resource.
-- `deploy/helm/grepnest/templates/networkpolicies.yaml`: ingress isolation and opt-in CIDR egress isolation.
-- `deploy/helm/grepnest/tests/render.sh`: render, structure, optional-path, failure, and negative security assertions.
+- `deploy/helm/graphnest/Chart.yaml`: application chart metadata and Helm/Kubernetes compatibility.
+- `deploy/helm/graphnest/values.yaml`: the complete public operator interface and safe defaults.
+- `deploy/helm/graphnest/values.schema.json`: render-time validation and enabled-feature requirements.
+- `deploy/helm/graphnest/ci/minimal-values.yaml`: non-routable image names and dummy existing-Secret references for lint/render tests.
+- `deploy/helm/graphnest/ci/optional-values.yaml`: Ingress, PDB, monitoring, custom CA, scheduling, and external-egress test inputs.
+- `deploy/helm/graphnest/templates/_helpers.tpl`: shared names, labels, image construction, and required-input helpers only.
+- `deploy/helm/graphnest/templates/serviceaccounts.yaml`: release-managed server ServiceAccount with token automount disabled.
+- `deploy/helm/graphnest/templates/configmaps.yaml`: non-secret server and node environment.
+- `deploy/helm/graphnest/templates/server.yaml`: server Deployment and ClusterIP Service.
+- `deploy/helm/graphnest/templates/node.yaml`: one-replica node StatefulSet, internal Zoekt Service, and RWO claim template.
+- `deploy/helm/graphnest/templates/migration-job.yaml`: blocking migration hook using runtime Secret references.
+- `deploy/helm/graphnest/templates/ingress.yaml`: optional generic Kubernetes Ingress only.
+- `deploy/helm/graphnest/templates/pdb.yaml`: optional server PodDisruptionBudget.
+- `deploy/helm/graphnest/templates/servicemonitor.yaml`: optional CRD-gated Prometheus Operator resource.
+- `deploy/helm/graphnest/templates/networkpolicies.yaml`: ingress isolation and opt-in CIDR egress isolation.
+- `deploy/helm/graphnest/tests/render.sh`: render, structure, optional-path, failure, and negative security assertions.
 - `Makefile`: replace the Helm milestone stub with `helm-lint` and `helm-test` gates.
-- `deploy/helm/grepnest/README.md`: values, existing-Secret contracts, installation, upgrade, and rollback.
+- `deploy/helm/graphnest/README.md`: values, existing-Secret contracts, installation, upgrade, and rollback.
 - `docs/operations.md`: pilot capacity, storage, policies, and current binary/image limitation.
 - `README.md`: advertise the chart without claiming Milestone 2 deployability.
 
@@ -132,7 +132,7 @@ node:
       requests: {cpu: "2", memory: 8Gi}
       limits: {cpu: "8", memory: 24Gi}
   indexer:
-    executable: /usr/local/bin/grepnest-indexer
+    executable: /usr/local/bin/graphnest-indexer
     gitExecutable: /usr/bin/git
     zoektGitIndexExecutable: /usr/local/bin/zoekt-git-index
     minFreeBytes: 10737418240
@@ -158,7 +158,7 @@ node:
   podAnnotations: {}
 
 migration:
-  executable: /usr/local/bin/grepnest-migrate
+  executable: /usr/local/bin/graphnest-migrate
   backoffLimit: 1
   activeDeadlineSeconds: 600
   resources:
@@ -206,54 +206,54 @@ The chart maps these exact non-secret environment names:
 
 ```text
 server ConfigMap:
-GREPNEST_LISTEN_ADDRESS, GREPNEST_ZOEKT_URL,
-GREPNEST_GITHUB_WEB_URL, GREPNEST_GITHUB_API_URL,
-GREPNEST_GITHUB_UPLOAD_URL, GREPNEST_GITHUB_GIT_URL,
-GREPNEST_GITHUB_API_VERSION, GREPNEST_GITHUB_APP_ID,
-GREPNEST_USER_INSTALLATION_ID, GREPNEST_ADMIN_INSTALLATION_ID,
-GREPNEST_USER_REPOSITORY_IDS, GREPNEST_ADMIN_REPOSITORY_IDS,
-GREPNEST_DEFAULT_RESULTS, GREPNEST_MAX_RESULTS,
-GREPNEST_DEFAULT_CONTEXT_LINES, GREPNEST_MAX_CONTEXT_LINES,
-GREPNEST_DEFAULT_TIMEOUT, GREPNEST_MAX_TIMEOUT,
-GREPNEST_MAX_REQUEST_BYTES, GREPNEST_MAX_RESPONSE_BYTES,
-GREPNEST_GITHUB_PRIVATE_KEY_FILE, GREPNEST_GITHUB_WEBHOOK_SECRET_FILE,
-GREPNEST_GITHUB_CA_FILE
+GRAPHNEST_LISTEN_ADDRESS, GRAPHNEST_ZOEKT_URL,
+GRAPHNEST_GITHUB_WEB_URL, GRAPHNEST_GITHUB_API_URL,
+GRAPHNEST_GITHUB_UPLOAD_URL, GRAPHNEST_GITHUB_GIT_URL,
+GRAPHNEST_GITHUB_API_VERSION, GRAPHNEST_GITHUB_APP_ID,
+GRAPHNEST_USER_INSTALLATION_ID, GRAPHNEST_ADMIN_INSTALLATION_ID,
+GRAPHNEST_USER_REPOSITORY_IDS, GRAPHNEST_ADMIN_REPOSITORY_IDS,
+GRAPHNEST_DEFAULT_RESULTS, GRAPHNEST_MAX_RESULTS,
+GRAPHNEST_DEFAULT_CONTEXT_LINES, GRAPHNEST_MAX_CONTEXT_LINES,
+GRAPHNEST_DEFAULT_TIMEOUT, GRAPHNEST_MAX_TIMEOUT,
+GRAPHNEST_MAX_REQUEST_BYTES, GRAPHNEST_MAX_RESPONSE_BYTES,
+GRAPHNEST_GITHUB_PRIVATE_KEY_FILE, GRAPHNEST_GITHUB_WEBHOOK_SECRET_FILE,
+GRAPHNEST_GITHUB_CA_FILE
 
 node ConfigMap:
-GREPNEST_ZOEKT_URL, GREPNEST_GITHUB_WEB_URL,
-GREPNEST_GITHUB_API_URL, GREPNEST_GITHUB_UPLOAD_URL,
-GREPNEST_GITHUB_GIT_URL, GREPNEST_GITHUB_API_VERSION,
-GREPNEST_GITHUB_APP_ID, GREPNEST_GITHUB_PRIVATE_KEY_FILE,
-GREPNEST_GITHUB_CA_FILE,
-GREPNEST_DATA_DIR, GREPNEST_INDEX_DIR, GREPNEST_GIT_PATH,
-GREPNEST_ZOEKT_GIT_INDEX, GREPNEST_MIN_FREE_BYTES
+GRAPHNEST_ZOEKT_URL, GRAPHNEST_GITHUB_WEB_URL,
+GRAPHNEST_GITHUB_API_URL, GRAPHNEST_GITHUB_UPLOAD_URL,
+GRAPHNEST_GITHUB_GIT_URL, GRAPHNEST_GITHUB_API_VERSION,
+GRAPHNEST_GITHUB_APP_ID, GRAPHNEST_GITHUB_PRIVATE_KEY_FILE,
+GRAPHNEST_GITHUB_CA_FILE,
+GRAPHNEST_DATA_DIR, GRAPHNEST_INDEX_DIR, GRAPHNEST_GIT_PATH,
+GRAPHNEST_ZOEKT_GIT_INDEX, GRAPHNEST_MIN_FREE_BYTES
 
 Secret-backed environment:
-GREPNEST_DATABASE_URL, GREPNEST_USER_TOKEN, GREPNEST_ADMIN_TOKEN
+GRAPHNEST_DATABASE_URL, GRAPHNEST_USER_TOKEN, GRAPHNEST_ADMIN_TOKEN
 
 Downward API:
-GREPNEST_WORKER_ID = metadata.name
+GRAPHNEST_WORKER_ID = metadata.name
 ```
 
 ### Task 1: Chart Contract, Schema, and Shared Helpers
 
 **Files:**
-- Create: `deploy/helm/grepnest/Chart.yaml`
-- Create: `deploy/helm/grepnest/values.yaml`
-- Create: `deploy/helm/grepnest/values.schema.json`
-- Create: `deploy/helm/grepnest/ci/minimal-values.yaml`
-- Create: `deploy/helm/grepnest/templates/_helpers.tpl`
+- Create: `deploy/helm/graphnest/Chart.yaml`
+- Create: `deploy/helm/graphnest/values.yaml`
+- Create: `deploy/helm/graphnest/values.schema.json`
+- Create: `deploy/helm/graphnest/ci/minimal-values.yaml`
+- Create: `deploy/helm/graphnest/templates/_helpers.tpl`
 
 **Interfaces:**
 - Consumes: Helm 3 and the Complete Values Interface above.
-- Produces: chart `grepnest` version `0.1.0`, app version `0.0.0-pilot`, helpers `grepnest.name`, `grepnest.fullname`, `grepnest.labels`, `grepnest.selectorLabels`, `grepnest.serverName`, `grepnest.nodeName`, `grepnest.image`, and schema-validated operator inputs.
+- Produces: chart `graphnest` version `0.1.0`, app version `0.0.0-pilot`, helpers `graphnest.name`, `graphnest.fullname`, `graphnest.labels`, `graphnest.selectorLabels`, `graphnest.serverName`, `graphnest.nodeName`, `graphnest.image`, and schema-validated operator inputs.
 
 - [ ] **Step 1: RED — prove the chart does not exist**
 
 Run:
 
 ```bash
-helm lint deploy/helm/grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml
+helm lint deploy/helm/graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml
 ```
 
 Expected: FAIL with `no such file or directory` or `Chart.yaml file is missing`.
@@ -264,8 +264,8 @@ Create `Chart.yaml`:
 
 ```yaml
 apiVersion: v2
-name: grepnest
-description: Generic Kubernetes chart for the GrepNest single-node pilot
+name: graphnest
+description: Generic Kubernetes chart for the GraphNest single-node pilot
 type: application
 version: 0.1.0
 appVersion: 0.0.0-pilot
@@ -279,14 +279,14 @@ Create `ci/minimal-values.yaml`:
 ```yaml
 images:
   application:
-    repository: registry.example.invalid/grepnest/application
+    repository: registry.example.invalid/graphnest/application
     digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   node:
-    repository: registry.example.invalid/grepnest/node
+    repository: registry.example.invalid/graphnest/node
     digest: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 secrets:
-  runtime: {name: grepnest-runtime}
-  githubApp: {name: grepnest-github-app}
+  runtime: {name: graphnest-runtime}
+  githubApp: {name: graphnest-github-app}
 server:
   config:
     githubAppID: "12345"
@@ -560,22 +560,22 @@ cannot compare numeric siblings.
 Use standard 63-character truncation for names and these exact helper contracts:
 
 ```gotemplate
-{{- define "grepnest.image" -}}
+{{- define "graphnest.image" -}}
 {{- printf "%s@%s" (required "image repository is required" .repository) (required "image sha256 digest is required" .digest) -}}
 {{- end }}
-{{- define "grepnest.serverName" -}}{{ include "grepnest.fullname" . }}-server{{- end }}
-{{- define "grepnest.nodeName" -}}{{ include "grepnest.fullname" . }}-node{{- end }}
+{{- define "graphnest.serverName" -}}{{ include "graphnest.fullname" . }}-server{{- end }}
+{{- define "graphnest.nodeName" -}}{{ include "graphnest.fullname" . }}-node{{- end }}
 ```
 
-`grepnest.labels` emits `helm.sh/chart`, `app.kubernetes.io/name`, `app.kubernetes.io/instance`, `app.kubernetes.io/version`, and `app.kubernetes.io/managed-by`. `grepnest.selectorLabels` emits only name and instance; workloads add `app.kubernetes.io/component: server|node|migration`.
+`graphnest.labels` emits `helm.sh/chart`, `app.kubernetes.io/name`, `app.kubernetes.io/instance`, `app.kubernetes.io/version`, and `app.kubernetes.io/managed-by`. `graphnest.selectorLabels` emits only name and instance; workloads add `app.kubernetes.io/component: server|node|migration`.
 
 - [ ] **Step 5: GREEN — verify valid and invalid contracts**
 
 Run:
 
 ```bash
-helm lint deploy/helm/grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml
-helm lint deploy/helm/grepnest --set images.application.repository=x --set images.application.digest=latest
+helm lint deploy/helm/graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml
+helm lint deploy/helm/graphnest --set images.application.repository=x --set images.application.digest=latest
 ```
 
 Expected: first command PASS; second command FAIL and name `images.node.repository` plus invalid digest syntax.
@@ -584,36 +584,36 @@ Expected: first command PASS; second command FAIL and name `images.node.reposito
 
 ```bash
 git status --short
-git add deploy/helm/grepnest/Chart.yaml deploy/helm/grepnest/values.yaml deploy/helm/grepnest/values.schema.json deploy/helm/grepnest/ci/minimal-values.yaml deploy/helm/grepnest/templates/_helpers.tpl
+git add deploy/helm/graphnest/Chart.yaml deploy/helm/graphnest/values.yaml deploy/helm/graphnest/values.schema.json deploy/helm/graphnest/ci/minimal-values.yaml deploy/helm/graphnest/templates/_helpers.tpl
 git commit -S -m "feat(helm): define chart contract"
 ```
 
 ### Task 2: Server Workload and Existing-Secret Wiring
 
 **Files:**
-- Create: `deploy/helm/grepnest/templates/serviceaccounts.yaml`
-- Create: `deploy/helm/grepnest/templates/configmaps.yaml`
-- Create: `deploy/helm/grepnest/templates/server.yaml`
-- Create: `deploy/helm/grepnest/templates/pdb.yaml`
+- Create: `deploy/helm/graphnest/templates/serviceaccounts.yaml`
+- Create: `deploy/helm/graphnest/templates/configmaps.yaml`
+- Create: `deploy/helm/graphnest/templates/server.yaml`
+- Create: `deploy/helm/graphnest/templates/pdb.yaml`
 
 **Interfaces:**
 - Consumes: `images.application`, `secrets.*`, `server.*`, and helpers from Task 1.
-- Produces: `<release>-grepnest-server` Deployment/Service/ServiceAccount/ConfigMap and optional PDB; Service port name `http`; selector component `server`.
+- Produces: `<release>-graphnest-server` Deployment/Service/ServiceAccount/ConfigMap and optional PDB; Service port name `http`; selector component `server`.
 
 - [ ] **Step 1: RED — assert the server contract before templates exist**
 
 Run:
 
 ```bash
-helm template pilot deploy/helm/grepnest -n grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml > /tmp/grepnest-server.yaml
-rg -n '^kind: Deployment$|name: pilot-grepnest-server$|automountServiceAccountToken: false|containerPort: 8080|path: /readyz|readOnlyRootFilesystem: true' /tmp/grepnest-server.yaml
+helm template pilot deploy/helm/graphnest -n graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml > /tmp/graphnest-server.yaml
+rg -n '^kind: Deployment$|name: pilot-graphnest-server$|automountServiceAccountToken: false|containerPort: 8080|path: /readyz|readOnlyRootFilesystem: true' /tmp/graphnest-server.yaml
 ```
 
 Expected: render exits 0, then `rg` FAILS because no server resources exist.
 
 - [ ] **Step 2: GREEN — render server configuration and ServiceAccount**
 
-Add one server ConfigMap using the exact server ConfigMap environment mapping above. Derive `GREPNEST_ZOEKT_URL` as `http://<release>-grepnest-zoekt:<node.service.port>`, set the two secret file paths to `/var/run/secrets/grepnest/github/private-key.pem` and `/var/run/secrets/grepnest/github/webhook-secret`, and emit `GREPNEST_GITHUB_CA_FILE=/var/run/secrets/grepnest/ca/ca.crt` only when `secrets.customCA.name` is non-empty. Do not emit the Milestone 1 fixture registry or repository-name lists; the full pilot is database-backed.
+Add one server ConfigMap using the exact server ConfigMap environment mapping above. Derive `GRAPHNEST_ZOEKT_URL` as `http://<release>-graphnest-zoekt:<node.service.port>`, set the two secret file paths to `/var/run/secrets/graphnest/github/private-key.pem` and `/var/run/secrets/graphnest/github/webhook-secret`, and emit `GRAPHNEST_GITHUB_CA_FILE=/var/run/secrets/graphnest/ca/ca.crt` only when `secrets.customCA.name` is non-empty. Do not emit the Milestone 1 fixture registry or repository-name lists; the full pilot is database-backed.
 
 Create the release-managed server ServiceAccount with:
 
@@ -646,7 +646,7 @@ readinessProbe:
   httpGet: {path: /readyz, port: http}
 ```
 
-Set pod `securityContext.runAsNonRoot: true` and `securityContext.seccompProfile.type: RuntimeDefault`. Merge additive `server.podSecurityContext` fields without setting a UID/GID by default, but reserve those two chart-owned keys so operator input cannot duplicate or override them. Set pod and ServiceAccount token automount false, and use the digest-only application image helper. Load non-secrets with `envFrom.configMapRef`; load the three runtime Secret keys with individual `secretKeyRef` entries. Mount only the private-key and webhook-secret keys from the GitHub App Secret using `items`, read-only. When configured, mount only the selected CA key read-only at `/var/run/secrets/grepnest/ca/ca.crt`. Add `emptyDir` volumes for `/tmp` and `/var/run/grepnest`; set `HOME=/var/run/grepnest`. Wire resources, image pull secrets, annotations, nodeSelector, affinity, tolerations, and topology spread directly from values.
+Set pod `securityContext.runAsNonRoot: true` and `securityContext.seccompProfile.type: RuntimeDefault`. Merge additive `server.podSecurityContext` fields without setting a UID/GID by default, but reserve those two chart-owned keys so operator input cannot duplicate or override them. Set pod and ServiceAccount token automount false, and use the digest-only application image helper. Load non-secrets with `envFrom.configMapRef`; load the three runtime Secret keys with individual `secretKeyRef` entries. Mount only the private-key and webhook-secret keys from the GitHub App Secret using `items`, read-only. When configured, mount only the selected CA key read-only at `/var/run/secrets/graphnest/ca/ca.crt`. Add `emptyDir` volumes for `/tmp` and `/var/run/graphnest`; set `HOME=/var/run/graphnest`. Wire resources, image pull secrets, annotations, nodeSelector, affinity, tolerations, and topology spread directly from values.
 
 The Service is always `ClusterIP`, selects only component `server`, maps `server.service.port` to named target `http`, and carries only `server.service.annotations`.
 
@@ -662,9 +662,9 @@ one, then render `policy/v1` PodDisruptionBudget selecting the server with
 Run:
 
 ```bash
-helm template pilot deploy/helm/grepnest -n grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml > /tmp/grepnest-server.yaml
-rg -n 'kind: Deployment|kind: Service|kind: PodDisruptionBudget|registry\.example\.invalid/grepnest/application@sha256:a{64}|automountServiceAccountToken: false|path: /healthz|path: /readyz|readOnlyRootFilesystem: true|drop:|RuntimeDefault' /tmp/grepnest-server.yaml
-! rg -n '^kind: Secret$|runAsUser:|privileged: true|hostPath:|:latest' /tmp/grepnest-server.yaml
+helm template pilot deploy/helm/graphnest -n graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml > /tmp/graphnest-server.yaml
+rg -n 'kind: Deployment|kind: Service|kind: PodDisruptionBudget|registry\.example\.invalid/graphnest/application@sha256:a{64}|automountServiceAccountToken: false|path: /healthz|path: /readyz|readOnlyRootFilesystem: true|drop:|RuntimeDefault' /tmp/graphnest-server.yaml
+! rg -n '^kind: Secret$|runAsUser:|privileged: true|hostPath:|:latest' /tmp/graphnest-server.yaml
 ```
 
 Expected: every positive pattern matches; forbidden scan exits 0 because `rg` finds nothing.
@@ -673,42 +673,42 @@ Expected: every positive pattern matches; forbidden scan exits 0 because `rg` fi
 
 ```bash
 git status --short
-git add deploy/helm/grepnest/templates/serviceaccounts.yaml deploy/helm/grepnest/templates/configmaps.yaml deploy/helm/grepnest/templates/server.yaml deploy/helm/grepnest/templates/pdb.yaml
+git add deploy/helm/graphnest/templates/serviceaccounts.yaml deploy/helm/graphnest/templates/configmaps.yaml deploy/helm/graphnest/templates/server.yaml deploy/helm/graphnest/templates/pdb.yaml
 git commit -S -m "feat(helm): add server workload"
 ```
 
 ### Task 3: Single-Replica Zoekt Node and Persistent Storage
 
 **Files:**
-- Modify: `deploy/helm/grepnest/templates/configmaps.yaml`
-- Create: `deploy/helm/grepnest/templates/node.yaml`
+- Modify: `deploy/helm/graphnest/templates/configmaps.yaml`
+- Create: `deploy/helm/graphnest/templates/node.yaml`
 
 **Interfaces:**
 - Consumes: `images.node`, `secrets.runtime`, `secrets.githubApp`, `secrets.customCA`, and `node.*`.
-- Produces: `<release>-grepnest-node` StatefulSet, headless governing Service named `<release>-grepnest-node`, internal ClusterIP Zoekt Service named `<release>-grepnest-zoekt`, and claim template `data`.
+- Produces: `<release>-graphnest-node` StatefulSet, headless governing Service named `<release>-graphnest-node`, internal ClusterIP Zoekt Service named `<release>-graphnest-zoekt`, and claim template `data`.
 
 - [ ] **Step 1: RED — assert the node topology before implementation**
 
 Run:
 
 ```bash
-helm template pilot deploy/helm/grepnest -n grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml > /tmp/grepnest-node.yaml
-rg -n '^kind: StatefulSet$|name: zoekt-webserver$|name: grepnest-indexer$|claimName: data|storage: 250Gi|clusterIP: None|name: pilot-grepnest-zoekt$' /tmp/grepnest-node.yaml
+helm template pilot deploy/helm/graphnest -n graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml > /tmp/graphnest-node.yaml
+rg -n '^kind: StatefulSet$|name: zoekt-webserver$|name: graphnest-indexer$|claimName: data|storage: 250Gi|clusterIP: None|name: pilot-graphnest-zoekt$' /tmp/graphnest-node.yaml
 ```
 
 Expected: FAIL because the StatefulSet and Zoekt Services do not exist.
 
 - [ ] **Step 2: GREEN — add node non-secret configuration**
 
-Extend the ConfigMap template with the exact node environment mapping. Use the internal Zoekt URL, configured GitHub endpoints, executable/path values, and a decimal string for `GREPNEST_MIN_FREE_BYTES`. Do not place the database URL, tokens, private keys, webhook secrets, or CA contents in the ConfigMap.
+Extend the ConfigMap template with the exact node environment mapping. Use the internal Zoekt URL, configured GitHub endpoints, executable/path values, and a decimal string for `GRAPHNEST_MIN_FREE_BYTES`. Do not place the database URL, tokens, private keys, webhook secrets, or CA contents in the ConfigMap.
 
 - [ ] **Step 3: GREEN — render the one-pod, two-container StatefulSet**
 
-Set `replicas: 1`, `serviceName: <release>-grepnest-node`, `podManagementPolicy: OrderedReady`, and `updateStrategy.type: RollingUpdate`. Both containers use the same digest-pinned node image and common security context from Task 2.
+Set `replicas: 1`, `serviceName: <release>-graphnest-node`, `podManagementPolicy: OrderedReady`, and `updateStrategy.type: RollingUpdate`. Both containers use the same digest-pinned node image and common security context from Task 2.
 
 `zoekt-webserver` runs `[node.zoekt.executable]` with chart-derived `-index <node.paths.indexes>`, `-listen :<node.zoekt.port>`, `-rpc`, and `-html=false` arguments. It exposes named TCP port `zoekt`, mounts `data` read-only at `node.paths.indexes` using the path relative to `node.paths.data` as its PVC `subPath`, and has TCP startup/readiness probes on `zoekt`. Rendering fails unless `node.paths.indexes` is a child of `node.paths.data`. It receives no runtime Secret env or GitHub App mount.
 
-`grepnest-indexer` runs `[node.indexer.executable]`, loads the node ConfigMap, receives only `GREPNEST_DATABASE_URL` from the runtime Secret, obtains `GREPNEST_WORKER_ID` from `metadata.name`, mounts the GitHub private key plus optional CA read-only, and mounts `data` read-write at `node.paths.data`. The webhook secret remains server-only. Both containers get separate `/tmp` and runtime-home `emptyDir` mounts; no process supervisor is added.
+`graphnest-indexer` runs `[node.indexer.executable]`, loads the node ConfigMap, receives only `GRAPHNEST_DATABASE_URL` from the runtime Secret, obtains `GRAPHNEST_WORKER_ID` from `metadata.name`, mounts the GitHub private key plus optional CA read-only, and mounts `data` read-write at `node.paths.data`. The webhook secret remains server-only. Both containers get separate `/tmp` and runtime-home `emptyDir` mounts; no process supervisor is added.
 
 Render the claim template exactly as:
 
@@ -734,12 +734,12 @@ Render a headless Service (`clusterIP: None`) selecting component `node` for Sta
 Run:
 
 ```bash
-helm template pilot deploy/helm/grepnest -n grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml > /tmp/grepnest-node.yaml
-test "$(rg -c '^kind: StatefulSet$' /tmp/grepnest-node.yaml)" -eq 1
-rg -n 'replicas: 1|name: zoekt-webserver|name: grepnest-indexer|readOnly: true|mountPath: /data|storage: 250Gi|ReadWriteOnce|tcpSocket:|clusterIP: None|name: pilot-grepnest-zoekt' /tmp/grepnest-node.yaml
-test "$(rg -c 'name: GREPNEST_DATABASE_URL' /tmp/grepnest-node.yaml)" -eq 2
-if sed -n '/name: zoekt-webserver/,/name: grepnest-indexer/p' /tmp/grepnest-node.yaml | rg -q 'GREPNEST_DATABASE_URL|github-app'; then exit 1; fi
-! rg -n 'type: (NodePort|LoadBalancer)|kind: Ingress[[:space:]]*$.*zoekt' /tmp/grepnest-node.yaml
+helm template pilot deploy/helm/graphnest -n graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml > /tmp/graphnest-node.yaml
+test "$(rg -c '^kind: StatefulSet$' /tmp/graphnest-node.yaml)" -eq 1
+rg -n 'replicas: 1|name: zoekt-webserver|name: graphnest-indexer|readOnly: true|mountPath: /data|storage: 250Gi|ReadWriteOnce|tcpSocket:|clusterIP: None|name: pilot-graphnest-zoekt' /tmp/graphnest-node.yaml
+test "$(rg -c 'name: GRAPHNEST_DATABASE_URL' /tmp/graphnest-node.yaml)" -eq 2
+if sed -n '/name: zoekt-webserver/,/name: graphnest-indexer/p' /tmp/graphnest-node.yaml | rg -q 'GRAPHNEST_DATABASE_URL|github-app'; then exit 1; fi
+! rg -n 'type: (NodePort|LoadBalancer)|kind: Ingress[[:space:]]*$.*zoekt' /tmp/graphnest-node.yaml
 ```
 
 Expected: PASS; the two database URL occurrences are server plus indexer, never Zoekt.
@@ -748,26 +748,26 @@ Expected: PASS; the two database URL occurrences are server plus indexer, never 
 
 ```bash
 git status --short
-git add deploy/helm/grepnest/templates/configmaps.yaml deploy/helm/grepnest/templates/node.yaml
+git add deploy/helm/graphnest/templates/configmaps.yaml deploy/helm/graphnest/templates/node.yaml
 git commit -S -m "feat(helm): add single-node Zoekt workload"
 ```
 
 ### Task 4: Blocking Migration Hook
 
 **Files:**
-- Create: `deploy/helm/grepnest/templates/migration-job.yaml`
+- Create: `deploy/helm/graphnest/templates/migration-job.yaml`
 
 **Interfaces:**
 - Consumes: application image, runtime Secret database URL key, `migration.*`, and the namespace default ServiceAccount.
-- Produces: `<release>-grepnest-migrate` `batch/v1` Job with Helm hook lifecycle.
+- Produces: `<release>-graphnest-migrate` `batch/v1` Job with Helm hook lifecycle.
 
 - [ ] **Step 1: RED — assert hook semantics before implementation**
 
 Run:
 
 ```bash
-helm template pilot deploy/helm/grepnest -n grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml > /tmp/grepnest-migration.yaml
-rg -n 'helm.sh/hook: pre-install,pre-upgrade|helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded|helm.sh/hook-weight: "-10"|activeDeadlineSeconds: 600' /tmp/grepnest-migration.yaml
+helm template pilot deploy/helm/graphnest -n graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml > /tmp/graphnest-migration.yaml
+rg -n 'helm.sh/hook: pre-install,pre-upgrade|helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded|helm.sh/hook-weight: "-10"|activeDeadlineSeconds: 600' /tmp/graphnest-migration.yaml
 ```
 
 Expected: FAIL because no migration Job exists.
@@ -790,16 +790,16 @@ spec:
       restartPolicy: Never
 ```
 
-Retaining failures is deliberate: do not include `hook-failed` in the delete policy. Give the container only `GREPNEST_DATABASE_URL` from the runtime Secret, `/tmp`, runtime home, resources, and the common security defaults. Do not mount the GitHub App Secret or custom CA and do not inject bearer tokens, webhook secret, or node PVC.
+Retaining failures is deliberate: do not include `hook-failed` in the delete policy. Give the container only `GRAPHNEST_DATABASE_URL` from the runtime Secret, `/tmp`, runtime home, resources, and the common security defaults. Do not mount the GitHub App Secret or custom CA and do not inject bearer tokens, webhook secret, or node PVC.
 
 - [ ] **Step 3: GREEN — verify the failure-retention contract**
 
 Run:
 
 ```bash
-helm template pilot deploy/helm/grepnest -n grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml > /tmp/grepnest-migration.yaml
-rg -n 'kind: Job|pre-install,pre-upgrade|before-hook-creation,hook-succeeded|activeDeadlineSeconds: 600|GREPNEST_DATABASE_URL|readOnlyRootFilesystem: true' /tmp/grepnest-migration.yaml
-! rg -n 'hook-failed|GREPNEST_USER_TOKEN|GREPNEST_ADMIN_TOKEN|GREPNEST_GITHUB_WEBHOOK_SECRET_FILE' /tmp/grepnest-migration.yaml
+helm template pilot deploy/helm/graphnest -n graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml > /tmp/graphnest-migration.yaml
+rg -n 'kind: Job|pre-install,pre-upgrade|before-hook-creation,hook-succeeded|activeDeadlineSeconds: 600|GRAPHNEST_DATABASE_URL|readOnlyRootFilesystem: true' /tmp/graphnest-migration.yaml
+! rg -n 'hook-failed|GRAPHNEST_USER_TOKEN|GRAPHNEST_ADMIN_TOKEN|GRAPHNEST_GITHUB_WEBHOOK_SECRET_FILE' /tmp/graphnest-migration.yaml
 ```
 
 Expected: PASS; a failed hook remains for diagnosis and blocks install/upgrade naturally.
@@ -808,16 +808,16 @@ Expected: PASS; a failed hook remains for diagnosis and blocks install/upgrade n
 
 ```bash
 git status --short
-git add deploy/helm/grepnest/templates/migration-job.yaml
+git add deploy/helm/graphnest/templates/migration-job.yaml
 git commit -S -m "feat(helm): add migration hook"
 ```
 
 ### Task 5: Optional Generic Ingress and Monitoring
 
 **Files:**
-- Create: `deploy/helm/grepnest/ci/optional-values.yaml`
-- Create: `deploy/helm/grepnest/templates/ingress.yaml`
-- Create: `deploy/helm/grepnest/templates/servicemonitor.yaml`
+- Create: `deploy/helm/graphnest/ci/optional-values.yaml`
+- Create: `deploy/helm/graphnest/templates/ingress.yaml`
+- Create: `deploy/helm/graphnest/templates/servicemonitor.yaml`
 
 **Interfaces:**
 - Consumes: `ingress.*`, `monitoring.serviceMonitor.*`, and the server Service port `http`.
@@ -833,18 +833,18 @@ ingress:
   className: nginx
   annotations: {nginx.ingress.kubernetes.io/proxy-body-size: 1m}
   hosts:
-    - host: grepnest.example.invalid
+    - host: graphnest.example.invalid
       paths:
         - {path: /, pathType: Prefix}
   tls:
-    - secretName: grepnest-existing-tls
-      hosts: [grepnest.example.invalid]
+    - secretName: graphnest-existing-tls
+      hosts: [graphnest.example.invalid]
 monitoring:
   serviceMonitor:
     enabled: true
     labels: {monitoring: pilot}
 secrets:
-  customCA: {name: grepnest-existing-ca, key: ca.crt}
+  customCA: {name: graphnest-existing-ca, key: ca.crt}
 networkPolicy:
   serverIngress:
     ingressControllerNamespaceSelector:
@@ -856,8 +856,8 @@ networkPolicy:
 Run:
 
 ```bash
-helm template pilot deploy/helm/grepnest -n grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml -f deploy/helm/grepnest/ci/optional-values.yaml --api-versions monitoring.coreos.com/v1/ServiceMonitor > /tmp/grepnest-optional.yaml
-rg -n '^kind: Ingress$|^kind: ServiceMonitor$' /tmp/grepnest-optional.yaml
+helm template pilot deploy/helm/graphnest -n graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml -f deploy/helm/graphnest/ci/optional-values.yaml --api-versions monitoring.coreos.com/v1/ServiceMonitor > /tmp/graphnest-optional.yaml
+rg -n '^kind: Ingress$|^kind: ServiceMonitor$' /tmp/graphnest-optional.yaml
 ```
 
 Expected: FAIL because neither optional template exists.
@@ -884,10 +884,10 @@ Then render a ServiceMonitor selecting the server Service labels, endpoint port 
 Run:
 
 ```bash
-helm template pilot deploy/helm/grepnest -n grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml | rg '^kind: (Ingress|ServiceMonitor)$'
-helm template pilot deploy/helm/grepnest -n grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml -f deploy/helm/grepnest/ci/optional-values.yaml
-helm template pilot deploy/helm/grepnest -n grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml -f deploy/helm/grepnest/ci/optional-values.yaml --api-versions monitoring.coreos.com/v1/ServiceMonitor > /tmp/grepnest-optional.yaml
-rg -n 'apiVersion: networking.k8s.io/v1|kind: Ingress|secretName: grepnest-existing-tls|apiVersion: monitoring.coreos.com/v1|kind: ServiceMonitor|path: /metrics' /tmp/grepnest-optional.yaml
+helm template pilot deploy/helm/graphnest -n graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml | rg '^kind: (Ingress|ServiceMonitor)$'
+helm template pilot deploy/helm/graphnest -n graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml -f deploy/helm/graphnest/ci/optional-values.yaml
+helm template pilot deploy/helm/graphnest -n graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml -f deploy/helm/graphnest/ci/optional-values.yaml --api-versions monitoring.coreos.com/v1/ServiceMonitor > /tmp/graphnest-optional.yaml
+rg -n 'apiVersion: networking.k8s.io/v1|kind: Ingress|secretName: graphnest-existing-tls|apiVersion: monitoring.coreos.com/v1|kind: ServiceMonitor|path: /metrics' /tmp/graphnest-optional.yaml
 ```
 
 Expected: first command exits 1 because optional kinds are absent; second command FAILS with the exact CRD-required message; final render and scan PASS.
@@ -896,15 +896,15 @@ Expected: first command exits 1 because optional kinds are absent; second comman
 
 ```bash
 git status --short
-git add deploy/helm/grepnest/ci/optional-values.yaml deploy/helm/grepnest/templates/ingress.yaml deploy/helm/grepnest/templates/servicemonitor.yaml
+git add deploy/helm/graphnest/ci/optional-values.yaml deploy/helm/graphnest/templates/ingress.yaml deploy/helm/graphnest/templates/servicemonitor.yaml
 git commit -S -m "feat(helm): add optional integrations"
 ```
 
 ### Task 6: Ingress Isolation and Opt-In External Egress
 
 **Files:**
-- Create: `deploy/helm/grepnest/templates/networkpolicies.yaml`
-- Modify: `deploy/helm/grepnest/ci/optional-values.yaml`
+- Create: `deploy/helm/graphnest/templates/networkpolicies.yaml`
+- Modify: `deploy/helm/graphnest/ci/optional-values.yaml`
 
 **Interfaces:**
 - Consumes: component labels, server/Zoekt/PostgreSQL ports, namespace `.Release.Namespace`, and `networkPolicy.*`.
@@ -915,8 +915,8 @@ git commit -S -m "feat(helm): add optional integrations"
 Run:
 
 ```bash
-helm template pilot deploy/helm/grepnest -n grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml > /tmp/grepnest-policy.yaml
-rg -n 'name: pilot-grepnest-deny-ingress|name: pilot-grepnest-allow-server-ingress|name: pilot-grepnest-allow-zoekt-ingress|policyTypes:|podSelector: {}' /tmp/grepnest-policy.yaml
+helm template pilot deploy/helm/graphnest -n graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml > /tmp/graphnest-policy.yaml
+rg -n 'name: pilot-graphnest-deny-ingress|name: pilot-graphnest-allow-server-ingress|name: pilot-graphnest-allow-zoekt-ingress|policyTypes:|podSelector: {}' /tmp/graphnest-policy.yaml
 ```
 
 Expected: FAIL because no NetworkPolicy exists.
@@ -966,11 +966,11 @@ Do not infer IPs from hostnames, add broad `0.0.0.0/0`, or make egress restricti
 Run:
 
 ```bash
-helm template pilot deploy/helm/grepnest -n grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml > /tmp/grepnest-policy-minimal.yaml
-rg -n 'deny-ingress|allow-server-ingress|allow-zoekt-ingress' /tmp/grepnest-policy-minimal.yaml
-! rg -n 'deny-egress|192.0.2.10/32|198.51.100.0/24' /tmp/grepnest-policy-minimal.yaml
-helm template pilot deploy/helm/grepnest -n grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml -f deploy/helm/grepnest/ci/optional-values.yaml --api-versions monitoring.coreos.com/v1/ServiceMonitor > /tmp/grepnest-policy-optional.yaml
-rg -n 'deny-egress|allow-internal-egress|192.0.2.10/32|198.51.100.0/24|kube-system|k8s-app: kube-dns' /tmp/grepnest-policy-optional.yaml
+helm template pilot deploy/helm/graphnest -n graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml > /tmp/graphnest-policy-minimal.yaml
+rg -n 'deny-ingress|allow-server-ingress|allow-zoekt-ingress' /tmp/graphnest-policy-minimal.yaml
+! rg -n 'deny-egress|192.0.2.10/32|198.51.100.0/24' /tmp/graphnest-policy-minimal.yaml
+helm template pilot deploy/helm/graphnest -n graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml -f deploy/helm/graphnest/ci/optional-values.yaml --api-versions monitoring.coreos.com/v1/ServiceMonitor > /tmp/graphnest-policy-optional.yaml
+rg -n 'deny-egress|allow-internal-egress|192.0.2.10/32|198.51.100.0/24|kube-system|k8s-app: kube-dns' /tmp/graphnest-policy-optional.yaml
 ```
 
 Expected: PASS; default render contains ingress isolation only and optional render contains exact CIDR/DNS allows.
@@ -979,14 +979,14 @@ Expected: PASS; default render contains ingress isolation only and optional rend
 
 ```bash
 git status --short
-git add deploy/helm/grepnest/templates/networkpolicies.yaml deploy/helm/grepnest/ci/optional-values.yaml
+git add deploy/helm/graphnest/templates/networkpolicies.yaml deploy/helm/graphnest/ci/optional-values.yaml
 git commit -S -m "feat(helm): enforce network boundaries"
 ```
 
 ### Task 7: Render and Security Regression Harness
 
 **Files:**
-- Create: `deploy/helm/grepnest/tests/render.sh`
+- Create: `deploy/helm/graphnest/tests/render.sh`
 - Modify: `Makefile`
 
 **Interfaces:**
@@ -1009,8 +1009,8 @@ Create an executable POSIX shell script with `set -eu`, `mktemp -d`, and a trap.
 
 ```sh
 helm lint "$chart" -f "$minimal"
-helm template pilot "$chart" -n grepnest -f "$minimal" > "$tmp/minimal.yaml"
-helm template pilot "$chart" -n grepnest -f "$minimal" -f "$optional" \
+helm template pilot "$chart" -n graphnest -f "$minimal" > "$tmp/minimal.yaml"
+helm template pilot "$chart" -n graphnest -f "$minimal" -f "$optional" \
   --api-versions monitoring.coreos.com/v1/ServiceMonitor > "$tmp/optional.yaml"
 ```
 
@@ -1047,10 +1047,10 @@ Change `.PHONY` to include `helm-test`. Replace the existing Helm stub with:
 
 ```make
 helm-lint:
-	helm lint deploy/helm/grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml
+	helm lint deploy/helm/graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml
 
 helm-test:
-	sh deploy/helm/grepnest/tests/render.sh
+	sh deploy/helm/graphnest/tests/render.sh
 ```
 
 Do not add chart-testing, kubeconform, yq, jq, or a Helm plugin.
@@ -1070,14 +1070,14 @@ Expected: both commands exit 0; the script prints only Helm lint output and its 
 
 ```bash
 git status --short
-git add deploy/helm/grepnest/tests/render.sh Makefile
+git add deploy/helm/graphnest/tests/render.sh Makefile
 git commit -S -m "test(helm): add render security gate"
 ```
 
 ### Task 8: Operator Documentation and Whole-Chart Verification
 
 **Files:**
-- Create: `deploy/helm/grepnest/README.md`
+- Create: `deploy/helm/graphnest/README.md`
 - Modify: `docs/operations.md`
 - Modify: `README.md`
 
@@ -1090,7 +1090,7 @@ git commit -S -m "test(helm): add render security gate"
 Run:
 
 ```bash
-rg -n 'helm upgrade --install|grepnest-migrate|existing Secret|250Gi|ServiceMonitor' deploy/helm/grepnest/README.md docs/operations.md README.md
+rg -n 'helm upgrade --install|graphnest-migrate|existing Secret|250Gi|ServiceMonitor' deploy/helm/graphnest/README.md docs/operations.md README.md
 ```
 
 Expected: FAIL because the chart README does not exist and the current docs describe only Milestones 0-1.
@@ -1100,10 +1100,10 @@ Expected: FAIL because the chart README does not exist and the current docs desc
 Document these exact operator steps in the chart README:
 
 ```bash
-helm lint deploy/helm/grepnest -f my-values.yaml
-helm template grepnest deploy/helm/grepnest -n grepnest -f my-values.yaml
-helm upgrade --install grepnest deploy/helm/grepnest -n grepnest --create-namespace -f my-values.yaml --wait --timeout 15m
-helm rollback grepnest <REVISION> -n grepnest --wait --timeout 15m
+helm lint deploy/helm/graphnest -f my-values.yaml
+helm template graphnest deploy/helm/graphnest -n graphnest -f my-values.yaml
+helm upgrade --install graphnest deploy/helm/graphnest -n graphnest --create-namespace -f my-values.yaml --wait --timeout 15m
+helm rollback graphnest <REVISION> -n graphnest --wait --timeout 15m
 ```
 
 List the exact runtime, GitHub App, optional CA, image pull, and Ingress TLS existing-Secret names/keys from the values interface. State that the chart never creates Secrets or PostgreSQL, migration failure blocks install/upgrade and remains inspectable, ServiceMonitor requires its CRD, Zoekt must remain internal, and external egress CIDRs must cover DNS, GitHub, and PostgreSQL endpoints before enabling isolation.
@@ -1120,14 +1120,14 @@ Add the server/Zoekt/indexer resource defaults and 250Gi RWO default. State verb
 
 - [ ] **Step 4: GREEN — document the current implementation boundary**
 
-In the root README and operations guide, state that the chart is structurally renderable but is not currently deployable: this change does not build images and the required Milestone 2 `grepnest-indexer`/`grepnest-migrate` behavior is unfinished. Do not add OpenShift install commands, Route instructions, image build steps, PostgreSQL installation, or a cluster test claim.
+In the root README and operations guide, state that the chart is structurally renderable but is not currently deployable: this change does not build images and the required Milestone 2 `graphnest-indexer`/`graphnest-migrate` behavior is unfinished. Do not add OpenShift install commands, Route instructions, image build steps, PostgreSQL installation, or a cluster test claim.
 
 - [ ] **Step 5: GREEN — run documentation and repository regressions**
 
 Run:
 
 ```bash
-rg -n 'helm upgrade --install|existing Secret|migration failure|250Gi|ReadWriteOnce|measured source corpus size|not currently deployable' deploy/helm/grepnest/README.md docs/operations.md README.md
+rg -n 'helm upgrade --install|existing Secret|migration failure|250Gi|ReadWriteOnce|measured source corpus size|not currently deployable' deploy/helm/graphnest/README.md docs/operations.md README.md
 make test
 make helm-test
 ```
@@ -1138,7 +1138,7 @@ Expected: all required documentation phrases match; Go tests and chart harness P
 
 ```bash
 git status --short
-git add deploy/helm/grepnest/README.md docs/operations.md README.md
+git add deploy/helm/graphnest/README.md docs/operations.md README.md
 git commit -S -m "docs(helm): add operator guidance"
 ```
 
@@ -1152,7 +1152,7 @@ git diff --check main...HEAD
 git diff --name-only main...HEAD
 ```
 
-Expected: branch is `feat/helm-chart`; no whitespace errors; changed files are limited to `deploy/helm/grepnest/**`, `Makefile`, `README.md`, `docs/operations.md`, and this plan. No container, Go application, migration SQL, Compose, OpenShift, or Secret manifest file appears.
+Expected: branch is `feat/helm-chart`; no whitespace errors; changed files are limited to `deploy/helm/graphnest/**`, `Makefile`, `README.md`, `docs/operations.md`, and this plan. No container, Go application, migration SQL, Compose, OpenShift, or Secret manifest file appears.
 
 - [ ] **Step 8: Run every local regression gate**
 
@@ -1174,10 +1174,10 @@ Expected: every command exits 0.
 Run:
 
 ```bash
-helm template pilot deploy/helm/grepnest -n grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml > /tmp/grepnest-minimal-final.yaml
-helm template pilot deploy/helm/grepnest -n grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml -f deploy/helm/grepnest/ci/optional-values.yaml --api-versions monitoring.coreos.com/v1/ServiceMonitor > /tmp/grepnest-optional-final.yaml
-rg '^kind:' /tmp/grepnest-minimal-final.yaml
-rg '^kind:' /tmp/grepnest-optional-final.yaml
+helm template pilot deploy/helm/graphnest -n graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml > /tmp/graphnest-minimal-final.yaml
+helm template pilot deploy/helm/graphnest -n graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml -f deploy/helm/graphnest/ci/optional-values.yaml --api-versions monitoring.coreos.com/v1/ServiceMonitor > /tmp/graphnest-optional-final.yaml
+rg '^kind:' /tmp/graphnest-minimal-final.yaml
+rg '^kind:' /tmp/graphnest-optional-final.yaml
 ```
 
 Expected: minimal mode contains ConfigMaps, two release-managed ServiceAccounts

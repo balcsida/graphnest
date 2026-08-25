@@ -2,7 +2,7 @@
 
 ## Goal
 
-Prepare GrepNest for public source visibility without publishing it, then apply
+Prepare GraphNest for public source visibility without publishing it, then apply
 solo-maintainer branch and security protections as soon as GitHub permits them.
 
 ## Current constraints

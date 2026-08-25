@@ -15,14 +15,14 @@ semantic search, a UI, Redis, an ORM, or a general workflow engine.
 Run two Go processes against one PostgreSQL database and one Zoekt node:
 
 ```text
-GitHub Enterprise -> grepnest-server -> PostgreSQL <- grepnest-indexer
+GitHub Enterprise -> graphnest-server -> PostgreSQL <- graphnest-indexer
                           |                          |
                     REST and MCP               Git -> Zoekt
 ```
 
-`grepnest-server` owns webhook verification, GitHub reconciliation, repository
+`graphnest-server` owns webhook verification, GitHub reconciliation, repository
 and status APIs, indexed-SHA file reads, and the PostgreSQL-backed repository
-registry. `grepnest-indexer` claims one leased job at a time, fetches one
+registry. `graphnest-indexer` claims one leased job at a time, fetches one
 default branch, invokes the pinned Zoekt indexer, and publishes completion only
 after Zoekt exposes the requested revision.
 
@@ -159,7 +159,7 @@ a configurable cap rejects oversized repositories before token minting or
 fetch, while the free-space floor remains a second volume-level guard.
 
 The pinned Zoekt indexer honors a repository's commit-resident
-`.sourcegraph/ignore`. GrepNest does not synthesize or mutate that file because
+`.sourcegraph/ignore`. GraphNest does not synthesize or mutate that file because
 doing so would index a different commit and break indexed-SHA consistency.
 Deployment-wide injected exclusion patterns require an upstream indexer input
 that preserves the original commit identity and are deferred from Milestone 2;
