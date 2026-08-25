@@ -15,7 +15,7 @@
 
 OIDC is the primary browser authentication path. Local administrator recovery
 is disabled by default and requires two independent operator actions: offline
-password provisioning through `grepnest-admin` standard input or a terminal,
+password provisioning through `graphnest-admin` standard input or a terminal,
 then deliberate route enablement in deployment configuration. Passwords,
 hashes, salts, session tokens, request bodies, and OIDC claims are absent from
 deployment values and audit records. An unavailable or failing IdP never
@@ -38,7 +38,7 @@ replicas restart.
 During a recovery window, expose `/auth/local` and `/auth/local/rotate` only
 through a trusted edge. That edge must establish the real client address from
 its own trusted proxy chain and rate-limit both routes by that address. Do not
-accept `Forwarded` or `X-Forwarded-*` from arbitrary peers: GrepNest's shared
+accept `Forwarded` or `X-Forwarded-*` from arbitrary peers: GraphNest's shared
 throttle uses the transport peer address, so a shared proxy otherwise makes
 all clients appear as one source.
 

@@ -7,7 +7,7 @@ Complete on `feat/ladybug-graph`.
 ## Delivered
 
 - Added one real PostgreSQL/LadybugDB public graph contract for embedded
-  runtime ownership and the standalone `grepnest-graph` command.
+  runtime ownership and the standalone `graphnest-graph` command.
 - Compared REST and MCP context, impact, trace, and administrator Cypher
   results for both modes.
 - Covered exact commits, category/depth boundaries, partial results, Cypher
@@ -111,7 +111,7 @@ internal/postgres: PASS
 internal/authz: PASS
 internal/webhook: PASS
 test/integration: PASS
-cmd/grepnest-indexer: PASS
+cmd/graphnest-indexer: PASS
 ```
 
 This includes the new embedded/standalone public contract and the pre-existing
@@ -198,7 +198,7 @@ Signing succeeded while the user was present; no unsigned fallback was used.
   databases are closed, scanner worktrees are removed, and PostgreSQL schemas
   use existing bounded cleanup.
 - Skill installation: existing race coverage for `internal/agentskills` and
-  `cmd/grepnest-mcp` remained green; Task 7's idempotent install and no-write
+  `cmd/graphnest-mcp` remained green; Task 7's idempotent install and no-write
   proxy behavior was not reimplemented.
 - No production graph code, new testing framework, dependency, speculative
   platform matrix, public graph endpoint, or live deployment claim was added.
@@ -224,7 +224,7 @@ export GOCACHE="$PWD/.cache/go-build" XDG_CACHE_HOME="$PWD/.cache"
 export DYLD_LIBRARY_PATH="$PWD/.cache/ladybug/v0.18.3"
 export CGO_CFLAGS="-I$PWD/.cache/ladybug/v0.18.3"
 export CGO_LDFLAGS="-L$PWD/.cache/ladybug/v0.18.3"
-export GREPNEST_TEST_POSTGRES_DSN='postgres://grepnest:grepnest@192.168.107.2:5432/grepnest?sslmode=disable'
+export GRAPHNEST_TEST_POSTGRES_DSN='postgres://graphnest:graphnest@192.168.107.2:5432/graphnest?sslmode=disable'
 
 go test -v -tags='e2e system_ladybug' ./test/e2e \
   -run '^TestGraphLanguageFixturesReachRESTAndMCP$' -count=1
@@ -239,7 +239,7 @@ so rerun `make e2e` or `make postgres-integration` when it changes.
 
 ```text
 # RED: the old inspection loop returned the last successful pipeline status.
-for binary in missing-binary grepnest-graph; do \
+for binary in missing-binary graphnest-graph; do \
   otool -L .cache/native/$binary | rg 'liblbug'; done
 error: ... can't open file: .cache/native/missing-binary
 @rpath/liblbug.0.dylib ...

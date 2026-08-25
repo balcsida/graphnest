@@ -1,4 +1,4 @@
-# GrepNest Search Workspace Redesign Implementation Plan
+# GraphNest Search Workspace Redesign Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -102,7 +102,7 @@ func TestConsoleKeepsHiddenApplicationStatesAuthoritative(t *testing.T) {
 Run:
 
 ```bash
-GOCACHE=/tmp/grepnest-webui-go-build go test ./internal/webui -run 'TestConsoleMatchesApprovedSearchWorkspaceContract|TestConsoleKeepsHiddenApplicationStatesAuthoritative'
+GOCACHE=/tmp/graphnest-webui-go-build go test ./internal/webui -run 'TestConsoleMatchesApprovedSearchWorkspaceContract|TestConsoleKeepsHiddenApplicationStatesAuthoritative'
 ```
 
 Expected: FAIL because the new classes, palette, grid, and authoritative
@@ -125,7 +125,7 @@ Use this structural skeleton while preserving all current IDs and labels:
 
 ```html
 <header class="app-bar">
-  <a class="wordmark" href="/">GrepNest</a>
+  <a class="wordmark" href="/">GraphNest</a>
   <span class="product-label">Code search</span>
   <button id="sign-out" type="button" hidden>Sign out</button>
 </header>
@@ -146,11 +146,11 @@ Use this structural skeleton while preserving all current IDs and labels:
   <section id="token-gate" aria-labelledby="token-title">
     <form id="token-form" class="token-panel">
       <p class="eyebrow">Private code search</p>
-      <h1 id="token-title">Connect to GrepNest</h1>
+      <h1 id="token-title">Connect to GraphNest</h1>
       <p>Use a bearer token for this browser session.</p>
       <label for="token">Bearer token</label>
       <input id="token" type="password" autocomplete="off" required>
-      <button type="submit">Open GrepNest</button>
+      <button type="submit">Open GraphNest</button>
     </form>
   </section>
   <section id="workspace" hidden>
@@ -159,7 +159,7 @@ Use this structural skeleton while preserving all current IDs and labels:
       <p id="repository-count">All authorized repositories</p>
       <h2>Query examples</h2>
       <code>file:\.go NewService</code>
-      <code>case:yes GrepNest</code>
+      <code>case:yes GraphNest</code>
     </aside>
     <section class="results-panel" aria-labelledby="results-title">
       <header class="results-summary">
@@ -178,7 +178,7 @@ Use this structural skeleton while preserving all current IDs and labels:
 Run:
 
 ```bash
-GOCACHE=/tmp/grepnest-webui-go-build go test ./internal/webui
+GOCACHE=/tmp/graphnest-webui-go-build go test ./internal/webui
 ```
 
 Expected: PASS.
@@ -248,7 +248,7 @@ func TestConsoleRendersGroupedCodeResults(t *testing.T) {
 Run:
 
 ```bash
-GOCACHE=/tmp/grepnest-webui-go-build go test ./internal/webui -run TestConsoleRendersGroupedCodeResults
+GOCACHE=/tmp/graphnest-webui-go-build go test ./internal/webui -run TestConsoleRendersGroupedCodeResults
 ```
 
 Expected: FAIL because the current renderer builds `.result` cards.
@@ -321,7 +321,7 @@ a fixed line-number column plus `max-content` code, and
 Run:
 
 ```bash
-GOCACHE=/tmp/grepnest-webui-go-build go test ./internal/webui
+GOCACHE=/tmp/graphnest-webui-go-build go test ./internal/webui
 ```
 
 Expected: PASS.
@@ -397,7 +397,7 @@ func TestConsoleKeepsBrowserPerformanceBudget(t *testing.T) {
 Run:
 
 ```bash
-GOCACHE=/tmp/grepnest-webui-go-build go test ./internal/webui -run TestConsoleKeepsBrowserPerformanceBudget
+GOCACHE=/tmp/graphnest-webui-go-build go test ./internal/webui -run TestConsoleKeepsBrowserPerformanceBudget
 ```
 
 Expected: PASS if Tasks 1 and 2 respected the budget; otherwise FAIL on the
@@ -415,7 +415,7 @@ to hide structural growth.
 Run:
 
 ```bash
-GOCACHE=/tmp/grepnest-webui-go-build go test ./internal/webui
+GOCACHE=/tmp/graphnest-webui-go-build go test ./internal/webui
 wc -c internal/webui/index.html
 ```
 
@@ -434,20 +434,20 @@ git commit -S -m "test(webui): enforce browser performance budgets"
 ### Task 4: Verify Real Browser Geometry and Capture Settled Screenshots
 
 **Files:**
-- Generate outside git: `/Users/hu901131/.codex/visualizations/2026/07/20/019f7f2c-771a-7ec3-9812-3fcfb6c61829/grepnest-redesign/*.png`
-- Use temporary browser helper outside git: `/tmp/grepnest-webui-check.mjs`
+- Generate outside git: `/Users/hu901131/.codex/visualizations/2026/07/20/019f7f2c-771a-7ec3-9812-3fcfb6c61829/graphnest-redesign/*.png`
+- Use temporary browser helper outside git: `/tmp/graphnest-webui-check.mjs`
 - No repository files should change.
 
 **Interfaces:**
-- Consumes: checked-in fixture, local Zoekt binaries, `grepnest-server`, installed Chrome, and temporary Playwright Core.
+- Consumes: checked-in fixture, local Zoekt binaries, `graphnest-server`, installed Chrome, and temporary Playwright Core.
 - Produces: geometry/performance measurements plus token, desktop-result, and mobile-result screenshots.
 
 - [ ] **Step 1: Start the real checked-in fixture stack**
 
 Follow the fixture commands in `README.md`: index
 `test/fixtures/repository` as `fixture/repository` with Zoekt ID 7, start
-Zoekt on `127.0.0.1:6070`, and start GrepNest on
-`127.0.0.1:58097` with token `grepnest-dev-user-token`.
+Zoekt on `127.0.0.1:6070`, and start GraphNest on
+`127.0.0.1:58097` with token `graphnest-dev-user-token`.
 
 Expected:
 
@@ -460,7 +460,7 @@ server listening address=127.0.0.1:58097
 Use Playwright Core only from a temporary directory. The helper must:
 
 1. visit the unauthenticated page and assert `#token-gate` is visible while `#search-form` and `#workspace` are hidden;
-2. authenticate, search `GrepNestFixtureNeedle`, and wait for `#result-count` to contain `1 match`;
+2. authenticate, search `GraphNestFixtureNeedle`, and wait for `#result-count` to contain `1 match`;
 3. at 320, 390, 768, and 1440 pixels assert `document.documentElement.scrollWidth === document.documentElement.clientWidth`;
 4. assert every search control rectangle stays within the viewport and control rectangles do not overlap;
 5. assert code overflow is owned by `.code-viewport` while the document remains bounded;
@@ -499,7 +499,7 @@ controls, no page-level horizontal overflow, and fully opaque results.
 Run:
 
 ```bash
-GOCACHE=/tmp/grepnest-final-go-build make fmt lint test-race build staticcheck govulncheck helm-lint helm-test
+GOCACHE=/tmp/graphnest-final-go-build make fmt lint test-race build staticcheck govulncheck helm-lint helm-test
 git diff --check
 git status --short --branch
 git log -3 --show-signature --format='%h %G? %s'

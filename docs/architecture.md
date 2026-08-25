@@ -6,7 +6,7 @@ GitHub Enterprise -> indexer -> Zoekt shards
           +-> PostgreSQL <-+-> server <- REST and MCP
 ```
 
-`grepnest-server` is the sole Zoekt search client. It authenticates a single
+`graphnest-server` is the sole Zoekt search client. It authenticates a single
 bearer credential, selects repositories permitted to that principal, converts
 those repositories to Zoekt `RepoIDs`, applies bounded search limits, and
 normalizes the response. A request that selects no authorized repositories
@@ -14,7 +14,7 @@ returns no matches without calling Zoekt.
 
 Browser sign-in may enable OIDC, GitHub OAuth, or both; the provider list is
 deterministically OIDC then GitHub. Both use the same Authorization Code + PKCE
-flow and store only a hashed opaque GrepNest session. Same-origin browser REST
+flow and store only a hashed opaque GraphNest session. Same-origin browser REST
 requests use the HttpOnly session cookie. GitHub OAuth's metadata/flow provider
 is `github`, but its identity and session method is `oauth`; its routes are
 `/auth/oauth/github/login` and `/auth/oauth/github/callback`.
@@ -35,8 +35,8 @@ Sessions and API tokens resolve live directory state on every request, so SCIM
 deactivation or deletion takes effect immediately.
 
 REST and MCP call the same search service. `/mcp` is hosted Streamable HTTP
-MCP behind bearer authentication. `grepnest-mcp` is a stdio proxy: it connects
-to `<GREPNEST_SERVER_URL>/mcp` with `GREPNEST_TOKEN`, lists the hosted tools,
+MCP behind bearer authentication. `graphnest-mcp` is a stdio proxy: it connects
+to `<GRAPHNEST_SERVER_URL>/mcp` with `GRAPHNEST_TOKEN`, lists the hosted tools,
 and forwards calls. It does not call Zoekt.
 
 The embedded Web UI at `/` and `/index.html` is a thin, same-origin client of
@@ -46,9 +46,9 @@ only usability selectors, and the server authenticates every API request and
 enforces the principal's repository scope.
 
 Beginning in Milestone 2, PostgreSQL supplies repository metadata and the
-durable index queue. `grepnest-server` verifies GitHub webhooks and reconciles
+durable index queue. `graphnest-server` verifies GitHub webhooks and reconciles
 GitHub App installations. That GitHub App is separate from user OAuth and is
-the only credential used for repository work. `grepnest-indexer` leases one
+the only credential used for repository work. `graphnest-indexer` leases one
 job at a time, fetches
 only its default branch, and publishes the indexed SHA after Zoekt confirms
 visibility through `/api/list`. Search suppresses a result when Zoekt's branch
@@ -87,7 +87,7 @@ repository ID, upload ID, and commit. Request and response contracts are in the
 
 Pre-generated `.scip` uploads remain an exact-SHA code-navigation input and a
 fallback source when native scanning is unavailable; they do not turn SCIP
-into a native scanner. PostgreSQL remains internal-only behind GrepNest's
+into a native scanner. PostgreSQL remains internal-only behind GraphNest's
 authenticated REST and MCP services. See
 [ADR-0014](adr/0014-postgresql-graph-queries.md) for the current query-store
 decision. The ADR index records the superseded topology.

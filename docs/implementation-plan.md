@@ -1,4 +1,4 @@
-# GrepNest Implementation Plan
+# GraphNest Implementation Plan
 
 ## Completed: Milestones 0-2
 
@@ -62,7 +62,7 @@ require an explicit Milestone 3 pass; the existing Helm chart is structural.
 - Verify arbitrary numeric UID with root group, read-only root filesystem,
   writable `/tmp` and data mounts, dropped capabilities, RuntimeDefault seccomp,
   graceful SIGTERM, and no Java executable or runtime.
-- Validate the existing `deploy/helm/grepnest` server Deployment, one-replica
+- Validate the existing `deploy/helm/graphnest` server Deployment, one-replica
   Zoekt/indexer StatefulSet, services, storage, policies, and migration Job with
   published images on a real cluster.
 - Default-deny network access where supported; allow only server-to-Zoekt and

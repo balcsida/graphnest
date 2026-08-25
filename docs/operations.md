@@ -20,7 +20,7 @@ Use `GET /healthz` for process liveness. `GET /readyz` performs a bounded Zoekt
 health query and returns 503 with `{"error":"unavailable"}` when Zoekt is not
 ready. `GET /metrics` exposes Prometheus metrics. Search and readiness are
 
-For an explicit low-volume degraded path, set `GREPNEST_SEARCH_BACKEND=github`
+For an explicit low-volume degraded path, set `GRAPHNEST_SEARCH_BACKEND=github`
 on the durable server. GitHub code search is authorization-scoped but eventual,
 rate-limited, and reported as partial without an exact-SHA claim. Restore the
 default `zoekt` value to roll back; no automatic fallback occurs.
@@ -53,8 +53,8 @@ required.
 For a source-tree run, start PostgreSQL and Zoekt, apply migrations, and run
 the indexer with the documented GitHub App, database, data-directory, index
 directory, Zoekt URL, worker, repository-size, free-space, and metrics
-settings. `GREPNEST_DATA_DIR` must point to job-scoped ephemeral storage, while
-`GREPNEST_INDEX_DIR` points to durable Zoekt shards. The indexer handles SIGINT and SIGTERM by cancelling active work and
+settings. `GRAPHNEST_DATA_DIR` must point to job-scoped ephemeral storage, while
+`GRAPHNEST_INDEX_DIR` points to durable Zoekt shards. The indexer handles SIGINT and SIGTERM by cancelling active work and
 releasing PostgreSQL leases. Keep checkout data job-scoped and logs free of
 credentials.
 
@@ -82,9 +82,9 @@ Recovery uses the normal durable pipeline:
 
 1. Restore PostgreSQL according to the database backup policy.
 2. Requeue indexing for repositories whose current indexed SHA has no completed
-   upload. For native enrichment, install `grepnest-scanner` in the indexer and
-   set `GREPNEST_SCANNER_PATH` to that binary.
-3. Confirm the indexer's `grepnest-scanner enrich` invocation or an exact-SHA
+   upload. For native enrichment, install `graphnest-scanner` in the indexer and
+   set `GRAPHNEST_SCANNER_PATH` to that binary.
+3. Confirm the indexer's `graphnest-scanner enrich` invocation or an exact-SHA
    SCIP upload stores a completed artifact for that repository ID and commit.
 4. Retry the bounded graph operation.
 
@@ -93,7 +93,7 @@ source snapshot or an accepted exact-SHA SCIP upload. Running the scanner
 without the indexer's `enrich` invocation only idles for compatibility; it does
 not lease or complete graph work.
 
-Graph request limits are configured with `GREPNEST_GRAPH_*` query settings.
+Graph request limits are configured with `GRAPHNEST_GRAPH_*` query settings.
 Context, impact, and trace enforce traversal depth, fanout, node, edge, row,
 request-byte, and response-byte caps. PostgreSQL queries are parameterized,
 repository/upload/commit scoped, stable-ordered, and batch each relation
@@ -106,11 +106,11 @@ authorized operator has direct access to the same PostgreSQL database used by
 every server replica:
 
 ```sh
-export GREPNEST_DATABASE_URL='postgres://...'
+export GRAPHNEST_DATABASE_URL='postgres://...'
 docker run --rm -it --network <database-network> \
-  --env GREPNEST_DATABASE_URL \
-  "$GREPNEST_APPLICATION_IMAGE" \
-  grepnest-admin break-glass set-password recovery-admin
+  --env GRAPHNEST_DATABASE_URL \
+  "$GRAPHNEST_APPLICATION_IMAGE" \
+  graphnest-admin break-glass set-password recovery-admin
 ```
 
 Use the same digest-pinned application image deployed by the server and a
@@ -123,7 +123,7 @@ rotation, revokes its sessions and API tokens, and records
 `break_glass_password_set`.
 
 Creating the credential does not expose local login. An external-provider outage never
-enables it automatically. Set `GREPNEST_BREAK_GLASS_ENABLED=true` (Compose) or
+enables it automatically. Set `GRAPHNEST_BREAK_GLASS_ENABLED=true` (Compose) or
 `breakGlass.enabled=true` (Helm) only for the recovery window, apply the
 configuration, and wait for every replica to restart. All replicas must share
 the same PostgreSQL database, which holds throttles and sessions. The first
@@ -132,7 +132,7 @@ clears forced rotation, revokes older sessions and API tokens, and issues a
 new session.
 
 After external sign-in is restored, first verify OIDC or GitHub OAuth sign-in.
-If the recovery account must remain, rerun `grepnest-admin` to replace its
+If the recovery account must remain, rerun `graphnest-admin` to replace its
 password and revoke its
 credentials; otherwise suspend it through identity administration and revoke
 its credentials. Set the Compose switch to `false` or Helm
@@ -158,7 +158,7 @@ repository:
   `/auth/local/rotate` only through a trusted edge. Configure that edge to
   derive a real client address from its trusted proxy chain and rate-limit both
   routes by it. Never trust `Forwarded` or `X-Forwarded-*` supplied by an
-  arbitrary peer; GrepNest itself throttles the connection peer address.
+  arbitrary peer; GraphNest itself throttles the connection peer address.
 - Before allowing a `v*` release tag, enable GitHub protected-tag rules, or
   require reviewers on the release environment that publishes the release.
   Confirm the live repository rule or environment gate; the checked-in release
@@ -175,29 +175,29 @@ repository:
 ## Optional OIDC operations
 
 Permit server egress only to the configured IdP discovery, JWKS, and token
-endpoints. The callback is `/auth/oidc/callback`; `GREPNEST_PUBLIC_URL` is the
+endpoints. The callback is `/auth/oidc/callback`; `GRAPHNEST_PUBLIC_URL` is the
 authoritative HTTPS origin. Browser clients send same-origin credentials. Unsafe
-session requests require that exact Origin, and GrepNest persists no refresh
+session requests require that exact Origin, and GraphNest persists no refresh
 tokens.
 
 ## Optional GitHub OAuth operations
 
-GitHub OAuth requires durable PostgreSQL, an HTTPS `GREPNEST_PUBLIC_URL`, and
-both `GREPNEST_OAUTH_GITHUB_CLIENT_ID` and
-`GREPNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE`. The secret must be a non-empty
+GitHub OAuth requires durable PostgreSQL, an HTTPS `GRAPHNEST_PUBLIC_URL`, and
+both `GRAPHNEST_OAUTH_GITHUB_CLIENT_ID` and
+`GRAPHNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE`. The secret must be a non-empty
 regular file mounted read-only; there is no plaintext secret variable. Both
 absent disables this provider and either one alone is a startup error. Use a
 dedicated GitHub OAuth App for each environment and register exactly
-`<GREPNEST_PUBLIC_URL>/auth/oauth/github/callback` as its callback URL. GitHub
+`<GRAPHNEST_PUBLIC_URL>/auth/oauth/github/callback` as its callback URL. GitHub
 OAuth may run alone or beside OIDC; the combined browser list puts OIDC first.
 With neither browser provider, browser sign-in is unavailable but bearer REST
 and MCP credentials remain supported. Local break-glass requires either
 external provider, never enables automatically, and recovery must verify an
 external login before closure.
 
-OAuth derives its authorization/token endpoints from `GREPNEST_GITHUB_WEB_URL`
-and its user endpoint from `GREPNEST_GITHUB_API_URL`; it reuses their existing
-GitHub egress, `GREPNEST_GITHUB_CA_FILE`, timeout, and redirect policy. Do not
+OAuth derives its authorization/token endpoints from `GRAPHNEST_GITHUB_WEB_URL`
+and its user endpoint from `GRAPHNEST_GITHUB_API_URL`; it reuses their existing
+GitHub egress, `GRAPHNEST_GITHUB_CA_FILE`, timeout, and redirect policy. Do not
 add OAuth-specific endpoint, CA, or network-policy controls. GitHub Enterprise
 Server OAuth is explicitly unverified. This OAuth App is only browser identity:
 the separate GitHub App remains the repository credential. The request sends
@@ -214,11 +214,11 @@ use a bearer token for `/mcp`.
 
 1. Use a public HTTPS origin and create a dedicated GitHub.com OAuth App for
    that environment. Set its homepage to the public origin and its callback to
-   `<GREPNEST_PUBLIC_URL>/auth/oauth/github/callback`.
+   `<GRAPHNEST_PUBLIC_URL>/auth/oauth/github/callback`.
 2. Place the OAuth client secret in a read-only regular file. Configure
-   `GREPNEST_DATABASE_URL`, `GREPNEST_PUBLIC_URL=https://<public-host>`,
-   `GREPNEST_OAUTH_GITHUB_CLIENT_ID`, and
-   `GREPNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE`; retain the existing GitHub web,
+   `GRAPHNEST_DATABASE_URL`, `GRAPHNEST_PUBLIC_URL=https://<public-host>`,
+   `GRAPHNEST_OAUTH_GITHUB_CLIENT_ID`, and
+   `GRAPHNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE`; retain the existing GitHub web,
    API, egress, and CA configuration. Restart every server replica.
 3. Obtain the test account's numeric ID without using its mutable login name:
    `curl --fail-with-body https://api.github.com/user -H "Authorization: Bearer $GITHUB_TOKEN" | jq .id`.
@@ -240,8 +240,8 @@ use a bearer token for `/mcp`.
 
 ## Optional SCIM operations
 
-Publish only the HTTPS `<GREPNEST_PUBLIC_URL>/scim/v2` endpoint and configure
-`GREPNEST_SCIM_TOKEN_FILE` from a read-only secret mount. Use a dedicated
+Publish only the HTTPS `<GRAPHNEST_PUBLIC_URL>/scim/v2` endpoint and configure
+`GRAPHNEST_SCIM_TOKEN_FILE` from a read-only secret mount. Use a dedicated
 high-entropy token; it cannot access REST, MCP, or admin APIs. The OIDC link
 claim must exactly equal each SCIM user's `externalId`.
 
@@ -269,16 +269,16 @@ Releases publish multi-architecture images and an OCI chart. Replace each
 it is a placeholder, not a literal digest.
 
 ```sh
-docker pull ghcr.io/balcsida/grep-nest/application@sha256:RELEASE_DIGEST
-docker pull ghcr.io/balcsida/grep-nest/node@sha256:RELEASE_DIGEST
-helm pull oci://ghcr.io/balcsida/grep-nest/charts/grepnest --version 0.1.0
+docker pull ghcr.io/balcsida/graphnest/application@sha256:RELEASE_DIGEST
+docker pull ghcr.io/balcsida/graphnest/node@sha256:RELEASE_DIGEST
+helm pull oci://ghcr.io/balcsida/graphnest/charts/graphnest --version 0.1.0
 ```
 
 Verify the copied artifacts with the commands included in the GitHub Release:
 
 ```sh
-gh attestation verify "oci://ghcr.io/balcsida/grep-nest/application@sha256:RELEASE_DIGEST" --repo "balcsida/grep-nest"
-gh attestation verify "oci://ghcr.io/balcsida/grep-nest/node@sha256:RELEASE_DIGEST" --repo "balcsida/grep-nest"
+gh attestation verify "oci://ghcr.io/balcsida/graphnest/application@sha256:RELEASE_DIGEST" --repo "balcsida/graphnest"
+gh attestation verify "oci://ghcr.io/balcsida/graphnest/node@sha256:RELEASE_DIGEST" --repo "balcsida/graphnest"
 ```
 
 The pulled OCI chart already embeds both release image digests. The source-tree

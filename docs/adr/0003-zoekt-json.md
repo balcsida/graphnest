@@ -12,7 +12,7 @@ Send the canonical `Q`, `RepoIDs`, and `Opts` fields and decode the `Result` or
 ## Rationale
 
 JSON HTTP provides the smallest observable process boundary for the first
-vertical slice and avoids coupling GrepNest to Zoekt's internal Go packages.
+vertical slice and avoids coupling GraphNest to Zoekt's internal Go packages.
 
 ## Consequences
 

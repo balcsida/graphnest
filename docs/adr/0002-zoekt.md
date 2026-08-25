@@ -7,7 +7,7 @@
 
 Use Zoekt commit `3c8b39b1ef4f8194cb912d7e6581cff9db224aa7`
 (`v0.0.0-20260717095332-3c8b39b1ef4f`) for indexing and text search behind
-GrepNest's `SearchBackend` interface. Pin the development image to
+GraphNest's `SearchBackend` interface. Pin the development image to
 `ghcr.io/sourcegraph/zoekt@sha256:ac76391662c77d02f5be73b64272304415dbc42cac70633ef89d28747edff4cd`.
 
 ## Rationale
@@ -18,4 +18,4 @@ would add risk without improving the Milestone 1 outcome.
 ## Consequences
 
 Zoekt remains internal and is never exposed directly. Its JSON and index
-formats are adapter details, and GrepNest returns only canonical models.
+formats are adapter details, and GraphNest returns only canonical models.
