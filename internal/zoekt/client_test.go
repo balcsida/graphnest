@@ -270,7 +270,7 @@ func TestSearchRecordsBackendFailure(t *testing.T) {
 	}
 	recorder := httptest.NewRecorder()
 	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
-	if !strings.Contains(recorder.Body.String(), `grepnest_search_backend_calls_total{result="error"} 1`) {
+	if !strings.Contains(recorder.Body.String(), `graphnest_search_backend_calls_total{result="error"} 1`) {
 		t.Fatalf("metrics = %s", recorder.Body.String())
 	}
 }

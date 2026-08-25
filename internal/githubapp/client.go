@@ -421,7 +421,7 @@ func EndpointURL(base *url.URL, segments ...string) string {
 
 func SetAPIHeaders(header http.Header, apiVersion string) {
 	header.Set("Accept", githubMediaType)
-	header.Set("User-Agent", "GrepNest")
+	header.Set("User-Agent", "GraphNest")
 	header.Set("X-GitHub-Api-Version", apiVersion)
 }
 

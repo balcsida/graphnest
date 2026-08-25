@@ -29,7 +29,7 @@ func main() {
 		return
 	}
 	if os.Args[1] != "enrich" {
-		fmt.Fprintln(os.Stderr, "usage: grepnest-scanner enrich")
+		fmt.Fprintln(os.Stderr, "usage: graphnest-scanner enrich")
 		os.Exit(2)
 	}
 	ctx, cancel := signalContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

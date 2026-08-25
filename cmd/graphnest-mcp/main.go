@@ -17,10 +17,10 @@ import (
 
 const upstreamTimeout = 5 * time.Second
 
-var errUsage = errors.New("usage: grepnest-mcp [install-skills [--root PATH]]")
+var errUsage = errors.New("usage: graphnest-mcp [install-skills [--root PATH]]")
 
 func main() {
-	if err := run(context.Background(), os.Args[1:], os.Getenv("GREPNEST_SERVER_URL"), os.Getenv("GREPNEST_TOKEN"), &mcp.StdioTransport{}); err != nil {
+	if err := run(context.Background(), os.Args[1:], os.Getenv("GRAPHNEST_SERVER_URL"), os.Getenv("GRAPHNEST_TOKEN"), &mcp.StdioTransport{}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -44,11 +44,11 @@ func run(ctx context.Context, args []string, serverURL, token string, transport 
 
 func runProxy(ctx context.Context, serverURL, token string, transport mcp.Transport) error {
 	if serverURL == "" || token == "" {
-		return errors.New("GREPNEST_SERVER_URL and GREPNEST_TOKEN are required")
+		return errors.New("GRAPHNEST_SERVER_URL and GRAPHNEST_TOKEN are required")
 	}
 	startupCtx, cancelStartup := context.WithTimeout(ctx, upstreamTimeout)
 	defer cancelStartup()
-	client := mcp.NewClient(&mcp.Implementation{Name: "grepnest-mcp", Version: "0.1.0"}, nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: "graphnest-mcp", Version: "0.1.0"}, nil)
 	upstream, err := client.Connect(startupCtx, &mcp.StreamableClientTransport{
 		Endpoint: strings.TrimRight(serverURL, "/") + "/mcp",
 		HTTPClient: &http.Client{Timeout: upstreamTimeout, Transport: bearerTransport{
@@ -66,7 +66,7 @@ func runProxy(ctx context.Context, serverURL, token string, transport mcp.Transp
 		return err
 	}
 	cancelStartup()
-	server := mcp.NewServer(&mcp.Implementation{Name: "grepnest-mcp", Version: "0.1.0"}, nil)
+	server := mcp.NewServer(&mcp.Implementation{Name: "graphnest-mcp", Version: "0.1.0"}, nil)
 	for _, tool := range tools.Tools {
 		server.AddTool(tool, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return upstream.CallTool(ctx, &mcp.CallToolParams{Name: request.Params.Name, Arguments: request.Params.Arguments})

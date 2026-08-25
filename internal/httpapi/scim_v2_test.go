@@ -62,7 +62,7 @@ func TestSCIMV2RouteContracts(t *testing.T) {
 			t.Fatalf("%s %s content type=%q", test.method, test.path, response.Header().Get("Content-Type"))
 		}
 		if test.status == 201 {
-			if response.Header().Get("Location") != "https://grepnest.example/scim/v2/Users/1" ||
+			if response.Header().Get("Location") != "https://graphnest.example/scim/v2/Users/1" ||
 				!strings.Contains(response.Body.String(), `"userName":"ada"`) {
 				t.Fatalf("POST response headers=%v body=%q", response.Header(), response.Body.String())
 			}
@@ -153,7 +153,7 @@ func scimTestHandler(t *testing.T, store scim.Store) http.Handler {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	return GuardSCIMV2(mux, authenticator, &scim.Service{Store: store, BaseURL: "https://grepnest.example", MaxResults: 100})
+	return GuardSCIMV2(mux, authenticator, &scim.Service{Store: store, BaseURL: "https://graphnest.example", MaxResults: 100})
 }
 
 func scimRequest(handler http.Handler, method, path, body, token string) *httptest.ResponseRecorder {

@@ -34,7 +34,7 @@ func TestSearchAnnotatesDirectoryMatchesFromScopedMetadata(t *testing.T) {
 			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 				t.Fatal(err)
 			}
-			if body.Q != "meta.grepnest_repository_id:7 or meta.grepnest_repository_id:8 or meta.grepnest_repository_id:10 or meta.grepnest_repository_id:11 or meta.grepnest_repository_id:12" {
+			if body.Q != "meta.graphnest_repository_id:7 or meta.graphnest_repository_id:8 or meta.graphnest_repository_id:10 or meta.graphnest_repository_id:11 or meta.graphnest_repository_id:12" {
 				t.Fatalf("metadata scope = %q", body.Q)
 			}
 			_, _ = writer.Write([]byte(`{"List":{"ReposMap":{

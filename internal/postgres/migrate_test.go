@@ -22,16 +22,16 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var schemaName = regexp.MustCompile(`^grepnest_test_[0-9a-f]{16}$`)
+var schemaName = regexp.MustCompile(`^graphnest_test_[0-9a-f]{16}$`)
 
 func testPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	dsn := os.Getenv("GREPNEST_TEST_POSTGRES_DSN")
+	dsn := os.Getenv("GRAPHNEST_TEST_POSTGRES_DSN")
 	if dsn == "" {
-		if os.Getenv("GREPNEST_REQUIRE_POSTGRES") == "1" {
-			t.Fatal("GREPNEST_TEST_POSTGRES_DSN is not set")
+		if os.Getenv("GRAPHNEST_REQUIRE_POSTGRES") == "1" {
+			t.Fatal("GRAPHNEST_TEST_POSTGRES_DSN is not set")
 		}
-		t.Skip("GREPNEST_TEST_POSTGRES_DSN is not set")
+		t.Skip("GRAPHNEST_TEST_POSTGRES_DSN is not set")
 	}
 
 	admin, err := pgxpool.New(t.Context(), dsn)
@@ -44,7 +44,7 @@ func testPool(t *testing.T) *pgxpool.Pool {
 	if _, err := rand.Read(bytes); err != nil {
 		t.Fatal(err)
 	}
-	schema := "grepnest_test_" + hex.EncodeToString(bytes)
+	schema := "graphnest_test_" + hex.EncodeToString(bytes)
 	if !schemaName.MatchString(schema) {
 		t.Fatalf("invalid schema name %q", schema)
 	}

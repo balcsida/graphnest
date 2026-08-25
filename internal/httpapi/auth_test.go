@@ -155,7 +155,7 @@ func TestRegisterAuthLogoutIsIdempotentAndClearsCookie(t *testing.T) {
 			}
 			metricResponse := httptest.NewRecorder()
 			metrics.Handler().ServeHTTP(metricResponse, httptest.NewRequest(http.MethodGet, "/metrics", nil))
-			if !strings.Contains(metricResponse.Body.String(), `grepnest_auth_events_total{event="logout",provider="session",result="`+test.wantResult+`"} 1`) {
+			if !strings.Contains(metricResponse.Body.String(), `graphnest_auth_events_total{event="logout",provider="session",result="`+test.wantResult+`"} 1`) {
 				t.Fatalf("logout metric = %s", metricResponse.Body.String())
 			}
 			assertAuthPrivateHeaders(t, recorder)
@@ -164,13 +164,13 @@ func TestRegisterAuthLogoutIsIdempotentAndClearsCookie(t *testing.T) {
 }
 
 func TestRegisterAuthLogoutRequiresSessionRequestBoundary(t *testing.T) {
-	const publicOrigin = "https://grepnest.example.test"
+	const publicOrigin = "https://graphnest.example.test"
 	tests := []struct {
 		name, origin, authorization, cookie string
 		wantStatus                          int
 		wantRevoked                         bool
 	}{
-		{"exact Origin", publicOrigin, "", "valid-session", http.StatusNoContent, true}, {"missing Origin", "", "", "valid-session", http.StatusUnauthorized, false}, {"null Origin", "null", "", "valid-session", http.StatusUnauthorized, false}, {"wrong scheme", "http://grepnest.example.test", "", "valid-session", http.StatusUnauthorized, false}, {"wrong host", "https://other.example.test", "", "valid-session", http.StatusUnauthorized, false}, {"wrong port", publicOrigin + ":8443", "", "valid-session", http.StatusUnauthorized, false}, {"mixed credentials", publicOrigin, "Bearer token", "valid-session", http.StatusUnauthorized, false}, {"cookie-less", "", "", "", http.StatusNoContent, false},
+		{"exact Origin", publicOrigin, "", "valid-session", http.StatusNoContent, true}, {"missing Origin", "", "", "valid-session", http.StatusUnauthorized, false}, {"null Origin", "null", "", "valid-session", http.StatusUnauthorized, false}, {"wrong scheme", "http://graphnest.example.test", "", "valid-session", http.StatusUnauthorized, false}, {"wrong host", "https://other.example.test", "", "valid-session", http.StatusUnauthorized, false}, {"wrong port", publicOrigin + ":8443", "", "valid-session", http.StatusUnauthorized, false}, {"mixed credentials", publicOrigin, "Bearer token", "valid-session", http.StatusUnauthorized, false}, {"cookie-less", "", "", "", http.StatusNoContent, false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

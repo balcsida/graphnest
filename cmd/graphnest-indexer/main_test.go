@@ -242,7 +242,7 @@ func TestWarnIgnoredGitSettingsInArchiveMode(t *testing.T) {
 	var output bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&output, nil))
 	warnIgnoredGitSettings(logger, config.Indexer{SourceProvider: "archive", GitPath: "/usr/bin/git"})
-	if text := output.String(); !strings.Contains(text, "GREPNEST_GIT_PATH") || !strings.Contains(text, "ignored") {
+	if text := output.String(); !strings.Contains(text, "GRAPHNEST_GIT_PATH") || !strings.Contains(text, "ignored") {
 		t.Fatalf("warning = %q", text)
 	}
 	output.Reset()

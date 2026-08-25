@@ -94,7 +94,7 @@ func New(service *search.Service, repositoryServices ...*repository.Service) *mc
 
 func NewWithLimits(services Services, limits Limits) *mcp.Server {
 	limits = normalizeLimits(limits)
-	server := mcp.NewServer(&mcp.Implementation{Name: "grepnest", Version: "0.1.0"}, nil)
+	server := mcp.NewServer(&mcp.Implementation{Name: "graphnest", Version: "0.1.0"}, nil)
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "search_code", Description: "Search code contents when you know a symbol, string, or code expression.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input searchInput) (*mcp.CallToolResult, output, error) {

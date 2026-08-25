@@ -138,7 +138,7 @@ func testStore(t *testing.T) (*postgres.Store, *pgxpool.Pool) {
 	if _, err := rand.Read(bytes); err != nil {
 		t.Fatal(err)
 	}
-	schema := "grepnest_authz_" + hex.EncodeToString(bytes)
+	schema := "graphnest_authz_" + hex.EncodeToString(bytes)
 	if _, err := admin.Exec(t.Context(), "create schema "+schema); err != nil {
 		t.Fatal(err)
 	}
@@ -164,9 +164,9 @@ func testStore(t *testing.T) (*postgres.Store, *pgxpool.Pool) {
 
 func testDSN(t *testing.T) string {
 	t.Helper()
-	dsn := os.Getenv("GREPNEST_TEST_POSTGRES_DSN")
+	dsn := os.Getenv("GRAPHNEST_TEST_POSTGRES_DSN")
 	if dsn == "" {
-		t.Skip("GREPNEST_TEST_POSTGRES_DSN is not set")
+		t.Skip("GRAPHNEST_TEST_POSTGRES_DSN is not set")
 	}
 	return dsn
 }

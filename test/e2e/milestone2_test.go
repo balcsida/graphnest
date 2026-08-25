@@ -290,15 +290,15 @@ type milestoneDatabase struct {
 
 func newMilestoneDatabase(t *testing.T) milestoneDatabase {
 	t.Helper()
-	dsn := os.Getenv("GREPNEST_TEST_POSTGRES_DSN")
+	dsn := os.Getenv("GRAPHNEST_TEST_POSTGRES_DSN")
 	if dsn == "" {
-		t.Fatal("GREPNEST_TEST_POSTGRES_DSN is required for Milestone 2 E2E")
+		t.Fatal("GRAPHNEST_TEST_POSTGRES_DSN is required for Milestone 2 E2E")
 	}
 	random := make([]byte, 8)
 	if _, err := rand.Read(random); err != nil {
 		t.Fatal(err)
 	}
-	schema := "grepnest_e2e_" + hex.EncodeToString(random)
+	schema := "graphnest_e2e_" + hex.EncodeToString(random)
 	admin, err := pgxpool.New(t.Context(), dsn)
 	if err != nil {
 		t.Fatal(err)
@@ -348,8 +348,8 @@ func newSmartGitOrigin(t *testing.T, ctx context.Context, root, name string, ver
 	run(t, ctx, "git", "init", "--bare", path)
 	work := filepath.Join(t.TempDir(), "work")
 	run(t, ctx, "git", "init", "--initial-branch=main", work)
-	run(t, ctx, "git", "-C", work, "config", "user.name", "GrepNest Test")
-	run(t, ctx, "git", "-C", work, "config", "user.email", "test@grepnest.invalid")
+	run(t, ctx, "git", "-C", work, "config", "user.name", "GraphNest Test")
+	run(t, ctx, "git", "-C", work, "config", "user.email", "test@graphnest.invalid")
 	origin := smartGitOrigin{name: name, path: path}
 	if versions == nil {
 		run(t, ctx, "git", "-C", work, "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "empty")
@@ -554,7 +554,7 @@ func decodeJWTPart(part string, target any) bool {
 func (github *fakeGHES) serveGit(writer http.ResponseWriter, request *http.Request) {
 	username, password, ok := request.BasicAuth()
 	if !ok || username != "x-access-token" || password != milestoneGitToken {
-		writer.Header().Set("WWW-Authenticate", `Basic realm="GrepNest"`)
+		writer.Header().Set("WWW-Authenticate", `Basic realm="GraphNest"`)
 		writer.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -675,7 +675,7 @@ func (github *fakeGHES) assertRejectsMutatedCredentials(t *testing.T, appSigner 
 			request.Header.Set("Authorization", "Bearer "+test.credential)
 			request.Header.Set("Accept", "application/vnd.github+json")
 			request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-			request.Header.Set("User-Agent", "GrepNest-authenticity-mutation")
+			request.Header.Set("User-Agent", "GraphNest-authenticity-mutation")
 			response, err := github.server.Client().Do(request)
 			if err != nil {
 				t.Fatal(err)

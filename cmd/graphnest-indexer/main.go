@@ -27,9 +27,9 @@ import (
 )
 
 const (
-	askPassModeEnv    = "GREPNEST_ASKPASS_MODE"
-	askPassOriginEnv  = "GREPNEST_ASKPASS_ORIGIN"
-	gitTokenEnv       = "GREPNEST_GIT_TOKEN"
+	askPassModeEnv    = "GRAPHNEST_ASKPASS_MODE"
+	askPassOriginEnv  = "GRAPHNEST_ASKPASS_ORIGIN"
+	gitTokenEnv       = "GRAPHNEST_GIT_TOKEN"
 	searchNodeID      = "primary"
 	maxPrivateKeySize = 64 << 10
 	maxCABytes        = 1 << 20
@@ -69,10 +69,10 @@ func main() {
 
 func warnIgnoredGitSettings(logger *slog.Logger, settings config.Indexer) {
 	if settings.ZoektGitIndexDeprecated {
-		logger.Warn("deprecated Zoekt indexer setting", "setting", "GREPNEST_ZOEKT_GIT_INDEX", "replacement", "GREPNEST_ZOEKT_INDEX")
+		logger.Warn("deprecated Zoekt indexer setting", "setting", "GRAPHNEST_ZOEKT_GIT_INDEX", "replacement", "GRAPHNEST_ZOEKT_INDEX")
 	}
 	if settings.SourceProvider == "archive" && settings.GitPath != "" {
-		logger.Warn("deprecated Git runtime setting ignored in archive mode", "setting", "GREPNEST_GIT_PATH")
+		logger.Warn("deprecated Git runtime setting ignored in archive mode", "setting", "GRAPHNEST_GIT_PATH")
 	}
 }
 
@@ -201,7 +201,7 @@ func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime
 	worker := &indexer.Worker{
 		ID: settings.WorkerID, Queue: store, Store: store, Tokens: githubClient, Snapshots: newSnapshotProvider(settings, githubClient, git, metrics),
 		Zoekt:        &indexer.ZoektIndexer{Binary: settings.ZoektIndex, IndexDir: settings.IndexDir, Runner: runner, Client: zoektClient, IndexTimeout: 10 * time.Minute, VisibilityTimeout: 2 * time.Minute},
-		Enricher:     newEnricher(os.Getenv("GREPNEST_SCANNER_PATH")),
+		Enricher:     newEnricher(os.Getenv("GRAPHNEST_SCANNER_PATH")),
 		MinFreeBytes: uint64(settings.MinFreeBytes), MaxRepositoryBytes: settings.MaxRepositoryBytes, Metrics: metrics,
 	}
 	listener, err := net.Listen("tcp", settings.MetricsListenAddress)

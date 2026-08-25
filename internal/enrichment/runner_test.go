@@ -34,7 +34,7 @@ func validResponse(t *testing.T) []byte {
 		SchemaVersion: 1,
 		RepositoryID:  4,
 		Commit:        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		Analyzer:      graphartifact.Analyzer{Name: "grepnest-scanner", Version: "1"},
+		Analyzer:      graphartifact.Analyzer{Name: "graphnest-scanner", Version: "1"},
 		ContentHash:   bytes.Repeat([]byte{1}, sha256.Size),
 	}
 	output, err := json.Marshal(Response{Version: ProtocolVersion, Artifact: artifact})

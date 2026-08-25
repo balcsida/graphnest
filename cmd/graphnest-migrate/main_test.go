@@ -8,18 +8,18 @@ import (
 
 func TestLoadDatabaseURLRequiresOnlyPostgreSQL(t *testing.T) {
 	environment := map[string]string{
-		"GREPNEST_DATABASE_URL": "postgres://grepnest:secret@db/grepnest",
-		"GREPNEST_USER_TOKEN":   "", "GREPNEST_ADMIN_TOKEN": "",
-		"GREPNEST_GITHUB_WEBHOOK_SECRET_FILE": "",
+		"GRAPHNEST_DATABASE_URL": "postgres://graphnest:secret@db/graphnest",
+		"GRAPHNEST_USER_TOKEN":   "", "GRAPHNEST_ADMIN_TOKEN": "",
+		"GRAPHNEST_GITHUB_WEBHOOK_SECRET_FILE": "",
 	}
 	got, err := loadDatabaseURL(func(name string) string { return environment[name] })
-	if err != nil || got != environment["GREPNEST_DATABASE_URL"] {
+	if err != nil || got != environment["GRAPHNEST_DATABASE_URL"] {
 		t.Fatalf("database URL=%q error=%v", got, err)
 	}
 }
 
 func TestLoadDatabaseURLRejectsMissingOrUnsafeValue(t *testing.T) {
-	for _, value := range []string{"", "http://db/grepnest", "postgres:///grepnest"} {
+	for _, value := range []string{"", "http://db/graphnest", "postgres:///graphnest"} {
 		if _, err := loadDatabaseURL(func(string) string { return value }); err == nil {
 			t.Fatalf("accepted database URL %q", value)
 		}

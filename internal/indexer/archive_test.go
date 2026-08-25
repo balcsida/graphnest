@@ -211,7 +211,7 @@ func TestArchiveSnapshotProviderReportsPartialCleanupFailure(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "gzip") || !strings.Contains(err.Error(), "cleanup partial archive workspace") {
 		t.Fatalf("error = %v", err)
 	}
-	if body := scrapeWorkerMetrics(t, metrics); !strings.Contains(body, `grepnest_archive_operations_total{operation="cleanup",result="error"} 1`) {
+	if body := scrapeWorkerMetrics(t, metrics); !strings.Contains(body, `graphnest_archive_operations_total{operation="cleanup",result="error"} 1`) {
 		t.Fatalf("cleanup failure metric missing:\n%s", body)
 	}
 }
@@ -224,8 +224,8 @@ func TestArchiveSnapshotProviderCountsStreamingFailureAsDownloadError(t *testing
 	}
 	body := scrapeWorkerMetrics(t, metrics)
 	for _, want := range []string{
-		`grepnest_archive_operations_total{operation="download",result="error"} 1`,
-		`grepnest_archive_operations_total{operation="extract",result="error"} 1`,
+		`graphnest_archive_operations_total{operation="download",result="error"} 1`,
+		`graphnest_archive_operations_total{operation="extract",result="error"} 1`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("metrics missing %q:\n%s", want, body)

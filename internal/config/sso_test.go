@@ -15,16 +15,16 @@ func TestLoadOIDC(t *testing.T) {
 		want bool
 	}{
 		{"valid", func(*testing.T) {}, true},
-		{"HTTP origin", func(t *testing.T) { t.Setenv("GREPNEST_PUBLIC_URL", "http://search.example.test") }, false},
-		{"HTTP issuer", func(t *testing.T) { t.Setenv("GREPNEST_OIDC_ISSUER_URL", "http://id.example.test") }, false},
-		{"missing client ID", func(t *testing.T) { t.Setenv("GREPNEST_OIDC_CLIENT_ID", "") }, false},
-		{"client secret is directory", func(t *testing.T) { t.Setenv("GREPNEST_OIDC_CLIENT_SECRET_FILE", t.TempDir()) }, false},
-		{"missing openid scope", func(t *testing.T) { t.Setenv("GREPNEST_OIDC_SCOPES", "profile,email") }, false},
-		{"offline access scope", func(t *testing.T) { t.Setenv("GREPNEST_OIDC_SCOPES", "openid,offline_access") }, false},
-		{"missing link claim", func(t *testing.T) { t.Setenv("GREPNEST_OIDC_LINK_CLAIM", "") }, false},
-		{"idle below minimum", func(t *testing.T) { t.Setenv("GREPNEST_SSO_SESSION_IDLE", "4m") }, false},
-		{"absolute above maximum", func(t *testing.T) { t.Setenv("GREPNEST_SSO_SESSION_TTL", "25h") }, false},
-		{"login flow above maximum", func(t *testing.T) { t.Setenv("GREPNEST_SSO_LOGIN_FLOW_TTL", "16m") }, false},
+		{"HTTP origin", func(t *testing.T) { t.Setenv("GRAPHNEST_PUBLIC_URL", "http://search.example.test") }, false},
+		{"HTTP issuer", func(t *testing.T) { t.Setenv("GRAPHNEST_OIDC_ISSUER_URL", "http://id.example.test") }, false},
+		{"missing client ID", func(t *testing.T) { t.Setenv("GRAPHNEST_OIDC_CLIENT_ID", "") }, false},
+		{"client secret is directory", func(t *testing.T) { t.Setenv("GRAPHNEST_OIDC_CLIENT_SECRET_FILE", t.TempDir()) }, false},
+		{"missing openid scope", func(t *testing.T) { t.Setenv("GRAPHNEST_OIDC_SCOPES", "profile,email") }, false},
+		{"offline access scope", func(t *testing.T) { t.Setenv("GRAPHNEST_OIDC_SCOPES", "openid,offline_access") }, false},
+		{"missing link claim", func(t *testing.T) { t.Setenv("GRAPHNEST_OIDC_LINK_CLAIM", "") }, false},
+		{"idle below minimum", func(t *testing.T) { t.Setenv("GRAPHNEST_SSO_SESSION_IDLE", "4m") }, false},
+		{"absolute above maximum", func(t *testing.T) { t.Setenv("GRAPHNEST_SSO_SESSION_TTL", "25h") }, false},
+		{"login flow above maximum", func(t *testing.T) { t.Setenv("GRAPHNEST_SSO_LOGIN_FLOW_TTL", "16m") }, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			setValidOIDCEnvironment(t)
@@ -62,23 +62,23 @@ func TestLoadGitHubOAuth(t *testing.T) {
 		{"partial GitHub pair", func(t *testing.T) {
 			setValidEnvironment(t)
 			setDurableEnvironment(t)
-			t.Setenv("GREPNEST_OAUTH_GITHUB_CLIENT_ID", "grepnest")
+			t.Setenv("GRAPHNEST_OAUTH_GITHUB_CLIENT_ID", "graphnest")
 		}, false, false, false, true},
-		{"missing database", func(t *testing.T) { setValidGitHubOAuthEnvironment(t); t.Setenv("GREPNEST_DATABASE_URL", "") }, false, false, false, true},
-		{"missing public URL", func(t *testing.T) { setValidGitHubOAuthEnvironment(t); t.Setenv("GREPNEST_PUBLIC_URL", "") }, false, false, false, true},
+		{"missing database", func(t *testing.T) { setValidGitHubOAuthEnvironment(t); t.Setenv("GRAPHNEST_DATABASE_URL", "") }, false, false, false, true},
+		{"missing public URL", func(t *testing.T) { setValidGitHubOAuthEnvironment(t); t.Setenv("GRAPHNEST_PUBLIC_URL", "") }, false, false, false, true},
 		{"HTTP public URL", func(t *testing.T) {
 			setValidGitHubOAuthEnvironment(t)
-			t.Setenv("GREPNEST_PUBLIC_URL", "http://search.example.test")
+			t.Setenv("GRAPHNEST_PUBLIC_URL", "http://search.example.test")
 		}, false, false, false, true},
 		{"secret is directory", func(t *testing.T) {
 			setValidGitHubOAuthEnvironment(t)
-			t.Setenv("GREPNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE", t.TempDir())
+			t.Setenv("GRAPHNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE", t.TempDir())
 		}, false, false, false, true},
 		{"OAuth only break glass", func(t *testing.T) {
 			setValidGitHubOAuthEnvironment(t)
-			t.Setenv("GREPNEST_BREAK_GLASS_ENABLED", "true")
+			t.Setenv("GRAPHNEST_BREAK_GLASS_ENABLED", "true")
 		}, false, true, true, false},
-		{"break glass without provider", func(t *testing.T) { setValidEnvironment(t); t.Setenv("GREPNEST_BREAK_GLASS_ENABLED", "true") }, false, false, false, true},
+		{"break glass without provider", func(t *testing.T) { setValidEnvironment(t); t.Setenv("GRAPHNEST_BREAK_GLASS_ENABLED", "true") }, false, false, false, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			test.set(t)
@@ -112,7 +112,7 @@ func TestLoadBreakGlass(t *testing.T) {
 	})
 	t.Run("exact true enables durable OIDC HTTPS mode", func(t *testing.T) {
 		setValidOIDCEnvironment(t)
-		t.Setenv("GREPNEST_BREAK_GLASS_ENABLED", "true")
+		t.Setenv("GRAPHNEST_BREAK_GLASS_ENABLED", "true")
 		got, err := Load()
 		if err != nil {
 			t.Fatal(err)
@@ -124,7 +124,7 @@ func TestLoadBreakGlass(t *testing.T) {
 	for _, value := range []string{"1", "TRUE", " true"} {
 		t.Run("rejects "+value, func(t *testing.T) {
 			setValidOIDCEnvironment(t)
-			t.Setenv("GREPNEST_BREAK_GLASS_ENABLED", value)
+			t.Setenv("GRAPHNEST_BREAK_GLASS_ENABLED", value)
 			if _, err := Load(); !errors.Is(err, ErrInvalid) {
 				t.Fatalf("Load() error = %v", err)
 			}
@@ -132,7 +132,7 @@ func TestLoadBreakGlass(t *testing.T) {
 	}
 	t.Run("exact false stays disabled", func(t *testing.T) {
 		setValidEnvironment(t)
-		t.Setenv("GREPNEST_BREAK_GLASS_ENABLED", "false")
+		t.Setenv("GRAPHNEST_BREAK_GLASS_ENABLED", "false")
 		got, err := Load()
 		if err != nil {
 			t.Fatal(err)
@@ -144,14 +144,14 @@ func TestLoadBreakGlass(t *testing.T) {
 	t.Run("requires OIDC", func(t *testing.T) {
 		setValidEnvironment(t)
 		setDurableEnvironment(t)
-		t.Setenv("GREPNEST_BREAK_GLASS_ENABLED", "true")
+		t.Setenv("GRAPHNEST_BREAK_GLASS_ENABLED", "true")
 		if _, err := Load(); !errors.Is(err, ErrInvalid) {
 			t.Fatalf("Load() error = %v", err)
 		}
 	})
 	t.Run("rejects static mode", func(t *testing.T) {
 		setValidEnvironment(t)
-		t.Setenv("GREPNEST_BREAK_GLASS_ENABLED", "true")
+		t.Setenv("GRAPHNEST_BREAK_GLASS_ENABLED", "true")
 		if _, err := Load(); !errors.Is(err, ErrInvalid) {
 			t.Fatalf("Load() error = %v", err)
 		}
@@ -162,11 +162,11 @@ func setValidOIDCEnvironment(t *testing.T) {
 	t.Helper()
 	setValidEnvironment(t)
 	setDurableEnvironment(t)
-	t.Setenv("GREPNEST_PUBLIC_URL", "https://search.example.test")
-	t.Setenv("GREPNEST_OIDC_ISSUER_URL", "https://id.example.test")
-	t.Setenv("GREPNEST_OIDC_CLIENT_ID", "grepnest")
-	t.Setenv("GREPNEST_OIDC_CLIENT_SECRET_FILE", writeSecret(t, "secret"))
-	t.Setenv("GREPNEST_OIDC_LINK_CLAIM", "oid")
+	t.Setenv("GRAPHNEST_PUBLIC_URL", "https://search.example.test")
+	t.Setenv("GRAPHNEST_OIDC_ISSUER_URL", "https://id.example.test")
+	t.Setenv("GRAPHNEST_OIDC_CLIENT_ID", "graphnest")
+	t.Setenv("GRAPHNEST_OIDC_CLIENT_SECRET_FILE", writeSecret(t, "secret"))
+	t.Setenv("GRAPHNEST_OIDC_LINK_CLAIM", "oid")
 }
 
 func setValidGitHubOAuthEnvironment(t *testing.T) {
@@ -178,9 +178,9 @@ func setValidGitHubOAuthEnvironment(t *testing.T) {
 
 func setGitHubOAuthEnvironment(t *testing.T) {
 	t.Helper()
-	t.Setenv("GREPNEST_PUBLIC_URL", "https://search.example.test")
-	t.Setenv("GREPNEST_OAUTH_GITHUB_CLIENT_ID", "grepnest")
-	t.Setenv("GREPNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE", writeSecret(t, "secret"))
+	t.Setenv("GRAPHNEST_PUBLIC_URL", "https://search.example.test")
+	t.Setenv("GRAPHNEST_OAUTH_GITHUB_CLIENT_ID", "graphnest")
+	t.Setenv("GRAPHNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE", writeSecret(t, "secret"))
 }
 
 func writeSecret(t *testing.T, value string) string {

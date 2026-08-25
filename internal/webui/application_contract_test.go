@@ -44,7 +44,7 @@ func TestConsoleRendersTrustedProviderMetadataGenerically(t *testing.T) {
 const links=[],host={replaceChildren(){links.length=0},append(link){links.push(link)}},document={
   createDocumentFragment(){return {children:[],append(link){this.children.push(link)}}},
   createElement(){return {}},
-},$=()=>host,location={origin:"https://grepnest.example"};
+},$=()=>host,location={origin:"https://graphnest.example"};
 ` + render + `
 providers([
   {label:"Corporate identity",login_url:"/auth/oidc/login"},
@@ -74,7 +74,7 @@ func TestConsolePrefersSameOriginBrowserSessionBeforeBearerFallback(t *testing.T
 			t.Errorf("console is missing OIDC session behavior %q", want)
 		}
 	}
-	for _, forbidden := range []string{`localStorage`, `sessionStorage.setItem("grepnest_session`} {
+	for _, forbidden := range []string{`localStorage`, `sessionStorage.setItem("graphnest_session`} {
 		if bytes.Contains(document, []byte(forbidden)) {
 			t.Errorf("console stores a session credential %q", forbidden)
 		}

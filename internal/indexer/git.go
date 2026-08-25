@@ -285,7 +285,7 @@ func (git *Git) environment(token, origin string) []string {
 		"GIT_CONFIG_COUNT=" + strconv.Itoa(len(values)),
 	}
 	if token != "" {
-		environment = append(environment, "GIT_ASKPASS="+git.AskPass, "GREPNEST_ASKPASS_MODE=1", "GREPNEST_ASKPASS_ORIGIN="+origin, "GREPNEST_GIT_TOKEN="+token)
+		environment = append(environment, "GIT_ASKPASS="+git.AskPass, "GRAPHNEST_ASKPASS_MODE=1", "GRAPHNEST_ASKPASS_ORIGIN="+origin, "GRAPHNEST_GIT_TOKEN="+token)
 	}
 	for index, value := range values {
 		environment = append(environment,

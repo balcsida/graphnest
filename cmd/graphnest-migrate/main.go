@@ -38,10 +38,10 @@ func main() {
 }
 
 func loadDatabaseURL(getenv func(string) string) (string, error) {
-	value := getenv("GREPNEST_DATABASE_URL")
+	value := getenv("GRAPHNEST_DATABASE_URL")
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") {
-		return "", errors.New("GREPNEST_DATABASE_URL must be a PostgreSQL URL")
+		return "", errors.New("GRAPHNEST_DATABASE_URL must be a PostgreSQL URL")
 	}
 	return value, nil
 }

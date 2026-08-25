@@ -171,7 +171,7 @@ func authRuntimeSettings(t *testing.T) (config.Config, githubapp.Endpoints, *htt
 		t.Fatal(err)
 	}
 	settings := config.Config{SSO: config.SSO{
-		PublicURL: &url.URL{Scheme: "https", Host: "grepnest.example", Path: "/"},
+		PublicURL: &url.URL{Scheme: "https", Host: "graphnest.example", Path: "/"},
 		OIDC:      config.OIDC{Enabled: true, IssuerURL: server.URL, ClientID: "oidc-client", ClientSecretFile: secretFile, CAFile: caFile, Scopes: []string{"openid"}},
 		OAuth:     config.OAuth{GitHub: config.GitHubOAuth{Enabled: true, ClientID: "github-client", ClientSecretFile: secretFile}},
 	}}
@@ -227,7 +227,7 @@ func TestSCIMBearerIsIsolatedFromApplicationSurfaces(t *testing.T) {
 	handler := newAPIHandler(
 		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}},
 		observability.New(), testRequestAuthenticator(rest), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		&provisioning, &scimapi.Service{BaseURL: "https://grepnest.example", MaxResults: 10},
+		&provisioning, &scimapi.Service{BaseURL: "https://graphnest.example", MaxResults: 10},
 	)
 	for _, test := range []struct {
 		path, token string
@@ -258,7 +258,7 @@ func TestSCIMGuardAuthenticatesBeforeCanonicalRouting(t *testing.T) {
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}}
 	rest := testRequestAuthenticator(authn.NewStatic(map[string]authn.Principal{"rest": {Subject: "user"}}))
 	withSCIM := newAPIHandler(settings, observability.New(), rest, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		&provisioning, &scimapi.Service{BaseURL: "https://grepnest.example", MaxResults: 10})
+		&provisioning, &scimapi.Service{BaseURL: "https://graphnest.example", MaxResults: 10})
 	withoutSCIM := newAPIHandler(settings, observability.New(), rest, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	for _, path := range []string{
@@ -314,9 +314,9 @@ func TestNewProvisioningRuntimeReadsBoundedSecret(t *testing.T) {
 	if err := os.WriteFile(tokenFile, []byte(strings.Repeat("s", 32)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	settings := config.Config{SCIM: config.SCIM{Enabled: true, TokenFile: tokenFile, PublicURL: &url.URL{Scheme: "https", Host: "grepnest.example", Path: "/"}}}
+	settings := config.Config{SCIM: config.SCIM{Enabled: true, TokenFile: tokenFile, PublicURL: &url.URL{Scheme: "https", Host: "graphnest.example", Path: "/"}}}
 	authenticator, service, err := newProvisioningRuntime(settings, nil)
-	if err != nil || authenticator == nil || service == nil || service.BaseURL != "https://grepnest.example" {
+	if err != nil || authenticator == nil || service == nil || service.BaseURL != "https://graphnest.example" {
 		t.Fatalf("authenticator=%v service=%#v err=%v", authenticator, service, err)
 	}
 	if err := os.WriteFile(tokenFile, []byte(strings.Repeat("s", 31)), 0o600); err != nil {
@@ -328,7 +328,7 @@ func TestNewProvisioningRuntimeReadsBoundedSecret(t *testing.T) {
 }
 
 func TestDurableAuthenticatorRejectsStaticTokens(t *testing.T) {
-	// Break caught: durable runtime retaining GREPNEST_USER_TOKEN authentication.
+	// Break caught: durable runtime retaining GRAPHNEST_USER_TOKEN authentication.
 	store := &mainTokenStore{principal: authn.Principal{Subject: "11", Method: "api_token"}}
 	manager := durableAuthenticator(store)
 	if _, err := manager.Authenticate(t.Context(), "user-token"); !errors.Is(err, authn.ErrUnauthenticated) {

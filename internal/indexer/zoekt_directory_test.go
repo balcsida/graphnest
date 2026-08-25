@@ -42,7 +42,7 @@ func TestZoektIndexWritesDirectoryMetadataOutsideSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("TMPDIR", ambientTemp)
-	t.Setenv("GREPNEST_GIT_TOKEN", "must-not-leak")
+	t.Setenv("GRAPHNEST_GIT_TOKEN", "must-not-leak")
 	indexer := ZoektIndexer{Binary: binary, IndexDir: filepath.Join(directory, "index"), Runner: Runner{MaxOutput: 1024, KillGrace: time.Millisecond}}
 	repo := repository.Repository{
 		ID: 4, ZoektID: 7, Name: "acme/repo", Branch: "release/v3",
@@ -94,7 +94,7 @@ func TestZoektIndexWritesDirectoryMetadataOutsideSource(t *testing.T) {
 	if err := json.Unmarshal(data, &metadata); err != nil {
 		t.Fatal(err)
 	}
-	if metadata.ID != repo.ZoektID || metadata.Name != repo.Name || metadata.URL != repo.WebURL || metadata.Metadata["grepnest_repository_id"] != "7" ||
+	if metadata.ID != repo.ZoektID || metadata.Name != repo.Name || metadata.URL != repo.WebURL || metadata.Metadata["graphnest_repository_id"] != "7" ||
 		len(metadata.Branches) != 1 || metadata.Branches[0].Name != repo.Branch || metadata.Branches[0].Version != repo.DesiredSHA {
 		t.Fatalf("metadata = %#v", metadata)
 	}

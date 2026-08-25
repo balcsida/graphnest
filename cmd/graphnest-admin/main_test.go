@@ -21,7 +21,7 @@ func (tty *fakeTTY) Close() error { tty.closed = true; return nil }
 
 func testCommand(apply func(context.Context, string, string, authn.PasswordCredential, audit.Event) error) commandRuntime {
 	return commandRuntime{
-		getenv:  func(string) string { return "postgres://user:secret@db/grepnest" },
+		getenv:  func(string) string { return "postgres://user:secret@db/graphnest" },
 		openTTY: func() (terminal, error) { return nil, errors.New("no tty") },
 		hashPassword: func([]byte, io.Reader) (authn.PasswordCredential, error) {
 			return authn.PasswordCredential{
@@ -154,7 +154,7 @@ func TestCommandSetsForcedRotationAndBoundedAuditEvent(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := runtime.run(t.Context(), []string{"break-glass", "set-password", "recovery-admin"},
 		strings.NewReader("sixteen-byte-secret\nsixteen-byte-secret\n"), &stdout, &stderr)
-	if code != 0 || gotURL != "postgres://user:secret@db/grepnest" || gotUser != "recovery-admin" {
+	if code != 0 || gotURL != "postgres://user:secret@db/graphnest" || gotUser != "recovery-admin" {
 		t.Fatalf("code=%d URL=%q user=%q stderr=%q", code, gotURL, gotUser, stderr.String())
 	}
 	if !gotCredential.ForceRotation || gotEvent.ActorType != "operator" ||
