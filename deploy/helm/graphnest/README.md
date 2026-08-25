@@ -37,6 +37,9 @@ may contain letters, digits, `-`, `_`, and `.`.
 
 ## Validate and install
 
+Deployments created before the GraphNest rename require fresh GraphNest configuration
+and a fresh GraphNest installation. This is not an in-place upgrade; GraphNest does not automatically discover or mutate previous deployment state.
+
 For a release, replace `sha256:RELEASE_DIGEST` with values copied from the
 GitHub Release; they are placeholders, not literal digest values. The OCI chart
 already embeds both copied release digests, so pull and install it directly:
@@ -60,10 +63,6 @@ helm lint deploy/helm/graphnest -f my-values.yaml
 helm template graphnest deploy/helm/graphnest -n graphnest -f my-values.yaml
 helm upgrade --install graphnest deploy/helm/graphnest -n graphnest --create-namespace -f my-values.yaml --wait --timeout 15m
 ```
-
-Deployments created before the GraphNest rename require fresh GraphNest configuration
-and a fresh GraphNest installation. This is not an in-place upgrade; GraphNest does not automatically discover or mutate previous deployment state.
-The `helm upgrade --install` command below applies only to upgrades between GraphNest releases.
 
 For upgrades between GraphNest releases, use the same `helm upgrade --install`
 command and the complete values file. Roll back with:
