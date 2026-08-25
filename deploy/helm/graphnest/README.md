@@ -61,7 +61,7 @@ helm template graphnest deploy/helm/graphnest -n graphnest -f my-values.yaml
 helm upgrade --install graphnest deploy/helm/graphnest -n graphnest --create-namespace -f my-values.yaml --wait --timeout 15m
 ```
 
-A pre-rename GrepNest deployment is a clean-break boundary: it requires fresh GraphNest configuration
+Deployments created before the GraphNest rename require fresh GraphNest configuration
 and a fresh GraphNest installation. This is not an in-place upgrade; GraphNest does not automatically discover or mutate previous deployment state.
 The `helm upgrade --install` command below applies only to upgrades between GraphNest releases.
 
