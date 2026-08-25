@@ -1,6 +1,6 @@
 apiVersion: v2
-name: grepnest
-description: Generic Kubernetes chart for the GrepNest single-node pilot
+name: graphnest
+description: Generic Kubernetes chart for the GraphNest single-node pilot
 type: application
 version: 0.3.0
 appVersion: 0.3.0

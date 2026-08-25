@@ -2,40 +2,40 @@
 set -eu
 
 base_config=$(env \
-  GREPNEST_APPLICATION_IMAGE= \
-  GREPNEST_GITHUB_PRIVATE_KEY_FILE= \
-  GREPNEST_GITHUB_WEBHOOK_SECRET_FILE= \
-  GREPNEST_GITHUB_WEB_URL= \
-  GREPNEST_GITHUB_API_URL= \
-  GREPNEST_GITHUB_UPLOAD_URL= \
-  GREPNEST_GITHUB_GIT_URL= \
-  GREPNEST_GITHUB_APP_ID= \
-  GREPNEST_USER_TOKEN= \
-  GREPNEST_USER_INSTALLATION_ID= \
-  GREPNEST_USER_REPOSITORY_IDS= \
-  GREPNEST_ADMIN_TOKEN= \
-  GREPNEST_ADMIN_INSTALLATION_ID= \
-  GREPNEST_ADMIN_REPOSITORY_IDS= \
+  GRAPHNEST_APPLICATION_IMAGE= \
+  GRAPHNEST_GITHUB_PRIVATE_KEY_FILE= \
+  GRAPHNEST_GITHUB_WEBHOOK_SECRET_FILE= \
+  GRAPHNEST_GITHUB_WEB_URL= \
+  GRAPHNEST_GITHUB_API_URL= \
+  GRAPHNEST_GITHUB_UPLOAD_URL= \
+  GRAPHNEST_GITHUB_GIT_URL= \
+  GRAPHNEST_GITHUB_APP_ID= \
+  GRAPHNEST_USER_TOKEN= \
+  GRAPHNEST_USER_INSTALLATION_ID= \
+  GRAPHNEST_USER_REPOSITORY_IDS= \
+  GRAPHNEST_ADMIN_TOKEN= \
+  GRAPHNEST_ADMIN_INSTALLATION_ID= \
+  GRAPHNEST_ADMIN_REPOSITORY_IDS= \
   docker compose -f deploy/compose/compose.yml --profile fixture config --format json)
 
 printf '%s' "${base_config:?missing fixture Compose config}" |
   jq -e '
-    (.services | has("grepnest-server") | not)
+    (.services | has("graphnest-server") | not)
     and (.services | has("postgres"))
     and (.services | has("zoekt"))
     and (.services | has("zoekt-index"))
   ' >/dev/null
 
-fixture=$(mktemp -d "${TMPDIR:-/tmp}/grepnest-fixture.XXXXXX")
+fixture=$(mktemp -d "${TMPDIR:-/tmp}/graphnest-fixture.XXXXXX")
 case "$fixture" in
-  "${TMPDIR:-/tmp}"/grepnest-fixture.*) ;;
+  "${TMPDIR:-/tmp}"/graphnest-fixture.*) ;;
   *) echo "unexpected temporary directory: $fixture" >&2; exit 1 ;;
 esac
 trap 'rm -rf "$fixture"' EXIT
 cp -R test/fixtures/repository/. "$fixture"
 git init --initial-branch=main "$fixture" >/dev/null
-git -C "$fixture" config user.name "GrepNest Test"
-git -C "$fixture" config user.email test@grepnest.invalid
+git -C "$fixture" config user.name "GraphNest Test"
+git -C "$fixture" config user.email test@graphnest.invalid
 git -C "$fixture" config commit.gpgsign false
 git -C "$fixture" config zoekt.repoid 7
 git -C "$fixture" config zoekt.name fixture/repository
@@ -57,31 +57,31 @@ render_files() {
   overlay_args=
   [ -z "$overlay" ] || overlay_args="-f $overlay"
   env \
-    GREPNEST_NODE_IMAGE=registry.example/grepnest/node:test \
-    GREPNEST_APPLICATION_IMAGE= \
-    GREPNEST_GITHUB_CA_FILE= \
-    GREPNEST_PUBLIC_URL= \
-    GREPNEST_SSO_SESSION_IDLE= \
-    GREPNEST_SSO_SESSION_TTL= \
-    GREPNEST_SSO_LOGIN_FLOW_TTL= \
-    GREPNEST_OIDC_ISSUER_URL= \
-    GREPNEST_OIDC_CLIENT_ID= \
-    GREPNEST_OIDC_CLIENT_SECRET_FILE= \
-    GREPNEST_OIDC_CA_FILE= \
-    GREPNEST_OIDC_SCOPES= \
-    GREPNEST_OIDC_LINK_CLAIM= \
-    GREPNEST_OIDC_DISPLAY_NAME_CLAIM= \
-    GREPNEST_OAUTH_GITHUB_CLIENT_ID= \
-    GREPNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE= \
-    GREPNEST_SCIM_TOKEN_FILE= \
-    GREPNEST_BREAK_GLASS_ENABLED= \
-    GREPNEST_GITHUB_PRIVATE_KEY_FILE=/tmp/private-key.pem \
-    GREPNEST_GITHUB_WEBHOOK_SECRET_FILE=/tmp/webhook-secret \
-    GREPNEST_GITHUB_WEB_URL=https://github.example \
-    GREPNEST_GITHUB_API_URL=https://github.example/api/v3 \
-    GREPNEST_GITHUB_UPLOAD_URL=https://github.example/api/uploads \
-    GREPNEST_GITHUB_GIT_URL=https://github.example \
-    GREPNEST_GITHUB_APP_ID=1 \
+    GRAPHNEST_NODE_IMAGE=registry.example/graphnest/node:test \
+    GRAPHNEST_APPLICATION_IMAGE= \
+    GRAPHNEST_GITHUB_CA_FILE= \
+    GRAPHNEST_PUBLIC_URL= \
+    GRAPHNEST_SSO_SESSION_IDLE= \
+    GRAPHNEST_SSO_SESSION_TTL= \
+    GRAPHNEST_SSO_LOGIN_FLOW_TTL= \
+    GRAPHNEST_OIDC_ISSUER_URL= \
+    GRAPHNEST_OIDC_CLIENT_ID= \
+    GRAPHNEST_OIDC_CLIENT_SECRET_FILE= \
+    GRAPHNEST_OIDC_CA_FILE= \
+    GRAPHNEST_OIDC_SCOPES= \
+    GRAPHNEST_OIDC_LINK_CLAIM= \
+    GRAPHNEST_OIDC_DISPLAY_NAME_CLAIM= \
+    GRAPHNEST_OAUTH_GITHUB_CLIENT_ID= \
+    GRAPHNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE= \
+    GRAPHNEST_SCIM_TOKEN_FILE= \
+    GRAPHNEST_BREAK_GLASS_ENABLED= \
+    GRAPHNEST_GITHUB_PRIVATE_KEY_FILE=/tmp/private-key.pem \
+    GRAPHNEST_GITHUB_WEBHOOK_SECRET_FILE=/tmp/webhook-secret \
+    GRAPHNEST_GITHUB_WEB_URL=https://github.example \
+    GRAPHNEST_GITHUB_API_URL=https://github.example/api/v3 \
+    GRAPHNEST_GITHUB_UPLOAD_URL=https://github.example/api/uploads \
+    GRAPHNEST_GITHUB_GIT_URL=https://github.example \
+    GRAPHNEST_GITHUB_APP_ID=1 \
     "$@" \
     docker compose \
       -f deploy/compose/compose.yml \
@@ -97,89 +97,89 @@ render() {
 }
 
 config=$(render \
-  GREPNEST_APPLICATION_IMAGE=registry.example/grepnest/application:test \
-  GREPNEST_GITHUB_CA_FILE=/tmp/github-ca.pem \
-  GREPNEST_PUBLIC_URL=https://grepnest.example \
-  GREPNEST_SSO_SESSION_IDLE=30m \
-  GREPNEST_SSO_SESSION_TTL=8h \
-  GREPNEST_SSO_LOGIN_FLOW_TTL=10m \
-  GREPNEST_OIDC_ISSUER_URL=https://id.example \
-  GREPNEST_OIDC_CLIENT_ID=grepnest \
-  GREPNEST_OIDC_CLIENT_SECRET_FILE=/tmp/oidc-client-secret \
-  GREPNEST_OIDC_CA_FILE=/tmp/oidc-ca.pem \
-  GREPNEST_OIDC_SCOPES=openid,profile,email \
-  GREPNEST_OIDC_LINK_CLAIM=sub \
-  GREPNEST_OIDC_DISPLAY_NAME_CLAIM=name \
-  GREPNEST_OAUTH_GITHUB_CLIENT_ID=grepnest-github \
-  GREPNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE=/tmp/oauth-github-client-secret \
-  GREPNEST_SCIM_TOKEN_FILE=/tmp/scim-token)
+  GRAPHNEST_APPLICATION_IMAGE=registry.example/graphnest/application:test \
+  GRAPHNEST_GITHUB_CA_FILE=/tmp/github-ca.pem \
+  GRAPHNEST_PUBLIC_URL=https://graphnest.example \
+  GRAPHNEST_SSO_SESSION_IDLE=30m \
+  GRAPHNEST_SSO_SESSION_TTL=8h \
+  GRAPHNEST_SSO_LOGIN_FLOW_TTL=10m \
+  GRAPHNEST_OIDC_ISSUER_URL=https://id.example \
+  GRAPHNEST_OIDC_CLIENT_ID=graphnest \
+  GRAPHNEST_OIDC_CLIENT_SECRET_FILE=/tmp/oidc-client-secret \
+  GRAPHNEST_OIDC_CA_FILE=/tmp/oidc-ca.pem \
+  GRAPHNEST_OIDC_SCOPES=openid,profile,email \
+  GRAPHNEST_OIDC_LINK_CLAIM=sub \
+  GRAPHNEST_OIDC_DISPLAY_NAME_CLAIM=name \
+  GRAPHNEST_OAUTH_GITHUB_CLIENT_ID=graphnest-github \
+  GRAPHNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE=/tmp/oauth-github-client-secret \
+  GRAPHNEST_SCIM_TOKEN_FILE=/tmp/scim-token)
 
 printf '%s' "$config" | jq -e '
-  .services["grepnest-server"] as $server
-  | .services["grepnest-indexer"] as $indexer
+  .services["graphnest-server"] as $server
+  | .services["graphnest-indexer"] as $indexer
   | if $server == null then false else
-    (.services | has("grepnest-scanner") | not)
-  and ($indexer.environment.GREPNEST_SOURCE_PROVIDER == "archive")
-  and ($indexer.environment | has("GREPNEST_GIT_PATH") | not)
-  and ($indexer.volumes | any(.target == "/var/lib/grepnest/work" and .type == "tmpfs"))
-  and ($indexer.volumes | any(.target == "/var/lib/grepnest/index" and .type == "bind"))
+    (.services | has("graphnest-scanner") | not)
+  and ($indexer.environment.GRAPHNEST_SOURCE_PROVIDER == "archive")
+  and ($indexer.environment | has("GRAPHNEST_GIT_PATH") | not)
+  and ($indexer.volumes | any(.target == "/var/lib/graphnest/work" and .type == "tmpfs"))
+  and ($indexer.volumes | any(.target == "/var/lib/graphnest/index" and .type == "bind"))
   and ([.volumes // {} | keys[]] | length == 0)
   and
     $server.profiles == ["durable"]
-  and $server.image == "registry.example/grepnest/application:test"
-  and $server.entrypoint == ["grepnest-server"]
+  and $server.image == "registry.example/graphnest/application:test"
+  and $server.entrypoint == ["graphnest-server"]
   and $server.depends_on.postgres.condition == "service_healthy"
   and $server.depends_on["zoekt-durable"].condition == "service_healthy"
   and ($server.environment | keys | sort) == [
-    "GREPNEST_BREAK_GLASS_ENABLED", "GREPNEST_DATABASE_URL", "GREPNEST_GITHUB_API_URL", "GREPNEST_GITHUB_APP_ID",
-    "GREPNEST_GITHUB_CA_FILE", "GREPNEST_GITHUB_GIT_URL", "GREPNEST_GITHUB_PRIVATE_KEY_FILE", "GREPNEST_GITHUB_UPLOAD_URL",
-    "GREPNEST_GITHUB_WEBHOOK_SECRET_FILE", "GREPNEST_GITHUB_WEB_URL", "GREPNEST_OAUTH_GITHUB_CLIENT_ID", "GREPNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE", "GREPNEST_OIDC_CA_FILE", "GREPNEST_OIDC_CLIENT_ID", "GREPNEST_OIDC_CLIENT_SECRET_FILE", "GREPNEST_OIDC_DISPLAY_NAME_CLAIM", "GREPNEST_OIDC_ISSUER_URL", "GREPNEST_OIDC_LINK_CLAIM", "GREPNEST_OIDC_SCOPES", "GREPNEST_PUBLIC_URL", "GREPNEST_SCIM_TOKEN_FILE", "GREPNEST_SCIP_MAX_UPLOAD_BYTES", "GREPNEST_SSO_LOGIN_FLOW_TTL", "GREPNEST_SSO_SESSION_IDLE", "GREPNEST_SSO_SESSION_TTL",
-    "GREPNEST_ZOEKT_URL"
+    "GRAPHNEST_BREAK_GLASS_ENABLED", "GRAPHNEST_DATABASE_URL", "GRAPHNEST_GITHUB_API_URL", "GRAPHNEST_GITHUB_APP_ID",
+    "GRAPHNEST_GITHUB_CA_FILE", "GRAPHNEST_GITHUB_GIT_URL", "GRAPHNEST_GITHUB_PRIVATE_KEY_FILE", "GRAPHNEST_GITHUB_UPLOAD_URL",
+    "GRAPHNEST_GITHUB_WEBHOOK_SECRET_FILE", "GRAPHNEST_GITHUB_WEB_URL", "GRAPHNEST_OAUTH_GITHUB_CLIENT_ID", "GRAPHNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE", "GRAPHNEST_OIDC_CA_FILE", "GRAPHNEST_OIDC_CLIENT_ID", "GRAPHNEST_OIDC_CLIENT_SECRET_FILE", "GRAPHNEST_OIDC_DISPLAY_NAME_CLAIM", "GRAPHNEST_OIDC_ISSUER_URL", "GRAPHNEST_OIDC_LINK_CLAIM", "GRAPHNEST_OIDC_SCOPES", "GRAPHNEST_PUBLIC_URL", "GRAPHNEST_SCIM_TOKEN_FILE", "GRAPHNEST_SCIP_MAX_UPLOAD_BYTES", "GRAPHNEST_SSO_LOGIN_FLOW_TTL", "GRAPHNEST_SSO_SESSION_IDLE", "GRAPHNEST_SSO_SESSION_TTL",
+    "GRAPHNEST_ZOEKT_URL"
   ]
   and ($server.ports | any(.host_ip == "127.0.0.1" and .target == 8080 and .published == "8080"))
   and ($server.networks | keys | sort) == ["internal", "loopback"]
-  and ([ $server.volumes[] | select(.target == "/run/secrets/grepnest/private-key.pem" or .target == "/run/secrets/grepnest/webhook-secret") | .read_only ] | length == 2 and all(. == true))
+  and ([ $server.volumes[] | select(.target == "/run/secrets/graphnest/private-key.pem" or .target == "/run/secrets/graphnest/webhook-secret") | .read_only ] | length == 2 and all(. == true))
   and ([ $server.volumes[].bind.create_host_path ] | all((. // false) == false))
-  and $server.environment.GREPNEST_GITHUB_CA_FILE == "/run/secrets/grepnest/github-ca.pem"
-  and ($server.volumes | any(.source == "/tmp/github-ca.pem" and .target == "/run/secrets/grepnest/github-ca.pem" and .read_only))
-  and $server.environment.GREPNEST_OIDC_CLIENT_SECRET_FILE == "/run/secrets/grepnest/oidc-client-secret"
-  and $server.environment.GREPNEST_OIDC_CA_FILE == "/run/secrets/grepnest/oidc-ca.pem"
-  and ($server.volumes | any(.source == "/tmp/oidc-client-secret" and .target == "/run/secrets/grepnest/oidc-client-secret" and .read_only))
-  and ($server.volumes | any(.source == "/tmp/oidc-ca.pem" and .target == "/run/secrets/grepnest/oidc-ca.pem" and .read_only))
-  and $server.environment.GREPNEST_OAUTH_GITHUB_CLIENT_ID == "grepnest-github"
-  and $server.environment.GREPNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE == "/run/secrets/grepnest/oauth-github-client-secret"
-  and ($server.volumes | any(.source == "/tmp/oauth-github-client-secret" and .target == "/run/secrets/grepnest/oauth-github-client-secret" and .read_only))
-  and $server.environment.GREPNEST_SCIM_TOKEN_FILE == "/run/secrets/grepnest/scim/token"
-  and $server.environment.GREPNEST_BREAK_GLASS_ENABLED == "false"
-  and ($server.volumes | any(.source == "/tmp/scim-token" and .target == "/run/secrets/grepnest/scim/token" and .read_only))
+  and $server.environment.GRAPHNEST_GITHUB_CA_FILE == "/run/secrets/graphnest/github-ca.pem"
+  and ($server.volumes | any(.source == "/tmp/github-ca.pem" and .target == "/run/secrets/graphnest/github-ca.pem" and .read_only))
+  and $server.environment.GRAPHNEST_OIDC_CLIENT_SECRET_FILE == "/run/secrets/graphnest/oidc-client-secret"
+  and $server.environment.GRAPHNEST_OIDC_CA_FILE == "/run/secrets/graphnest/oidc-ca.pem"
+  and ($server.volumes | any(.source == "/tmp/oidc-client-secret" and .target == "/run/secrets/graphnest/oidc-client-secret" and .read_only))
+  and ($server.volumes | any(.source == "/tmp/oidc-ca.pem" and .target == "/run/secrets/graphnest/oidc-ca.pem" and .read_only))
+  and $server.environment.GRAPHNEST_OAUTH_GITHUB_CLIENT_ID == "graphnest-github"
+  and $server.environment.GRAPHNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE == "/run/secrets/graphnest/oauth-github-client-secret"
+  and ($server.volumes | any(.source == "/tmp/oauth-github-client-secret" and .target == "/run/secrets/graphnest/oauth-github-client-secret" and .read_only))
+  and $server.environment.GRAPHNEST_SCIM_TOKEN_FILE == "/run/secrets/graphnest/scim/token"
+  and $server.environment.GRAPHNEST_BREAK_GLASS_ENABLED == "false"
+  and ($server.volumes | any(.source == "/tmp/scim-token" and .target == "/run/secrets/graphnest/scim/token" and .read_only))
   and $server.healthcheck.test == ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/readyz"]
   end
 ' >/dev/null
 
 enabled=$(render \
-  GREPNEST_APPLICATION_IMAGE=registry.example/grepnest/application:test \
-  GREPNEST_BREAK_GLASS_ENABLED=true)
+  GRAPHNEST_APPLICATION_IMAGE=registry.example/graphnest/application:test \
+  GRAPHNEST_BREAK_GLASS_ENABLED=true)
 
 printf '%s' "$enabled" | jq -e '
-  .services["grepnest-server"].environment.GREPNEST_BREAK_GLASS_ENABLED == "true"
-  and ([.services["grepnest-server"].environment | keys[] | select(test("PASSWORD|HASH|SALT"))] | length == 0)
+  .services["graphnest-server"].environment.GRAPHNEST_BREAK_GLASS_ENABLED == "true"
+  and ([.services["graphnest-server"].environment | keys[] | select(test("PASSWORD|HASH|SALT"))] | length == 0)
 ' >/dev/null
 
-without_ca=$(render GREPNEST_APPLICATION_IMAGE=registry.example/grepnest/application:test)
+without_ca=$(render GRAPHNEST_APPLICATION_IMAGE=registry.example/graphnest/application:test)
 
 printf '%s' "${without_ca:?missing Compose config without private CA}" |
   jq -e '
-    .services["grepnest-server"] as $server
-    | $server.image == "registry.example/grepnest/application:test"
-    and $server.environment.GREPNEST_GITHUB_CA_FILE == ""
-    and $server.environment.GREPNEST_OAUTH_GITHUB_CLIENT_ID == ""
-    and $server.environment.GREPNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE == ""
-    and $server.environment.GREPNEST_SCIM_TOKEN_FILE == ""
-    and ($server.volumes | any(.source == "/dev/null" and .target == "/run/secrets/grepnest/github-ca.pem" and .read_only and (.bind.create_host_path // false) == false))
-    and ($server.volumes | any(.source == "/dev/null" and .target == "/run/secrets/grepnest/oauth-github-client-secret" and .read_only and (.bind.create_host_path // false) == false))
+    .services["graphnest-server"] as $server
+    | $server.image == "registry.example/graphnest/application:test"
+    and $server.environment.GRAPHNEST_GITHUB_CA_FILE == ""
+    and $server.environment.GRAPHNEST_OAUTH_GITHUB_CLIENT_ID == ""
+    and $server.environment.GRAPHNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE == ""
+    and $server.environment.GRAPHNEST_SCIM_TOKEN_FILE == ""
+    and ($server.volumes | any(.source == "/dev/null" and .target == "/run/secrets/graphnest/github-ca.pem" and .read_only and (.bind.create_host_path // false) == false))
+    and ($server.volumes | any(.source == "/dev/null" and .target == "/run/secrets/graphnest/oauth-github-client-secret" and .read_only and (.bind.create_host_path // false) == false))
   ' >/dev/null
 
 if render >/dev/null 2>&1; then
-  echo "expected GREPNEST_APPLICATION_IMAGE to be required" >&2
+  echo "expected GRAPHNEST_APPLICATION_IMAGE to be required" >&2
   exit 1
 fi

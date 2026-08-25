@@ -1,132 +1,132 @@
 services:
-  grepnest-indexer:
+  graphnest-indexer:
     profiles: [durable]
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    image: ${GREPNEST_NODE_IMAGE:?GREPNEST_NODE_IMAGE is required}
-    entrypoint: ["grepnest-indexer"]
+    image: ${GRAPHNEST_NODE_IMAGE:?GRAPHNEST_NODE_IMAGE is required}
+    entrypoint: ["graphnest-indexer"]
     depends_on:
       postgres:
         condition: service_healthy
       zoekt-durable:
         condition: service_healthy
     environment:
-      GREPNEST_DATABASE_URL: postgres://grepnest:grepnest@postgres:5432/grepnest?sslmode=disable
-      GREPNEST_ZOEKT_URL: http://zoekt-durable:6070
-      GREPNEST_SEARCH_BACKEND: ${GREPNEST_SEARCH_BACKEND:-zoekt}
-      GREPNEST_GITHUB_WEB_URL: ${GREPNEST_GITHUB_WEB_URL:?GREPNEST_GITHUB_WEB_URL is required}
-      GREPNEST_GITHUB_API_URL: ${GREPNEST_GITHUB_API_URL:?GREPNEST_GITHUB_API_URL is required}
-      GREPNEST_GITHUB_UPLOAD_URL: ${GREPNEST_GITHUB_UPLOAD_URL:?GREPNEST_GITHUB_UPLOAD_URL is required}
-      GREPNEST_GITHUB_GIT_URL: ${GREPNEST_GITHUB_GIT_URL:?GREPNEST_GITHUB_GIT_URL is required}
-      GREPNEST_GITHUB_APP_ID: ${GREPNEST_GITHUB_APP_ID:?GREPNEST_GITHUB_APP_ID is required}
-      GREPNEST_GITHUB_CA_FILE: ${GREPNEST_GITHUB_CA_FILE:+/run/secrets/grepnest/github-ca.pem}
-      GREPNEST_GITHUB_PRIVATE_KEY_FILE: /run/secrets/grepnest/private-key.pem
-      GREPNEST_DATA_DIR: /var/lib/grepnest/work
-      GREPNEST_INDEX_DIR: /var/lib/grepnest/index
-      GREPNEST_SOURCE_PROVIDER: archive
-      GREPNEST_ZOEKT_INDEX: /usr/local/bin/zoekt-index
-      GREPNEST_WORKER_ID: primary
-      GREPNEST_MIN_FREE_BYTES: 1073741824
+      GRAPHNEST_DATABASE_URL: postgres://graphnest:graphnest@postgres:5432/graphnest?sslmode=disable
+      GRAPHNEST_ZOEKT_URL: http://zoekt-durable:6070
+      GRAPHNEST_SEARCH_BACKEND: ${GRAPHNEST_SEARCH_BACKEND:-zoekt}
+      GRAPHNEST_GITHUB_WEB_URL: ${GRAPHNEST_GITHUB_WEB_URL:?GRAPHNEST_GITHUB_WEB_URL is required}
+      GRAPHNEST_GITHUB_API_URL: ${GRAPHNEST_GITHUB_API_URL:?GRAPHNEST_GITHUB_API_URL is required}
+      GRAPHNEST_GITHUB_UPLOAD_URL: ${GRAPHNEST_GITHUB_UPLOAD_URL:?GRAPHNEST_GITHUB_UPLOAD_URL is required}
+      GRAPHNEST_GITHUB_GIT_URL: ${GRAPHNEST_GITHUB_GIT_URL:?GRAPHNEST_GITHUB_GIT_URL is required}
+      GRAPHNEST_GITHUB_APP_ID: ${GRAPHNEST_GITHUB_APP_ID:?GRAPHNEST_GITHUB_APP_ID is required}
+      GRAPHNEST_GITHUB_CA_FILE: ${GRAPHNEST_GITHUB_CA_FILE:+/run/secrets/graphnest/github-ca.pem}
+      GRAPHNEST_GITHUB_PRIVATE_KEY_FILE: /run/secrets/graphnest/private-key.pem
+      GRAPHNEST_DATA_DIR: /var/lib/graphnest/work
+      GRAPHNEST_INDEX_DIR: /var/lib/graphnest/index
+      GRAPHNEST_SOURCE_PROVIDER: archive
+      GRAPHNEST_ZOEKT_INDEX: /usr/local/bin/zoekt-index
+      GRAPHNEST_WORKER_ID: primary
+      GRAPHNEST_MIN_FREE_BYTES: 1073741824
     volumes:
       - type: tmpfs
-        target: /var/lib/grepnest/work
+        target: /var/lib/graphnest/work
         tmpfs:
           size: 6442450944
-      - ../../.cache/durable-index:/var/lib/grepnest/index
+      - ../../.cache/durable-index:/var/lib/graphnest/index
       - type: bind
-        source: ${GREPNEST_GITHUB_PRIVATE_KEY_FILE:?GREPNEST_GITHUB_PRIVATE_KEY_FILE is required}
-        target: /run/secrets/grepnest/private-key.pem
+        source: ${GRAPHNEST_GITHUB_PRIVATE_KEY_FILE:?GRAPHNEST_GITHUB_PRIVATE_KEY_FILE is required}
+        target: /run/secrets/graphnest/private-key.pem
         read_only: true
         bind:
           create_host_path: false
       - type: bind
-        source: ${GREPNEST_GITHUB_CA_FILE:-/dev/null}
-        target: /run/secrets/grepnest/github-ca.pem
+        source: ${GRAPHNEST_GITHUB_CA_FILE:-/dev/null}
+        target: /run/secrets/graphnest/github-ca.pem
         read_only: true
         bind:
           create_host_path: false
     networks: [internal]
 
-  grepnest-server:
+  graphnest-server:
     profiles: [durable]
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    image: ${GREPNEST_APPLICATION_IMAGE:?GREPNEST_APPLICATION_IMAGE is required}
-    entrypoint: ["grepnest-server"]
+    image: ${GRAPHNEST_APPLICATION_IMAGE:?GRAPHNEST_APPLICATION_IMAGE is required}
+    entrypoint: ["graphnest-server"]
     depends_on:
       postgres:
         condition: service_healthy
       zoekt-durable:
         condition: service_healthy
     environment:
-      GREPNEST_DATABASE_URL: postgres://grepnest:grepnest@postgres:5432/grepnest?sslmode=disable
-      GREPNEST_ZOEKT_URL: http://zoekt-durable:6070
-      GREPNEST_GITHUB_WEB_URL: ${GREPNEST_GITHUB_WEB_URL:?GREPNEST_GITHUB_WEB_URL is required}
-      GREPNEST_GITHUB_API_URL: ${GREPNEST_GITHUB_API_URL:?GREPNEST_GITHUB_API_URL is required}
-      GREPNEST_GITHUB_UPLOAD_URL: ${GREPNEST_GITHUB_UPLOAD_URL:?GREPNEST_GITHUB_UPLOAD_URL is required}
-      GREPNEST_GITHUB_GIT_URL: ${GREPNEST_GITHUB_GIT_URL:?GREPNEST_GITHUB_GIT_URL is required}
-      GREPNEST_GITHUB_APP_ID: ${GREPNEST_GITHUB_APP_ID:?GREPNEST_GITHUB_APP_ID is required}
-      GREPNEST_GITHUB_CA_FILE: ${GREPNEST_GITHUB_CA_FILE:+/run/secrets/grepnest/github-ca.pem}
-      GREPNEST_GITHUB_PRIVATE_KEY_FILE: /run/secrets/grepnest/private-key.pem
-      GREPNEST_GITHUB_WEBHOOK_SECRET_FILE: /run/secrets/grepnest/webhook-secret
-      GREPNEST_SCIP_MAX_UPLOAD_BYTES: ${GREPNEST_SCIP_MAX_UPLOAD_BYTES:-67108864}
-      GREPNEST_PUBLIC_URL: ${GREPNEST_PUBLIC_URL:-}
-      GREPNEST_SSO_SESSION_IDLE: ${GREPNEST_SSO_SESSION_IDLE:-}
-      GREPNEST_SSO_SESSION_TTL: ${GREPNEST_SSO_SESSION_TTL:-}
-      GREPNEST_SSO_LOGIN_FLOW_TTL: ${GREPNEST_SSO_LOGIN_FLOW_TTL:-}
-      GREPNEST_OIDC_ISSUER_URL: ${GREPNEST_OIDC_ISSUER_URL:-}
-      GREPNEST_OIDC_CLIENT_ID: ${GREPNEST_OIDC_CLIENT_ID:-}
-      GREPNEST_OIDC_CLIENT_SECRET_FILE: ${GREPNEST_OIDC_CLIENT_SECRET_FILE:+/run/secrets/grepnest/oidc-client-secret}
-      GREPNEST_OIDC_CA_FILE: ${GREPNEST_OIDC_CA_FILE:+/run/secrets/grepnest/oidc-ca.pem}
-      GREPNEST_OIDC_SCOPES: ${GREPNEST_OIDC_SCOPES:-}
-      GREPNEST_OIDC_LINK_CLAIM: ${GREPNEST_OIDC_LINK_CLAIM:-}
-      GREPNEST_OIDC_DISPLAY_NAME_CLAIM: ${GREPNEST_OIDC_DISPLAY_NAME_CLAIM:-}
-      GREPNEST_OAUTH_GITHUB_CLIENT_ID: ${GREPNEST_OAUTH_GITHUB_CLIENT_ID:-}
-      GREPNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE: ${GREPNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE:+/run/secrets/grepnest/oauth-github-client-secret}
-      GREPNEST_SCIM_TOKEN_FILE: ${GREPNEST_SCIM_TOKEN_FILE:+/run/secrets/grepnest/scim/token}
-      GREPNEST_BREAK_GLASS_ENABLED: ${GREPNEST_BREAK_GLASS_ENABLED:-false}
+      GRAPHNEST_DATABASE_URL: postgres://graphnest:graphnest@postgres:5432/graphnest?sslmode=disable
+      GRAPHNEST_ZOEKT_URL: http://zoekt-durable:6070
+      GRAPHNEST_GITHUB_WEB_URL: ${GRAPHNEST_GITHUB_WEB_URL:?GRAPHNEST_GITHUB_WEB_URL is required}
+      GRAPHNEST_GITHUB_API_URL: ${GRAPHNEST_GITHUB_API_URL:?GRAPHNEST_GITHUB_API_URL is required}
+      GRAPHNEST_GITHUB_UPLOAD_URL: ${GRAPHNEST_GITHUB_UPLOAD_URL:?GRAPHNEST_GITHUB_UPLOAD_URL is required}
+      GRAPHNEST_GITHUB_GIT_URL: ${GRAPHNEST_GITHUB_GIT_URL:?GRAPHNEST_GITHUB_GIT_URL is required}
+      GRAPHNEST_GITHUB_APP_ID: ${GRAPHNEST_GITHUB_APP_ID:?GRAPHNEST_GITHUB_APP_ID is required}
+      GRAPHNEST_GITHUB_CA_FILE: ${GRAPHNEST_GITHUB_CA_FILE:+/run/secrets/graphnest/github-ca.pem}
+      GRAPHNEST_GITHUB_PRIVATE_KEY_FILE: /run/secrets/graphnest/private-key.pem
+      GRAPHNEST_GITHUB_WEBHOOK_SECRET_FILE: /run/secrets/graphnest/webhook-secret
+      GRAPHNEST_SCIP_MAX_UPLOAD_BYTES: ${GRAPHNEST_SCIP_MAX_UPLOAD_BYTES:-67108864}
+      GRAPHNEST_PUBLIC_URL: ${GRAPHNEST_PUBLIC_URL:-}
+      GRAPHNEST_SSO_SESSION_IDLE: ${GRAPHNEST_SSO_SESSION_IDLE:-}
+      GRAPHNEST_SSO_SESSION_TTL: ${GRAPHNEST_SSO_SESSION_TTL:-}
+      GRAPHNEST_SSO_LOGIN_FLOW_TTL: ${GRAPHNEST_SSO_LOGIN_FLOW_TTL:-}
+      GRAPHNEST_OIDC_ISSUER_URL: ${GRAPHNEST_OIDC_ISSUER_URL:-}
+      GRAPHNEST_OIDC_CLIENT_ID: ${GRAPHNEST_OIDC_CLIENT_ID:-}
+      GRAPHNEST_OIDC_CLIENT_SECRET_FILE: ${GRAPHNEST_OIDC_CLIENT_SECRET_FILE:+/run/secrets/graphnest/oidc-client-secret}
+      GRAPHNEST_OIDC_CA_FILE: ${GRAPHNEST_OIDC_CA_FILE:+/run/secrets/graphnest/oidc-ca.pem}
+      GRAPHNEST_OIDC_SCOPES: ${GRAPHNEST_OIDC_SCOPES:-}
+      GRAPHNEST_OIDC_LINK_CLAIM: ${GRAPHNEST_OIDC_LINK_CLAIM:-}
+      GRAPHNEST_OIDC_DISPLAY_NAME_CLAIM: ${GRAPHNEST_OIDC_DISPLAY_NAME_CLAIM:-}
+      GRAPHNEST_OAUTH_GITHUB_CLIENT_ID: ${GRAPHNEST_OAUTH_GITHUB_CLIENT_ID:-}
+      GRAPHNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE: ${GRAPHNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE:+/run/secrets/graphnest/oauth-github-client-secret}
+      GRAPHNEST_SCIM_TOKEN_FILE: ${GRAPHNEST_SCIM_TOKEN_FILE:+/run/secrets/graphnest/scim/token}
+      GRAPHNEST_BREAK_GLASS_ENABLED: ${GRAPHNEST_BREAK_GLASS_ENABLED:-false}
     volumes:
       - type: bind
-        source: ${GREPNEST_GITHUB_PRIVATE_KEY_FILE:?GREPNEST_GITHUB_PRIVATE_KEY_FILE is required}
-        target: /run/secrets/grepnest/private-key.pem
+        source: ${GRAPHNEST_GITHUB_PRIVATE_KEY_FILE:?GRAPHNEST_GITHUB_PRIVATE_KEY_FILE is required}
+        target: /run/secrets/graphnest/private-key.pem
         read_only: true
         bind:
           create_host_path: false
       - type: bind
-        source: ${GREPNEST_GITHUB_WEBHOOK_SECRET_FILE:?GREPNEST_GITHUB_WEBHOOK_SECRET_FILE is required}
-        target: /run/secrets/grepnest/webhook-secret
+        source: ${GRAPHNEST_GITHUB_WEBHOOK_SECRET_FILE:?GRAPHNEST_GITHUB_WEBHOOK_SECRET_FILE is required}
+        target: /run/secrets/graphnest/webhook-secret
         read_only: true
         bind:
           create_host_path: false
       - type: bind
-        source: ${GREPNEST_GITHUB_CA_FILE:-/dev/null}
-        target: /run/secrets/grepnest/github-ca.pem
+        source: ${GRAPHNEST_GITHUB_CA_FILE:-/dev/null}
+        target: /run/secrets/graphnest/github-ca.pem
         read_only: true
         bind:
           create_host_path: false
       - type: bind
-        source: ${GREPNEST_OIDC_CLIENT_SECRET_FILE:-/dev/null}
-        target: /run/secrets/grepnest/oidc-client-secret
+        source: ${GRAPHNEST_OIDC_CLIENT_SECRET_FILE:-/dev/null}
+        target: /run/secrets/graphnest/oidc-client-secret
         read_only: true
         bind:
           create_host_path: false
       - type: bind
-        source: ${GREPNEST_OIDC_CA_FILE:-/dev/null}
-        target: /run/secrets/grepnest/oidc-ca.pem
+        source: ${GRAPHNEST_OIDC_CA_FILE:-/dev/null}
+        target: /run/secrets/graphnest/oidc-ca.pem
         read_only: true
         bind:
           create_host_path: false
       - type: bind
-        source: ${GREPNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE:-/dev/null}
-        target: /run/secrets/grepnest/oauth-github-client-secret
+        source: ${GRAPHNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE:-/dev/null}
+        target: /run/secrets/graphnest/oauth-github-client-secret
         read_only: true
         bind:
           create_host_path: false
       - type: bind
-        source: ${GREPNEST_SCIM_TOKEN_FILE:-/dev/null}
-        target: /run/secrets/grepnest/scim/token
+        source: ${GRAPHNEST_SCIM_TOKEN_FILE:-/dev/null}
+        target: /run/secrets/graphnest/scim/token
         read_only: true
         bind:
           create_host_path: false

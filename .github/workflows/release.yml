@@ -46,9 +46,9 @@ jobs:
 
           version=${GITHUB_REF_NAME#v}
           chart_version=$(ruby -e 'require "yaml"; puts YAML.load_file(ARGV[0]).fetch("version")' \
-            deploy/helm/grepnest/Chart.yaml)
+            deploy/helm/graphnest/Chart.yaml)
           app_version=$(ruby -e 'require "yaml"; puts YAML.load_file(ARGV[0]).fetch("appVersion")' \
-            deploy/helm/grepnest/Chart.yaml)
+            deploy/helm/graphnest/Chart.yaml)
           [[ "$chart_version" == "$version" ]]
           [[ "$app_version" == "$version" ]]
 
@@ -87,12 +87,12 @@ jobs:
           zoekt_version=$(make -s zoekt-version)
           docker buildx build --load --platform "$platform" --target application \
             --build-arg "ZOEKT_VERSION=$zoekt_version" \
-            -t "grepnest-application:smoke-$suffix" .
+            -t "graphnest-application:smoke-$suffix" .
           docker buildx build --load --platform "$platform" --target node \
             --build-arg "ZOEKT_VERSION=$zoekt_version" \
-            -t "grepnest-node:smoke-$suffix" .
-          APPLICATION_IMAGE="grepnest-application:smoke-$suffix" \
-          NODE_IMAGE="grepnest-node:smoke-$suffix" \
+            -t "graphnest-node:smoke-$suffix" .
+          APPLICATION_IMAGE="graphnest-application:smoke-$suffix" \
+          NODE_IMAGE="graphnest-node:smoke-$suffix" \
             sh deploy/images/test.sh
       - name: Scan smoke images
         run: |
@@ -105,13 +105,13 @@ jobs:
             -v "$RUNNER_TEMP/trivy-cache:/root/.cache/trivy" \
             aquasec/trivy:0.73.0@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c image \
             --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 \
-            "grepnest-application:smoke-$suffix"
+            "graphnest-application:smoke-$suffix"
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v "$RUNNER_TEMP/trivy-cache:/root/.cache/trivy" \
             aquasec/trivy:0.73.0@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c image \
             --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 \
-            "grepnest-node:smoke-$suffix"
+            "graphnest-node:smoke-$suffix"
 
   publish:
     needs: [validate, ci, smoke]
@@ -200,14 +200,14 @@ jobs:
           set -euo pipefail
 
           ruby scripts/stage_release_chart.rb \
-            --chart deploy/helm/grepnest \
+            --chart deploy/helm/graphnest \
             --output "$RUNNER_TEMP/release-chart" \
             --version "$VERSION" \
             --application-repository "$APPLICATION" \
             --application-digest "$APPLICATION_DIGEST" \
             --node-repository "$NODE" \
             --node-digest "$NODE_DIGEST"
-          chart="$RUNNER_TEMP/release-chart/grepnest"
+          chart="$RUNNER_TEMP/release-chart/graphnest"
           values="$chart/ci/minimal-values.yaml"
           helm lint "$chart" -f "$values" \
             --set-string "images.application.repository=$APPLICATION" \
@@ -232,19 +232,19 @@ jobs:
 
           mkdir -p "$RUNNER_TEMP/packages"
           helm package "$chart" --destination "$RUNNER_TEMP/packages"
-          chart_archive="$RUNNER_TEMP/packages/grepnest-$VERSION.tgz"
+          chart_archive="$RUNNER_TEMP/packages/graphnest-$VERSION.tgz"
           push_output="$RUNNER_TEMP/helm-push.txt"
-          helm push "$chart_archive" oci://ghcr.io/balcsida/grep-nest/charts \
+          helm push "$chart_archive" oci://ghcr.io/balcsida/graphnest/charts \
             | tee "$push_output"
           chart_digest=$(awk '$1 == "Digest:" {print $2}' "$push_output")
           [[ "$chart_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          chart_reference="oci://ghcr.io/balcsida/grep-nest/charts/grepnest:$VERSION@$chart_digest"
+          chart_reference="oci://ghcr.io/balcsida/graphnest/charts/graphnest:$VERSION@$chart_digest"
 
           pull_dir="$RUNNER_TEMP/pulled-chart"
           mkdir "$pull_dir"
-          helm pull oci://ghcr.io/balcsida/grep-nest/charts/grepnest \
+          helm pull oci://ghcr.io/balcsida/graphnest/charts/graphnest \
             --version "$VERSION" --destination "$pull_dir"
-          pulled_archive="$pull_dir/grepnest-$VERSION.tgz"
+          pulled_archive="$pull_dir/graphnest-$VERSION.tgz"
           cmp "$chart_archive" "$pulled_archive"
           helm template release "$pulled_archive" -f "$values" \
             --set-string "images.application.repository=$APPLICATION" \

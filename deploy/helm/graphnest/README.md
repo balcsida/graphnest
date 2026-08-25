@@ -1,4 +1,4 @@
-# GrepNest Helm chart
+# GraphNest Helm chart
 
 This chart models the generic Kubernetes single-node pilot. The source-tree
 chart is generic: it requires operator-supplied image repositories and
@@ -42,10 +42,10 @@ GitHub Release; they are placeholders, not literal digest values. The OCI chart
 already embeds both copied release digests, so pull and install it directly:
 
 ```sh
-docker pull ghcr.io/balcsida/grep-nest/application@sha256:RELEASE_DIGEST
-docker pull ghcr.io/balcsida/grep-nest/node@sha256:RELEASE_DIGEST
-helm pull oci://ghcr.io/balcsida/grep-nest/charts/grepnest --version 0.1.0
-helm upgrade --install grepnest grepnest-0.1.0.tgz -n grepnest --create-namespace -f my-values.yaml --wait --timeout 15m
+docker pull ghcr.io/balcsida/graphnest/application@sha256:RELEASE_DIGEST
+docker pull ghcr.io/balcsida/graphnest/node@sha256:RELEASE_DIGEST
+helm pull oci://ghcr.io/balcsida/graphnest/charts/graphnest --version 0.1.0
+helm upgrade --install graphnest graphnest-0.1.0.tgz -n graphnest --create-namespace -f my-values.yaml --wait --timeout 15m
 ```
 
 Use the `gh attestation verify` commands copied from the GitHub Release to
@@ -56,16 +56,16 @@ Start from `values.yaml`, provide every required image, Secret, GitHub App ID,
 installation ID, and repository ID value, then run:
 
 ```sh
-helm lint deploy/helm/grepnest -f my-values.yaml
-helm template grepnest deploy/helm/grepnest -n grepnest -f my-values.yaml
-helm upgrade --install grepnest deploy/helm/grepnest -n grepnest --create-namespace -f my-values.yaml --wait --timeout 15m
+helm lint deploy/helm/graphnest -f my-values.yaml
+helm template graphnest deploy/helm/graphnest -n graphnest -f my-values.yaml
+helm upgrade --install graphnest deploy/helm/graphnest -n graphnest --create-namespace -f my-values.yaml --wait --timeout 15m
 ```
 
 Upgrade with the same `helm upgrade --install` command and the complete values
 file. Roll back with:
 
 ```sh
-helm rollback grepnest <REVISION> -n grepnest --wait --timeout 15m
+helm rollback graphnest <REVISION> -n graphnest --wait --timeout 15m
 ```
 
 Helm rollback does not execute the pre-install/pre-upgrade migration hook.
@@ -73,11 +73,11 @@ Before rolling the application image back after a schema-changing upgrade,
 verify database backward compatibility and follow the release-specific database
 rollback or restore procedure.
 
-The `grepnest-migrate` pre-install/pre-upgrade hook must succeed before the
+The `graphnest-migrate` pre-install/pre-upgrade hook must succeed before the
 release proceeds. A migration failure blocks install or upgrade, and the failed
 Job remains inspectable because only successful and superseded hook Jobs are
-deleted. Inspect it with `kubectl get job -n grepnest` and
-`kubectl logs -n grepnest job/grepnest-migrate` (adjust the generated name when
+deleted. Inspect it with `kubectl get job -n graphnest` and
+`kubectl logs -n graphnest job/graphnest-migrate` (adjust the generated name when
 using name overrides). Correct the database or migration problem before retrying.
 
 ## Optional integrations and networking
@@ -121,12 +121,12 @@ Enable GitHub OAuth with `server.sso.githubOAuth.enabled=true`, the same HTTPS
 `server.sso.publicURL`, and `server.sso.githubOAuth.clientID`. Register
 `<publicURL>/auth/oauth/github/callback` at GitHub and reference the existing
 `secrets.githubOAuth` Secret. Its secret is mounted read-only at
-`/var/run/secrets/grepnest/oauth-github/client-secret`; it is never placed in
+`/var/run/secrets/graphnest/oauth-github/client-secret`; it is never placed in
 values or a ConfigMap. GitHub OAuth uses the existing GitHub CA and egress.
 
 Enable SCIM with `server.scim.enabled=true`, the same HTTPS
 `server.sso.publicURL`, and an existing `secrets.scim` Secret. The token is
-mounted read-only at `/var/run/secrets/grepnest/scim/token`; it is never
+mounted read-only at `/var/run/secrets/graphnest/scim/token`; it is never
 rendered into a ConfigMap or environment value. Replace the Secret and restart
 the server pods to rotate it. See the repository README for supported filters,
 PATCH paths, limits, unsupported features, and the OIDC link-claim requirement.
@@ -134,7 +134,7 @@ PATCH paths, limits, unsupported features, and the OIDC link-claim requirement.
 `breakGlass.enabled=true` exposes only the disabled-by-default local recovery
 routes. It provisions no user name, password, hash, salt, or Secret and never
 activates because OIDC is unavailable. Provision and rotate the operator
-password offline with `grepnest-admin` from the same digest-pinned application
+password offline with `graphnest-admin` from the same digest-pinned application
 image configured in `images.application`, then follow the repository
 break-glass runbook. The chart requires OIDC or GitHub OAuth when break-glass
 is enabled.

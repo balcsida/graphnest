@@ -69,38 +69,38 @@ require 'grep failed with status 2' "$tmp/require-grep.err"
 require 'grep failed with status 2' "$tmp/reject-grep.err"
 
 helm lint "$chart" -f "$minimal"
-helm template pilot "$chart" -n grepnest -f "$minimal" >"$tmp/minimal.yaml"
-helm template pilot "$chart" -n grepnest -f "$minimal" -f "$optional" \
+helm template pilot "$chart" -n graphnest -f "$minimal" >"$tmp/minimal.yaml"
+helm template pilot "$chart" -n graphnest -f "$minimal" -f "$optional" \
   --api-versions monitoring.coreos.com/v1/ServiceMonitor >"$tmp/optional.yaml"
-helm template uid "$chart" -n grepnest -f "$minimal" \
+helm template uid "$chart" -n graphnest -f "$minimal" \
   --set=server.podSecurityContext.runAsUser=1001230000 \
   --set=node.podSecurityContext.runAsUser=1001230001 >"$tmp/uid.yaml"
 for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
-  reject 'app.kubernetes.io/component: scanner|grepnest-scanner|GREPNEST_GIT_PATH|zoekt-git-index|liblbug' "$manifest"
-  require 'name: archive-workspace, mountPath: "/var/lib/grepnest/work"' "$manifest"
+  reject 'app.kubernetes.io/component: scanner|graphnest-scanner|GRAPHNEST_GIT_PATH|zoekt-git-index|liblbug' "$manifest"
+  require 'name: archive-workspace, mountPath: "/var/lib/graphnest/work"' "$manifest"
   require 'name: archive-workspace$' "$manifest"
   require 'sizeLimit: 6Gi' "$manifest"
 done
-helm template scim "$chart" -n grepnest -f "$minimal" \
+helm template scim "$chart" -n graphnest -f "$minimal" \
   --set=server.scim.enabled=true \
-  --set-string=server.sso.publicURL=https://grepnest.example.invalid \
-  --set-string=secrets.scim.name=grepnest-scim >"$tmp/scim.yaml"
-helm template break-glass "$chart" -n grepnest -f "$minimal" \
+  --set-string=server.sso.publicURL=https://graphnest.example.invalid \
+  --set-string=secrets.scim.name=graphnest-scim >"$tmp/scim.yaml"
+helm template break-glass "$chart" -n graphnest -f "$minimal" \
   -f "$optional" --set=breakGlass.enabled=true \
   --api-versions monitoring.coreos.com/v1/ServiceMonitor >"$tmp/break-glass.yaml"
-helm template github-oauth "$chart" -n grepnest -f "$minimal" \
+helm template github-oauth "$chart" -n graphnest -f "$minimal" \
   --set=server.sso.githubOAuth.enabled=true \
-  --set-string=server.sso.githubOAuth.clientID=grepnest-github \
-  --set-string=server.sso.publicURL=https://grepnest.example.invalid \
-  --set-string=secrets.githubOAuth.name=grepnest-github-oauth >"$tmp/github-oauth.yaml"
-helm template github-break-glass "$chart" -n grepnest -f "$minimal" \
+  --set-string=server.sso.githubOAuth.clientID=graphnest-github \
+  --set-string=server.sso.publicURL=https://graphnest.example.invalid \
+  --set-string=secrets.githubOAuth.name=graphnest-github-oauth >"$tmp/github-oauth.yaml"
+helm template github-break-glass "$chart" -n graphnest -f "$minimal" \
   --set=breakGlass.enabled=true \
   --set=server.sso.githubOAuth.enabled=true \
-  --set-string=server.sso.githubOAuth.clientID=grepnest-github \
-  --set-string=server.sso.publicURL=https://grepnest.example.invalid \
-  --set-string=secrets.githubOAuth.name=grepnest-github-oauth >"$tmp/github-break-glass.yaml"
+  --set-string=server.sso.githubOAuth.clientID=graphnest-github \
+  --set-string=server.sso.publicURL=https://graphnest.example.invalid \
+  --set-string=secrets.githubOAuth.name=graphnest-github-oauth >"$tmp/github-break-glass.yaml"
 long_release=abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzx
-helm template "$long_release" "$chart" -n grepnest -f "$minimal" >"$tmp/long-release.yaml"
+helm template "$long_release" "$chart" -n graphnest -f "$minimal" >"$tmp/long-release.yaml"
 
 awk '
   /^[[:space:]]*(name|serviceName|serviceAccountName): [^{}]/ {
@@ -121,37 +121,37 @@ done
   grep -E -c -e '-(server|node|zoekt|indexer|migrate|deny-ingress|allow-server-ingress|allow-zoekt-ingress|allow-indexer-metrics-ingress)$')" \
   -eq 9 ] || exit 1
 
-helm template paths "$chart" -n grepnest -f "$minimal" \
-  --set-string=node.paths.workspace=/srv/grepnest-work \
-  --set-string=node.paths.indexes=/srv/grepnest-index \
+helm template paths "$chart" -n graphnest -f "$minimal" \
+  --set-string=node.paths.workspace=/srv/graphnest-work \
+  --set-string=node.paths.indexes=/srv/graphnest-index \
   --set-string=node.indexer.workspaceSizeLimit=8Gi \
   --set=node.zoekt.port=16070 --set=node.service.port=16071 \
   --set=node.indexer.metricsPort=19090 >"$tmp/node-contract.yaml"
 for pattern in \
-  'GREPNEST_DATA_DIR: "/srv/grepnest-work"' \
-  'GREPNEST_INDEX_DIR: "/srv/grepnest-index"' \
-  'GREPNEST_MIN_FREE_BYTES: "1073741824"' \
-  'GREPNEST_MAX_REPOSITORY_BYTES: "5368709120"' \
-	'GREPNEST_SCIP_MAX_UPLOAD_BYTES: "67108864"' \
+  'GRAPHNEST_DATA_DIR: "/srv/graphnest-work"' \
+  'GRAPHNEST_INDEX_DIR: "/srv/graphnest-index"' \
+  'GRAPHNEST_MIN_FREE_BYTES: "1073741824"' \
+  'GRAPHNEST_MAX_REPOSITORY_BYTES: "5368709120"' \
+	'GRAPHNEST_SCIP_MAX_UPLOAD_BYTES: "67108864"' \
   'containerPort: 16070' 'port: 16071, targetPort: zoekt' \
-  'GREPNEST_METRICS_LISTEN_ADDRESS: ":19090"' \
+  'GRAPHNEST_METRICS_LISTEN_ADDRESS: ":19090"' \
   'name: metrics, containerPort: 19090' \
   'name: metrics, port: 19090, targetPort: metrics' \
-  'mountPath: "/srv/grepnest-index", readOnly: true' \
-  'name: archive-workspace, mountPath: "/srv/grepnest-work"' \
+  'mountPath: "/srv/graphnest-index", readOnly: true' \
+  'name: archive-workspace, mountPath: "/srv/graphnest-work"' \
   'sizeLimit: 8Gi'; do
   require "$pattern" "$tmp/node-contract.yaml"
 done
-sed -n '/name: zoekt-webserver$/,/name: grepnest-indexer$/p' \
+sed -n '/name: zoekt-webserver$/,/name: graphnest-indexer$/p' \
   "$tmp/node-contract.yaml" >"$tmp/node-contract-zoekt.yaml"
 require '^- -index$|^            - -index$' "$tmp/node-contract-zoekt.yaml"
-require '^            - "/srv/grepnest-index"$' \
+require '^            - "/srv/graphnest-index"$' \
   "$tmp/node-contract-zoekt.yaml"
 require '^- -listen$|^            - -listen$' "$tmp/node-contract-zoekt.yaml"
 require '^            - ":16070"$' "$tmp/node-contract-zoekt.yaml"
 [ "$(grep -E -c -e 'tcpSocket: \{port: zoekt\}' "$tmp/node-contract-zoekt.yaml")" -eq 2 ] || exit 1
 
-helm template refs "$chart" -n grepnest -f "$minimal" \
+helm template refs "$chart" -n graphnest -f "$minimal" \
   --set-string=secrets.runtime.name=runtime.team.example \
   --set-string=secrets.runtime.databaseURLKey=DB_URL.v1-key \
   --set-string=images.pullSecrets[0]=registry.team.example \
@@ -161,7 +161,7 @@ for pattern in 'name: runtime.team.example' 'key: DB_URL.v1-key' \
   require "$pattern" "$tmp/references.yaml"
 done
 
-helm template security "$chart" -n grepnest -f "$minimal" \
+helm template security "$chart" -n graphnest -f "$minimal" \
   --set=server.podSecurityContext.runAsNonRoot=false \
   --set=server.podSecurityContext.seccompProfile.type=Unconfined \
   --set=server.podSecurityContext.fsGroup=1234 \
@@ -193,7 +193,7 @@ for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
     'allowPrivilegeEscalation: false' 'capabilities: \{drop: \[ALL\]\}' \
     'readOnlyRootFilesystem: true' 'runAsNonRoot: true' \
     'seccompProfile: \{type: RuntimeDefault\}' \
-    'mountPath: /tmp' 'mountPath: /var/run/grepnest' \
+    'mountPath: /tmp' 'mountPath: /var/run/graphnest' \
     'requests:' 'limits:'; do
     require "$pattern" "$manifest"
   done
@@ -227,17 +227,17 @@ for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
   [ "$(grep -E -c -e 'seccompProfile: \{type: RuntimeDefault\}' "$manifest")" -ge "$images" ] || exit 1
   [ "$(grep -E -c -e '^kind: StatefulSet$' "$manifest")" -eq 1 ] || exit 1
   [ "$(grep -E -c -e '^  replicas: 1$' "$manifest")" -eq 1 ] || exit 1
-  [ "$(grep -E -c -e '^        - name: (zoekt-webserver|grepnest-indexer)$' "$manifest")" -eq 2 ] || exit 1
+  [ "$(grep -E -c -e '^        - name: (zoekt-webserver|graphnest-indexer)$' "$manifest")" -eq 2 ] || exit 1
 done
 
 for pattern in '^kind: Ingress$' '^kind: ServiceMonitor$' \
-  'name: custom-ca' 'secretName: grepnest-existing-ca' \
-  'grepnest.example.invalid/pool: server' \
-  'grepnest.example.invalid/pool: node' \
-  'grepnest.example.invalid/pool: migration' \
+  'name: custom-ca' 'secretName: graphnest-existing-ca' \
+  'graphnest.example.invalid/pool: server' \
+  'graphnest.example.invalid/pool: node' \
+  'graphnest.example.invalid/pool: migration' \
   'nodeSelector:' 'affinity:' 'tolerations:' \
-  'grepnest.example.invalid/tier' \
-  'grepnest.example.invalid/dedicated' \
+  'graphnest.example.invalid/tier' \
+  'graphnest.example.invalid/dedicated' \
   '- frontend$' '- storage$' '- batch$' \
   'value: server' 'value: node' 'value: migration' \
   'topologySpreadConstraints:' \
@@ -248,7 +248,7 @@ done
 require 'app.kubernetes.io/component: indexer' "$tmp/optional.yaml"
 require 'port: metrics' "$tmp/optional.yaml"
 
-sed -n '/^kind: StatefulSet$/,/^# Source: grepnest\/templates\/migration-job.yaml$/p' \
+sed -n '/^kind: StatefulSet$/,/^# Source: graphnest\/templates\/migration-job.yaml$/p' \
   "$tmp/minimal.yaml" >"$tmp/node.yaml"
 require '^kind: StatefulSet$' "$tmp/node.yaml"
 require '^        fsGroup: 65532$' "$tmp/node.yaml"
@@ -256,30 +256,30 @@ require '^        fsGroup: 65532$' "$tmp/node.yaml"
 sed -n '/^      containers:$/,/^      volumes:$/p' "$tmp/node.yaml" >"$tmp/node-containers.yaml"
 require '^      containers:$' "$tmp/node-containers.yaml"
 [ "$(grep -E -c -e '^        - name:' "$tmp/node-containers.yaml")" -eq 2 ] || exit 1
-sed -n '/^        - name: zoekt-webserver$/,/^        - name: grepnest-indexer$/p' \
+sed -n '/^        - name: zoekt-webserver$/,/^        - name: graphnest-indexer$/p' \
   "$tmp/node.yaml" >"$tmp/zoekt.yaml"
 require '^        - name: zoekt-webserver$' "$tmp/zoekt.yaml"
-sed -n '/^        - name: grepnest-indexer$/,/^      volumes:$/p' \
+sed -n '/^        - name: graphnest-indexer$/,/^      volumes:$/p' \
   "$tmp/node.yaml" >"$tmp/indexer.yaml"
-require '^        - name: grepnest-indexer$' "$tmp/indexer.yaml"
-reject 'secretKeyRef:|name: GREPNEST_DATABASE_URL|name: GREPNEST_(USER|ADMIN)_TOKEN' "$tmp/zoekt.yaml"
-require 'name: GREPNEST_DATABASE_URL' "$tmp/indexer.yaml"
-reject 'name: GREPNEST_(USER|ADMIN)_TOKEN' "$tmp/indexer.yaml"
+require '^        - name: graphnest-indexer$' "$tmp/indexer.yaml"
+reject 'secretKeyRef:|name: GRAPHNEST_DATABASE_URL|name: GRAPHNEST_(USER|ADMIN)_TOKEN' "$tmp/zoekt.yaml"
+require 'name: GRAPHNEST_DATABASE_URL' "$tmp/indexer.yaml"
+reject 'name: GRAPHNEST_(USER|ADMIN)_TOKEN' "$tmp/indexer.yaml"
 
-sed -n '/^# Source: grepnest\/templates\/ingress.yaml$/,/^---$/p' \
+sed -n '/^# Source: graphnest\/templates\/ingress.yaml$/,/^---$/p' \
   "$tmp/optional.yaml" >"$tmp/optional-ingress.yaml"
 require '^kind: Ingress$' "$tmp/optional-ingress.yaml"
-reject 'pilot-grepnest-zoekt|name: .*zoekt|backend:.*zoekt' "$tmp/optional-ingress.yaml"
+reject 'pilot-graphnest-zoekt|name: .*zoekt|backend:.*zoekt' "$tmp/optional-ingress.yaml"
 reject 'host: "?\*|path: /\*|host: "?default([.]|"|$)' "$tmp/optional-ingress.yaml"
 
 policies='deny-ingress allow-server-ingress allow-zoekt-ingress allow-indexer-metrics-ingress deny-egress allow-zoekt-egress allow-dns-egress allow-postgresql-egress allow-github-egress allow-identity-provider-egress'
 for policy in $policies; do
-  sed -n "/^  name: pilot-grepnest-$policy\$/,/^---\$/p" \
+  sed -n "/^  name: pilot-graphnest-$policy\$/,/^---\$/p" \
     "$tmp/optional.yaml" >"$tmp/$policy.yaml"
-  require "^  name: pilot-grepnest-$policy\$" "$tmp/$policy.yaml"
+  require "^  name: pilot-graphnest-$policy\$" "$tmp/$policy.yaml"
   sed -n '/^spec:$/,/^---$/p' "$tmp/$policy.yaml" >"$tmp/$policy-spec.yaml"
   require '^spec:$' "$tmp/$policy-spec.yaml"
-  require 'app.kubernetes.io/name: grepnest' "$tmp/$policy-spec.yaml"
+  require 'app.kubernetes.io/name: graphnest' "$tmp/$policy-spec.yaml"
   require 'app.kubernetes.io/instance: pilot' "$tmp/$policy-spec.yaml"
 done
 
@@ -287,7 +287,7 @@ require 'policyTypes: \[Ingress\]' "$tmp/deny-ingress-spec.yaml"
 require 'ingress: \[\]' "$tmp/deny-ingress-spec.yaml"
 require 'app.kubernetes.io/component: server' "$tmp/allow-server-ingress-spec.yaml"
 require 'policyTypes: \[Ingress\]' "$tmp/allow-server-ingress-spec.yaml"
-for peer in grepnest ingress-nginx monitoring; do
+for peer in graphnest ingress-nginx monitoring; do
   require "kubernetes.io/metadata.name: $peer" "$tmp/allow-server-ingress-spec.yaml"
 done
 require 'protocol: TCP, port: 8080' "$tmp/allow-server-ingress-spec.yaml"
@@ -332,30 +332,30 @@ require 'protocol: TCP, port: 443' "$tmp/allow-github-egress-spec.yaml"
 require 'app.kubernetes.io/component: server' "$tmp/allow-identity-provider-egress-spec.yaml"
 require 'cidr: "203\.0\.113\.10/32"' "$tmp/allow-identity-provider-egress-spec.yaml"
 require 'protocol: TCP, port: 443' "$tmp/allow-identity-provider-egress-spec.yaml"
-require 'mountPath: /var/run/secrets/grepnest/oidc/client-secret' "$tmp/optional.yaml"
-require 'secretName: grepnest-oidc' "$tmp/optional.yaml"
-reject 'GREPNEST_OIDC_CLIENT_SECRET: ' "$tmp/optional.yaml"
-require 'GREPNEST_OAUTH_GITHUB_CLIENT_ID: "grepnest-github"' "$tmp/github-oauth.yaml"
-require 'GREPNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE: /var/run/secrets/grepnest/oauth-github/client-secret' "$tmp/github-oauth.yaml"
-require 'mountPath: /var/run/secrets/grepnest/oauth-github/client-secret' "$tmp/github-oauth.yaml"
-require 'secretName: grepnest-github-oauth' "$tmp/github-oauth.yaml"
+require 'mountPath: /var/run/secrets/graphnest/oidc/client-secret' "$tmp/optional.yaml"
+require 'secretName: graphnest-oidc' "$tmp/optional.yaml"
+reject 'GRAPHNEST_OIDC_CLIENT_SECRET: ' "$tmp/optional.yaml"
+require 'GRAPHNEST_OAUTH_GITHUB_CLIENT_ID: "graphnest-github"' "$tmp/github-oauth.yaml"
+require 'GRAPHNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE: /var/run/secrets/graphnest/oauth-github/client-secret' "$tmp/github-oauth.yaml"
+require 'mountPath: /var/run/secrets/graphnest/oauth-github/client-secret' "$tmp/github-oauth.yaml"
+require 'secretName: graphnest-github-oauth' "$tmp/github-oauth.yaml"
 require 'readOnly: true' "$tmp/github-oauth.yaml"
-reject 'GREPNEST_OAUTH_GITHUB_(CA|CLIENT_SECRET):|oauth-github-ca|allow-github-oauth' "$tmp/github-oauth.yaml"
-for key in GREPNEST_SSO_SESSION_IDLE GREPNEST_SSO_SESSION_TTL GREPNEST_SSO_LOGIN_FLOW_TTL; do
+reject 'GRAPHNEST_OAUTH_GITHUB_(CA|CLIENT_SECRET):|oauth-github-ca|allow-github-oauth' "$tmp/github-oauth.yaml"
+for key in GRAPHNEST_SSO_SESSION_IDLE GRAPHNEST_SSO_SESSION_TTL GRAPHNEST_SSO_LOGIN_FLOW_TTL; do
   [ "$(grep -E -c -e "^  $key:" "$tmp/optional.yaml")" -eq 1 ] || exit 1
 done
-require 'GREPNEST_SCIM_TOKEN_FILE: /var/run/secrets/grepnest/scim/token' "$tmp/optional.yaml"
-require 'mountPath: /var/run/secrets/grepnest/scim/token' "$tmp/optional.yaml"
-require 'secretName: grepnest-scim' "$tmp/optional.yaml"
-reject 'GREPNEST_SCIM_TOKEN:|GREPNEST_SCIM_TOKEN_FILE:' "$tmp/minimal.yaml"
-reject '^kind: Secret$|GREPNEST_SCIM_TOKEN: ' "$tmp/optional.yaml"
-require 'GREPNEST_PUBLIC_URL: "https://grepnest.example.invalid"' "$tmp/scim.yaml"
-require 'GREPNEST_SCIM_TOKEN_FILE: /var/run/secrets/grepnest/scim/token' "$tmp/scim.yaml"
-reject 'GREPNEST_OIDC_' "$tmp/scim.yaml"
-reject 'GREPNEST_(USER|ADMIN)_(TOKEN|INSTALLATION_ID|REPOSITORY_IDS)' "$tmp/minimal.yaml"
-reject 'GREPNEST_BREAK_GLASS_ENABLED|BREAK_GLASS.*(PASSWORD|HASH|SALT)' "$tmp/minimal.yaml"
-require 'GREPNEST_BREAK_GLASS_ENABLED: "true"' "$tmp/break-glass.yaml"
-require 'GREPNEST_BREAK_GLASS_ENABLED: "true"' "$tmp/github-break-glass.yaml"
+require 'GRAPHNEST_SCIM_TOKEN_FILE: /var/run/secrets/graphnest/scim/token' "$tmp/optional.yaml"
+require 'mountPath: /var/run/secrets/graphnest/scim/token' "$tmp/optional.yaml"
+require 'secretName: graphnest-scim' "$tmp/optional.yaml"
+reject 'GRAPHNEST_SCIM_TOKEN:|GRAPHNEST_SCIM_TOKEN_FILE:' "$tmp/minimal.yaml"
+reject '^kind: Secret$|GRAPHNEST_SCIM_TOKEN: ' "$tmp/optional.yaml"
+require 'GRAPHNEST_PUBLIC_URL: "https://graphnest.example.invalid"' "$tmp/scim.yaml"
+require 'GRAPHNEST_SCIM_TOKEN_FILE: /var/run/secrets/graphnest/scim/token' "$tmp/scim.yaml"
+reject 'GRAPHNEST_OIDC_' "$tmp/scim.yaml"
+reject 'GRAPHNEST_(USER|ADMIN)_(TOKEN|INSTALLATION_ID|REPOSITORY_IDS)' "$tmp/minimal.yaml"
+reject 'GRAPHNEST_BREAK_GLASS_ENABLED|BREAK_GLASS.*(PASSWORD|HASH|SALT)' "$tmp/minimal.yaml"
+require 'GRAPHNEST_BREAK_GLASS_ENABLED: "true"' "$tmp/break-glass.yaml"
+require 'GRAPHNEST_BREAK_GLASS_ENABLED: "true"' "$tmp/github-break-glass.yaml"
 reject 'BREAK_GLASS.*(PASSWORD|HASH|SALT)|^kind: Secret$' "$tmp/break-glass.yaml"
 expect_failure "$tmp/break-glass-type.err" helm template bad "$chart" -f "$minimal" \
   --set-string=breakGlass.enabled=true
@@ -364,32 +364,32 @@ expect_failure "$tmp/break-glass-without-oidc.err" helm template bad "$chart" -f
 
 expect_failure "$tmp/github-oauth-client-id.err" helm template bad "$chart" -f "$minimal" \
   --set=server.sso.githubOAuth.enabled=true \
-  --set-string=secrets.githubOAuth.name=grepnest-github-oauth \
-  --set-string=server.sso.publicURL=https://grepnest.example.invalid
+  --set-string=secrets.githubOAuth.name=graphnest-github-oauth \
+  --set-string=server.sso.publicURL=https://graphnest.example.invalid
 expect_failure "$tmp/github-oauth-secret.err" helm template bad "$chart" -f "$minimal" \
   --set=server.sso.githubOAuth.enabled=true \
-  --set-string=server.sso.githubOAuth.clientID=grepnest-github \
-  --set-string=server.sso.publicURL=https://grepnest.example.invalid
+  --set-string=server.sso.githubOAuth.clientID=graphnest-github \
+  --set-string=server.sso.publicURL=https://graphnest.example.invalid
 expect_failure "$tmp/github-oauth-public-url.err" helm template bad "$chart" -f "$minimal" \
   --set=server.sso.githubOAuth.enabled=true \
-  --set-string=server.sso.githubOAuth.clientID=grepnest-github \
-  --set-string=secrets.githubOAuth.name=grepnest-github-oauth \
-  --set-string=server.sso.publicURL=http://grepnest.example.invalid
+  --set-string=server.sso.githubOAuth.clientID=graphnest-github \
+  --set-string=secrets.githubOAuth.name=graphnest-github-oauth \
+  --set-string=server.sso.publicURL=http://graphnest.example.invalid
 expect_failure "$tmp/github-oauth-enabled-type.err" helm template bad "$chart" -f "$minimal" \
   --set-string=server.sso.githubOAuth.enabled=true
 
 expect_failure "$tmp/scim-secret.err" helm template bad "$chart" -f "$minimal" \
   --set=server.scim.enabled=true
 expect_failure "$tmp/scim-public-url.err" helm template bad "$chart" -f "$minimal" \
-  --set=server.scim.enabled=true --set-string=secrets.scim.name=grepnest-scim \
-  --set-string=server.sso.publicURL=http://grepnest.example.invalid
+  --set=server.scim.enabled=true --set-string=secrets.scim.name=graphnest-scim \
+  --set-string=server.sso.publicURL=http://graphnest.example.invalid
 
 reject '^ *- \{\}|^ *from: *\[?\]?$|^ *to: *\[?\]?$|^ *- (podSelector|namespaceSelector): *\{\}$' "$tmp/optional.yaml"
 reject 'cidr: "?(0\.0\.0\.0/0|::/0)"?' "$tmp/optional.yaml"
 reject '^ *namespaceSelector: *\{\}$|^ *podSelector: *\{\}$' "$tmp/optional.yaml"
 
 for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
-  reject 'GREPNEST_GRAPH_(URL|SECRET_FILE|MODE|DATA_DIR|LISTEN_ADDRESS):' "$manifest"
+  reject 'GRAPHNEST_GRAPH_(URL|SECRET_FILE|MODE|DATA_DIR|LISTEN_ADDRESS):' "$manifest"
 done
 require 'runAsUser: 1001230000' "$tmp/uid.yaml"
 require 'runAsUser: 1001230001' "$tmp/uid.yaml"
