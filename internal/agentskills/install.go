@@ -10,17 +10,17 @@ import (
 	"strings"
 )
 
-const markerName = ".grepnest-generated"
+const markerName = ".graphnest-generated"
 
 var (
-	ErrUnownedDestination = errors.New("agent skill destination is not GrepNest-owned")
+	ErrUnownedDestination = errors.New("agent skill destination is not GraphNest-owned")
 	ErrUnsafeDestination  = errors.New("agent skill destination is unsafe")
 
 	skillNames = []string{
-		"grepnest-guide",
-		"grepnest-exploring",
-		"grepnest-debugging",
-		"grepnest-impact-analysis",
+		"graphnest-guide",
+		"graphnest-exploring",
+		"graphnest-debugging",
+		"graphnest-impact-analysis",
 	}
 )
 
