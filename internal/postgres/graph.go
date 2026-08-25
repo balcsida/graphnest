@@ -6,9 +6,9 @@ import (
 	"math"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/graphartifact"
-	"github.com/grepnest/grepnest/internal/scipgraph"
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/internal/graphartifact"
+	"github.com/balcsida/graphnest/internal/scipgraph"
+	"github.com/balcsida/graphnest/pkg/api"
 	"github.com/jackc/pgx/v5"
 )
 

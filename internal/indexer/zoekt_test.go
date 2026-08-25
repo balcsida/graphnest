@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/observability"
-	"github.com/grepnest/grepnest/internal/repository"
-	"github.com/grepnest/grepnest/internal/zoekt"
+	"github.com/balcsida/graphnest/internal/observability"
+	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/zoekt"
 )
 
 func TestZoektIndexUsesFixedDeadline(t *testing.T) {

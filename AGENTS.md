@@ -2,12 +2,12 @@
 
 ## Project Structure & Module Organization
 
-GrepNest is a Go code-search service. Executables live in `cmd/` (`grepnest-server`, `grepnest-indexer`, `grepnest-mcp`, and `grepnest-migrate`). Core implementation belongs in `internal/`; reusable API models are in `pkg/api/`. Put unit tests beside their packages. Cross-component tests live in `test/integration/` and `test/e2e/`, with deterministic inputs under `test/fixtures/`. Deployment resources are under `deploy/compose/` and `deploy/helm/grepnest/`; architecture, operations, ADRs, and the OpenAPI contract are under `docs/`.
+GraphNest is a Go code-search service. Executables live in `cmd/` (`graphnest-server`, `graphnest-indexer`, `graphnest-mcp`, and `graphnest-migrate`). Core implementation belongs in `internal/`; reusable API models are in `pkg/api/`. Put unit tests beside their packages. Cross-component tests live in `test/integration/` and `test/e2e/`, with deterministic inputs under `test/fixtures/`. Deployment resources are under `deploy/compose/` and `deploy/helm/graphnest/`; architecture, operations, ADRs, and the OpenAPI contract are under `docs/`.
 
 ## Build, Test, and Development Commands
 
 - `make build` compiles every command under `cmd/`.
-- `make server` runs the HTTP server locally; configure required `GREPNEST_*` variables as documented in `README.md`.
+- `make server` runs the HTTP server locally; configure required `GRAPHNEST_*` variables as documented in `README.md`.
 - `make test` runs the standard Go test suite.
 - `make test-race` runs unit tests with the race detector and is part of CI.
 - `make integration` starts PostgreSQL with Docker Compose and runs integration-tagged tests.

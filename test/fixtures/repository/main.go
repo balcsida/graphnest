@@ -1,3 +1,3 @@
 package fixture
 
-const Needle = "GrepNestFixtureNeedle"
+const Needle = "GraphNestFixtureNeedle"

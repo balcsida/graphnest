@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/postgres"
-	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/repository"
 )
 
 const gitTargetSHA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -252,7 +252,7 @@ func gitPrepareFixture(t *testing.T) (Git, repository.Repository, postgres.Index
 	directory := t.TempDir()
 	promptsFile := filepath.Join(directory, "prompts")
 	askPass := filepath.Join(directory, "askpass")
-	askPassScript := "#!/bin/sh\nprintf '%s\\n' \"$1\" >> '" + promptsFile + "'\ncase \"$1\" in\nUsername*) printf '%s\\n' x-access-token;;\nPassword*) printf '%s\\n' \"$GREPNEST_GIT_TOKEN\";;\n*) exit 1;;\nesac\n"
+	askPassScript := "#!/bin/sh\nprintf '%s\\n' \"$1\" >> '" + promptsFile + "'\ncase \"$1\" in\nUsername*) printf '%s\\n' x-access-token;;\nPassword*) printf '%s\\n' \"$GRAPHNEST_GIT_TOKEN\";;\n*) exit 1;;\nesac\n"
 	if err := os.WriteFile(askPass, []byte(askPassScript), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -378,11 +378,11 @@ func TestGitRejectsMissingCredentialInputsBeforeDiskWrites(t *testing.T) {
 func TestGitEnvironmentEnablesFixedAskPassOnlyWithToken(t *testing.T) {
 	git := Git{AskPass: "/proc/self/exe"}
 	withToken := strings.Join(git.environment("secret", "https://ghe.example"), "\n")
-	if !strings.Contains(withToken, "GREPNEST_ASKPASS_MODE=1") || !strings.Contains(withToken, "GREPNEST_GIT_TOKEN=secret") || !strings.Contains(withToken, "GREPNEST_ASKPASS_ORIGIN=https://ghe.example") {
+	if !strings.Contains(withToken, "GRAPHNEST_ASKPASS_MODE=1") || !strings.Contains(withToken, "GRAPHNEST_GIT_TOKEN=secret") || !strings.Contains(withToken, "GRAPHNEST_ASKPASS_ORIGIN=https://ghe.example") {
 		t.Fatalf("askpass environment = %q", withToken)
 	}
 	withoutToken := strings.Join(git.environment("", ""), "\n")
-	if strings.Contains(withoutToken, "ASKPASS") || strings.Contains(withoutToken, "askPass") || strings.Contains(withoutToken, "GREPNEST_GIT_TOKEN") {
+	if strings.Contains(withoutToken, "ASKPASS") || strings.Contains(withoutToken, "askPass") || strings.Contains(withoutToken, "GRAPHNEST_GIT_TOKEN") {
 		t.Fatalf("cleanup environment contains credentials = %q", withoutToken)
 	}
 }

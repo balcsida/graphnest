@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/authn"
 )
 
 func AuthenticateRequest(authenticator authn.RequestAuthenticator, next http.Handler) http.Handler {

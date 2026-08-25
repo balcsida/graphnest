@@ -1,4 +1,4 @@
-# GrepNest Search Workspace Redesign
+# GraphNest Search Workspace Redesign
 
 **Date:** 2026-07-20
 **Status:** Approved
@@ -6,7 +6,7 @@
 ## Goal
 
 Replace the unstable card layout with a dense, predictable code-search
-workspace inspired by Sourcegraph's information hierarchy. Preserve GrepNest's
+workspace inspired by Sourcegraph's information hierarchy. Preserve GraphNest's
 identity, dependency-free delivery, same-origin APIs, session-scoped bearer
 token, and sub-40 KiB embedded document.
 
@@ -45,12 +45,12 @@ Rejected alternatives:
 
 1. a single-column results feed, because it loses persistent query context and
    is slower to scan on wide screens; and
-2. a larger multi-page application shell, because GrepNest has no additional
+2. a larger multi-page application shell, because GraphNest has no additional
    destinations that justify tabs or global navigation.
 
 ## Application Shell
 
-The top bar is 52 pixels tall on desktop and contains the GrepNest wordmark and
+The top bar is 52 pixels tall on desktop and contains the GraphNest wordmark and
 session action. The search strip sits immediately below it. Its query field is
 the dominant control, with repository scope and the Search action adjacent.
 

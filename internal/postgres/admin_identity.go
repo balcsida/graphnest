@@ -4,8 +4,8 @@ import (
 	"context"
 	"strconv"
 
-	"github.com/grepnest/grepnest/internal/admin"
-	"github.com/grepnest/grepnest/internal/audit"
+	"github.com/balcsida/graphnest/internal/admin"
+	"github.com/balcsida/graphnest/internal/audit"
 	"github.com/jackc/pgx/v5"
 )
 

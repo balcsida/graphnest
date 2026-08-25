@@ -2,7 +2,7 @@
 
 ## Scope
 
-GrepNest will replace production static bearer identities with one
+GraphNest will replace production static bearer identities with one
 deployment-wide OIDC provider, PostgreSQL-backed users and groups, fixed
 role/repository grants, revocable API tokens, SCIM 2.0 provisioning, and a
 disabled-by-default local break-glass administrator login.
@@ -95,7 +95,7 @@ stable group IDs, never display names.
 
 ## OIDC Linking and Login
 
-One OIDC issuer and client are configured per deployment. GrepNest uses
+One OIDC issuer and client are configured per deployment. GraphNest uses
 Authorization Code with PKCE S256 and validates:
 
 - HTTPS discovery and endpoints;
@@ -104,7 +104,7 @@ Authorization Code with PKCE S256 and validates:
 - client audience and authorized party where present;
 - nonce, expiry, issued-at bounds, one-time state, and browser binding.
 
-GrepNest does not persist access, ID, or refresh tokens.
+GraphNest does not persist access, ID, or refresh tokens.
 
 The deployment config selects one immutable OIDC claim used for provisioning
 linkage. Its value must exactly match the SCIM user's `externalId`. The default
@@ -112,7 +112,7 @@ claim is `sub`; an explicit alternative supports providers whose SCIM object ID
 is exposed under another immutable claim. Username or email fallback is not
 allowed.
 
-On first successful login, GrepNest atomically binds `(issuer, subject)` to the
+On first successful login, GraphNest atomically binds `(issuer, subject)` to the
 active SCIM user with that external ID. Later logins use only the immutable
 binding. Unknown, deleted, SCIM-inactive, or administrator-suspended users are
 denied with a generic response.
@@ -128,7 +128,7 @@ and grants before constructing `authn.Principal`. No session contains durable
 authorization claims. SCIM changes therefore take effect on the next request.
 
 Unsafe cookie-authenticated requests require an exact match with the configured
-public `Origin`. GrepNest rejects requests that present both a session cookie
+public `Origin`. GraphNest rejects requests that present both a session cookie
 and an `Authorization` header. MCP accepts bearer credentials only and never
 browser sessions.
 
@@ -170,7 +170,7 @@ The existing admin console gains bounded APIs and views for:
 
 SCIM-owned username, external ID, profile, group name, and membership fields are
 read-only in the admin API. This avoids two writers fighting over directory
-state. Administrators manage GrepNest access mappings and emergency suspension;
+state. Administrators manage GraphNest access mappings and emergency suspension;
 SCIM manages directory identity and membership.
 
 Users can list, create, and revoke their own API tokens. Creation accepts an
@@ -226,7 +226,7 @@ mutations, invalid paths, excessive operations, and malformed values are
 rejected with SCIM errors.
 
 Deactivating or deleting a user immediately removes effective access. Deleting
-a group removes its memberships and GrepNest grants but never deletes users.
+a group removes its memberships and GraphNest grants but never deletes users.
 Duplicate usernames, group display names, or non-empty external IDs return
 `409 uniqueness`.
 
@@ -298,9 +298,9 @@ optional custom CA. NetworkPolicy permits required OIDC egress without opening
 unrelated destinations. Multi-replica login and sessions rely only on
 PostgreSQL, not process memory.
 
-The OpenAPI document covers GrepNest authentication, user, group, grant, token,
+The OpenAPI document covers GraphNest authentication, user, group, grant, token,
 and audit APIs. SCIM schemas are documented separately by their standard
-discovery endpoints rather than duplicated into the GrepNest OpenAPI document.
+discovery endpoints rather than duplicated into the GraphNest OpenAPI document.
 
 ## Failure Handling
 

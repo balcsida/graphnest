@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/audit"
+	"github.com/balcsida/graphnest/internal/audit"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -48,7 +48,7 @@ func TestServiceValidatesBeforeStore(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			store := &fakeStore{}
-			err := test.run(&Service{Store: store, BaseURL: "https://grepnest.example/", MaxResults: 100})
+			err := test.run(&Service{Store: store, BaseURL: "https://graphnest.example/", MaxResults: 100})
 			var scimError Error
 			if !errors.As(err, &scimError) || scimError.Status != 400 || store.calls != 0 {
 				t.Fatalf("err=%v calls=%d", err, store.calls)
@@ -72,21 +72,21 @@ func TestServiceDefaultsActiveAndBuildsLocationsFromConfiguredOrigin(t *testing.
 			return group, nil
 		},
 	}
-	service := &Service{Store: store, BaseURL: "https://grepnest.example/", MaxResults: 100}
+	service := &Service{Store: store, BaseURL: "https://graphnest.example/", MaxResults: 100}
 	user, err := service.CreateUser(t.Context(), User{Schemas: []string{UserSchema}, ExternalID: "oidc-1", UserName: "ada"})
-	if err != nil || user.Meta.Location != "https://grepnest.example/scim/v2/Users/42" {
+	if err != nil || user.Meta.Location != "https://graphnest.example/scim/v2/Users/42" {
 		t.Fatalf("user=%#v err=%v", user, err)
 	}
 	group, err := service.CreateGroup(t.Context(), Group{Schemas: []string{GroupSchema}, DisplayName: "Engineering", Members: []Member{{Value: "42"}}})
-	if err != nil || group.Meta.Location != "https://grepnest.example/scim/v2/Groups/7" ||
-		group.Members[0].Ref != "https://grepnest.example/scim/v2/Users/42" {
+	if err != nil || group.Meta.Location != "https://graphnest.example/scim/v2/Groups/7" ||
+		group.Members[0].Ref != "https://graphnest.example/scim/v2/Users/42" {
 		t.Fatalf("group=%#v err=%v", group, err)
 	}
 }
 
 func TestServiceRejectsUnsafeBaseURLBeforeStore(t *testing.T) {
 	store := &fakeStore{}
-	service := &Service{Store: store, BaseURL: "http://grepnest.example/tenant", MaxResults: 100}
+	service := &Service{Store: store, BaseURL: "http://graphnest.example/tenant", MaxResults: 100}
 	if _, err := service.CreateUser(t.Context(), User{ExternalID: "oidc-1", UserName: "ada"}); err == nil || store.calls != 0 {
 		t.Fatalf("err=%v calls=%d", err, store.calls)
 	}
@@ -94,7 +94,7 @@ func TestServiceRejectsUnsafeBaseURLBeforeStore(t *testing.T) {
 
 func TestServiceUsesPatchParserAndValidatesMutation(t *testing.T) {
 	store := &fakeStore{}
-	service := &Service{Store: store, BaseURL: "https://grepnest.example", MaxResults: 100}
+	service := &Service{Store: store, BaseURL: "https://graphnest.example", MaxResults: 100}
 	request := NewPatchRequest([]PatchOperation{{Op: "replace", Path: "userName", Value: []byte(`""`)}})
 	_, err := service.PatchUser(t.Context(), 42, request)
 	var scimError Error
@@ -123,7 +123,7 @@ func TestServiceRejectsUnknownPatchFieldsBeforeStore(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			store := &fakeStore{}
-			err := test.run(&Service{Store: store, BaseURL: "https://grepnest.example", MaxResults: 100})
+			err := test.run(&Service{Store: store, BaseURL: "https://graphnest.example", MaxResults: 100})
 			var scimError Error
 			if !errors.As(err, &scimError) || scimError.Status != 400 || store.calls != 0 {
 				t.Fatalf("err=%v calls=%d", err, store.calls)
@@ -173,7 +173,7 @@ func TestServiceRequiresExactRequestSchemaBeforeStore(t *testing.T) {
 		} {
 			t.Run(operation.name+"/"+schemas.name, func(t *testing.T) {
 				store := &fakeStore{}
-				service := &Service{Store: store, BaseURL: "https://grepnest.example", MaxResults: 100}
+				service := &Service{Store: store, BaseURL: "https://graphnest.example", MaxResults: 100}
 				err := operation.run(service, schemas.value)
 				var scimError Error
 				if !errors.As(err, &scimError) || scimError.Status != 400 || scimError.SCIMType != "invalidValue" || store.calls != 0 {
@@ -190,7 +190,7 @@ func TestServiceRejectsNoncanonicalPatchMemberBeforeStore(t *testing.T) {
 		{Op: "remove", Path: `members[value eq "01"]`},
 	} {
 		store := &fakeStore{}
-		service := &Service{Store: store, BaseURL: "https://grepnest.example", MaxResults: 100}
+		service := &Service{Store: store, BaseURL: "https://graphnest.example", MaxResults: 100}
 		_, err := service.PatchGroup(t.Context(), 1, NewPatchRequest([]PatchOperation{operation}))
 		var scimError Error
 		if !errors.As(err, &scimError) || scimError.Status != 400 || scimError.SCIMType != "invalidValue" || store.calls != 0 {
@@ -206,7 +206,7 @@ func TestServiceRejectsUnsupportedNameFieldsBeforeStore(t *testing.T) {
 		{HonorificSuffix: "PhD"},
 	} {
 		store := &fakeStore{}
-		service := &Service{Store: store, BaseURL: "https://grepnest.example", MaxResults: 100}
+		service := &Service{Store: store, BaseURL: "https://graphnest.example", MaxResults: 100}
 		_, err := service.CreateUser(t.Context(), User{Schemas: []string{UserSchema}, ExternalID: "oidc-1", UserName: "ada", Name: name})
 		var scimError Error
 		if !errors.As(err, &scimError) || scimError.Status != 400 || scimError.SCIMType != "invalidValue" || store.calls != 0 {
@@ -232,7 +232,7 @@ func TestServiceMapsStoreErrors(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			service := &Service{
 				Store:      &fakeStore{userErr: test.storeErr},
-				BaseURL:    "https://grepnest.example",
+				BaseURL:    "https://graphnest.example",
 				MaxResults: 100,
 			}
 			_, err := service.User(t.Context(), 42, Projection{})
@@ -256,7 +256,7 @@ func TestServiceAuditsFinalAdministratorDenialAndPreservesConflict(t *testing.T)
 	recorder := &failingSCIMAudit{}
 	service := &Service{
 		Store: &fakeStore{userErr: ErrFinalAdministrator}, Audit: recorder,
-		BaseURL: "https://grepnest.example", MaxResults: 100,
+		BaseURL: "https://graphnest.example", MaxResults: 100,
 	}
 	ctx := audit.WithRequestID(t.Context(), "request-42")
 	_, err := service.ReplaceGroup(ctx, 9, Group{
@@ -278,7 +278,7 @@ func TestServiceProjectsAndBoundsLists(t *testing.T) {
 		ID: "42", ExternalID: "oidc-1", UserName: "ada", DisplayName: "Ada",
 		Active: &active, Emails: []Email{{Value: "ada@example.test"}},
 	}}, total: 1}
-	service := &Service{Store: store, BaseURL: "https://grepnest.example", MaxResults: 10}
+	service := &Service{Store: store, BaseURL: "https://graphnest.example", MaxResults: 10}
 	projection, err := ParseProjection(mapValues("attributes", "userName"), ResourceUsers)
 	if err != nil {
 		t.Fatal(err)

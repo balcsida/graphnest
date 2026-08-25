@@ -22,8 +22,8 @@
 - Default impact depth is 3; maximum 32. Default trace depth is 10; maximum 30.
 - Use existing 100-item and 256 KiB public response limits unless a smaller request limit applies.
 - Internal graph endpoints remain secret-authenticated, ClusterIP-only, and absent from ingress.
-- Normal `grepnest-mcp` proxy startup never writes local files.
-- Skill installation writes only GrepNest-marked directories and rejects symlink destinations.
+- Normal `graphnest-mcp` proxy startup never writes local files.
+- Skill installation writes only GraphNest-marked directories and rejects symlink destinations.
 - Preserve existing MCP tool names and behavior.
 
 ---
@@ -36,7 +36,7 @@
 - `internal/mcpserver/graph.go`: graph tool registration and explicit schemas.
 - `internal/agentskills/`: embedded initial skills and safe installer.
 - `deploy/compose/graph-*.yml`: explicit runtime-mode overlays.
-- `deploy/helm/grepnest/templates/graph.yaml`: standalone graph resources.
+- `deploy/helm/graphnest/templates/graph.yaml`: standalone graph resources.
 - `docs/adr/0012-derived-ladybug-graph.md`: accepted storage/runtime boundary.
 
 ### Task 1: Add public graph contracts and strict repository resolution
@@ -217,8 +217,8 @@ git commit -S -m "feat(graph): authorize graph analysis"
 **Files:**
 - Create: `internal/httpapi/graph_query.go`
 - Create: `internal/httpapi/graph_query_test.go`
-- Modify: `cmd/grepnest-server/main.go`
-- Modify: `cmd/grepnest-server/main_test.go`
+- Modify: `cmd/graphnest-server/main.go`
+- Modify: `cmd/graphnest-server/main_test.go`
 - Modify: `docs/openapi.yaml`
 - Modify: `scripts/check_openapi.rb`
 
@@ -241,7 +241,7 @@ func TestCypherRequiresAdministrator(t *testing.T) {
 
 - [ ] **Step 2: Run HTTP tests and observe missing registration**
 
-Run: `go test ./internal/httpapi ./cmd/grepnest-server -run Graph -count=1`
+Run: `go test ./internal/httpapi ./cmd/graphnest-server -run Graph -count=1`
 
 Expected: FAIL because query routes are absent.
 
@@ -255,7 +255,7 @@ Routes are `/v1/graph/context`, `/impact`, `/trace`, and `/cypher`. Map only sta
 
 - [ ] **Step 4: Wire durable server runtime**
 
-Construct `graphclient.Client` from bounded secret-file bytes and `GREPNEST_GRAPH_URL`, then inject one `graphservice.Service`. Static mode omits all graph ingestion/query routes.
+Construct `graphclient.Client` from bounded secret-file bytes and `GRAPHNEST_GRAPH_URL`, then inject one `graphservice.Service`. Static mode omits all graph ingestion/query routes.
 
 - [ ] **Step 5: Document the routes, run focused tests, and commit**
 
@@ -264,14 +264,14 @@ Add strict OpenAPI request objects, discriminated responses, branch behavior, `g
 Run:
 
 ```bash
-gofmt -w internal/httpapi cmd/grepnest-server
-go test ./internal/httpapi ./cmd/grepnest-server -count=1
+gofmt -w internal/httpapi cmd/graphnest-server
+go test ./internal/httpapi ./cmd/graphnest-server -count=1
 make openapi-check
 ```
 
 ```bash
 git status --short
-git add internal/httpapi/graph_query.go internal/httpapi/graph_query_test.go cmd/grepnest-server/main.go cmd/grepnest-server/main_test.go docs/openapi.yaml scripts/check_openapi.rb
+git add internal/httpapi/graph_query.go internal/httpapi/graph_query_test.go cmd/graphnest-server/main.go cmd/graphnest-server/main_test.go docs/openapi.yaml scripts/check_openapi.rb
 git commit -S -m "feat(graph): expose graph REST queries"
 ```
 
@@ -281,7 +281,7 @@ git commit -S -m "feat(graph): expose graph REST queries"
 - Create: `internal/mcpserver/graph.go`
 - Modify: `internal/mcpserver/server.go`
 - Modify: `internal/mcpserver/server_test.go`
-- Modify: `cmd/grepnest-server/main.go`
+- Modify: `cmd/graphnest-server/main.go`
 
 **Interfaces:**
 - Replaces variadic service construction with one explicit `Services` struct.
@@ -325,11 +325,11 @@ Put graph-specific schemas/handlers in `graph.go`. Each handler calls the shared
 
 - [ ] **Step 5: Run MCP/server tests and commit**
 
-Run: `go test -race ./internal/mcpserver ./cmd/grepnest-server -count=1`
+Run: `go test -race ./internal/mcpserver ./cmd/graphnest-server -count=1`
 
 ```bash
 git status --short
-git add internal/mcpserver/graph.go internal/mcpserver/server.go internal/mcpserver/server_test.go cmd/grepnest-server/main.go
+git add internal/mcpserver/graph.go internal/mcpserver/server.go internal/mcpserver/server_test.go cmd/graphnest-server/main.go
 git commit -S -m "feat(graph): add MCP analysis tools"
 ```
 
@@ -338,8 +338,8 @@ git commit -S -m "feat(graph): add MCP analysis tools"
 **Files:**
 - Modify: `internal/config/config.go`
 - Modify: `internal/config/config_test.go`
-- Modify: `cmd/grepnest-server/main.go`
-- Modify: `cmd/grepnest-server/main_test.go`
+- Modify: `cmd/graphnest-server/main.go`
+- Modify: `cmd/graphnest-server/main_test.go`
 
 **Interfaces:**
 - Extends the runtime plan's shared graph loader with server URL and public request/response limits.
@@ -351,7 +351,7 @@ Cover URL and secret-file validation, public depth/count/request/response caps, 
 
 - [ ] **Step 2: Run focused tests and observe incomplete wiring**
 
-Run: `go test ./internal/config ./internal/observability ./cmd/grepnest-server -count=1`
+Run: `go test ./internal/config ./internal/observability ./cmd/graphnest-server -count=1`
 
 Expected: FAIL until server graph client configuration is complete.
 
@@ -375,11 +375,11 @@ Call the runtime plan's existing `ObserveGraphQuery` method after each public gr
 
 - [ ] **Step 5: Run tests and commit**
 
-Run: `go test -race ./internal/config ./internal/observability ./cmd/grepnest-server -count=1`
+Run: `go test -race ./internal/config ./internal/observability ./cmd/graphnest-server -count=1`
 
 ```bash
 git status --short
-git add internal/config cmd/grepnest-server
+git add internal/config cmd/graphnest-server
 git commit -S -m "feat(graph): configure graph clients"
 ```
 
@@ -390,17 +390,17 @@ git commit -S -m "feat(graph): configure graph clients"
 **Files:**
 - Create: `internal/agentskills/install.go`
 - Create: `internal/agentskills/install_test.go`
-- Create: `internal/agentskills/assets/grepnest-guide/SKILL.md`
-- Create: `internal/agentskills/assets/grepnest-exploring/SKILL.md`
-- Create: `internal/agentskills/assets/grepnest-debugging/SKILL.md`
-- Create: `internal/agentskills/assets/grepnest-impact-analysis/SKILL.md`
-- Create: `internal/agentskills/assets/*/.grepnest-generated`
-- Modify: `cmd/grepnest-mcp/main.go`
-- Modify: `cmd/grepnest-mcp/main_test.go`
+- Create: `internal/agentskills/assets/graphnest-guide/SKILL.md`
+- Create: `internal/agentskills/assets/graphnest-exploring/SKILL.md`
+- Create: `internal/agentskills/assets/graphnest-debugging/SKILL.md`
+- Create: `internal/agentskills/assets/graphnest-impact-analysis/SKILL.md`
+- Create: `internal/agentskills/assets/*/.graphnest-generated`
+- Modify: `cmd/graphnest-mcp/main.go`
+- Modify: `cmd/graphnest-mcp/main_test.go`
 
 **Interfaces:**
 - Produces `agentskills.Install(root string) error`.
-- Adds `grepnest-mcp install-skills [--root PATH]`.
+- Adds `graphnest-mcp install-skills [--root PATH]`.
 
 - [ ] **Step 1: Write failing installer safety tests**
 
@@ -409,7 +409,7 @@ Cover `.claude/skills` installation, `.agents/skills` only when `.agents` exists
 ```go
 func TestInstallRefusesUnownedSkill(t *testing.T) {
 	root := t.TempDir()
-	target := filepath.Join(root, ".claude", "skills", "grepnest-guide")
+	target := filepath.Join(root, ".claude", "skills", "graphnest-guide")
 	mkdir(t, target)
 	writeFile(t, filepath.Join(target, "SKILL.md"), "user content")
 	if err := Install(root); !errors.Is(err, ErrUnownedDestination) { t.Fatalf("err=%v", err) }
@@ -418,7 +418,7 @@ func TestInstallRefusesUnownedSkill(t *testing.T) {
 
 - [ ] **Step 2: Run tests and observe missing installer**
 
-Run: `go test ./internal/agentskills ./cmd/grepnest-mcp -count=1`
+Run: `go test ./internal/agentskills ./cmd/graphnest-mcp -count=1`
 
 Expected: FAIL because installer/assets/subcommand do not exist.
 
@@ -433,20 +433,20 @@ Do not mention unavailable query, PDG, taint, mutation, group, or generated-area
 
 - [ ] **Step 4: Implement atomic marked-directory installation**
 
-Use `os.Lstat` for every destination component, create a sibling temporary directory, write embedded files with `0600`/directories `0700`, sync/close, then rename. Update only when `.grepnest-generated` matches the embedded marker.
+Use `os.Lstat` for every destination component, create a sibling temporary directory, write embedded files with `0600`/directories `0700`, sync/close, then rename. Update only when `.graphnest-generated` matches the embedded marker.
 
 - [ ] **Step 5: Add the explicit subcommand and commit**
 
 Run:
 
 ```bash
-gofmt -w internal/agentskills cmd/grepnest-mcp
-go test -race ./internal/agentskills ./cmd/grepnest-mcp -count=1
+gofmt -w internal/agentskills cmd/graphnest-mcp
+go test -race ./internal/agentskills ./cmd/graphnest-mcp -count=1
 ```
 
 ```bash
 git status --short
-git add internal/agentskills cmd/grepnest-mcp
+git add internal/agentskills cmd/graphnest-mcp
 git commit -S -m "feat(mcp): install graph agent skills"
 ```
 
@@ -475,7 +475,7 @@ Expected: FAIL because graph overlays do not exist.
 
 - [ ] **Step 3: Add the two minimal overlays**
 
-Add common `grepnest-indexer` and `grepnest-scanner` services to `durable.yml`, using required `GREPNEST_NODE_IMAGE` and `GREPNEST_SCANNER_IMAGE` values. Embedded mode adds graph path/listener to that indexer service. Separate mode disables embedded ownership and adds one `grepnest-graph` service and volume. Both give the server only the internal URL and read-only secret, and both mount the durable Zoekt index writable only in the indexer.
+Add common `graphnest-indexer` and `graphnest-scanner` services to `durable.yml`, using required `GRAPHNEST_NODE_IMAGE` and `GRAPHNEST_SCANNER_IMAGE` values. Embedded mode adds graph path/listener to that indexer service. Separate mode disables embedded ownership and adds one `graphnest-graph` service and volume. Both give the server only the internal URL and read-only secret, and both mount the durable Zoekt index writable only in the indexer.
 
 - [ ] **Step 4: Render both combinations and document commands**
 
@@ -500,18 +500,18 @@ git commit -S -m "feat(deploy): compose graph modes"
 ### Task 8: Package both modes in Helm
 
 **Files:**
-- Modify: `deploy/helm/grepnest/values.yaml`
-- Modify: `deploy/helm/grepnest/values.schema.json`
-- Modify: `deploy/helm/grepnest/templates/configmaps.yaml`
-- Modify: `deploy/helm/grepnest/templates/node.yaml`
-- Create: `deploy/helm/grepnest/templates/graph.yaml`
-- Modify: `deploy/helm/grepnest/templates/networkpolicies.yaml`
-- Modify: `deploy/helm/grepnest/templates/serviceaccounts.yaml`
-- Modify: `deploy/helm/grepnest/templates/servicemonitor.yaml`
-- Modify: `deploy/helm/grepnest/tests/render.sh`
-- Modify: `deploy/helm/grepnest/ci/minimal-values.yaml`
-- Modify: `deploy/helm/grepnest/ci/optional-values.yaml`
-- Modify: `deploy/helm/grepnest/README.md`
+- Modify: `deploy/helm/graphnest/values.yaml`
+- Modify: `deploy/helm/graphnest/values.schema.json`
+- Modify: `deploy/helm/graphnest/templates/configmaps.yaml`
+- Modify: `deploy/helm/graphnest/templates/node.yaml`
+- Create: `deploy/helm/graphnest/templates/graph.yaml`
+- Modify: `deploy/helm/graphnest/templates/networkpolicies.yaml`
+- Modify: `deploy/helm/graphnest/templates/serviceaccounts.yaml`
+- Modify: `deploy/helm/graphnest/templates/servicemonitor.yaml`
+- Modify: `deploy/helm/graphnest/tests/render.sh`
+- Modify: `deploy/helm/graphnest/ci/minimal-values.yaml`
+- Modify: `deploy/helm/graphnest/ci/optional-values.yaml`
+- Modify: `deploy/helm/graphnest/README.md`
 
 **Interfaces:**
 - Adds `graph.mode: embedded|separate`, default `embedded`.
@@ -541,7 +541,7 @@ Run: `make helm-lint helm-test`
 
 ```bash
 git status --short
-git add deploy/helm/grepnest
+git add deploy/helm/graphnest
 git commit -S -m "feat(helm): deploy graph runtime modes"
 ```
 
@@ -648,7 +648,7 @@ git commit -S -m "test(graph): verify graph analysis"
 - [ ] Run every command from Task 10 Step 4 in a clean process.
 - [ ] Verify ordinary tokens cannot execute Cypher or observe unauthorized graph rows.
 - [ ] Verify every graph response reports current commits or explicit boundaries.
-- [ ] Verify `grepnest-mcp install-skills` is idempotent and normal startup leaves the checkout untouched.
+- [ ] Verify `graphnest-mcp install-skills` is idempotent and normal startup leaves the checkout untouched.
 - [ ] Verify embedded and separate Helm/Compose modes have one writer and no public graph endpoint.
 - [ ] Verify every commit signature with `git log --show-signature --format='%h %G? %s' origin/main..HEAD`.
 - [ ] Confirm `git status --short --branch` is clean.

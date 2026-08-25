@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/account"
-	"github.com/grepnest/grepnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/account"
+	"github.com/balcsida/graphnest/internal/authn"
 )
 
 const maxTokenRepositories = 100

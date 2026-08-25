@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/githubapp"
-	"github.com/grepnest/grepnest/internal/repository"
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/githubapp"
+	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/pkg/api"
 	"github.com/jackc/pgx/v5"
 )
 

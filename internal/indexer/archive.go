@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/githubapp"
-	"github.com/grepnest/grepnest/internal/observability"
+	"github.com/balcsida/graphnest/internal/githubapp"
+	"github.com/balcsida/graphnest/internal/observability"
 )
 
 type ArchiveDownloader interface {

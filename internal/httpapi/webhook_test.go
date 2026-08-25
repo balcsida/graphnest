@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/webhook"
+	"github.com/balcsida/graphnest/internal/webhook"
 )
 
 type webhookProcessorStub struct {

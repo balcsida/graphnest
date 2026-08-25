@@ -1,6 +1,6 @@
 package enrichment
 
-import "github.com/grepnest/grepnest/internal/graphartifact"
+import "github.com/balcsida/graphnest/internal/graphartifact"
 
 const ProtocolVersion = 1
 

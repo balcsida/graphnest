@@ -14,13 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/authz"
-	"github.com/grepnest/grepnest/internal/githubapp"
-	"github.com/grepnest/grepnest/internal/indexer"
-	"github.com/grepnest/grepnest/internal/postgres"
-	"github.com/grepnest/grepnest/internal/repository"
-	"github.com/grepnest/grepnest/internal/webhook"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/authz"
+	"github.com/balcsida/graphnest/internal/githubapp"
+	"github.com/balcsida/graphnest/internal/indexer"
+	"github.com/balcsida/graphnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/webhook"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -797,21 +797,21 @@ type postgresHarness struct {
 
 func newPostgresHarness(t *testing.T) *postgresHarness {
 	t.Helper()
-	dsn := os.Getenv("GREPNEST_TEST_POSTGRES_DSN")
+	dsn := os.Getenv("GRAPHNEST_TEST_POSTGRES_DSN")
 	if dsn == "" {
-		dsn = os.Getenv("GREPNEST_TEST_DATABASE_URL")
+		dsn = os.Getenv("GRAPHNEST_TEST_DATABASE_URL")
 	}
 	if dsn == "" {
-		if os.Getenv("GREPNEST_REQUIRE_POSTGRES") == "1" {
-			t.Fatal("GREPNEST_TEST_POSTGRES_DSN is not set")
+		if os.Getenv("GRAPHNEST_REQUIRE_POSTGRES") == "1" {
+			t.Fatal("GRAPHNEST_TEST_POSTGRES_DSN is not set")
 		}
-		t.Skip("GREPNEST_TEST_POSTGRES_DSN is not set")
+		t.Skip("GRAPHNEST_TEST_POSTGRES_DSN is not set")
 	}
 	bytes := make([]byte, 8)
 	if _, err := rand.Read(bytes); err != nil {
 		t.Fatal(err)
 	}
-	schema := "grepnest_cross_" + hex.EncodeToString(bytes)
+	schema := "graphnest_cross_" + hex.EncodeToString(bytes)
 	admin, err := pgxpool.New(t.Context(), dsn)
 	if err != nil {
 		t.Fatal(err)

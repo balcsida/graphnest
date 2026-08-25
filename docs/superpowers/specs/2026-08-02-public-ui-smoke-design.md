@@ -2,7 +2,7 @@
 
 ## Goal
 
-Run a real-browser smoke test on every pull request against the embedded GrepNest UI and two public GitHub repositories at fixed revisions. The smoke must catch failures in static inventory, repository filtering, searching, non-interactive static result paths, and exact indexed-source links without requiring credentials or executing repository code.
+Run a real-browser smoke test on every pull request against the embedded GraphNest UI and two public GitHub repositories at fixed revisions. The smoke must catch failures in static inventory, repository filtering, searching, non-interactive static result paths, and exact indexed-source links without requiring credentials or executing repository code.
 
 ## Test topology
 
@@ -11,7 +11,7 @@ The repository will add an exact-pinned `@playwright/test` development dependenc
 - `octocat/Hello-World` at `7fd1a60b01f91b314f59955a4e4d4e80d8edf11d`
 - `octocat/Spoon-Knife` at `d0dd1f61b33d64e29d8bc1372a94ef6a2fee76a9`
 
-The harness will assign distinct Zoekt IDs and names, build one temporary index, write a matching static registry, start Zoekt and GrepNest on loopback, wait for readiness, and run one Playwright Chromium spec through the production bearer-token page. A trap will stop child processes, print service logs on failure, and remove the temporary workspace.
+The harness will assign distinct Zoekt IDs and names, build one temporary index, write a matching static registry, start Zoekt and GraphNest on loopback, wait for readiness, and run one Playwright Chromium spec through the production bearer-token page. A trap will stop child processes, print service logs on failure, and remove the temporary workspace.
 
 The Playwright spec will sign in with a development-only token, verify both inventory rows and their short SHAs, verify both repository filter options, search each repository for stable pinned content, and assert that only the selected repository renders. Each result path must not be a button, and `Open indexed source` must point to the selected repository, exact pinned SHA, file, and line anchor. External GitHub links will not be opened.
 

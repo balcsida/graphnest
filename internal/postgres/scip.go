@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 
-	"github.com/grepnest/grepnest/internal/admin"
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/graphartifact"
-	"github.com/grepnest/grepnest/internal/scipgraph"
+	"github.com/balcsida/graphnest/internal/admin"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/graphartifact"
+	"github.com/balcsida/graphnest/internal/scipgraph"
 	"github.com/jackc/pgx/v5"
 	"github.com/scip-code/scip/bindings/go/scip"
 )

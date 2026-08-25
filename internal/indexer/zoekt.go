@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/repository"
-	"github.com/grepnest/grepnest/internal/search"
-	"github.com/grepnest/grepnest/internal/zoekt"
+	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/search"
+	"github.com/balcsida/graphnest/internal/zoekt"
 )
 
 type ZoektIndexer struct {
@@ -44,7 +44,7 @@ func (indexer *ZoektIndexer) Index(ctx context.Context, repo repository.Reposito
 		URL      string
 		Metadata map[string]string
 		Branches []struct{ Name, Version string }
-	}{ID: repo.ZoektID, Name: repo.Name, URL: repo.WebURL, Metadata: map[string]string{"grepnest_repository_id": strconv.FormatUint(uint64(repo.ZoektID), 10)}, Branches: []struct{ Name, Version string }{{repo.Branch, repo.DesiredSHA}}}
+	}{ID: repo.ZoektID, Name: repo.Name, URL: repo.WebURL, Metadata: map[string]string{"graphnest_repository_id": strconv.FormatUint(uint64(repo.ZoektID), 10)}, Branches: []struct{ Name, Version string }{{repo.Branch, repo.DesiredSHA}}}
 	if err := json.NewEncoder(metadata).Encode(description); err != nil {
 		_ = metadata.Close()
 		return err

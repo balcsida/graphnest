@@ -21,22 +21,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/githubapp"
-	"github.com/grepnest/grepnest/internal/graphartifact"
-	"github.com/grepnest/grepnest/internal/graphingest"
-	"github.com/grepnest/grepnest/internal/graphquery"
-	"github.com/grepnest/grepnest/internal/graphservice"
-	"github.com/grepnest/grepnest/internal/httpapi"
-	"github.com/grepnest/grepnest/internal/mcpserver"
-	"github.com/grepnest/grepnest/internal/postgres"
-	"github.com/grepnest/grepnest/internal/repository"
-	"github.com/grepnest/grepnest/scanner/graphscan"
-	"github.com/grepnest/grepnest/scanner/graphscan/golang"
-	"github.com/grepnest/grepnest/scanner/graphscan/java"
-	"github.com/grepnest/grepnest/scanner/graphscan/javascript"
-	"github.com/grepnest/grepnest/scanner/graphscan/kotlin"
-	"github.com/grepnest/grepnest/scanner/graphscan/rust"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/githubapp"
+	"github.com/balcsida/graphnest/internal/graphartifact"
+	"github.com/balcsida/graphnest/internal/graphingest"
+	"github.com/balcsida/graphnest/internal/graphquery"
+	"github.com/balcsida/graphnest/internal/graphservice"
+	"github.com/balcsida/graphnest/internal/httpapi"
+	"github.com/balcsida/graphnest/internal/mcpserver"
+	"github.com/balcsida/graphnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/scanner/graphscan"
+	"github.com/balcsida/graphnest/scanner/graphscan/golang"
+	"github.com/balcsida/graphnest/scanner/graphscan/java"
+	"github.com/balcsida/graphnest/scanner/graphscan/javascript"
+	"github.com/balcsida/graphnest/scanner/graphscan/kotlin"
+	"github.com/balcsida/graphnest/scanner/graphscan/rust"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -210,15 +210,15 @@ type milestoneDatabase struct {
 
 func newMilestoneDatabase(t *testing.T) milestoneDatabase {
 	t.Helper()
-	dsn := os.Getenv("GREPNEST_TEST_POSTGRES_DSN")
+	dsn := os.Getenv("GRAPHNEST_TEST_POSTGRES_DSN")
 	if dsn == "" {
-		t.Fatal("GREPNEST_TEST_POSTGRES_DSN is required for Milestone 2 E2E")
+		t.Fatal("GRAPHNEST_TEST_POSTGRES_DSN is required for Milestone 2 E2E")
 	}
 	random := make([]byte, 8)
 	if _, err := rand.Read(random); err != nil {
 		t.Fatal(err)
 	}
-	schema := "grepnest_e2e_" + hex.EncodeToString(random)
+	schema := "graphnest_e2e_" + hex.EncodeToString(random)
 	connection, err := pgx.Connect(t.Context(), dsn)
 	if err != nil {
 		t.Fatal(err)

@@ -1,0 +1,13 @@
+images:
+  application:
+    repository: registry.example.invalid/graphnest/application
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  node:
+    repository: registry.example.invalid/graphnest/node
+    digest: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+secrets:
+  runtime: {name: graphnest-runtime}
+  githubApp: {name: graphnest-github-app}
+server:
+  config:
+    githubAppID: "12345"

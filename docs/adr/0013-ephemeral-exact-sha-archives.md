@@ -18,7 +18,7 @@ providers. Persistent Zoekt shards remain separate from ephemeral source.
 
 ## Rationale
 
-GrepNest needs file contents, not repository history. Exact-SHA archives remove
+GraphNest needs file contents, not repository history. Exact-SHA archives remove
 persistent clones and a second scanner checkout while preserving the existing
 PostgreSQL desired/indexed SHA publication gates. One snapshot also prevents
 indexing and enrichment from observing different revisions.
@@ -31,7 +31,7 @@ origin allowlist. Authorization is stripped whenever a redirect leaves the API
 origin, and errors/logs redact redirect targets. Credentials are never forwarded
 to an untrusted host. Extraction rejects escaping paths, links, special files,
 conflicting outputs, and configured resource limits.
-Startup cleanup removes only inactive, conservatively old GrepNest workspaces;
+Startup cleanup removes only inactive, conservatively old GraphNest workspaces;
 active database jobs are never deleted.
 
 ## Consequences

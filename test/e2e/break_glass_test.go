@@ -47,8 +47,8 @@ func TestBreakGlassRecoveryAcrossRealReplicas(t *testing.T) {
 	database := newMilestoneDatabase(t)
 	databaseURL := databaseURLForSchema(t, database)
 	root := t.TempDir()
-	serverBinary := buildE2EBinary(t, root, "grepnest-server", "../../cmd/grepnest-server")
-	adminBinary := buildE2EBinary(t, root, "grepnest-admin", "../../cmd/grepnest-admin")
+	serverBinary := buildE2EBinary(t, root, "graphnest-server", "../../cmd/graphnest-server")
+	adminBinary := buildE2EBinary(t, root, "graphnest-admin", "../../cmd/graphnest-admin")
 	idp := newOIDCTestProvider(t)
 	idp.displayName = oidcClaimSentinel
 	zoekt := newHealthyZoekt(t)
@@ -175,7 +175,7 @@ func databaseURLForSchema(t *testing.T, database milestoneDatabase) string {
 	if err := database.pool.QueryRow(t.Context(), "select current_schema()").Scan(&schema); err != nil {
 		t.Fatal(err)
 	}
-	parsed, err := url.Parse(os.Getenv("GREPNEST_TEST_POSTGRES_DSN"))
+	parsed, err := url.Parse(os.Getenv("GRAPHNEST_TEST_POSTGRES_DSN"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,27 +242,27 @@ func startRealServer(t *testing.T, binary, address, databaseURL, publicOrigin, i
 	t.Helper()
 	command := exec.CommandContext(t.Context(), binary)
 	command.Env = append(os.Environ(),
-		"GREPNEST_LISTEN_ADDRESS="+address,
-		"GREPNEST_DATABASE_URL="+databaseURL,
-		"GREPNEST_ZOEKT_URL="+zoektURL,
-		"GREPNEST_GITHUB_WEB_URL="+issuerURL,
-		"GREPNEST_GITHUB_API_URL="+issuerURL,
-		"GREPNEST_GITHUB_UPLOAD_URL="+issuerURL,
-		"GREPNEST_GITHUB_GIT_URL="+issuerURL,
-		"GREPNEST_GITHUB_APP_ID=1",
-		"GREPNEST_GITHUB_PRIVATE_KEY_FILE="+files.privateKey,
-		"GREPNEST_GITHUB_WEBHOOK_SECRET_FILE="+files.webhook,
-		"GREPNEST_GITHUB_CA_FILE="+files.oidcCA,
-		"GREPNEST_PUBLIC_URL="+publicOrigin,
-		"GREPNEST_OIDC_ISSUER_URL="+issuerURL,
-		"GREPNEST_OIDC_CLIENT_ID=grepnest-e2e",
-		"GREPNEST_OIDC_CLIENT_SECRET_FILE="+files.oidcSecret,
-		"GREPNEST_OIDC_CA_FILE="+files.oidcCA,
-		"GREPNEST_OIDC_SCOPES=openid",
-		"GREPNEST_OIDC_LINK_CLAIM=directory_id",
-		"GREPNEST_OIDC_DISPLAY_NAME_CLAIM=name",
-		"GREPNEST_SCIM_TOKEN_FILE="+files.scimToken,
-		fmt.Sprintf("GREPNEST_BREAK_GLASS_ENABLED=%t", breakGlass),
+		"GRAPHNEST_LISTEN_ADDRESS="+address,
+		"GRAPHNEST_DATABASE_URL="+databaseURL,
+		"GRAPHNEST_ZOEKT_URL="+zoektURL,
+		"GRAPHNEST_GITHUB_WEB_URL="+issuerURL,
+		"GRAPHNEST_GITHUB_API_URL="+issuerURL,
+		"GRAPHNEST_GITHUB_UPLOAD_URL="+issuerURL,
+		"GRAPHNEST_GITHUB_GIT_URL="+issuerURL,
+		"GRAPHNEST_GITHUB_APP_ID=1",
+		"GRAPHNEST_GITHUB_PRIVATE_KEY_FILE="+files.privateKey,
+		"GRAPHNEST_GITHUB_WEBHOOK_SECRET_FILE="+files.webhook,
+		"GRAPHNEST_GITHUB_CA_FILE="+files.oidcCA,
+		"GRAPHNEST_PUBLIC_URL="+publicOrigin,
+		"GRAPHNEST_OIDC_ISSUER_URL="+issuerURL,
+		"GRAPHNEST_OIDC_CLIENT_ID=graphnest-e2e",
+		"GRAPHNEST_OIDC_CLIENT_SECRET_FILE="+files.oidcSecret,
+		"GRAPHNEST_OIDC_CA_FILE="+files.oidcCA,
+		"GRAPHNEST_OIDC_SCOPES=openid",
+		"GRAPHNEST_OIDC_LINK_CLAIM=directory_id",
+		"GRAPHNEST_OIDC_DISPLAY_NAME_CLAIM=name",
+		"GRAPHNEST_SCIM_TOKEN_FILE="+files.scimToken,
+		fmt.Sprintf("GRAPHNEST_BREAK_GLASS_ENABLED=%t", breakGlass),
 	)
 	return startProcess(t, command)
 }
@@ -299,16 +299,16 @@ func contextWithTimeout(t *testing.T, timeout time.Duration) (context.Context, c
 func runAdmin(t *testing.T, binary, databaseURL, userName, first, second string, success bool) string {
 	t.Helper()
 	command := exec.CommandContext(t.Context(), binary, "break-glass", "set-password", userName)
-	command.Env = append(os.Environ(), "GREPNEST_DATABASE_URL="+databaseURL)
+	command.Env = append(os.Environ(), "GRAPHNEST_DATABASE_URL="+databaseURL)
 	command.Stdin = strings.NewReader(first + "\n" + second + "\n")
 	var output bytes.Buffer
 	command.Stdout, command.Stderr = &output, &output
 	err := command.Run()
 	if success && err != nil {
-		t.Fatalf("grepnest-admin failed: %v", err)
+		t.Fatalf("graphnest-admin failed: %v", err)
 	}
 	if !success && err == nil {
-		t.Fatal("grepnest-admin mismatch unexpectedly succeeded")
+		t.Fatal("graphnest-admin mismatch unexpectedly succeeded")
 	}
 	return output.String()
 }
@@ -368,7 +368,7 @@ func sessionCookieToken(t *testing.T, client *http.Client, endpoint string) stri
 		t.Fatal(err)
 	}
 	for _, cookie := range client.Jar.Cookies(parsed) {
-		if cookie.Name == "__Host-grepnest_session" && cookie.Value != "" {
+		if cookie.Name == "__Host-graphnest_session" && cookie.Value != "" {
 			return cookie.Value
 		}
 	}
@@ -586,7 +586,7 @@ func assertAuditEvents(t *testing.T, events []auditEvent) {
 func validAuditIDs(event auditEvent) bool {
 	switch event.Operation {
 	case "break_glass_password_set":
-		return event.ActorID == "grepnest-admin" && event.TargetID == recoveryUser
+		return event.ActorID == "graphnest-admin" && event.TargetID == recoveryUser
 	case "password_rotated":
 		return positiveDecimal(event.ActorID) && event.TargetID == event.ActorID
 	case "local_login_succeeded", "session_created", "oidc_login_succeeded":

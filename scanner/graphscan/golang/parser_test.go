@@ -6,8 +6,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/graphartifact"
-	"github.com/grepnest/grepnest/scanner/graphscan"
+	"github.com/balcsida/graphnest/internal/graphartifact"
+	"github.com/balcsida/graphnest/scanner/graphscan"
 )
 
 func TestParseGoEmitsPackageImportsAndDeclarations(t *testing.T) {

@@ -1,11 +1,11 @@
-# GrepNest Full-Pilot Helm Chart Design
+# GraphNest Full-Pilot Helm Chart Design
 
 **Date:** 2026-07-19
 **Status:** Approved
 
 ## Goal
 
-Add one generic Kubernetes Helm chart that models GrepNest's full single-node
+Add one generic Kubernetes Helm chart that models GraphNest's full single-node
 pilot topology without adding container builds, OpenShift resources, a bundled
 PostgreSQL database, or secret material. The chart is structurally complete,
 but it is not a claim that the unfinished Milestone 2 binaries or images are
@@ -13,12 +13,12 @@ deployable.
 
 ## Scope
 
-The chart lives at `deploy/helm/grepnest` and renders:
+The chart lives at `deploy/helm/graphnest` and renders:
 
-- a `grepnest-server` Deployment and ClusterIP Service;
+- a `graphnest-server` Deployment and ClusterIP Service;
 - an optional standard Kubernetes Ingress;
-- a one-replica `grepnest-node` StatefulSet containing `zoekt-webserver` and
-  `grepnest-indexer` containers;
+- a one-replica `graphnest-node` StatefulSet containing `zoekt-webserver` and
+  `graphnest-indexer` containers;
 - one internal ClusterIP Service for Zoekt;
 - a shared ReadWriteOnce volume claim template mounted by both node containers;
 - a pre-install/pre-upgrade migration hook Job;
@@ -53,12 +53,12 @@ The alternatives were:
 
 ## Workload Topology
 
-`grepnest-server` defaults to two replicas so a server PDB with
+`graphnest-server` defaults to two replicas so a server PDB with
 `minAvailable: 1` is useful. It listens on port 8080, exposes `/healthz`,
 `/readyz`, and `/metrics`, uses JSON logging from the application, and reaches
 PostgreSQL, GitHub, and the internal Zoekt Service.
 
-`grepnest-node` is fixed at one replica. Its two containers share one RWO PVC.
+`graphnest-node` is fixed at one replica. Its two containers share one RWO PVC.
 The indexer mounts its root at `node.paths.data`; `node.paths.indexes` must be a
 child of that path, and Zoekt mounts the corresponding PVC subpath there
 read-only. The chart derives Zoekt's `-index` and `-listen` arguments from
@@ -67,8 +67,8 @@ and selects only this StatefulSet. It has no Ingress or external service mode.
 A TCP readiness/startup probe avoids inventing an undocumented Zoekt health
 endpoint.
 
-The migration Job uses the GrepNest application image and runs
-`grepnest-migrate`. Helm hook annotations run it before install and upgrade and
+The migration Job uses the GraphNest application image and runs
+`graphnest-migrate`. Helm hook annotations run it before install and upgrade and
 retain failed jobs for diagnosis. A failed migration blocks rollout. Server and
 node have release-managed ServiceAccounts; the pre-install migration hook uses
 the namespace default ServiceAccount because it cannot depend on ordinary
@@ -79,10 +79,10 @@ API token mounting.
 
 The chart accepts two operator-supplied images:
 
-- a GrepNest application image containing `grepnest-server` and
-  `grepnest-migrate`; and
+- a GraphNest application image containing `graphnest-server` and
+  `graphnest-migrate`; and
 - a node image containing `zoekt-webserver`, `zoekt-git-index`,
-  `grepnest-indexer`, Git, CA certificates, and minimal init behavior.
+  `graphnest-indexer`, Git, CA certificates, and minimal init behavior.
 
 Repository and `sha256:` digest are required at render time. Tags are optional
 metadata only and never override a digest. The default values contain no fake
@@ -91,7 +91,7 @@ deployable image and no `latest` tag. Pull secrets are references only.
 ## Configuration and Secrets
 
 Non-secret values are split into server and node ConfigMaps and exposed as the
-documented `GREPNEST_*` environment variables. Values cover GitHub web/API/
+documented `GRAPHNEST_*` environment variables. Values cover GitHub web/API/
 upload/Git endpoints and API version, App ID, principal installation and
 repository ID scopes, search limits, worker identity, executable paths, data
 paths, minimum free space, and internal service URLs.

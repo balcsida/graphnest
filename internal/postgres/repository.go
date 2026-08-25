@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/admin"
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/githubapp"
-	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/admin"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/githubapp"
+	"github.com/balcsida/graphnest/internal/repository"
 	"github.com/jackc/pgx/v5"
 )
 

@@ -2,12 +2,12 @@
 
 ## Purpose and success criteria
 
-GrepNest will add a derived LadybugDB code graph beside its existing Zoekt
+GraphNest will add a derived LadybugDB code graph beside its existing Zoekt
 lexical index and PostgreSQL-backed SCIP navigation. The first graph release
 will support four authorization-aware MCP tools, with matching REST behavior:
 `context`, `impact`, `trace`, and administrator-only `cypher`.
 
-Success means GrepNest can scan Go, TypeScript/JavaScript, Java, Kotlin, and
+Success means GraphNest can scan Go, TypeScript/JavaScript, Java, Kotlin, and
 Rust repositories at their exact indexed commits; accept the same graph
 artifact from external CI; rebuild LadybugDB entirely from PostgreSQL; run in
 either embedded or standalone mode without changing public behavior; and never
@@ -35,9 +35,9 @@ other than the repository's indexed default branch with `branch_not_indexed`.
 One reusable internal graph runtime owns the LadybugDB schema, synchronization,
 connection lifecycle, bounded queries, and internal HTTP handlers.
 
-The default `embedded` mode starts this runtime inside `grepnest-indexer`. This
+The default `embedded` mode starts this runtime inside `graphnest-indexer`. This
 reuses the singleton node and its writable persistent volume. The optional
-`separate` mode starts the identical runtime in a new `grepnest-graph` command
+`separate` mode starts the identical runtime in a new `graphnest-graph` command
 with its own deployment and volume. API servers always use the same internal
 HTTP client and do not branch on the deployment mode.
 
@@ -58,7 +58,7 @@ Managed scanning and external analysis produce the same versioned graph
 artifact.
 
 The transaction that publishes a completed Zoekt index also enqueues a separate
-graph job for that repository and commit. Scalable `grepnest-scanner` workers
+graph job for that repository and commit. Scalable `graphnest-scanner` workers
 claim these jobs, fetch only the exact commit through the existing GitHub App
 and Git transport boundaries, parse bounded source inputs, resolve cross-file
 symbols, and submit a graph artifact. Scanners parse source but never execute
@@ -169,7 +169,7 @@ The caller selects a symbol by `uid`, or by `name` with optional `file_path`
 and `kind`. The result is structured as `found`, `ambiguous`, or `not_found`.
 A found result contains the symbol, categorized incoming and outgoing
 relationships, bounded reference sites, graph commit, and completeness
-boundaries. Optional source content is read through GrepNest's existing
+boundaries. Optional source content is read through GraphNest's existing
 exact-SHA repository file service rather than stored in LadybugDB.
 
 ### `impact`
@@ -204,14 +204,14 @@ does not weaken the administrator requirement.
 ## Initial agent skills
 
 The first graph release ships four static skills: Guide, Exploring, Debugging,
-and Impact Analysis. They teach agents the GrepNest graph schema and direct
+and Impact Analysis. They teach agents the GraphNest graph schema and direct
 them to the bounded `context`, `impact`, and `trace` tools; only Guide documents
 administrator-only `cypher`.
 
-`grepnest-mcp install-skills` installs the embedded skill files beneath
+`graphnest-mcp install-skills` installs the embedded skill files beneath
 `.claude/skills/` in a selected repository root and mirrors them beneath
 `.agents/skills/` when that repository already contains `.agents/`. It updates
-only directories carrying a GrepNest-generated marker, rejects symbolic-link
+only directories carrying a GraphNest-generated marker, rejects symbolic-link
 destinations, and writes each directory through an atomic sibling rename.
 Normal MCP proxy startup never writes to the working tree.
 

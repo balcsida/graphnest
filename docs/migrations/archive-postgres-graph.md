@@ -8,26 +8,26 @@ names before changing the deployment.
 ## Configuration changes
 
 Archive ingestion is the default. The packaged node image, Compose overlay,
-and Helm chart no longer contain Git, `zoekt-git-index`, `grepnest-scanner`, a
+and Helm chart no longer contain Git, `zoekt-git-index`, `graphnest-scanner`, a
 persistent checkout volume, graph-owner modes, graph secrets, graph ports,
 LadybugDB data, or `liblbug`.
 
-Use `GREPNEST_ZOEKT_INDEX` instead of the deprecated
-`GREPNEST_ZOEKT_GIT_INDEX` alias. The alias remains accepted during the
+Use `GRAPHNEST_ZOEKT_INDEX` instead of the deprecated
+`GRAPHNEST_ZOEKT_GIT_INDEX` alias. The alias remains accepted during the
 pre-1.0 compatibility window only when its basename is `zoekt-git-index`.
 Packaged deployments set archive ingestion directly; remove
-`GREPNEST_SOURCE_PROVIDER=git`, `GREPNEST_GIT_PATH`, scanner values, and former
-`GREPNEST_GRAPH_URL`, `GREPNEST_GRAPH_SECRET_FILE`, `GREPNEST_GRAPH_MODE`,
-`GREPNEST_GRAPH_DATA_DIR`, and `GREPNEST_GRAPH_LISTEN_ADDRESS` settings.
-`GREPNEST_GRAPH_*` query and upload limits remain valid.
+`GRAPHNEST_SOURCE_PROVIDER=git`, `GRAPHNEST_GIT_PATH`, scanner values, and former
+`GRAPHNEST_GRAPH_URL`, `GRAPHNEST_GRAPH_SECRET_FILE`, `GRAPHNEST_GRAPH_MODE`,
+`GRAPHNEST_GRAPH_DATA_DIR`, and `GRAPHNEST_GRAPH_LISTEN_ADDRESS` settings.
+`GRAPHNEST_GRAPH_*` query and upload limits remain valid.
 
 Configure two distinct writable locations:
 
-- `GREPNEST_DATA_DIR` is bounded ephemeral archive workspace. Compose uses a
+- `GRAPHNEST_DATA_DIR` is bounded ephemeral archive workspace. Compose uses a
   6 GiB tmpfs and Helm uses `node.paths.workspace` with
   `node.indexer.workspaceSizeLimit`. Both packaged deployments use a 1 GiB
   free-space floor so a 5 GiB repository can fit within that workspace.
-- `GREPNEST_INDEX_DIR` is durable Zoekt shard storage. Do not place the archive
+- `GRAPHNEST_INDEX_DIR` is durable Zoekt shard storage. Do not place the archive
   workspace inside this volume.
 
 Private GitHub CAs, configurable GitHub.com or GHES HTTPS origins, GitHub App
@@ -49,7 +49,7 @@ network-policy boundaries are unchanged.
    same indexed SHA. Repeat on GHES/private-CA repositories before broadening
    the rollout.
 
-GrepNest publishes a new indexed SHA only after Zoekt confirms visibility. If
+GraphNest publishes a new indexed SHA only after Zoekt confirms visibility. If
 PostgreSQL and Zoekt disagree, search results are intentionally suppressed and
 file reads stay on PostgreSQL's committed SHA. Treat suppression as a failed or
 incomplete index, not as permission to serve another revision.
@@ -69,8 +69,8 @@ Native enrichment is optional and is no longer installed by Compose or Helm.
 Operators that still need it during the compatibility window may explicitly
 run the indexer from Docker's `legacy-node` target, or mount the scanner binary
 into the default node, and set
-`GREPNEST_SCANNER_PATH=/usr/local/bin/grepnest-scanner`. The indexer invokes
-`grepnest-scanner enrich` on the same job-scoped archive snapshot; the scanner
+`GRAPHNEST_SCANNER_PATH=/usr/local/bin/graphnest-scanner`. The indexer invokes
+`graphnest-scanner enrich` on the same job-scoped archive snapshot; the scanner
 is not a standalone lease worker. Prefer an exact-SHA `.scip` upload when a
 language-specific indexer already exists; uploads continue to work without the
 native scanner.

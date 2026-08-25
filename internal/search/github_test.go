@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/pkg/api"
+	"github.com/balcsida/graphnest/pkg/api"
 )
 
 func TestGitHubBackendChunksAuthorizedRepositoryQualifiers(t *testing.T) {

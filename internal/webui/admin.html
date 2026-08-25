@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>GrepNest Admin</title>
+<title>GraphNest Admin</title>
 <style>
 :root{color-scheme:dark;--bg:#0a0d15;--surface:#0f1420;--surface2:#161d2f;--hover:#1b2338;--border:#1f2840;--ink:#e7ebf5;--muted:#8a94ac;--faint:#5c6680;--accent:#8b93ff;--soft:rgba(139,147,255,.13);--ok:#3ecf8e;--warn:#efb04e;--err:#f17878;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;--sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 :root.light{color-scheme:light;--bg:#f4f6fb;--surface:#fff;--surface2:#eef1f8;--hover:#e7ebf4;--border:#dfe4f0;--ink:#161b2c;--muted:#5b6478;--faint:#97a0b6;--accent:#4c51e0;--soft:rgba(76,81,224,.1);--ok:#158a5a;--warn:#a66e12;--err:#c13f3c}
@@ -16,18 +16,18 @@
 @media(prefers-reduced-motion: reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 </style>
 </head>
-<body data-grepnest-admin>
+<body data-graphnest-admin>
 <section id="access-panel">
  <div class="access">
   <h1>Administrator access</h1>
-  <p id="access-message">Enter an administrator bearer token. It stays in this tab and is sent only to this GrepNest origin.</p>
+  <p id="access-message">Enter an administrator bearer token. It stays in this tab and is sent only to this GraphNest origin.</p>
   <div id="provider-options" aria-label="Single sign-on providers"></div>
   <form id="token-form"><label for="token">Bearer token</label><input id="token" type="password" autocomplete="off" required><button class="primary">Open administrator console</button></form>
  </div>
 </section>
 <div id="admin-shell" hidden>
  <aside>
-  <div class="brand"><span class="mark">{}</span><div><strong>GrepNest</strong><small>ADMIN</small></div></div>
+  <div class="brand"><span class="mark">{}</span><div><strong>GraphNest</strong><small>ADMIN</small></div></div>
   <nav class="nav" aria-label="Administrator"><button data-nav="overview">Overview</button><button data-nav="repositories">Repositories</button><button data-nav="queue">Index queue</button><button data-nav="users" data-identity>Users</button><button data-nav="groups" data-identity>Groups</button><button data-nav="tokens" data-identity>API tokens</button><button data-nav="audit" data-identity>Audit events</button><button data-nav="scip">SCIP indexes</button><button data-nav="webhooks">Webhooks</button><button data-nav="github">GitHub App</button></nav>
   <div class="aside-foot"><span class="health"><i id="health-dot" class="dot"></i><span id="health-text">Health unavailable</span></span><span class="health"><i id="ready-dot" class="dot"></i><span id="ready-text">Readiness unavailable</span></span><a href="/">Open search console →</a></div>
  </aside>
@@ -57,7 +57,7 @@
 const $=id=>document.getElementById(id),access=$("access-panel"),shell=$("admin-shell"),status=$("admin-status"),bounded=value=>Array.isArray(value)?value.slice(0,100):[];
 const screens={overview:["Overview","system health at a glance"],repositories:["Repositories","index state reconciled from GitHub"],queue:["Index queue","durable default-branch indexing"],users:["Users","effective and direct access"],groups:["Groups","access granted to OIDC groups"],tokens:["API tokens","credentials for this signed-in account"],audit:["Audit events","bounded security activity"],scip:["SCIP indexes","pre-generated code-navigation data"],webhooks:["Webhook deliveries","verified GitHub HMAC intake"],github:["GitHub App","sanitized configuration and installations"]};
 const freshState=()=>({repositories:[],jobs:[],jobsCursor:null,users:[],groups:[],tokens:[],audits:[],tokensAvailable:true,revealedToken:"",uploads:[],dependencies:[],deliveries:[],github:null,overview:null,filter:"",repoStatus:"all",truncated:{}});
-let mode="anonymous",token="",pending="";try{pending=sessionStorage.getItem("grepnest_admin_token")||""}catch(_){}let state=freshState(),loadVersion=0,loadAbort;
+let mode="anonymous",token="",pending="";try{pending=sessionStorage.getItem("graphnest_admin_token")||""}catch(_){}let state=freshState(),loadVersion=0,loadAbort;
 const el=(tag,text,cls)=>{const node=document.createElement(tag);if(text!==undefined)node.textContent=String(text);if(cls)node.className=cls;return node};
 const clear=node=>{while(node.firstChild)node.removeChild(node.firstChild)};
 const short=value=>value?String(value).slice(0,8):"—";
@@ -66,7 +66,7 @@ const say=(message,bad=false)=>{status.textContent=message;status.style.borderCo
 async function api(path,options={}){const headers=new Headers(options.headers||{});if(mode==="bearer"&&token)headers.set("Authorization","Bearer "+token);return fetch(path,{...options,headers,cache:"no-store",credentials:"same-origin"})}
 async function request(path,options={},accessProbe=false){const response=await api(path,options);if(response.status===401||accessProbe&&(response.status===403||response.status===404)){const message=response.status===401?"Token required or expired.":response.status===403?"This account is not an administrator.":"Administrator API is unavailable in static mode.";lockAccess(message);const error=new Error(message);error.access=response.status;throw error}if(!response.ok){let message="Service unavailable.";try{message=(await response.json()).error?.message||message}catch(_){}throw new Error(message)}return response.status===204?null:response.json()}
 function showAccess(message){shell.hidden=true;access.hidden=false;if(message)$("access-message").textContent=message;$("token").focus()}
-function lockAccess(message){mode="anonymous";token="";loadVersion++;loadAbort?.abort();loadAbort=null;$("token").value="";try{sessionStorage.removeItem("grepnest_admin_token")}catch(_){}state=freshState();for(const id of ["repo-rows","job-rows","user-rows","group-rows","token-rows","audit-rows","token-reveal","upload-list","dependency-list","delivery-rows","github-config","installations","overview-cards","queue-cards","github-cards","inventory-notices"])clear($(id));showAccess(message)}
+function lockAccess(message){mode="anonymous";token="";loadVersion++;loadAbort?.abort();loadAbort=null;$("token").value="";try{sessionStorage.removeItem("graphnest_admin_token")}catch(_){}state=freshState();for(const id of ["repo-rows","job-rows","user-rows","group-rows","token-rows","audit-rows","token-reveal","upload-list","dependency-list","delivery-rows","github-config","installations","overview-cards","queue-cards","github-cards","inventory-notices"])clear($(id));showAccess(message)}
 function setIdentityVisibility(visible){for(const node of document.querySelectorAll("[data-nav][data-identity]"))node.hidden=!visible}
 function showScreen(name){if(mode==="bearer"&&["users","groups","tokens","audit"].includes(name))name="overview";for(const node of document.querySelectorAll("[data-screen]"))node.hidden=node.dataset.screen!==name;for(const node of document.querySelectorAll("[data-nav]"))node.setAttribute("aria-current",node.dataset.nav===name?"page":"false");$("title").textContent=screens[name][0];$("subtitle").textContent=screens[name][1];location.hash=name}
 function pill(value){const node=el("span",value||"unknown","pill"),v=String(value).toLowerCase();const ok=new Set(["ready","healthy","succeeded"]),warn=new Set(["pending","queued","running","indexing"]),bad=new Set(["failed","error","disabled","superseded","unavailable"]);node.classList.add(ok.has(v)?"ok":warn.has(v)?"warn":bad.has(v)?"err":"unknown");return node}
@@ -97,7 +97,7 @@ function retryJob(j){return confirmed("Retry failed job #"+j.id+"?","/v1/admin/j
 function renderProviders(providers){const host=$("provider-options");if(!host)return;clear(host);for(const provider of providers){if(!provider||typeof provider.login_url!=="string")continue;let login;try{login=new URL(provider.login_url,location.origin)}catch(_){continue}if(login.origin!==location.origin)continue;const link=el("a",provider.label||"Sign in with SSO","primary");link.href=login.pathname+login.search+login.hash;host.append(link)}}
 async function logout(){const response=await fetch("/auth/logout",{method:"POST",cache:"no-store",credentials:"same-origin"});if(response.status!==204)throw new Error("Unable to sign out.")}
 async function lock(){if(mode==="session")try{await logout()}catch(_){say("Unable to sign out. Try again.",true);return}lockAccess("Administrator console locked.")}
-async function enterBearer(next){next??=pending||$("token").value.trim();if(!next)return;try{await logout();mode="bearer";token=next;pending="";try{sessionStorage.setItem("grepnest_admin_token",token)}catch(_){ }load()}catch(_){showAccess("Unable to sign out.")}}
+async function enterBearer(next){next??=pending||$("token").value.trim();if(!next)return;try{await logout();mode="bearer";token=next;pending="";try{sessionStorage.setItem("graphnest_admin_token",token)}catch(_){ }load()}catch(_){showAccess("Unable to sign out.")}}
 async function start(){let config={token_login:true,providers:[]};try{const response=await api("/v1/auth/config");if(response.ok){const body=await response.json();config={token_login:body.token_login===true,providers:Array.isArray(body.providers)?body.providers:[]}}}catch(_){}renderProviders(config.providers);$("token-form").hidden=!config.token_login;try{if((await fetch("/v1/auth/session",{cache:"no-store",credentials:"same-origin"})).ok){mode="session";await load();return}}catch(_){}if(pending){await enterBearer(pending);return}showAccess()}
 $("token-form").addEventListener("submit",event=>{event.preventDefault();void enterBearer()});
 $("logout").addEventListener("click",()=>void lock());

@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/graphartifact"
-	"github.com/grepnest/grepnest/internal/graphprotocol"
+	"github.com/balcsida/graphnest/internal/graphartifact"
+	"github.com/balcsida/graphnest/internal/graphprotocol"
 )
 
 type stubQueryStore struct{ healthy bool }

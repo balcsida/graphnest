@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/githubapp"
-	"github.com/grepnest/grepnest/internal/graphartifact"
-	"github.com/grepnest/grepnest/internal/observability"
-	"github.com/grepnest/grepnest/internal/postgres"
-	"github.com/grepnest/grepnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/githubapp"
+	"github.com/balcsida/graphnest/internal/graphartifact"
+	"github.com/balcsida/graphnest/internal/observability"
+	"github.com/balcsida/graphnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/repository"
 )
 
 type fakeQueue struct {
@@ -337,10 +337,10 @@ func TestWorkerRecordsQueueAndPhaseMetrics(t *testing.T) {
 	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	body := recorder.Body.String()
 	for _, want := range []string{
-		`grepnest_index_queue_depth{state="running"} 2`,
-		`grepnest_index_phase_total{phase="fetch",result="success"} 1`,
-		`grepnest_index_phase_total{phase="index",result="success"} 1`,
-		`grepnest_index_phase_total{phase="visibility",result="success"} 1`,
+		`graphnest_index_queue_depth{state="running"} 2`,
+		`graphnest_index_phase_total{phase="fetch",result="success"} 1`,
+		`graphnest_index_phase_total{phase="index",result="success"} 1`,
+		`graphnest_index_phase_total{phase="visibility",result="success"} 1`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("metrics missing %q:\n%s", want, body)
@@ -376,7 +376,7 @@ func TestWorkerRecordsEachPhaseTerminalResultOnce(t *testing.T) {
 
 			body := scrapeWorkerMetrics(t, metrics)
 			for _, labels := range test.want {
-				want := "grepnest_index_phase_total{" + labels + "} 1"
+				want := "graphnest_index_phase_total{" + labels + "} 1"
 				if strings.Count(body, want) != 1 {
 					t.Errorf("metric %q not recorded exactly once:\n%s", want, body)
 				}
@@ -499,8 +499,8 @@ func TestWorkerLeaseLossCancelsIndexAndSkipsTransition(t *testing.T) {
 	}
 	body := scrapeWorkerMetrics(t, metrics)
 	for _, want := range []string{
-		`grepnest_index_phase_total{phase="fetch",result="success"} 1`,
-		`grepnest_index_phase_total{phase="index",result="error"} 1`,
+		`graphnest_index_phase_total{phase="fetch",result="success"} 1`,
+		`graphnest_index_phase_total{phase="index",result="error"} 1`,
 	} {
 		if strings.Count(body, want) != 1 {
 			t.Errorf("metric %q not recorded exactly once:\n%s", want, body)

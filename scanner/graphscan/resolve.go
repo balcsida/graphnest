@@ -8,11 +8,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/grepnest/grepnest/internal/graphartifact"
+	"github.com/balcsida/graphnest/internal/graphartifact"
 )
 
 const (
-	analyzerName    = "grepnest-scanner"
+	analyzerName    = "graphnest-scanner"
 	analyzerVersion = "1"
 )
 

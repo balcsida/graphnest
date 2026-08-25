@@ -8,10 +8,10 @@ end
 
 root = File.expand_path("..", __dir__)
 script = File.join(root, "scripts/stage_release_chart.rb")
-chart = File.join(root, "deploy/helm/grepnest")
+chart = File.join(root, "deploy/helm/graphnest")
 version = "0.1.0"
-application_repository = "ghcr.io/balcsida/grep-nest/application"
-node_repository = "ghcr.io/balcsida/grep-nest/node"
+application_repository = "ghcr.io/balcsida/graphnest/application"
+node_repository = "ghcr.io/balcsida/graphnest/node"
 application_digest = "sha256:" + "a" * 64
 node_digest = "sha256:" + "b" * 64
 
@@ -37,7 +37,7 @@ Dir.mktmpdir do |directory|
   )
   assert(status.success?, "staging failed: #{stdout}#{stderr}")
 
-  staged = File.join(output, "grepnest")
+  staged = File.join(output, "graphnest")
   staged_chart = YAML.load_file(File.join(staged, "Chart.yaml"))
   staged_values = YAML.load_file(File.join(staged, "values.yaml"))
   assert(staged_chart["version"] == version, "staged chart version is wrong")

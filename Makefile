@@ -1,13 +1,19 @@
 ZOEKT_VERSION := v0.0.0-20260717095332-3c8b39b1ef4f
 STATICCHECK_VERSION := v0.7.0
 GOVULNCHECK_VERSION := v1.1.4
-POSTGRES_COMPOSE := docker compose -p grepnest-postgres
-GREPNEST_TEST_POSTGRES_DSN ?= $(GREPNEST_TEST_DATABASE_URL)
+POSTGRES_COMPOSE := docker compose -p graphnest-postgres
+GRAPHNEST_TEST_POSTGRES_DSN ?= $(GRAPHNEST_TEST_DATABASE_URL)
 IMAGE_PLATFORM ?= linux/amd64
-APPLICATION_IMAGE ?= grepnest-application:dev
-NODE_IMAGE ?= grepnest-node:dev
+APPLICATION_IMAGE ?= graphnest-application:dev
+NODE_IMAGE ?= graphnest-node:dev
 
-.PHONY: fmt lint staticcheck govulncheck test test-race makefile-test scanner-build scanner-test scanner-vulncheck abi-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test tools-check ui-smoke
+.PHONY: brand-check fmt lint staticcheck govulncheck test test-race makefile-test scanner-build scanner-test scanner-vulncheck abi-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test tools-check ui-smoke
+
+brand-check:
+	@status=0; git grep -I -i -E 'grep[-_]?nest|graph[-_]nest' -- . || status=$$?; test $$status -eq 1
+	@paths=$$(git ls-files) || exit $$?; \
+	status=0; printf '%s\n' "$$paths" | grep -Eiq 'grep[-_]?nest|graph[-_]nest' || status=$$?; \
+	test $$status -eq 1
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
@@ -61,7 +67,7 @@ openapi-check:
 integration: postgres-integration
 
 postgres-test:
-	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' go test -count=1 -tags=integration ./internal/postgres ./internal/authz ./internal/webhook ./test/integration ./cmd/grepnest-indexer
+	GRAPHNEST_TEST_POSTGRES_DSN='$(GRAPHNEST_TEST_POSTGRES_DSN)' go test -count=1 -tags=integration ./internal/postgres ./internal/authz ./internal/webhook ./test/integration ./cmd/graphnest-indexer
 
 postgres-integration:
 	$(POSTGRES_COMPOSE) -f deploy/compose/compose.yml up -d --wait postgres
@@ -72,7 +78,7 @@ postgres-integration:
 		test -n "$$address"; \
 		address="$$address:5432" ;; \
 	esac; \
-	$(MAKE) postgres-test GREPNEST_TEST_POSTGRES_DSN="postgres://grepnest:grepnest@$$address/grepnest?sslmode=disable"
+	$(MAKE) postgres-test GRAPHNEST_TEST_POSTGRES_DSN="postgres://graphnest:graphnest@$$address/graphnest?sslmode=disable"
 
 tools:
 	mkdir -p .cache/bin
@@ -89,17 +95,17 @@ e2e: tools
 		test -n "$$address"; \
 		address="$$address:5432" ;; \
 	esac; \
-	$(MAKE) e2e-test GREPNEST_TEST_POSTGRES_DSN="postgres://grepnest:grepnest@$$address/grepnest?sslmode=disable"
+	$(MAKE) e2e-test GRAPHNEST_TEST_POSTGRES_DSN="postgres://graphnest:graphnest@$$address/graphnest?sslmode=disable"
 
 e2e-test:
-	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' GREPNEST_REQUIRE_POSTGRES=1 ZOEKT_INDEX=$$(pwd)/.cache/bin/zoekt-index ZOEKT_GIT_INDEX=$$(pwd)/.cache/bin/zoekt-git-index ZOEKT_WEBSERVER=$$(pwd)/.cache/bin/zoekt-webserver go test -v -tags=e2e ./test/e2e
-	GREPNEST_TEST_POSTGRES_DSN='$(GREPNEST_TEST_POSTGRES_DSN)' GREPNEST_REQUIRE_POSTGRES=1 CGO_ENABLED=1 go -C scanner test -v -tags=e2e ./test/e2e
+	GRAPHNEST_TEST_POSTGRES_DSN='$(GRAPHNEST_TEST_POSTGRES_DSN)' GRAPHNEST_REQUIRE_POSTGRES=1 ZOEKT_INDEX=$$(pwd)/.cache/bin/zoekt-index ZOEKT_GIT_INDEX=$$(pwd)/.cache/bin/zoekt-git-index ZOEKT_WEBSERVER=$$(pwd)/.cache/bin/zoekt-webserver go test -v -tags=e2e ./test/e2e
+	GRAPHNEST_TEST_POSTGRES_DSN='$(GRAPHNEST_TEST_POSTGRES_DSN)' GRAPHNEST_REQUIRE_POSTGRES=1 CGO_ENABLED=1 go -C scanner test -v -tags=e2e ./test/e2e
 
 build:
 	go build ./cmd/...
 
 server:
-	go run ./cmd/grepnest-server
+	go run ./cmd/graphnest-server
 
 zoekt-version:
 	@printf '%s\n' '$(ZOEKT_VERSION)'
@@ -115,10 +121,10 @@ image-test: image
 		sh deploy/images/test.sh
 
 helm-lint:
-	helm lint deploy/helm/grepnest -f deploy/helm/grepnest/ci/minimal-values.yaml
+	helm lint deploy/helm/graphnest -f deploy/helm/graphnest/ci/minimal-values.yaml
 
 helm-test:
-	sh deploy/helm/grepnest/tests/render.sh
+	sh deploy/helm/graphnest/tests/render.sh
 
 release-chart-test:
 	ruby scripts/stage_release_chart_test.rb

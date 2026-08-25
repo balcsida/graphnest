@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-const baseURL = process.env.GREPNEST_UI_SMOKE_URL;
-const token = process.env.GREPNEST_UI_SMOKE_TOKEN;
+const baseURL = process.env.GRAPHNEST_UI_SMOKE_URL;
+const token = process.env.GRAPHNEST_UI_SMOKE_TOKEN;
 
 test.use({ baseURL });
 

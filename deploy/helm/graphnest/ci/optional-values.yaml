@@ -1,0 +1,71 @@
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {nginx.ingress.kubernetes.io/proxy-body-size: 1m}
+  hosts:
+    - host: graphnest.example.invalid
+      paths:
+        - {path: /, pathType: Prefix}
+  tls:
+    - secretName: graphnest-existing-tls
+      hosts: [graphnest.example.invalid]
+monitoring:
+  serviceMonitor:
+    enabled: true
+    labels: {monitoring: pilot}
+secrets:
+  customCA: {name: graphnest-existing-ca, key: ca.crt}
+  oidc: {name: graphnest-oidc, clientSecretKey: client-secret}
+  githubOAuth: {name: graphnest-github-oauth, clientSecretKey: client-secret}
+  oidcCA: {name: graphnest-oidc-ca, key: ca.crt}
+  scim: {name: graphnest-scim, tokenKey: token}
+server:
+  scim: {enabled: true}
+  sso:
+    publicURL: https://graphnest.example.invalid
+    oidc: {enabled: true, issuerURL: https://id.example.invalid, clientID: graphnest, scopes: [openid, profile, email], linkClaim: sub, displayNameClaim: name}
+    githubOAuth: {enabled: true, clientID: graphnest-github}
+  nodeSelector: {graphnest.example.invalid/pool: server}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions: [{key: graphnest.example.invalid/tier, operator: In, values: [frontend]}]
+  tolerations: [{key: graphnest.example.invalid/dedicated, operator: Equal, value: server, effect: NoSchedule}]
+  topologySpreadConstraints:
+    - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway, labelSelector: {matchLabels: {app.kubernetes.io/component: server}}}
+node:
+  nodeSelector: {graphnest.example.invalid/pool: node}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions: [{key: graphnest.example.invalid/tier, operator: In, values: [storage]}]
+  tolerations: [{key: graphnest.example.invalid/dedicated, operator: Equal, value: node, effect: NoSchedule}]
+  topologySpreadConstraints:
+    - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: DoNotSchedule, labelSelector: {matchLabels: {app.kubernetes.io/component: node}}}
+migration:
+  nodeSelector: {graphnest.example.invalid/pool: migration}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions: [{key: graphnest.example.invalid/tier, operator: In, values: [batch]}]
+  tolerations: [{key: graphnest.example.invalid/dedicated, operator: Equal, value: migration, effect: NoSchedule}]
+networkPolicy:
+  serverIngress:
+    ingressControllerNamespaceSelector:
+      matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+    monitoringNamespaceSelector:
+      matchLabels: {kubernetes.io/metadata.name: monitoring}
+  externalEgress:
+    enabled: true
+    postgresql:
+      cidrs: [{address: 192.0.2.10, prefix: 32}]
+      port: 5432
+    github:
+      cidrs: [{address: 198.51.100.0, prefix: 24}, {address: "2001:db8:1234::", prefix: 48}]
+      ports: [443]
+    identityProvider:
+      cidrs: [{address: 203.0.113.10, prefix: 32}]
+      ports: [443]

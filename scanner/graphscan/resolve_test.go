@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/grepnest/grepnest/internal/graphartifact"
+	"github.com/balcsida/graphnest/internal/graphartifact"
 )
 
 func TestResolveImportedCall(t *testing.T) {

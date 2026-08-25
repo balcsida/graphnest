@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/grepnest/grepnest/internal/webhook"
+	"github.com/balcsida/graphnest/internal/webhook"
 )
 
 func RegisterGitHubWebhook(mux *http.ServeMux, secret []byte, maxBytes int64, processor webhook.Processor) {

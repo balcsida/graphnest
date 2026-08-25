@@ -1,9 +1,9 @@
-module github.com/grepnest/grepnest/scanner
+module github.com/balcsida/graphnest/scanner
 
 go 1.26.6
 
 require (
-	github.com/grepnest/grepnest v0.0.0
+	github.com/balcsida/graphnest v0.0.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/tree-sitter-grammars/tree-sitter-kotlin v1.1.0
@@ -42,4 +42,4 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 )
 
-replace github.com/grepnest/grepnest => ..
+replace github.com/balcsida/graphnest => ..

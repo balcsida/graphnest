@@ -5,13 +5,13 @@
 
 ## Decision
 
-GrepNest will contain no Java runtime, JVM, Maven, Gradle, or Java-based
+GraphNest will contain no Java runtime, JVM, Maven, Gradle, or Java-based
 sidecar, service, build step, or deployable dependency.
 
 ## Rationale
 
 Zoekt indexes Java, Kotlin, and Gradle files as text without executing their
-toolchains. GrepNest does not need a JVM to search them.
+toolchains. GraphNest does not need a JVM to search them.
 
 ## Consequences
 

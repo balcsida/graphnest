@@ -19,9 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/githubapp"
-	"github.com/grepnest/grepnest/internal/observability"
-	"github.com/grepnest/grepnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/githubapp"
+	"github.com/balcsida/graphnest/internal/observability"
+	"github.com/balcsida/graphnest/internal/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -387,10 +387,10 @@ func TestGitHubProcessorRecordsTerminalMetricsOnce(t *testing.T) {
 
 	body := scrapeWebhookMetrics(t, metrics)
 	for _, want := range []string{
-		`grepnest_webhook_deliveries_total{event="push",result="accepted"} 1`,
-		`grepnest_webhook_deliveries_total{event="push",result="duplicate"} 1`,
-		`grepnest_webhook_deliveries_total{event="unknown",result="ignored"} 1`,
-		`grepnest_webhook_deliveries_total{event="unknown",result="duplicate"} 1`,
+		`graphnest_webhook_deliveries_total{event="push",result="accepted"} 1`,
+		`graphnest_webhook_deliveries_total{event="push",result="duplicate"} 1`,
+		`graphnest_webhook_deliveries_total{event="unknown",result="ignored"} 1`,
+		`graphnest_webhook_deliveries_total{event="unknown",result="duplicate"} 1`,
 	} {
 		if strings.Count(body, want) != 1 {
 			t.Errorf("metric %q not recorded exactly once:\n%s", want, body)
@@ -459,16 +459,16 @@ func webhookReconciler(t *testing.T, store *postgres.Store, respond func(http.Re
 
 func webhookStore(t *testing.T) (*postgres.Store, *pgxpool.Pool) {
 	t.Helper()
-	dsn := os.Getenv("GREPNEST_TEST_POSTGRES_DSN")
+	dsn := os.Getenv("GRAPHNEST_TEST_POSTGRES_DSN")
 	if dsn == "" {
-		t.Skip("GREPNEST_TEST_POSTGRES_DSN is not set")
+		t.Skip("GRAPHNEST_TEST_POSTGRES_DSN is not set")
 	}
 	admin, err := pgxpool.New(t.Context(), dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(admin.Close)
-	schema := fmt.Sprintf("grepnest_delivery_%x", time.Now().UnixNano())
+	schema := fmt.Sprintf("graphnest_delivery_%x", time.Now().UnixNano())
 	if _, err := admin.Exec(t.Context(), "create schema "+schema); err != nil {
 		t.Fatal(err)
 	}

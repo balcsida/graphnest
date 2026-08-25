@@ -36,7 +36,7 @@ begin
   raise "output directory must be empty" if File.directory?(output) && !Dir.empty?(output)
 
   FileUtils.mkdir_p(output)
-  staged = File.join(output, "grepnest")
+  staged = File.join(output, "graphnest")
   FileUtils.cp_r(source, staged)
 
   chart_path = File.join(staged, "Chart.yaml")

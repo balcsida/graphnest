@@ -2,7 +2,7 @@
 
 ## Purpose and success criteria
 
-GrepNest will keep Zoekt as its lexical search engine and add precise code
+GraphNest will keep Zoekt as its lexical search engine and add precise code
 navigation from standard SCIP protobuf indexes. A client or CI job can upload a
 `.scip` file for an authorized repository and its exact indexed SHA, then ask
 for definitions, references, or implementations from a source position.
@@ -20,7 +20,7 @@ usable.
 ## Chosen approach
 
 Accept pre-generated SCIP artifacts rather than running language toolchains in
-GrepNest. This follows Sourcegraph's upload boundary and avoids coupling the Go
+GraphNest. This follows Sourcegraph's upload boundary and avoids coupling the Go
 indexer image to every supported compiler and build system. Use the official
 SCIP Go protobuf binding and PostgreSQL; do not add another graph database or
 background service.
@@ -43,7 +43,7 @@ Migration `003` adds:
   (`manual` or `github`).
 
 The upload endpoint accepts `application/vnd.scip+protobuf`, bounded by a new
-`GREPNEST_SCIP_MAX_UPLOAD_BYTES` setting. It requires an administrator bearer
+`GRAPHNEST_SCIP_MAX_UPLOAD_BYTES` setting. It requires an administrator bearer
 token whose repository scope includes the target repository. The service
 rejects malformed protobuf, invalid paths/ranges, duplicate documents, and
 commits other than the

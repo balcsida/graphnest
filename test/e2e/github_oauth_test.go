@@ -17,17 +17,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grepnest/grepnest/internal/authn"
-	"github.com/grepnest/grepnest/internal/authz"
-	"github.com/grepnest/grepnest/internal/githubapp"
-	"github.com/grepnest/grepnest/internal/httpapi"
-	"github.com/grepnest/grepnest/internal/mcpserver"
-	"github.com/grepnest/grepnest/internal/postgres"
-	"github.com/grepnest/grepnest/internal/repository"
-	"github.com/grepnest/grepnest/internal/search"
-	"github.com/grepnest/grepnest/internal/sso"
-	"github.com/grepnest/grepnest/internal/sso/githuboauth"
-	oidcclient "github.com/grepnest/grepnest/internal/sso/oidc"
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/authz"
+	"github.com/balcsida/graphnest/internal/githubapp"
+	"github.com/balcsida/graphnest/internal/httpapi"
+	"github.com/balcsida/graphnest/internal/mcpserver"
+	"github.com/balcsida/graphnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/search"
+	"github.com/balcsida/graphnest/internal/sso"
+	"github.com/balcsida/graphnest/internal/sso/githuboauth"
+	oidcclient "github.com/balcsida/graphnest/internal/sso/oidc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -54,7 +54,7 @@ func TestGitHubOAuthCrossReplicaPreservesCredentialBoundaries(t *testing.T) {
 
 	oidcLogin := startBrowserLogin(t, oidcBrowser, public.URL+"/auth/oidc/login", "A")
 	githubLogin := startBrowserLogin(t, oidcBrowser, public.URL+"/auth/oauth/github/login", "A")
-	githubCookie := loginCookie(t, oidcJar, public.URL, "__Host-grepnest_oauth_github_login")
+	githubCookie := loginCookie(t, oidcJar, public.URL, "__Host-graphnest_oauth_github_login")
 	assertBrowserCallbackFails(t, database, oidcBrowser, public.URL+"/auth/oauth/github/callback", oidcLogin.state, "B", public.URL)
 	completeOIDCLogin(t, oidcBrowser, oidcLogin.authorize, "B")
 	assertOIDCRepositoryStatus(t, oidcBrowser, public.URL, "B", http.StatusOK)
@@ -71,7 +71,7 @@ func TestGitHubOAuthCrossReplicaPreservesCredentialBoundaries(t *testing.T) {
 
 	assertGitHubOAuthFlowPersistence(t, database, githubLogin.state, githubCookie)
 	startBrowserLogin(t, githubBrowser, public.URL+"/auth/oidc/login", "A")
-	loginCookie(t, githubJar, public.URL, "__Host-grepnest_oidc_login")
+	loginCookie(t, githubJar, public.URL, "__Host-graphnest_oidc_login")
 	assertBrowserCallbackFails(t, database, githubBrowser, public.URL+"/auth/oidc/callback", githubLogin.state, "B", public.URL)
 	githubCallback := completeGitHubOAuthLogin(t, githubBrowser, githubLogin.authorize, "B")
 	assertOIDCRepositoryStatus(t, githubBrowser, public.URL, "B", http.StatusOK)
