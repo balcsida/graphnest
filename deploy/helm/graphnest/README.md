@@ -61,8 +61,12 @@ helm template graphnest deploy/helm/graphnest -n graphnest -f my-values.yaml
 helm upgrade --install graphnest deploy/helm/graphnest -n graphnest --create-namespace -f my-values.yaml --wait --timeout 15m
 ```
 
-Upgrade with the same `helm upgrade --install` command and the complete values
-file. Roll back with:
+A pre-rename GrepNest deployment is a clean-break boundary: it requires fresh GraphNest configuration
+and a fresh GraphNest installation. This is not an in-place upgrade; GraphNest does not automatically discover or mutate previous deployment state.
+The `helm upgrade --install` command below applies only to upgrades between GraphNest releases.
+
+For upgrades between GraphNest releases, use the same `helm upgrade --install`
+command and the complete values file. Roll back with:
 
 ```sh
 helm rollback graphnest <REVISION> -n graphnest --wait --timeout 15m
