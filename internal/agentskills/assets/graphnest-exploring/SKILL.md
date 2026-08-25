@@ -1,11 +1,11 @@
 ---
-name: grepnest-exploring
+name: graphnest-exploring
 description: Use when onboarding to an unfamiliar repository or explaining how known code symbols connect.
 ---
 
-# Exploring with GrepNest
+# Exploring with GraphNest
 
-**REQUIRED BACKGROUND:** Read `grepnest-guide`.
+**REQUIRED BACKGROUND:** Read `graphnest-guide`.
 
 Start narrow and expand only from returned UIDs:
 

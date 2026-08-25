@@ -1,11 +1,11 @@
 ---
-name: grepnest-impact-analysis
+name: graphnest-impact-analysis
 description: Use when planning a code change or preparing a review-ready blast-radius and test-impact note.
 ---
 
-# Impact Analysis with GrepNest
+# Impact Analysis with GraphNest
 
-**REQUIRED BACKGROUND:** Read `grepnest-guide`.
+**REQUIRED BACKGROUND:** Read `graphnest-guide`.
 
 1. Resolve the target:
    `context({"repo":"acme/api","name":"auth.ValidateToken","file_path":"internal/auth/token.go"})`.

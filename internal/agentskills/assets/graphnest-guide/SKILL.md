@@ -1,9 +1,9 @@
 ---
-name: grepnest-guide
-description: Use when selecting or interpreting GrepNest code graph tools, request fields, statuses, confidence, boundaries, or commits.
+name: graphnest-guide
+description: Use when selecting or interpreting GraphNest code graph tools, request fields, statuses, confidence, boundaries, or commits.
 ---
 
-# GrepNest Graph Guide
+# GraphNest Graph Guide
 
 Use only `list_repositories`, `context`, `impact`, and `trace`.
 

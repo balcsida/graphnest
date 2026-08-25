@@ -40,7 +40,7 @@ func TestInstallAtomicallyReplacesMarkedSkill(t *testing.T) {
 	if err := Install(root); err != nil {
 		t.Fatal(err)
 	}
-	target := filepath.Join(root, ".claude", "skills", "grepnest-guide")
+	target := filepath.Join(root, ".claude", "skills", "graphnest-guide")
 	if err := os.WriteFile(filepath.Join(target, "SKILL.md"), []byte("stale"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestInstallAtomicallyReplacesMarkedSkill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) == "stale" || !strings.Contains(string(data), "name: grepnest-guide") {
+	if string(data) == "stale" || !strings.Contains(string(data), "name: graphnest-guide") {
 		t.Fatalf("SKILL.md was not replaced: %q", data)
 	}
 	entries, err := os.ReadDir(filepath.Dir(target))
@@ -95,7 +95,7 @@ func TestAtomicSwapExchangesDirectories(t *testing.T) {
 
 func TestInstallRefusesUnownedSkill(t *testing.T) {
 	root := t.TempDir()
-	target := filepath.Join(root, ".claude", "skills", "grepnest-guide")
+	target := filepath.Join(root, ".claude", "skills", "graphnest-guide")
 	if err := os.MkdirAll(target, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -115,11 +115,11 @@ func TestInstallPreflightsAllDestinations(t *testing.T) {
 	if err := Install(root); err != nil {
 		t.Fatal(err)
 	}
-	guide := filepath.Join(root, ".claude", "skills", "grepnest-guide", "SKILL.md")
+	guide := filepath.Join(root, ".claude", "skills", "graphnest-guide", "SKILL.md")
 	if err := os.WriteFile(guide, []byte("keep until preflight succeeds"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	unowned := filepath.Join(root, ".agents", "skills", "grepnest-guide")
+	unowned := filepath.Join(root, ".agents", "skills", "graphnest-guide")
 	if err := os.RemoveAll(unowned); err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestInstallRejectsSymlinkDestinations(t *testing.T) {
 			if err := os.MkdirAll(filepath.Join(root, ".claude", "skills"), 0o700); err != nil {
 				return err
 			}
-			return os.Symlink(outside, filepath.Join(root, ".claude", "skills", "grepnest-guide"))
+			return os.Symlink(outside, filepath.Join(root, ".claude", "skills", "graphnest-guide"))
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -186,7 +186,7 @@ func TestInstallSkillRejectsPathTraversal(t *testing.T) {
 
 func assertInstalledSkill(t *testing.T, target string) {
 	t.Helper()
-	for _, file := range []string{"SKILL.md", markerName} {
+	for _, file := range []string{"SKILL.md", ".graphnest-generated"} {
 		info, err := os.Stat(filepath.Join(target, file))
 		if err != nil {
 			t.Fatal(err)

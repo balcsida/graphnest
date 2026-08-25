@@ -1,11 +1,11 @@
 ---
-name: grepnest-debugging
+name: graphnest-debugging
 description: Use when logs, errors, or a failing test identify a code symbol and graph evidence could narrow the cause or blast radius.
 ---
 
-# Debugging with GrepNest
+# Debugging with GraphNest
 
-**REQUIRED BACKGROUND:** Read `grepnest-guide`.
+**REQUIRED BACKGROUND:** Read `graphnest-guide`.
 
 Anchor the investigation at the observed failure, not a guessed cause:
 
