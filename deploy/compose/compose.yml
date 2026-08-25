@@ -2,11 +2,11 @@ services:
   postgres:
     image: postgres:18.4@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
     environment:
-      POSTGRES_DB: grepnest
-      POSTGRES_PASSWORD: grepnest
-      POSTGRES_USER: grepnest
+      POSTGRES_DB: graphnest
+      POSTGRES_PASSWORD: graphnest
+      POSTGRES_USER: graphnest
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U grepnest"]
+      test: ["CMD-SHELL", "pg_isready -U graphnest"]
       interval: 1s
       timeout: 1s
       retries: 30
@@ -23,8 +23,8 @@ services:
       - |
         cp -R /fixture /tmp/repository
         git init --initial-branch=main /tmp/repository
-        git -C /tmp/repository config user.name "GrepNest Test"
-        git -C /tmp/repository config user.email test@grepnest.invalid
+        git -C /tmp/repository config user.name "GraphNest Test"
+        git -C /tmp/repository config user.email test@graphnest.invalid
         git -C /tmp/repository config zoekt.repoid 7
         git -C /tmp/repository config zoekt.name fixture/repository
         git -C /tmp/repository add .

@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "graphnest.serverName" . }}
+  labels:
+    {{- include "graphnest.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+data:
+  GRAPHNEST_LISTEN_ADDRESS: {{ printf ":%v" .Values.server.port | quote }}
+  GRAPHNEST_ZOEKT_URL: {{ printf "http://%s:%v" (include "graphnest.zoektName" .) .Values.node.service.port | quote }}
+  GRAPHNEST_SEARCH_BACKEND: {{ .Values.server.config.searchBackend | quote }}
+  GRAPHNEST_GITHUB_WEB_URL: {{ .Values.server.config.githubWebURL | quote }}
+  GRAPHNEST_GITHUB_API_URL: {{ .Values.server.config.githubAPIURL | quote }}
+  GRAPHNEST_GITHUB_UPLOAD_URL: {{ .Values.server.config.githubUploadURL | quote }}
+  GRAPHNEST_GITHUB_GIT_URL: {{ .Values.server.config.githubGitURL | quote }}
+  GRAPHNEST_GITHUB_API_VERSION: {{ .Values.server.config.githubAPIVersion | quote }}
+  GRAPHNEST_GITHUB_APP_ID: {{ .Values.server.config.githubAppID | quote }}
+  GRAPHNEST_DEFAULT_RESULTS: {{ .Values.server.config.defaultResults | quote }}
+  GRAPHNEST_MAX_RESULTS: {{ .Values.server.config.maxResults | quote }}
+  GRAPHNEST_DEFAULT_CONTEXT_LINES: {{ .Values.server.config.defaultContextLines | quote }}
+  GRAPHNEST_MAX_CONTEXT_LINES: {{ .Values.server.config.maxContextLines | quote }}
+  GRAPHNEST_DEFAULT_TIMEOUT: {{ .Values.server.config.defaultTimeout | quote }}
+  GRAPHNEST_MAX_TIMEOUT: {{ .Values.server.config.maxTimeout | quote }}
+  GRAPHNEST_MAX_REQUEST_BYTES: {{ .Values.server.config.maxRequestBytes | quote }}
+  GRAPHNEST_MAX_RESPONSE_BYTES: {{ .Values.server.config.maxResponseBytes | quote }}
+  GRAPHNEST_SCIP_MAX_UPLOAD_BYTES: {{ printf "%d" (int64 .Values.server.config.scipMaxUploadBytes) | quote }}
+  GRAPHNEST_GITHUB_PRIVATE_KEY_FILE: /var/run/secrets/graphnest/github/private-key.pem
+  GRAPHNEST_GITHUB_WEBHOOK_SECRET_FILE: /var/run/secrets/graphnest/github/webhook-secret
+  {{- if .Values.breakGlass.enabled }}
+  GRAPHNEST_BREAK_GLASS_ENABLED: "true"
+  {{- end }}
+  {{- if .Values.secrets.customCA.name }}
+  GRAPHNEST_GITHUB_CA_FILE: /var/run/secrets/graphnest/ca/ca.crt
+  {{- end }}
+  {{- if or .Values.server.sso.oidc.enabled .Values.server.sso.githubOAuth.enabled .Values.server.scim.enabled }}
+  GRAPHNEST_PUBLIC_URL: {{ .Values.server.sso.publicURL | quote }}
+  {{- end }}
+  {{- if or .Values.server.sso.oidc.enabled .Values.server.sso.githubOAuth.enabled }}
+  GRAPHNEST_SSO_SESSION_IDLE: {{ .Values.server.sso.sessionIdle | quote }}
+  GRAPHNEST_SSO_SESSION_TTL: {{ .Values.server.sso.sessionTTL | quote }}
+  GRAPHNEST_SSO_LOGIN_FLOW_TTL: {{ .Values.server.sso.loginFlowTTL | quote }}
+  {{- end }}
+  {{- if .Values.server.sso.oidc.enabled }}
+  GRAPHNEST_OIDC_ISSUER_URL: {{ .Values.server.sso.oidc.issuerURL | quote }}
+  GRAPHNEST_OIDC_CLIENT_ID: {{ .Values.server.sso.oidc.clientID | quote }}
+  GRAPHNEST_OIDC_CLIENT_SECRET_FILE: /var/run/secrets/graphnest/oidc/client-secret
+  GRAPHNEST_OIDC_SCOPES: {{ join "," .Values.server.sso.oidc.scopes | quote }}
+  GRAPHNEST_OIDC_LINK_CLAIM: {{ .Values.server.sso.oidc.linkClaim | quote }}
+  GRAPHNEST_OIDC_DISPLAY_NAME_CLAIM: {{ .Values.server.sso.oidc.displayNameClaim | quote }}
+  {{- if .Values.secrets.oidcCA.name }}
+  GRAPHNEST_OIDC_CA_FILE: /var/run/secrets/graphnest/oidc-ca/ca.crt
+  {{- end }}
+  {{- end }}
+  {{- if .Values.server.sso.githubOAuth.enabled }}
+  GRAPHNEST_OAUTH_GITHUB_CLIENT_ID: {{ .Values.server.sso.githubOAuth.clientID | quote }}
+  GRAPHNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE: /var/run/secrets/graphnest/oauth-github/client-secret
+  {{- end }}
+  {{- if .Values.server.scim.enabled }}
+  GRAPHNEST_SCIM_TOKEN_FILE: /var/run/secrets/graphnest/scim/token
+  {{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "graphnest.nodeName" . }}
+  labels:
+    {{- include "graphnest.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+data:
+  GRAPHNEST_ZOEKT_URL: {{ printf "http://%s:%v" (include "graphnest.zoektName" .) .Values.node.service.port | quote }}
+  GRAPHNEST_GITHUB_WEB_URL: {{ .Values.server.config.githubWebURL | quote }}
+  GRAPHNEST_GITHUB_API_URL: {{ .Values.server.config.githubAPIURL | quote }}
+  GRAPHNEST_GITHUB_UPLOAD_URL: {{ .Values.server.config.githubUploadURL | quote }}
+  GRAPHNEST_GITHUB_GIT_URL: {{ .Values.server.config.githubGitURL | quote }}
+  GRAPHNEST_GITHUB_API_VERSION: {{ .Values.server.config.githubAPIVersion | quote }}
+  GRAPHNEST_GITHUB_APP_ID: {{ .Values.server.config.githubAppID | quote }}
+  GRAPHNEST_GITHUB_PRIVATE_KEY_FILE: /var/run/secrets/graphnest/github/private-key.pem
+  {{- if .Values.secrets.customCA.name }}
+  GRAPHNEST_GITHUB_CA_FILE: /var/run/secrets/graphnest/ca/ca.crt
+  {{- end }}
+  GRAPHNEST_DATA_DIR: {{ .Values.node.paths.workspace | quote }}
+  GRAPHNEST_INDEX_DIR: {{ .Values.node.paths.indexes | quote }}
+  GRAPHNEST_SOURCE_PROVIDER: archive
+  GRAPHNEST_ZOEKT_INDEX: {{ .Values.node.indexer.zoektIndexExecutable | quote }}
+  GRAPHNEST_MIN_FREE_BYTES: {{ printf "%d" (int64 .Values.node.indexer.minFreeBytes) | quote }}
+  GRAPHNEST_MAX_REPOSITORY_BYTES: {{ printf "%d" (int64 .Values.node.indexer.maxRepositoryBytes) | quote }}
+  GRAPHNEST_METRICS_LISTEN_ADDRESS: {{ printf ":%v" .Values.node.indexer.metricsPort | quote }}

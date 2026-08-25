@@ -2,9 +2,9 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "grepnest.serverName" . }}
+  name: {{ include "graphnest.serverName" . }}
   labels:
-    {{- include "grepnest.labels" . | nindent 4 }}
+    {{- include "graphnest.labels" . | nindent 4 }}
     app.kubernetes.io/component: server
   {{- with .Values.ingress.annotations }}
   annotations:
@@ -26,7 +26,7 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
-                name: {{ include "grepnest.serverName" $ }}
+                name: {{ include "graphnest.serverName" $ }}
                 port:
                   name: http
           {{- end }}

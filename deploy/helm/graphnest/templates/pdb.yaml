@@ -5,14 +5,14 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ include "grepnest.serverName" . }}
+  name: {{ include "graphnest.serverName" . }}
   labels:
-    {{- include "grepnest.labels" . | nindent 4 }}
+    {{- include "graphnest.labels" . | nindent 4 }}
     app.kubernetes.io/component: server
 spec:
   minAvailable: 1
   selector:
     matchLabels:
-      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      {{- include "graphnest.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: server
 {{- end }}

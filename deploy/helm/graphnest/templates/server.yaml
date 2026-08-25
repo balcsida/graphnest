@@ -1,20 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "grepnest.serverName" . }}
+  name: {{ include "graphnest.serverName" . }}
   labels:
-    {{- include "grepnest.labels" . | nindent 4 }}
+    {{- include "graphnest.labels" . | nindent 4 }}
     app.kubernetes.io/component: server
 spec:
   replicas: {{ .Values.server.replicas }}
   selector:
     matchLabels:
-      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      {{- include "graphnest.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: server
   template:
     metadata:
       labels:
-        {{- include "grepnest.selectorLabels" . | nindent 8 }}
+        {{- include "graphnest.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: server
       annotations:
         {{- with .Values.server.podAnnotations }}
@@ -23,9 +23,9 @@ spec:
         checksum/config: {{ include (print $.Template.BasePath "/configmaps.yaml") . | sha256sum }}
     spec:
       automountServiceAccountToken: false
-      serviceAccountName: {{ include "grepnest.serverName" . }}
+      serviceAccountName: {{ include "graphnest.serverName" . }}
       securityContext:
-        {{- include "grepnest.podSecurityContext" .Values.server.podSecurityContext | nindent 8 }}
+        {{- include "graphnest.podSecurityContext" .Values.server.podSecurityContext | nindent 8 }}
       {{- with .Values.images.pullSecrets }}
       imagePullSecrets:
         {{- range . }}
@@ -51,7 +51,7 @@ spec:
       initContainers:
       containers:
         - name: server
-          image: {{ include "grepnest.image" .Values.images.application | quote }}
+          image: {{ include "graphnest.image" .Values.images.application | quote }}
           imagePullPolicy: {{ .Values.images.application.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false
@@ -67,32 +67,32 @@ spec:
             httpGet: {path: /readyz, port: http}
           envFrom:
             - configMapRef:
-                name: {{ include "grepnest.serverName" . }}
+                name: {{ include "graphnest.serverName" . }}
           env:
             - name: HOME
-              value: /var/run/grepnest
-            - name: GREPNEST_DATABASE_URL
+              value: /var/run/graphnest
+            - name: GRAPHNEST_DATABASE_URL
               valueFrom:
                 secretKeyRef: {name: {{ .Values.secrets.runtime.name }}, key: {{ .Values.secrets.runtime.databaseURLKey }}}
           resources:
             {{- toYaml .Values.server.resources | nindent 12 }}
           volumeMounts:
             - {name: tmp, mountPath: /tmp}
-            - {name: runtime-home, mountPath: /var/run/grepnest}
-            - {name: github-app, mountPath: /var/run/secrets/grepnest/github, readOnly: true}
+            - {name: runtime-home, mountPath: /var/run/graphnest}
+            - {name: github-app, mountPath: /var/run/secrets/graphnest/github, readOnly: true}
             {{- if .Values.secrets.customCA.name }}
-            - {name: custom-ca, mountPath: /var/run/secrets/grepnest/ca/ca.crt, subPath: ca.crt, readOnly: true}
+            - {name: custom-ca, mountPath: /var/run/secrets/graphnest/ca/ca.crt, subPath: ca.crt, readOnly: true}
             {{- end }}
             {{- if .Values.server.sso.githubOAuth.enabled }}
-            - {name: oauth-github-client-secret, mountPath: /var/run/secrets/grepnest/oauth-github/client-secret, subPath: client-secret, readOnly: true}
+            - {name: oauth-github-client-secret, mountPath: /var/run/secrets/graphnest/oauth-github/client-secret, subPath: client-secret, readOnly: true}
             {{- end }}
             {{- if .Values.server.scim.enabled }}
-            - {name: scim-token, mountPath: /var/run/secrets/grepnest/scim/token, subPath: token, readOnly: true}
+            - {name: scim-token, mountPath: /var/run/secrets/graphnest/scim/token, subPath: token, readOnly: true}
             {{- end }}
             {{- if .Values.server.sso.oidc.enabled }}
-            - {name: oidc-client-secret, mountPath: /var/run/secrets/grepnest/oidc/client-secret, subPath: client-secret, readOnly: true}
+            - {name: oidc-client-secret, mountPath: /var/run/secrets/graphnest/oidc/client-secret, subPath: client-secret, readOnly: true}
             {{- if .Values.secrets.oidcCA.name }}
-            - {name: oidc-ca, mountPath: /var/run/secrets/grepnest/oidc-ca/ca.crt, subPath: ca.crt, readOnly: true}
+            - {name: oidc-ca, mountPath: /var/run/secrets/graphnest/oidc-ca/ca.crt, subPath: ca.crt, readOnly: true}
             {{- end }}
             {{- end }}
       volumes:
@@ -145,9 +145,9 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "grepnest.serverName" . }}
+  name: {{ include "graphnest.serverName" . }}
   labels:
-    {{- include "grepnest.labels" . | nindent 4 }}
+    {{- include "graphnest.labels" . | nindent 4 }}
     app.kubernetes.io/component: server
   {{- with .Values.server.service.annotations }}
   annotations:
@@ -156,7 +156,7 @@ metadata:
 spec:
   type: ClusterIP
   selector:
-    {{- include "grepnest.selectorLabels" . | nindent 4 }}
+    {{- include "graphnest.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: server
   ports:
     - {name: http, port: {{ .Values.server.service.port }}, targetPort: http, protocol: TCP}

@@ -1,5 +1,5 @@
 {
-  "name": "grepnest-ui-smoke",
+  "name": "graphnest-ui-smoke",
   "private": true,
   "scripts": {
     "test:ui-smoke": "playwright test test/smoke/public-ui.spec.mjs --workers=1"

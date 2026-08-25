@@ -3,55 +3,55 @@ ingress:
   className: nginx
   annotations: {nginx.ingress.kubernetes.io/proxy-body-size: 1m}
   hosts:
-    - host: grepnest.example.invalid
+    - host: graphnest.example.invalid
       paths:
         - {path: /, pathType: Prefix}
   tls:
-    - secretName: grepnest-existing-tls
-      hosts: [grepnest.example.invalid]
+    - secretName: graphnest-existing-tls
+      hosts: [graphnest.example.invalid]
 monitoring:
   serviceMonitor:
     enabled: true
     labels: {monitoring: pilot}
 secrets:
-  customCA: {name: grepnest-existing-ca, key: ca.crt}
-  oidc: {name: grepnest-oidc, clientSecretKey: client-secret}
-  githubOAuth: {name: grepnest-github-oauth, clientSecretKey: client-secret}
-  oidcCA: {name: grepnest-oidc-ca, key: ca.crt}
-  scim: {name: grepnest-scim, tokenKey: token}
+  customCA: {name: graphnest-existing-ca, key: ca.crt}
+  oidc: {name: graphnest-oidc, clientSecretKey: client-secret}
+  githubOAuth: {name: graphnest-github-oauth, clientSecretKey: client-secret}
+  oidcCA: {name: graphnest-oidc-ca, key: ca.crt}
+  scim: {name: graphnest-scim, tokenKey: token}
 server:
   scim: {enabled: true}
   sso:
-    publicURL: https://grepnest.example.invalid
-    oidc: {enabled: true, issuerURL: https://id.example.invalid, clientID: grepnest, scopes: [openid, profile, email], linkClaim: sub, displayNameClaim: name}
-    githubOAuth: {enabled: true, clientID: grepnest-github}
-  nodeSelector: {grepnest.example.invalid/pool: server}
+    publicURL: https://graphnest.example.invalid
+    oidc: {enabled: true, issuerURL: https://id.example.invalid, clientID: graphnest, scopes: [openid, profile, email], linkClaim: sub, displayNameClaim: name}
+    githubOAuth: {enabled: true, clientID: graphnest-github}
+  nodeSelector: {graphnest.example.invalid/pool: server}
   affinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
         nodeSelectorTerms:
-          - matchExpressions: [{key: grepnest.example.invalid/tier, operator: In, values: [frontend]}]
-  tolerations: [{key: grepnest.example.invalid/dedicated, operator: Equal, value: server, effect: NoSchedule}]
+          - matchExpressions: [{key: graphnest.example.invalid/tier, operator: In, values: [frontend]}]
+  tolerations: [{key: graphnest.example.invalid/dedicated, operator: Equal, value: server, effect: NoSchedule}]
   topologySpreadConstraints:
     - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway, labelSelector: {matchLabels: {app.kubernetes.io/component: server}}}
 node:
-  nodeSelector: {grepnest.example.invalid/pool: node}
+  nodeSelector: {graphnest.example.invalid/pool: node}
   affinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
         nodeSelectorTerms:
-          - matchExpressions: [{key: grepnest.example.invalid/tier, operator: In, values: [storage]}]
-  tolerations: [{key: grepnest.example.invalid/dedicated, operator: Equal, value: node, effect: NoSchedule}]
+          - matchExpressions: [{key: graphnest.example.invalid/tier, operator: In, values: [storage]}]
+  tolerations: [{key: graphnest.example.invalid/dedicated, operator: Equal, value: node, effect: NoSchedule}]
   topologySpreadConstraints:
     - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: DoNotSchedule, labelSelector: {matchLabels: {app.kubernetes.io/component: node}}}
 migration:
-  nodeSelector: {grepnest.example.invalid/pool: migration}
+  nodeSelector: {graphnest.example.invalid/pool: migration}
   affinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
         nodeSelectorTerms:
-          - matchExpressions: [{key: grepnest.example.invalid/tier, operator: In, values: [batch]}]
-  tolerations: [{key: grepnest.example.invalid/dedicated, operator: Equal, value: migration, effect: NoSchedule}]
+          - matchExpressions: [{key: graphnest.example.invalid/tier, operator: In, values: [batch]}]
+  tolerations: [{key: graphnest.example.invalid/dedicated, operator: Equal, value: migration, effect: NoSchedule}]
 networkPolicy:
   serverIngress:
     ingressControllerNamespaceSelector:

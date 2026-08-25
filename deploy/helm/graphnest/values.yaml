@@ -63,14 +63,14 @@ node:
     executable: /usr/local/bin/zoekt-webserver
     resources: {requests: {cpu: "2", memory: 8Gi}, limits: {cpu: "8", memory: 24Gi}}
   indexer:
-    executable: /usr/local/bin/grepnest-indexer
+    executable: /usr/local/bin/graphnest-indexer
     zoektIndexExecutable: /usr/local/bin/zoekt-index
     workspaceSizeLimit: 6Gi
     minFreeBytes: 1073741824
     maxRepositoryBytes: 5368709120
     metricsPort: 9090
     resources: {requests: {cpu: "1", memory: 2Gi}, limits: {cpu: "4", memory: 8Gi}}
-  paths: {workspace: /var/lib/grepnest/work, indexes: /data/index}
+  paths: {workspace: /var/lib/graphnest/work, indexes: /data/index}
   service: {port: 6070, annotations: {}}
   storage: {size: 250Gi, accessModes: [ReadWriteOnce], storageClassName: "", annotations: {}}
   nodeSelector: {}
@@ -80,7 +80,7 @@ node:
   podSecurityContext: {fsGroup: 65532}
   podAnnotations: {}
 migration:
-  executable: /usr/local/bin/grepnest-migrate
+  executable: /usr/local/bin/graphnest-migrate
   backoffLimit: 1
   activeDeadlineSeconds: 600
   resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: 500m, memory: 512Mi}}

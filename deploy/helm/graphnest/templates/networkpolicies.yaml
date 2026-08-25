@@ -2,26 +2,26 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.resourceName" (list . "deny-ingress") }}
+  name: {{ include "graphnest.resourceName" (list . "deny-ingress") }}
   labels:
-    {{- include "grepnest.labels" . | nindent 4 }}
+    {{- include "graphnest.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      {{- include "graphnest.selectorLabels" . | nindent 6 }}
   policyTypes: [Ingress]
   ingress: []
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.resourceName" (list . "allow-server-ingress") }}
+  name: {{ include "graphnest.resourceName" (list . "allow-server-ingress") }}
   labels:
-    {{- include "grepnest.labels" . | nindent 4 }}
+    {{- include "graphnest.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      {{- include "graphnest.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: server
   policyTypes: [Ingress]
   ingress:
@@ -43,13 +43,13 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.resourceName" (list . "allow-zoekt-ingress") }}
+  name: {{ include "graphnest.resourceName" (list . "allow-zoekt-ingress") }}
   labels:
-    {{- include "grepnest.labels" . | nindent 4 }}
+    {{- include "graphnest.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      {{- include "graphnest.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: node
   policyTypes: [Ingress]
   ingress:
@@ -59,14 +59,14 @@ spec:
               kubernetes.io/metadata.name: {{ .Release.Namespace }}
           podSelector:
             matchLabels:
-              {{- include "grepnest.selectorLabels" . | nindent 14 }}
+              {{- include "graphnest.selectorLabels" . | nindent 14 }}
               app.kubernetes.io/component: server
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: {{ .Release.Namespace }}
           podSelector:
             matchLabels:
-              {{- include "grepnest.selectorLabels" . | nindent 14 }}
+              {{- include "graphnest.selectorLabels" . | nindent 14 }}
               app.kubernetes.io/component: node
       ports:
         - {protocol: TCP, port: {{ .Values.node.zoekt.port }}}
@@ -74,13 +74,13 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.resourceName" (list . "allow-indexer-metrics-ingress") }}
+  name: {{ include "graphnest.resourceName" (list . "allow-indexer-metrics-ingress") }}
   labels:
-    {{- include "grepnest.labels" . | nindent 4 }}
+    {{- include "graphnest.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      {{- include "graphnest.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: node
   policyTypes: [Ingress]
   ingress:
@@ -100,26 +100,26 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.resourceName" (list . "deny-egress") }}
+  name: {{ include "graphnest.resourceName" (list . "deny-egress") }}
   labels:
-    {{- include "grepnest.labels" . | nindent 4 }}
+    {{- include "graphnest.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      {{- include "graphnest.selectorLabels" . | nindent 6 }}
   policyTypes: [Egress]
   egress: []
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.resourceName" (list . "allow-zoekt-egress") }}
+  name: {{ include "graphnest.resourceName" (list . "allow-zoekt-egress") }}
   labels:
-    {{- include "grepnest.labels" . | nindent 4 }}
+    {{- include "graphnest.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      {{- include "graphnest.selectorLabels" . | nindent 6 }}
     matchExpressions:
       - key: app.kubernetes.io/component
         operator: In
@@ -132,7 +132,7 @@ spec:
               kubernetes.io/metadata.name: {{ .Release.Namespace }}
           podSelector:
             matchLabels:
-              {{- include "grepnest.selectorLabels" . | nindent 14 }}
+              {{- include "graphnest.selectorLabels" . | nindent 14 }}
               app.kubernetes.io/component: node
       ports:
         - {protocol: TCP, port: {{ .Values.node.zoekt.port }}}
@@ -140,13 +140,13 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.resourceName" (list . "allow-dns-egress") }}
+  name: {{ include "graphnest.resourceName" (list . "allow-dns-egress") }}
   labels:
-    {{- include "grepnest.labels" . | nindent 4 }}
+    {{- include "graphnest.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      {{- include "graphnest.selectorLabels" . | nindent 6 }}
     matchExpressions:
       - key: app.kubernetes.io/component
         operator: In
@@ -167,15 +167,15 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.resourceName" (list . "allow-postgresql-egress") }}
+  name: {{ include "graphnest.resourceName" (list . "allow-postgresql-egress") }}
   labels:
-    {{- include "grepnest.labels" . | nindent 4 }}
+    {{- include "graphnest.labels" . | nindent 4 }}
 spec:
   # NetworkPolicy is pod-level: Zoekt shares this node policy, but only the
   # indexer container receives the database URL in the long-running node pod.
   podSelector:
     matchLabels:
-      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      {{- include "graphnest.selectorLabels" . | nindent 6 }}
     matchExpressions:
       - key: app.kubernetes.io/component
         operator: In
@@ -192,13 +192,13 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.resourceName" (list . "allow-github-egress") }}
+  name: {{ include "graphnest.resourceName" (list . "allow-github-egress") }}
   labels:
-    {{- include "grepnest.labels" . | nindent 4 }}
+    {{- include "graphnest.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      {{- include "graphnest.selectorLabels" . | nindent 6 }}
     matchExpressions:
       - key: app.kubernetes.io/component
         operator: In
@@ -219,13 +219,13 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "grepnest.resourceName" (list . "allow-identity-provider-egress") }}
+  name: {{ include "graphnest.resourceName" (list . "allow-identity-provider-egress") }}
   labels:
-    {{- include "grepnest.labels" . | nindent 4 }}
+    {{- include "graphnest.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "grepnest.selectorLabels" . | nindent 6 }}
+      {{- include "graphnest.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: server
   policyTypes: [Egress]
   egress:
