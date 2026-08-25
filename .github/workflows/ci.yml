@@ -25,7 +25,7 @@ jobs:
       - run: make compose-test openapi-check
       - run: make makefile-test abi-test tools-check
       - run: make scanner-build scanner-test scanner-vulncheck
-      - run: make fmt lint test-race build staticcheck govulncheck
+      - run: make brand-check fmt lint test-race build staticcheck govulncheck
 
   ui-smoke:
     runs-on: ubuntu-24.04

@@ -7,7 +7,11 @@ IMAGE_PLATFORM ?= linux/amd64
 APPLICATION_IMAGE ?= graphnest-application:dev
 NODE_IMAGE ?= graphnest-node:dev
 
-.PHONY: fmt lint staticcheck govulncheck test test-race makefile-test scanner-build scanner-test scanner-vulncheck abi-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test tools-check ui-smoke
+.PHONY: brand-check fmt lint staticcheck govulncheck test test-race makefile-test scanner-build scanner-test scanner-vulncheck abi-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test tools-check ui-smoke
+
+brand-check:
+	@! git grep -I -i -E 'grep[-_]?nest|graph[-_]nest' -- .
+	@! git ls-files | grep -Eiq 'grep[-_]?nest|graph[-_]nest'
 
 fmt:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
