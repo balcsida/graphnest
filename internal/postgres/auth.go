@@ -32,7 +32,12 @@ func (s *Store) CreateFederatedSessionAudited(ctx context.Context, identity auth
 		return err
 	}
 	defer tx.Rollback(ctx)
-	userID, err := bindFederatedUser(ctx, tx, identity.Issuer, identity.Subject, identity.LinkID)
+	var userID int64
+	if identity.AccessSync != nil {
+		userID, err = bindProviderUser(ctx, tx, identity)
+	} else {
+		userID, err = bindFederatedUser(ctx, tx, identity.Issuer, identity.Subject, identity.LinkID)
+	}
 	if err != nil {
 		return err
 	}
@@ -82,6 +87,59 @@ func bindFederatedUser(ctx context.Context, tx pgx.Tx, issuer, subject, external
 	}
 	return userID, err
 }
+
+// bindProviderUser provisions a provider-owned user on first login and
+// replaces that user's provider-derived repository grants. Unlike SCIM users,
+// the identity provider is authoritative for the account name and grants; an
+// existing SCIM or local user with the same external ID is never taken over.
+func bindProviderUser(ctx context.Context, tx pgx.Tx, identity authn.Identity) (int64, error) {
+	if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock($1,hashtext($2))`, providerUserLockNamespace, identity.LinkID); err != nil {
+		return 0, err
+	}
+	var userID int64
+	err := tx.QueryRow(ctx, `select id from users where external_id=$1 and source='github' and deleted_at is null for update`,
+		identity.LinkID).Scan(&userID)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		// The provider login is mutable and only unique per provider; suffix the
+		// immutable subject when another live account already uses the name.
+		if err := tx.QueryRow(ctx, `insert into users (external_id, user_name, display_name, source)
+			select $1, case when exists(select 1 from users where lower(user_name)=lower($2) and deleted_at is null)
+				then $2||'-'||$3 else $2 end, $4, 'github' returning id`,
+			identity.LinkID, identity.Login, identity.Subject, identity.DisplayName).Scan(&userID); err != nil {
+			return 0, err
+		}
+		if _, err := tx.Exec(ctx, `insert into user_identities (user_id,issuer,subject) values ($1,$2,$3)`, userID, identity.Issuer, identity.Subject); err != nil {
+			return 0, err
+		}
+	case err != nil:
+		return 0, err
+	default:
+		var live bool
+		if err := tx.QueryRow(ctx, `update users set display_name=$2,
+			user_name=case when exists(select 1 from users other where other.id<>users.id and lower(other.user_name)=lower($3) and other.deleted_at is null)
+				then $3||'-'||$4 else $3 end,
+			updated_at=case when (display_name,user_name) is distinct from ($2::varchar,$3::varchar) then now() else updated_at end
+			where id=$1 returning scim_active and suspended_at is null`, userID, identity.DisplayName, identity.Login, identity.Subject).Scan(&live); err != nil {
+			return 0, err
+		}
+		if !live {
+			return 0, pgx.ErrNoRows
+		}
+	}
+	if _, err := tx.Exec(ctx, `delete from user_github_grants where user_id=$1`, userID); err != nil {
+		return 0, err
+	}
+	// Unknown repository IDs are dropped: the join keeps only repositories this
+	// deployment indexes, and authorization re-checks installation state anyway.
+	if _, err := tx.Exec(ctx, `insert into user_github_grants (user_id, repository_id)
+		select $1, github_id from repositories where github_id=any($2)`, userID, identity.AccessSync.RepositoryIDs); err != nil {
+		return 0, err
+	}
+	return userID, nil
+}
+
+const providerUserLockNamespace = 0x6768 // "gh"
 
 func (s *Store) CreateLoginFlow(ctx context.Context, flow authn.LoginFlow) error {
 	_, err := s.pool.Exec(ctx, `insert into auth_login_flows (state_hash, browser_hash, provider, nonce, code_verifier, return_to, created_at, expires_at) values ($1,$2,$3,$4,$5,$6,$7,$8)`, flow.StateHash[:], flow.BrowserHash[:], flow.Provider, flow.Nonce, flow.CodeVerifier, flow.ReturnTo, flow.CreatedAt, flow.ExpiresAt)
