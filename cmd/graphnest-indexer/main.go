@@ -57,7 +57,7 @@ func main() {
 	warnIgnoredGitSettings(logger, settings)
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	runtime, err := newIndexRuntime(ctx, settings)
+	runtime, err := newIndexRuntime(ctx, settings, logger)
 	if err == nil {
 		err = runtime.run(ctx)
 	}
@@ -152,7 +152,7 @@ func (runtime indexRuntime) run(ctx context.Context) error {
 	return errors.Join(failures...)
 }
 
-func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime, error) {
+func newIndexRuntime(ctx context.Context, settings config.Indexer, logger *slog.Logger) (indexRuntime, error) {
 	privateKey, err := readBoundedFile(settings.GitHub.PrivateKeyFile, maxPrivateKeySize)
 	if err != nil {
 		return indexRuntime{}, err
@@ -202,7 +202,7 @@ func newIndexRuntime(ctx context.Context, settings config.Indexer) (indexRuntime
 		ID: settings.WorkerID, Queue: store, Store: store, Tokens: githubClient, Snapshots: newSnapshotProvider(settings, githubClient, git, metrics),
 		Zoekt:        &indexer.ZoektIndexer{Binary: settings.ZoektIndex, IndexDir: settings.IndexDir, Runner: runner, Client: zoektClient, IndexTimeout: 10 * time.Minute, VisibilityTimeout: 2 * time.Minute},
 		Enricher:     newEnricher(os.Getenv("GRAPHNEST_SCANNER_PATH")),
-		MinFreeBytes: uint64(settings.MinFreeBytes), MaxRepositoryBytes: settings.MaxRepositoryBytes, Metrics: metrics,
+		MinFreeBytes: uint64(settings.MinFreeBytes), MaxRepositoryBytes: settings.MaxRepositoryBytes, Metrics: metrics, Logger: logger,
 	}
 	listener, err := net.Listen("tcp", settings.MetricsListenAddress)
 	if err != nil {
