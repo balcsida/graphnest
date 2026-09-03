@@ -51,6 +51,8 @@ const adminUsersSQL = `select users.id, users.external_id, users.user_name, user
 		select grants.repository_id from (
 			select repository_id from user_repository_grants where user_id=users.id
 			union
+			select repository_id from user_github_grants where user_id=users.id
+			union
 			select group_grants.repository_id from group_memberships
 				join groups on groups.id=group_memberships.group_id and groups.deleted_at is null
 				join group_repository_grants group_grants on group_grants.group_id=groups.id
@@ -65,6 +67,10 @@ const adminUsersSQL = `select users.id, users.external_id, users.user_name, user
 	coalesce(array(
 		select repository_id from user_repository_grants
 		where user_id=users.id order by repository_id
+	), '{}'),
+	coalesce(array(
+		select repository_id from user_github_grants
+		where user_id=users.id order by repository_id
 	), '{}')
 	from users where users.deleted_at is null`
 
@@ -74,7 +80,7 @@ func scanAdminUser(row rowScanner) (admin.User, error) {
 	var user admin.User
 	err := row.Scan(&user.ID, &user.ExternalID, &user.UserName, &user.DisplayName,
 		&user.Source, &user.SCIMActive, &user.Suspended, &user.Administrator, &user.RepositoryIDs,
-		&user.DirectAdministrator, &user.DirectRepositoryIDs)
+		&user.DirectAdministrator, &user.DirectRepositoryIDs, &user.GitHubRepositoryIDs)
 	return user, err
 }
 

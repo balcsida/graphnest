@@ -64,6 +64,31 @@ func TestArchiveSnapshotProviderExtractsExactSHAIntoJobWorkspace(t *testing.T) {
 	}
 }
 
+func TestArchiveSnapshotProviderSkipsSymlinks(t *testing.T) {
+	// Real repositories carry symlinks (docs/latest -> v2, node_modules/.bin).
+	// Zoekt never follows them, so they are skipped instead of failing the job,
+	// and nothing is created for them inside the snapshot.
+	download := &archiveDownload{body: tarGzip(t,
+		tarEntry{name: "root/file", body: "x"},
+		tarEntry{name: "root/link", kind: tar.TypeSymlink, link: "../../etc/passwd"},
+		tarEntry{name: "root/dir/link", kind: tar.TypeSymlink, link: "file"},
+	)}
+	provider := ArchiveSnapshotProvider{Client: download, WorkspacesDir: t.TempDir(), Limits: testArchiveLimits()}
+	snapshot, err := provider.Prepare(t.Context(), archiveRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(snapshot.Root, "link")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("symlink was materialized: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(snapshot.Root, "dir", "link")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("nested symlink was materialized: %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(snapshot.Root, "file")); err != nil || string(data) != "x" {
+		t.Fatalf("file = %q, error = %v", data, err)
+	}
+}
+
 func TestArchiveSnapshotProviderRejectsUnsafeArchives(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -73,7 +98,6 @@ func TestArchiveSnapshotProviderRejectsUnsafeArchives(t *testing.T) {
 		{name: "traversal", entry: tarEntry{name: "root/../escape", body: "x"}},
 		{name: "absolute", entry: tarEntry{name: "/root/file", body: "x"}},
 		{name: "backslash", entry: tarEntry{name: `root\escape`, body: "x"}},
-		{name: "symlink", entry: tarEntry{name: "root/link", kind: tar.TypeSymlink, link: "file"}},
 		{name: "hardlink", entry: tarEntry{name: "root/link", kind: tar.TypeLink, link: "root/file"}},
 		{name: "fifo", entry: tarEntry{name: "root/pipe", kind: tar.TypeFifo}},
 		{name: "character device", entry: tarEntry{name: "root/device", kind: tar.TypeChar}},

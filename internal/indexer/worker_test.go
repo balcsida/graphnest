@@ -3,8 +3,10 @@
 package indexer
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -460,6 +462,8 @@ func TestWorkerRunOneClassifiesPermanentAndRetryableFailures(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			worker, queue, _, git, publisher := workerFixture()
+			var logs bytes.Buffer
+			worker.Logger = slog.New(slog.NewTextHandler(&logs, nil))
 			if errors.Is(test.err, ErrTargetMissing) {
 				git.prepareErr = test.err
 			} else {
@@ -471,6 +475,10 @@ func TestWorkerRunOneClassifiesPermanentAndRetryableFailures(t *testing.T) {
 			}
 			if queue.failedCode != test.code || queue.failedRetry != test.retry || (git.prepared && !git.cleaned) {
 				t.Fatalf("failure=%q retry=%v cleaned=%v", queue.failedCode, queue.failedRetry, git.cleaned)
+			}
+			// Operators only see the error code in the job row; the cause must reach the log.
+			if !strings.Contains(logs.String(), "code="+test.code) || !strings.Contains(logs.String(), test.err.Error()) {
+				t.Fatalf("failure log = %q", logs.String())
 			}
 		})
 	}
