@@ -80,7 +80,7 @@ globalThis.sessionStorage = {
 for (const id of [
   "access-panel", "admin-shell", "admin-status", "access-message", "token", "title", "subtitle",
   "overview-cards", "dependency-health", "activity", "repo-rows", "repo-empty", "repo-statuses",
-  "job-rows", "job-empty", "queue-cards", "load-older-jobs", "upload-list", "dependency-list", "delivery-rows",
+  "job-rows", "job-empty", "queue-cards", "load-older-jobs", "repo-shown", "load-more-repos", "upload-list", "dependency-list", "delivery-rows",
   "delivery-empty", "github-cards", "github-config", "installations", "health-dot", "health-text",
   "ready-dot", "ready-text", "token-form", "logout", "theme", "repo-filter", "select-all",
   "reconcile", "github-reconcile", "reindex-selected", "scip-upload", "scip-file", "scip-repo",
@@ -91,7 +91,7 @@ for (const id of [
   "audit-rows", "audit-empty",
 ]) {
   const node = document.createElement(id.includes("form") || id.includes("upload") || id.includes("refresh") ? "form" : "div");
-  node.hidden = id === "load-older-jobs";
+  node.hidden = id === "load-older-jobs" || id === "load-more-repos";
   ids.set(id, node);
 }
 for (const name of ["overview", "repositories", "queue", "users", "groups", "tokens", "audit", "scip", "webhooks", "github"]) {
@@ -104,7 +104,7 @@ for (const name of ["overview", "repositories", "queue", "users", "groups", "tok
 }
 
 const responses = {
-  "/v1/admin/overview": {repositories:{ready:1},jobs:{queued:1,running:1,succeeded:1,failed:1,superseded:1},deliveries:{succeeded:1},scip_uploads:1,dependencies:1,installations:1},
+  "/v1/admin/overview": {repositories:{ready:319,failed:1},jobs:{queued:1,running:1,succeeded:1,failed:1,superseded:1},deliveries:{succeeded:1},scip_uploads:1,dependencies:1,installations:1},
   "/v1/admin/repositories": {repositories:[
     {github_id:7,name:"acme/repo",default_branch:"main",status:"mystery",error_code:""},
     {github_id:8,name:"acme/failed",default_branch:"main",status:"failed",error_code:"clone_failed"},
@@ -162,6 +162,31 @@ const mystery = all.find(node => node.textContent === "mystery");
 assert.ok(mystery && !mystery.className.includes("ok"), "unknown status must not be green");
 assert.match(text(ids.get("inventory-notices")), /partial/i);
 assert.doesNotMatch(text(ids.get("inventory-notices")), /jobs/i);
+// Status chips report server-side totals, not the size of the loaded page.
+const chips = ids.get("repo-statuses").children.map(chip => chip.textContent);
+assert.deepEqual(chips, ["All · 320", "ready · 319", "failed · 1", "mystery · 0"]);
+assert.equal(ids.get("load-more-repos").hidden, true);
+assert.equal(ids.get("repo-shown").textContent, "");
+
+// A cursor turns the truncated inventory into a pageable list.
+responses["/v1/admin/repositories"] = {repositories:Array.from({length:3},(_,i)=>({github_id:100+i,name:"acme/repo-"+i,default_branch:"main",status:"ready",error_code:""})),truncated:true,next_cursor:"repos-page-2"};
+responses["/v1/admin/repositories?cursor=repos-page-2"] = {repositories:[{github_id:100,name:"acme/repo-0",default_branch:"main",status:"ready",error_code:""},{github_id:200,name:"beta/failed",default_branch:"main",status:"failed",error_code:"index_failed"}],truncated:false};
+refresh();
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.doesNotMatch(text(ids.get("inventory-notices")), /repositories/i);
+assert.equal(ids.get("load-more-repos").hidden, false);
+assert.equal(ids.get("repo-shown").textContent, "Showing 3 of 320 repositories.");
+await ids.get("load-more-repos").dispatch("click");
+assert.ok(requests.some(({path}) => path === "/v1/admin/repositories?cursor=repos-page-2"));
+assert.equal(ids.get("repo-rows").children.length, 4, "duplicate repository across pages must be dropped");
+assert.equal(ids.get("load-more-repos").hidden, true);
+assert.equal(ids.get("repo-shown").textContent, "");
+responses["/v1/admin/repositories"] = {repositories:[
+  {github_id:7,name:"acme/repo",default_branch:"main",status:"mystery",error_code:""},
+  {github_id:8,name:"acme/failed",default_branch:"main",status:"failed",error_code:"clone_failed"},
+],truncated:true};
+refresh();
+await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(ids.get("load-older-jobs").hidden, false);
 await ids.get("load-older-jobs").dispatch("click");
 assert.ok(requests.some(({path}) => path === "/v1/admin/jobs?cursor=page-2"));
