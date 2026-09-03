@@ -285,6 +285,10 @@ func extractArchive(ctx context.Context, input io.Reader, destination string, li
 			if copyErr != nil || closeErr != nil {
 				return errors.Join(copyErr, closeErr)
 			}
+		case tar.TypeSymlink:
+			// Symlinks are common in real repositories and carry no searchable
+			// content of their own; skipping them keeps the snapshot free of
+			// links that could point outside it.
 		default:
 			return errors.New("unsupported archive entry type")
 		}
