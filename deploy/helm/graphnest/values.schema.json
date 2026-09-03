@@ -233,10 +233,11 @@
             "githubOAuth": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["enabled", "clientID"],
+              "required": ["enabled", "clientID", "accessSync"],
               "properties": {
                 "enabled": {"type": "boolean"},
-                "clientID": {"type": "string"}
+                "clientID": {"type": "string"},
+                "accessSync": {"type": "boolean"}
               }
             }
           }
@@ -683,6 +684,10 @@
           "githubOAuth": {"properties": {"clientID": {"$ref": "#/definitions/nonEmptyString"}}}
         }}}}
       }}
+    },
+    {
+      "if": {"properties": {"server": {"properties": {"sso": {"properties": {"githubOAuth": {"properties": {"accessSync": {"const": true}}}}}}}}},
+      "then": {"properties": {"server": {"properties": {"sso": {"properties": {"githubOAuth": {"properties": {"enabled": {"const": true}}}}}}}}}
     },
     {
       "if": {"properties": {"networkPolicy": {"properties": {"externalEgress": {"properties": {"enabled": {"const": true}}}}}, "server": {"properties": {"sso": {"properties": {"oidc": {"properties": {"enabled": {"const": true}}}}}}}}},
