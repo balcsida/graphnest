@@ -503,10 +503,11 @@ func readBoundedRegularFile(path string, maxBytes int64) ([]byte, error) {
 	return data, nil
 }
 
+// startPeriodic validates the database-backed refresh and cleanup synchronously,
+// then runs the first GitHub reconcile and every later cycle in the background.
+// Reconciling hundreds of repositories can outlast a liveness probe window, so
+// it must not delay serving /healthz.
 func startPeriodic(ctx context.Context, interval time.Duration, reconcile, refresh, cleanup func(context.Context) error, onError func(error)) (<-chan struct{}, error) {
-	if err := reconcile(ctx); err != nil {
-		return nil, err
-	}
 	if err := refresh(ctx); err != nil {
 		return nil, err
 	}
@@ -516,6 +517,9 @@ func startPeriodic(ctx context.Context, interval time.Duration, reconcile, refre
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		if err := reconcile(ctx); err != nil && ctx.Err() == nil && onError != nil {
+			onError(err)
+		}
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {

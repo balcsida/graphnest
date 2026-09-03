@@ -709,11 +709,17 @@ func TestDurableSecretReadsAreBounded(t *testing.T) {
 	}
 }
 
-func TestDurableReconciliationStartsSynchronouslyAndStops(t *testing.T) {
+func TestDurableReconciliationRunsInBackgroundAndStops(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var reconciles, refreshes, cleanups, failures atomic.Int64
+	startedReconcile := make(chan struct{}, 1)
+	releaseReconcile := make(chan struct{})
 	done, err := startPeriodic(ctx, time.Millisecond, func(context.Context) error {
-		if reconciles.Add(1) == 2 {
+		if reconciles.Add(1) == 1 {
+			// A slow first GitHub reconcile (hundreds of repositories) must not
+			// block startup, so the server can serve health probes meanwhile.
+			startedReconcile <- struct{}{}
+			<-releaseReconcile
 			return context.DeadlineExceeded
 		}
 		return nil
@@ -727,9 +733,15 @@ func TestDurableReconciliationStartsSynchronouslyAndStops(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reconciles.Load() != 1 || refreshes.Load() != 1 || cleanups.Load() != 1 {
-		t.Fatalf("startup reconciles=%d refreshes=%d cleanups=%d", reconciles.Load(), refreshes.Load(), cleanups.Load())
+	if refreshes.Load() != 1 || cleanups.Load() != 1 {
+		t.Fatalf("startup refreshes=%d cleanups=%d", refreshes.Load(), cleanups.Load())
 	}
+	select {
+	case <-startedReconcile:
+	case <-time.After(time.Second):
+		t.Fatal("initial reconcile did not start")
+	}
+	close(releaseReconcile)
 	deadline := time.Now().Add(time.Second)
 	for reconciles.Load() < 3 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
