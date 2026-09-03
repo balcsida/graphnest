@@ -226,6 +226,8 @@ Authorization is enforced by the server against current repository IDs and direc
 
 GitHub OAuth uses a dedicated OAuth App per environment, separate from the GitHub App used for repository access. Configure `GRAPHNEST_PUBLIC_URL`, `GRAPHNEST_OAUTH_GITHUB_CLIENT_ID`, and `GRAPHNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE`, then register `https://<public-host>/auth/oauth/github/callback`. The flow requests no scope and uses the access token once for `GET /user`; the token is then discarded and cannot authenticate MCP. GitHub Enterprise Server OAuth remains unverified.
 
+Optionally, GraphNest can inherit repository access from GitHub instead of SCIM. With `GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC=true`, the OAuth client must be the GitHub App's own OAuth credential; each sign-in then provisions the user on first use and replaces their GitHub-derived grants with the indexed repositories that user can access through the App's installations. Administrator remains an explicit GraphNest role. See [Operations](docs/operations.md#github-derived-access).
+
 OIDC, GitHub OAuth, SCIM, API-token administration, audit events, and break-glass recovery require durable mode. See [Operations](docs/operations.md) and the [Threat model](docs/threat-model.md) before exposing the service.
 
 ## Kubernetes and Helm
