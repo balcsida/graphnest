@@ -79,6 +79,12 @@ func TestLoadGitHubOAuth(t *testing.T) {
 			t.Setenv("GRAPHNEST_BREAK_GLASS_ENABLED", "true")
 		}, false, true, true, false},
 		{"break glass without provider", func(t *testing.T) { setValidEnvironment(t); t.Setenv("GRAPHNEST_BREAK_GLASS_ENABLED", "true") }, false, false, false, true},
+		{"access sync without GitHub", func(t *testing.T) { setValidOIDCEnvironment(t); t.Setenv("GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC", "true") }, false, false, false, true},
+		{"access sync without provider", func(t *testing.T) { setValidEnvironment(t); t.Setenv("GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC", "true") }, false, false, false, true},
+		{"access sync invalid value", func(t *testing.T) {
+			setValidGitHubOAuthEnvironment(t)
+			t.Setenv("GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC", "yes")
+		}, false, false, false, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			test.set(t)
@@ -92,11 +98,19 @@ func TestLoadGitHubOAuth(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.SSO.OIDC.Enabled != test.wantOIDC || got.SSO.OAuth.GitHub.Enabled != test.wantGitHub || got.SSO.BreakGlass != test.wantBreakGlass {
+			if got.SSO.OIDC.Enabled != test.wantOIDC || got.SSO.OAuth.GitHub.Enabled != test.wantGitHub || got.SSO.BreakGlass != test.wantBreakGlass || got.SSO.OAuth.GitHub.AccessSync {
 				t.Fatalf("SSO = %#v", got.SSO)
 			}
 		})
 	}
+	t.Run("access sync enabled", func(t *testing.T) {
+		setValidGitHubOAuthEnvironment(t)
+		t.Setenv("GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC", "true")
+		got, err := Load()
+		if err != nil || !got.SSO.OAuth.GitHub.Enabled || !got.SSO.OAuth.GitHub.AccessSync {
+			t.Fatalf("SSO = %#v, error = %v", got.SSO, err)
+		}
+	})
 }
 
 func TestLoadBreakGlass(t *testing.T) {
