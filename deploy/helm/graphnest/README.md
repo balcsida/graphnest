@@ -126,6 +126,10 @@ Enable GitHub OAuth with `server.sso.githubOAuth.enabled=true`, the same HTTPS
 `secrets.githubOAuth` Secret. Its secret is mounted read-only at
 `/var/run/secrets/graphnest/oauth-github/client-secret`; it is never placed in
 values or a ConfigMap. GitHub OAuth uses the existing GitHub CA and egress.
+Set `server.sso.githubOAuth.accessSync=true` to provision users on first
+sign-in and mirror the repositories they can access through the configured
+GitHub App; the referenced OAuth Secret must then hold that GitHub App's own
+OAuth client secret. See the repository operations guide for the access model.
 
 Enable SCIM with `server.scim.enabled=true`, the same HTTPS
 `server.sso.publicURL`, and an existing `secrets.scim` Secret. The token is

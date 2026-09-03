@@ -54,6 +54,9 @@ data:
   {{- if .Values.server.sso.githubOAuth.enabled }}
   GRAPHNEST_OAUTH_GITHUB_CLIENT_ID: {{ .Values.server.sso.githubOAuth.clientID | quote }}
   GRAPHNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE: /var/run/secrets/graphnest/oauth-github/client-secret
+  {{- if .Values.server.sso.githubOAuth.accessSync }}
+  GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC: "true"
+  {{- end }}
   {{- end }}
   {{- if .Values.server.scim.enabled }}
   GRAPHNEST_SCIM_TOKEN_FILE: /var/run/secrets/graphnest/scim/token
