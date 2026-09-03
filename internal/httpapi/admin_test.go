@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -94,6 +95,68 @@ func TestAdminJobsPaginatesWithOpaqueCursor(t *testing.T) {
 	last := first.Jobs[len(first.Jobs)-1]
 	if store.jobsCursor == nil || store.jobsCursor.ID != last.ID || !store.jobsCursor.UpdatedAt.Equal(last.UpdatedAt) {
 		t.Fatalf("cursor=%#v last=%#v", store.jobsCursor, last)
+	}
+}
+
+func TestAdminRepositoriesPaginateWithOpaqueCursor(t *testing.T) {
+	store := &adminHTTPStore{repositoryPages: true}
+	mux := http.NewServeMux()
+	RegisterAdmin(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{
+		"admin": {Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}},
+	})), &admin.Service{Store: store, GitHub: adminHTTPGitHub{}}, 100, 1024, 64<<10)
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/admin/repositories", nil)
+	request.Header.Set("Authorization", "Bearer admin")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	var first struct {
+		Repositories []admin.Repository `json:"repositories"`
+		Truncated    bool               `json:"truncated"`
+		NextCursor   string             `json:"next_cursor"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &first); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusOK || len(first.Repositories) != 100 || !first.Truncated || first.NextCursor == "" {
+		t.Fatalf("status=%d count=%d truncated=%v cursor=%q", response.Code, len(first.Repositories), first.Truncated, first.NextCursor)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/v1/admin/repositories?cursor="+first.NextCursor, nil)
+	request.Header.Set("Authorization", "Bearer admin")
+	response = httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	var final map[string]json.RawMessage
+	if err := json.Unmarshal(response.Body.Bytes(), &final); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusOK || string(final["truncated"]) != "false" {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if _, ok := final["next_cursor"]; ok {
+		t.Fatalf("final response contains next_cursor: %s", response.Body.String())
+	}
+	if store.repoCursor == nil || store.repoCursor.Name != "acme/repo-099" {
+		t.Fatalf("cursor=%#v", store.repoCursor)
+	}
+
+	encode := func(value string) string { return base64.RawURLEncoding.EncodeToString([]byte(value)) }
+	for name, cursor := range map[string]string{
+		"empty":               "",
+		"not base64":          "not-base64",
+		"unsupported version": encode(`{"v":2,"name":"acme/one"}`),
+		"missing name":        encode(`{"v":1}`),
+		"no owner":            encode(`{"v":1,"name":"one"}`),
+		"second JSON value":   encode(`{"v":1,"name":"acme/one"} {}`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/v1/admin/repositories?cursor="+cursor, nil)
+			request.Header.Set("Authorization", "Bearer admin")
+			response := httptest.NewRecorder()
+			mux.ServeHTTP(response, request)
+			if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"invalid_request"`) {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
 	}
 }
 
@@ -215,6 +278,8 @@ type adminHTTPStore struct {
 	auditEvents     []audit.Event
 	jobPages        bool
 	jobsCursor      *admin.JobCursor
+	repositoryPages bool
+	repoCursor      *admin.RepositoryCursor
 }
 
 func (store *adminHTTPStore) AuditEvents(context.Context, int) ([]audit.Event, bool, error) {
@@ -224,8 +289,19 @@ func (store *adminHTTPStore) AuditEvents(context.Context, int) ([]audit.Event, b
 func (adminHTTPStore) AdminOverview(context.Context, int64, []int64) (admin.Overview, error) {
 	return admin.Overview{Repositories: map[string]int64{"ready": 1}}, nil
 }
-func (adminHTTPStore) AdminRepositories(context.Context, int64, []int64, int) ([]admin.Repository, bool, error) {
-	return []admin.Repository{{GitHubID: 101, Name: "acme/one"}}, false, nil
+func (store *adminHTTPStore) AdminRepositories(_ context.Context, _ int64, _ []int64, limit int, cursor *admin.RepositoryCursor) ([]admin.Repository, bool, error) {
+	if !store.repositoryPages {
+		return []admin.Repository{{GitHubID: 101, Name: "acme/one"}}, false, nil
+	}
+	store.repoCursor = cursor
+	if cursor != nil {
+		return []admin.Repository{{GitHubID: 999, Name: "zeta/last"}}, false, nil
+	}
+	repositories := make([]admin.Repository, limit)
+	for i := range repositories {
+		repositories[i] = admin.Repository{GitHubID: int64(100 + i), Name: fmt.Sprintf("acme/repo-%03d", i)}
+	}
+	return repositories, true, nil
 }
 func (store *adminHTTPStore) AdminJobs(_ context.Context, _ int64, _ []int64, limit int, cursor *admin.JobCursor) ([]admin.Job, bool, error) {
 	if !store.jobPages {

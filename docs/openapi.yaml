@@ -177,8 +177,14 @@ paths:
   /v1/admin/repositories:
     get:
       security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: string, minLength: 1}
       responses:
-        '200': {description: Bounded durable repository inventory, content: {application/json: {schema: {$ref: '#/components/schemas/AdminRepositoryList'}}}}
+        '200': {description: Cursor-paginated durable repository inventory ordered by full name, content: {application/json: {schema: {$ref: '#/components/schemas/AdminRepositoryList'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '503': {$ref: '#/components/responses/Unavailable'}
@@ -783,6 +789,7 @@ components:
       properties:
         repositories: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/AdminRepository'}}
         truncated: {type: boolean}
+        next_cursor: {type: string, minLength: 1, description: Opaque cursor for the next page; present only when truncated is true.}
     AdminRepository:
       type: object
       additionalProperties: false

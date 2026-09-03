@@ -3,6 +3,8 @@
 package postgres
 
 import (
+	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -319,6 +321,53 @@ func TestAdminJobsPaginatesAuthorizedJobs(t *testing.T) {
 	}
 }
 
+func TestAdminRepositoriesPaginateByOwnerAndName(t *testing.T) {
+	store := migratedStore(t)
+	if err := store.UpsertInstallation(t.Context(), InstallationUpdate{GitHubID: 10, AccountLogin: "acme", AccountType: "Organization", Status: "active"}); err != nil {
+		t.Fatal(err)
+	}
+	for index := range 7 {
+		owner := "acme"
+		if index%2 == 1 {
+			owner = "beta"
+		}
+		if _, err := store.UpsertRepository(t.Context(), RepositoryUpdate{GitHubID: int64(300 + index), InstallationID: 10, Owner: owner, Name: fmt.Sprintf("repo-%d", index), DefaultBranch: "main", Enabled: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var names []string
+	var cursor *admin.RepositoryCursor
+	for page := 0; ; page++ {
+		items, more, err := store.AdminRepositories(t.Context(), 0, nil, 3, cursor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range items {
+			names = append(names, item.Name)
+		}
+		if !more {
+			if page != 2 || len(items) != 1 {
+				t.Fatalf("final page=%d items=%d", page, len(items))
+			}
+			break
+		}
+		if len(items) != 3 {
+			t.Fatalf("page %d length=%d", page, len(items))
+		}
+		last := items[len(items)-1]
+		cursor = &admin.RepositoryCursor{Name: last.Name}
+	}
+	want := []string{"acme/repo-0", "acme/repo-2", "acme/repo-4", "acme/repo-6", "beta/repo-1", "beta/repo-3", "beta/repo-5"}
+	if !slices.Equal(names, want) {
+		t.Fatalf("paginated names = %v", names)
+	}
+	// A cursor past the end yields an empty, non-truncated page instead of wrapping.
+	items, more, err := store.AdminRepositories(t.Context(), 0, nil, 3, &admin.RepositoryCursor{Name: "zzz/last"})
+	if err != nil || len(items) != 0 || more {
+		t.Fatalf("past-end page=%#v more=%v err=%v", items, more, err)
+	}
+}
+
 func TestAdminDataIsBoundedAndSanitized(t *testing.T) {
 	store := migratedStore(t)
 	repositoryID := queueRepository(t, store)
@@ -346,7 +395,7 @@ func TestAdminDataIsBoundedAndSanitized(t *testing.T) {
 		values($1,'manual','depends_on','pkg:golang/example.com/dep@v1','golang','example.com/dep','v1')`, repositoryID); err != nil {
 		t.Fatal(err)
 	}
-	repositories, truncated, err := store.AdminRepositories(t.Context(), 10, []int64{101}, 10)
+	repositories, truncated, err := store.AdminRepositories(t.Context(), 10, []int64{101}, 10, nil)
 	if err != nil || len(repositories) != 1 || truncated {
 		t.Fatalf("repositories=%#v truncated=%v err=%v", repositories, truncated, err)
 	}
@@ -406,7 +455,7 @@ func TestDurableAdministratorInventoryUsesGlobalEligibleRepositories(t *testing.
 		}
 	}
 
-	repositories, truncated, err := store.AdminRepositories(t.Context(), 0, nil, 10)
+	repositories, truncated, err := store.AdminRepositories(t.Context(), 0, nil, 10, nil)
 	if err != nil || truncated || len(repositories) != 2 ||
 		repositories[0].GitHubID != 101 || repositories[1].GitHubID != 201 {
 		t.Fatalf("repositories=%#v truncated=%v err=%v", repositories, truncated, err)
@@ -439,7 +488,7 @@ func TestAdministratorAPITokenInventoryUsesOnlyRepositoryCeiling(t *testing.T) {
 		}
 	}
 
-	repositories, _, err := store.AdminRepositories(t.Context(), 0, []int64{201}, 10)
+	repositories, _, err := store.AdminRepositories(t.Context(), 0, []int64{201}, 10, nil)
 	if err != nil || len(repositories) != 1 || repositories[0].GitHubID != 201 {
 		t.Fatalf("repositories=%#v err=%v", repositories, err)
 	}
