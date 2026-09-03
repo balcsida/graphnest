@@ -75,6 +75,8 @@ helm template pilot "$chart" -n graphnest -f "$minimal" -f "$optional" \
 helm template uid "$chart" -n graphnest -f "$minimal" \
   --set=server.podSecurityContext.runAsUser=1001230000 \
   --set=node.podSecurityContext.runAsUser=1001230001 >"$tmp/uid.yaml"
+helm template restricted-scc "$chart" -n graphnest -f "$minimal" \
+  --set=node.podSecurityContext.fsGroup=null >"$tmp/restricted-scc.yaml"
 for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
   reject 'app.kubernetes.io/component: scanner|graphnest-scanner|GRAPHNEST_GIT_PATH|zoekt-git-index|liblbug' "$manifest"
   require 'name: archive-workspace, mountPath: "/var/lib/graphnest/work"' "$manifest"
@@ -403,6 +405,8 @@ for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
 done
 require 'runAsUser: 1001230000' "$tmp/uid.yaml"
 require 'runAsUser: 1001230001' "$tmp/uid.yaml"
+reject 'fsGroup' "$tmp/restricted-scc.yaml"
+require 'runAsNonRoot: true' "$tmp/restricted-scc.yaml"
 
 require 'values: \[server, node\]' "$tmp/optional.yaml"
 require 'values: \[server, node, migration\]' "$tmp/optional.yaml"
