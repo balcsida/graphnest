@@ -47,6 +47,9 @@ type JobCursor struct {
 	ID        int64
 }
 
+// RepositoryCursor identifies the last repository of a page by full name.
+type RepositoryCursor struct{ Name string }
+
 type Job struct {
 	ID           int64     `json:"id"`
 	RepositoryID int64     `json:"repository_id"`
@@ -142,7 +145,7 @@ type Store interface {
 	ReplaceAdminGroupAccess(context.Context, int64, int64, bool, []int64) error
 	RevokeAdminUserCredentials(context.Context, int64) error
 	AdminOverview(context.Context, int64, []int64) (Overview, error)
-	AdminRepositories(context.Context, int64, []int64, int) ([]Repository, bool, error)
+	AdminRepositories(context.Context, int64, []int64, int, *RepositoryCursor) ([]Repository, bool, error)
 	AdminJobs(context.Context, int64, []int64, int, *JobCursor) ([]Job, bool, error)
 	AdminSCIPUploads(context.Context, int64, []int64, int) ([]SCIPUpload, bool, error)
 	AdminSCIPDependencies(context.Context, int64, []int64, int) ([]SCIPDependency, bool, error)
@@ -176,11 +179,14 @@ func (service *Service) Overview(ctx context.Context, principal authn.Principal)
 	return service.Store.AdminOverview(ctx, principal.InstallationID, principal.RepositoryIDs)
 }
 
-func (service *Service) Repositories(ctx context.Context, principal authn.Principal) ([]Repository, bool, error) {
+func (service *Service) Repositories(ctx context.Context, principal authn.Principal, cursor *RepositoryCursor) ([]Repository, bool, error) {
 	if err := requireAdmin(principal); err != nil {
 		return nil, false, err
 	}
-	return service.Store.AdminRepositories(ctx, principal.InstallationID, principal.RepositoryIDs, service.limit())
+	if cursor != nil && (cursor.Name == "" || len(cursor.Name) > 512 || !strings.Contains(cursor.Name, "/")) {
+		return nil, false, ErrInvalid
+	}
+	return service.Store.AdminRepositories(ctx, principal.InstallationID, principal.RepositoryIDs, service.limit(), cursor)
 }
 
 func (service *Service) Jobs(ctx context.Context, principal authn.Principal, cursor *JobCursor) ([]Job, bool, error) {

@@ -32,11 +32,30 @@ func RegisterAdmin(mux *http.ServeMux, authenticator authn.RequestAuthenticator,
 		return service.Overview(request.Context(), PrincipalFromContext(request.Context()))
 	}))
 	mux.Handle("/v1/admin/repositories", get(func(request *http.Request) (any, error) {
-		items, truncated, err := service.Repositories(request.Context(), PrincipalFromContext(request.Context()))
+		query := request.URL.Query()
+		if query.Has("cursor") && query.Get("cursor") == "" {
+			return nil, admin.ErrInvalid
+		}
+		cursor, err := decodeAdminRepositoryCursor(query.Get("cursor"))
+		if err != nil {
+			return nil, err
+		}
+		items, truncated, err := service.Repositories(request.Context(), PrincipalFromContext(request.Context()), cursor)
+		if err != nil {
+			return nil, err
+		}
+		var nextCursor string
+		if truncated {
+			if len(items) == 0 {
+				return nil, errors.New("truncated repositories response is empty")
+			}
+			nextCursor, err = encodeAdminRepositoryCursor(items[len(items)-1])
+		}
 		return struct {
 			Repositories []admin.Repository `json:"repositories"`
 			Truncated    bool               `json:"truncated"`
-		}{items, truncated}, err
+			NextCursor   string             `json:"next_cursor,omitempty"`
+		}{items, truncated, nextCursor}, err
 	}))
 	mux.Handle("/v1/admin/jobs", get(func(request *http.Request) (any, error) {
 		query := request.URL.Query()
@@ -147,6 +166,38 @@ func decodeAdminJobCursor(value string) (*admin.JobCursor, error) {
 		return nil, admin.ErrInvalid
 	}
 	return &admin.JobCursor{UpdatedAt: cursor.UpdatedAt, ID: cursor.ID}, nil
+}
+
+type adminRepositoryCursor struct {
+	Version int    `json:"v"`
+	Name    string `json:"name"`
+}
+
+func decodeAdminRepositoryCursor(value string) (*admin.RepositoryCursor, error) {
+	if value == "" {
+		return nil, nil
+	}
+	data, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return nil, admin.ErrInvalid
+	}
+	var cursor adminRepositoryCursor
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&cursor); err != nil {
+		return nil, admin.ErrInvalid
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF || cursor.Version != 1 || !strings.Contains(cursor.Name, "/") {
+		return nil, admin.ErrInvalid
+	}
+	return &admin.RepositoryCursor{Name: cursor.Name}, nil
+}
+
+func encodeAdminRepositoryCursor(repository admin.Repository) (string, error) {
+	data, err := json.Marshal(adminRepositoryCursor{Version: 1, Name: repository.Name})
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(data), nil
 }
 
 func encodeAdminJobCursor(job admin.Job) (string, error) {
