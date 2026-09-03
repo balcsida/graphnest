@@ -23,6 +23,10 @@ type GitHubOAuth struct {
 	Enabled          bool
 	ClientID         string
 	ClientSecretFile string
+	// AccessSync provisions users on first sign-in and mirrors the repositories
+	// they can reach through the configured GitHub App. It requires the OAuth
+	// client to be that GitHub App's own OAuth credential.
+	AccessSync bool
 }
 
 type OIDC struct {
@@ -60,6 +64,9 @@ func loadSSO(databaseURL string) (SSO, error) {
 	oidcEnabled := issuerURL != "" || clientID != "" || clientSecretFile != ""
 	githubEnabled := githubClientID != "" || githubClientSecretFile != ""
 	if !oidcEnabled && !githubEnabled {
+		if os.Getenv("GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC") != "" && os.Getenv("GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC") != "false" {
+			return SSO{}, invalid("GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC requires GitHub OAuth")
+		}
 		switch os.Getenv("GRAPHNEST_BREAK_GLASS_ENABLED") {
 		case "", "false":
 		case "true":
@@ -131,6 +138,16 @@ func loadSSO(databaseURL string) (SSO, error) {
 			ClientID:         githubClientID,
 			ClientSecretFile: githubClientSecretFile,
 		}
+	}
+	switch value := os.Getenv("GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC"); value {
+	case "", "false":
+	case "true":
+		if !githubEnabled {
+			return SSO{}, invalid("GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC requires GitHub OAuth")
+		}
+		sso.OAuth.GitHub.AccessSync = true
+	default:
+		return SSO{}, invalid("GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC must be true or false")
 	}
 	switch os.Getenv("GRAPHNEST_BREAK_GLASS_ENABLED") {
 	case "", "false":

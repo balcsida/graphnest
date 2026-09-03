@@ -210,6 +210,9 @@ func newAuthRuntime(ctx context.Context, settings config.Config, store authn.Ses
 		if err != nil {
 			return nil, err
 		}
+		if settings.SSO.OAuth.GitHub.AccessSync {
+			client.AccessSyncAppID = settings.GitHub.AppID
+		}
 		runtime.providers = append(runtime.providers, githuboauth.NewProvider(client, store, runtime.sessions, recorder, settings.SSO.LoginFlowTTL))
 	}
 	return runtime, nil
