@@ -27,6 +27,7 @@ type User struct {
 	RepositoryIDs       []int64 `json:"repository_ids"`
 	DirectAdministrator bool    `json:"direct_administrator"`
 	DirectRepositoryIDs []int64 `json:"direct_repository_ids"`
+	GitHubRepositoryIDs []int64 `json:"github_repository_ids"`
 }
 
 type Group struct {

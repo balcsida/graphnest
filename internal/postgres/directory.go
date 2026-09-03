@@ -28,6 +28,8 @@ func userPrincipal(ctx context.Context, queryer principalQuerier, userID int64, 
     ), grants as (
         select repository_id from user_repository_grants where user_id=$1
         union
+        select repository_id from user_github_grants where user_id=$1
+        union
         select grants.repository_id from group_repository_grants grants join active_groups on active_groups.group_id=grants.group_id
     )
     select exists(select 1 from user_roles where user_id=users.id)

@@ -4,7 +4,9 @@ package postgres
 
 import (
 	"errors"
+	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -139,6 +141,90 @@ func TestOAuthBindingPreservesIdentityAfterLoginRename(t *testing.T) {
 			t.Fatalf("missing audit operation %q", operation)
 		}
 	}
+}
+
+func TestGitHubAccessSyncProvisionsUserAndMirrorsGrants(t *testing.T) {
+	store := migratedStore(t)
+	if _, err := store.pool.Exec(t.Context(), `insert into installations (github_id, account_login, account_type, status) values (1, 'acme', 'Organization', 'active')`); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int64{101, 102, 103} {
+		if _, err := store.pool.Exec(t.Context(), `insert into repositories (github_id, installation_id, owner, name, clone_url, web_url, default_branch, private, archived, enabled, status) values ($1, 1, 'acme', $2, '', '', 'main', false, false, true, 'ready')`, id, strconv.FormatInt(id, 10)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	identity := authn.Identity{
+		Provider: authn.ProviderOAuth, Issuer: "https://github.com", Subject: "777", LinkID: "github:https://github.com:777",
+		DisplayName: "Ada", Login: "ada", AccessSync: &authn.AccessSync{RepositoryIDs: []int64{101, 102, 999}},
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	session := func(token byte) authn.SessionRecord {
+		return authn.SessionRecord{
+			TokenHash: [32]byte{token}, AuditID: strings.Repeat(string(rune('a'+token-50)), 32), Provider: authn.ProviderOAuth,
+			CreatedAt: now, LastSeenAt: now, IdleExpiresAt: now.Add(time.Minute), ExpiresAt: now.Add(time.Hour),
+		}
+	}
+	// An unprovisioned identity without access sync is still denied.
+	if err := store.CreateFederatedSessionAudited(t.Context(), authn.Identity{Provider: identity.Provider, Issuer: identity.Issuer, Subject: identity.Subject, LinkID: identity.LinkID, DisplayName: identity.DisplayName}, session(50), audit.OperationOAuthLoginSucceeded); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("unprovisioned login error = %v", err)
+	}
+	if err := store.CreateFederatedSessionAudited(t.Context(), identity, session(51), audit.OperationOAuthLoginSucceeded); err != nil {
+		t.Fatal(err)
+	}
+	principal, err := store.SessionPrincipal(t.Context(), [32]byte{51}, now, now.Add(time.Minute))
+	if err != nil || principal.Administrator || !slices.Equal(principal.RepositoryIDs, []int64{101, 102}) {
+		t.Fatalf("principal=%#v err=%v", principal, err)
+	}
+	var source, userName, externalID string
+	if err := store.pool.QueryRow(t.Context(), `select source, user_name, external_id from users where id=$1`, principal.Subject).Scan(&source, &userName, &externalID); err != nil || source != "github" || userName != "ada" || externalID != identity.LinkID {
+		t.Fatalf("user source=%q name=%q external=%q err=%v", source, userName, externalID, err)
+	}
+	user, err := store.AdminUser(t.Context(), mustInt64(t, principal.Subject))
+	if err != nil || !slices.Equal(user.RepositoryIDs, []int64{101, 102}) || len(user.DirectRepositoryIDs) != 0 || !slices.Equal(user.GitHubRepositoryIDs, []int64{101, 102}) {
+		t.Fatalf("admin user=%#v err=%v", user, err)
+	}
+
+	// The next login replaces GitHub-derived grants and renames the user, while direct grants survive.
+	if _, err := store.pool.Exec(t.Context(), `insert into user_repository_grants (user_id, repository_id) values ($1, 103)`, mustInt64(t, principal.Subject)); err != nil {
+		t.Fatal(err)
+	}
+	identity.Login, identity.AccessSync = "ada-renamed", &authn.AccessSync{RepositoryIDs: []int64{102}}
+	if err := store.CreateFederatedSessionAudited(t.Context(), identity, session(52), audit.OperationOAuthLoginSucceeded); err != nil {
+		t.Fatal(err)
+	}
+	principal, err = store.SessionPrincipal(t.Context(), [32]byte{52}, now, now.Add(time.Minute))
+	if err != nil || !slices.Equal(principal.RepositoryIDs, []int64{102, 103}) {
+		t.Fatalf("resynced principal=%#v err=%v", principal, err)
+	}
+	if err := store.pool.QueryRow(t.Context(), `select user_name from users where id=$1`, principal.Subject).Scan(&userName); err != nil || userName != "ada-renamed" {
+		t.Fatalf("renamed user_name=%q err=%v", userName, err)
+	}
+
+	// A colliding login is not fatal: the login name stays unique through the GitHub ID suffix.
+	other := authn.Identity{Provider: authn.ProviderOAuth, Issuer: "https://github.com", Subject: "778", LinkID: "github:https://github.com:778", Login: "ada-renamed", AccessSync: &authn.AccessSync{}}
+	if err := store.CreateFederatedSessionAudited(t.Context(), other, session(53), audit.OperationOAuthLoginSucceeded); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.pool.QueryRow(t.Context(), `select user_name from users where external_id=$1`, other.LinkID).Scan(&userName); err != nil || userName != "ada-renamed-778" {
+		t.Fatalf("colliding user_name=%q err=%v", userName, err)
+	}
+
+	// Suspended GitHub users stay denied even with a fresh sync.
+	if _, err := store.pool.Exec(t.Context(), `update users set suspended_at=now() where external_id=$1`, identity.LinkID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateFederatedSessionAudited(t.Context(), identity, session(54), audit.OperationOAuthLoginSucceeded); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("suspended login error = %v", err)
+	}
+}
+
+func mustInt64(t *testing.T, value string) int64 {
+	t.Helper()
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return parsed
 }
 
 func TestOIDCBindingRejectsLocalExternalIDCollision(t *testing.T) {
