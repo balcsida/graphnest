@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"strconv"
 	"time"
 
@@ -28,7 +27,14 @@ func (indexer *ZoektIndexer) Index(ctx context.Context, repo repository.Reposito
 	if indexer == nil || indexer.Binary == "" || indexer.IndexDir == "" || source == "" || repo.ZoektID == 0 || repo.Name == "" || repo.WebURL == "" || repo.Branch == "" || !validSHA(repo.DesiredSHA) {
 		return errors.New("invalid Zoekt indexing job")
 	}
-	temporaryDirectory, err := os.MkdirTemp(filepath.Dir(indexer.IndexDir), "."+filepath.Base(indexer.IndexDir)+"-tmp-")
+	// Scratch space lives inside the index directory: it is the only writable
+	// durable path when the root filesystem is read-only, and zoekt-index's
+	// final rename stays on one filesystem. Zoekt only loads *.zoekt shards, so
+	// the hidden directory is never mistaken for one.
+	if err := os.MkdirAll(indexer.IndexDir, 0o750); err != nil {
+		return err
+	}
+	temporaryDirectory, err := os.MkdirTemp(indexer.IndexDir, ".tmp-")
 	if err != nil {
 		return err
 	}
