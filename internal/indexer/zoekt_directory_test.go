@@ -77,8 +77,14 @@ func TestZoektIndexWritesDirectoryMetadataOutsideSource(t *testing.T) {
 	if filepath.Dir(string(metadataPath)) != string(tempPath) {
 		t.Fatalf("metadata path %q and TMPDIR %q use different directories", metadataPath, tempPath)
 	}
-	if filepath.Dir(string(tempPath)) != filepath.Dir(indexer.IndexDir) {
-		t.Fatalf("TMPDIR %q is not adjacent to index directory %q", tempPath, indexer.IndexDir)
+	// The scratch directory must live inside the index directory: that is the
+	// only writable durable path in Kubernetes, and staying on the same
+	// filesystem keeps Zoekt's final shard renames atomic.
+	if filepath.Dir(string(tempPath)) != indexer.IndexDir {
+		t.Fatalf("TMPDIR %q is not inside index directory %q", tempPath, indexer.IndexDir)
+	}
+	if !strings.HasPrefix(filepath.Base(string(tempPath)), ".") {
+		t.Fatalf("TMPDIR %q is not hidden from shard discovery", tempPath)
 	}
 	var metadata struct {
 		ID       uint32
