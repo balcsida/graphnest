@@ -29,7 +29,8 @@ type accountStoreStub struct {
 }
 
 func TestAccountTokenRouteReturnsUnavailableForAuthorizerOutage(t *testing.T) {
-	service := &account.Service{Manager: authn.TokenManager{Store: &accountStoreStub{}, Rand: strings.NewReader(strings.Repeat("x", 32))}, Authorizer: failingAuthorizer{errors.New("database unavailable")}}
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	service := &account.Service{Manager: authn.TokenManager{Store: &accountStoreStub{}, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))}, Authorizer: failingAuthorizer{errors.New("database unavailable")}}
 	mux := http.NewServeMux()
 	RegisterAccount(mux, authn.RequestAuthenticator{Bearer: authn.NewStatic(map[string]authn.Principal{"user": {Subject: "11", Method: "oidc", RepositoryIDs: []int64{101}}})}, service, 1024, 4096)
 	request := httptest.NewRequest(http.MethodPost, "/v1/account/api-tokens", strings.NewReader(`{"expires_at":"2026-08-29T00:00:00Z","repository_ids":[101]}`))
@@ -63,7 +64,7 @@ func TestAccountTokenRoutesRevealPlaintextOnlyAtCreation(t *testing.T) {
 	// Break caught: account token endpoint leaking a reusable plaintext token in metadata.
 	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	store := &accountStoreStub{listed: []authn.APITokenMetadata{{ID: 3, Prefix: "gnp_visible", CreatedAt: now}}}
-	service := &account.Service{Manager: authn.TokenManager{Store: store, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+	service := &account.Service{Manager: authn.TokenManager{Store: store, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))}}
 	mux := http.NewServeMux()
 	RegisterAccount(mux, authn.RequestAuthenticator{Bearer: authn.NewStatic(map[string]authn.Principal{"user": {Subject: "11", Method: "oidc", RepositoryIDs: []int64{101}}})}, service, 1024, 4096)
 

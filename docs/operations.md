@@ -210,6 +210,39 @@ process startup. Revoke the OAuth App credential at GitHub as appropriate, then
 complete the restart. MCP has no browser OAuth mode and rejects session cookies;
 use a bearer token for `/mcp`.
 
+### GitHub-derived access
+
+`GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC=true` (Helm
+`server.sso.githubOAuth.accessSync=true`) replaces SCIM provisioning with
+GitHub's own permission model. It requires GitHub OAuth and changes two
+things:
+
+- The OAuth client must be the **GitHub App's own OAuth credential** (the
+  client ID and secret shown on the App's settings page), not a separate OAuth
+  App, and "Request user authorization (OAuth) during installation" may stay
+  off. GraphNest cannot verify this pairing; a foreign OAuth client simply
+  yields no installations and therefore no access.
+- After `GET /user`, the same one-time token calls `GET /user/installations`
+  and, for every installation of the configured `GRAPHNEST_GITHUB_APP_ID`,
+  `GET /user/installations/{id}/repositories`. The result is exactly the
+  repositories GraphNest indexes that this user can already reach on GitHub.
+  Any failure or over-bound response denies the login rather than narrowing
+  or widening access.
+
+On a successful sign-in GraphNest creates the user on first use with
+`source=github`, `externalId` `github:<issuer>:<numeric-id>`, and the GitHub
+login as user name (suffixed with the numeric ID on a collision), updates the
+display name, and atomically replaces that user's GitHub-derived grants. Direct
+administrator or repository grants set through the admin API are kept separate
+and still apply. Suspending the user in GraphNest denies subsequent logins.
+SCIM and local users are never taken over by this path.
+
+Access revoked on GitHub takes effect at the user's next sign-in, bounded by
+`GRAPHNEST_SSO_SESSION_TTL` and `GRAPHNEST_SSO_SESSION_IDLE`; shorten them when
+that window is too long. Grant the first administrator by user ID:
+`PUT /v1/admin/users/{id}/access` with `direct_administrator: true` from a
+bootstrap credential, or the offline `graphnest-admin` break-glass account.
+
 ### GitHub.com smoke and negative procedure
 
 1. Use a public HTTPS origin and create a dedicated GitHub.com OAuth App for

@@ -75,6 +75,8 @@ helm template pilot "$chart" -n graphnest -f "$minimal" -f "$optional" \
 helm template uid "$chart" -n graphnest -f "$minimal" \
   --set=server.podSecurityContext.runAsUser=1001230000 \
   --set=node.podSecurityContext.runAsUser=1001230001 >"$tmp/uid.yaml"
+helm template restricted-scc "$chart" -n graphnest -f "$minimal" \
+  --set=node.podSecurityContext.fsGroup=null >"$tmp/restricted-scc.yaml"
 for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
   reject 'app.kubernetes.io/component: scanner|graphnest-scanner|GRAPHNEST_GIT_PATH|zoekt-git-index|liblbug' "$manifest"
   require 'name: archive-workspace, mountPath: "/var/lib/graphnest/work"' "$manifest"
@@ -93,6 +95,12 @@ helm template github-oauth "$chart" -n graphnest -f "$minimal" \
   --set-string=server.sso.githubOAuth.clientID=graphnest-github \
   --set-string=server.sso.publicURL=https://graphnest.example.invalid \
   --set-string=secrets.githubOAuth.name=graphnest-github-oauth >"$tmp/github-oauth.yaml"
+helm template github-access-sync "$chart" -n graphnest -f "$minimal" \
+  --set=server.sso.githubOAuth.enabled=true \
+  --set=server.sso.githubOAuth.accessSync=true \
+  --set-string=server.sso.githubOAuth.clientID=graphnest-github \
+  --set-string=server.sso.publicURL=https://graphnest.example.invalid \
+  --set-string=secrets.githubOAuth.name=graphnest-github-oauth >"$tmp/github-access-sync.yaml"
 helm template github-break-glass "$chart" -n graphnest -f "$minimal" \
   --set=breakGlass.enabled=true \
   --set=server.sso.githubOAuth.enabled=true \
@@ -341,6 +349,8 @@ require 'mountPath: /var/run/secrets/graphnest/oauth-github/client-secret' "$tmp
 require 'secretName: graphnest-github-oauth' "$tmp/github-oauth.yaml"
 require 'readOnly: true' "$tmp/github-oauth.yaml"
 reject 'GRAPHNEST_OAUTH_GITHUB_(CA|CLIENT_SECRET):|oauth-github-ca|allow-github-oauth' "$tmp/github-oauth.yaml"
+reject 'GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC' "$tmp/github-oauth.yaml"
+require 'GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC: "true"' "$tmp/github-access-sync.yaml"
 for key in GRAPHNEST_SSO_SESSION_IDLE GRAPHNEST_SSO_SESSION_TTL GRAPHNEST_SSO_LOGIN_FLOW_TTL; do
   [ "$(grep -E -c -e "^  $key:" "$tmp/optional.yaml")" -eq 1 ] || exit 1
 done
@@ -377,6 +387,8 @@ expect_failure "$tmp/github-oauth-public-url.err" helm template bad "$chart" -f 
   --set-string=server.sso.publicURL=http://graphnest.example.invalid
 expect_failure "$tmp/github-oauth-enabled-type.err" helm template bad "$chart" -f "$minimal" \
   --set-string=server.sso.githubOAuth.enabled=true
+expect_failure "$tmp/github-access-sync-without-oauth.err" helm template bad "$chart" -f "$minimal" \
+  --set=server.sso.githubOAuth.accessSync=true
 
 expect_failure "$tmp/scim-secret.err" helm template bad "$chart" -f "$minimal" \
   --set=server.scim.enabled=true
@@ -393,6 +405,8 @@ for manifest in "$tmp/minimal.yaml" "$tmp/optional.yaml"; do
 done
 require 'runAsUser: 1001230000' "$tmp/uid.yaml"
 require 'runAsUser: 1001230001' "$tmp/uid.yaml"
+reject 'fsGroup' "$tmp/restricted-scc.yaml"
+require 'runAsNonRoot: true' "$tmp/restricted-scc.yaml"
 
 require 'values: \[server, node\]' "$tmp/optional.yaml"
 require 'values: \[server, node, migration\]' "$tmp/optional.yaml"

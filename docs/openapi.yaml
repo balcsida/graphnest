@@ -733,19 +733,20 @@ components:
     AdminUser:
       type: object
       additionalProperties: false
-      required: [id, external_id, user_name, display_name, source, scim_active, suspended, administrator, repository_ids, direct_administrator, direct_repository_ids]
+      required: [id, external_id, user_name, display_name, source, scim_active, suspended, administrator, repository_ids, direct_administrator, direct_repository_ids, github_repository_ids]
       properties:
         id: {type: integer, format: int64, minimum: 1}
         external_id: {type: string, readOnly: true}
         user_name: {type: string, readOnly: true}
         display_name: {type: string, readOnly: true}
-        source: {type: string, enum: [scim, local], readOnly: true}
+        source: {type: string, enum: [scim, local, github], readOnly: true}
         scim_active: {type: boolean, readOnly: true}
         suspended: {type: boolean}
         administrator: {type: boolean}
         repository_ids: {type: array, maxItems: 100, items: {type: integer, format: int64, minimum: 1}}
         direct_administrator: {type: boolean}
         direct_repository_ids: {type: array, maxItems: 100, items: {type: integer, format: int64, minimum: 1}}
+        github_repository_ids: {type: array, maxItems: 100, readOnly: true, description: Repository grants mirrored from GitHub at the user's last sign-in when GitHub access sync is enabled; replaced on every login and not editable through the admin API., items: {type: integer, format: int64, minimum: 1}}
     AdminGroupList:
       type: object
       additionalProperties: false

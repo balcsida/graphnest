@@ -20,7 +20,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s@%s" (required "image repository is required" .repository) (required "image sha256 digest is required" .digest) -}}
 {{- end }}
 {{- define "graphnest.podSecurityContext" -}}
-{{- $context := omit . "runAsNonRoot" "seccompProfile" -}}
+{{- $context := dict -}}
+{{- range $key, $value := omit . "runAsNonRoot" "seccompProfile" -}}
+{{- /* A null value clears a chart default, e.g. fsGroup on OpenShift restricted SCCs. */ -}}
+{{- if not (kindIs "invalid" $value) }}{{ $_ := set $context $key $value }}{{ end -}}
+{{- end -}}
 {{- $_ := set $context "runAsNonRoot" true -}}
 {{- $_ := set $context "seccompProfile" (dict "type" "RuntimeDefault") -}}
 {{- toYaml $context -}}

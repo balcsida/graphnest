@@ -5,6 +5,7 @@ package indexer
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -80,7 +81,10 @@ type Worker struct {
 	ReapEvery          time.Duration
 	CleanupTimeout     time.Duration
 	Metrics            *observability.Metrics
-	lastReap           time.Time
+	// Logger receives one record per failed job with the phase error; job
+	// rows only keep the error code. Credentials never reach these errors.
+	Logger   *slog.Logger
+	lastReap time.Time
 }
 
 func (worker *Worker) Run(ctx context.Context) error {
@@ -136,12 +140,15 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 		<-renewDone
 	}()
 
-	fail := func(code string, retry bool) (bool, error) {
+	fail := func(code string, retry bool, cause error) (bool, error) {
 		if leaseErr := readError(renewErrors); leaseErr != nil {
 			return true, leaseErr
 		}
 		if ctx.Err() != nil {
 			return true, ctx.Err()
+		}
+		if worker.Logger != nil {
+			worker.Logger.Error("index job failed", "job", job.ID, "repository", job.RepositoryID, "attempt", job.Attempt, "code", code, "retry", retry, "error", cause)
 		}
 		if err := worker.Queue.FailIndex(ctx, job.ID, worker.ID, code, retry); err != nil {
 			return true, err
@@ -151,24 +158,24 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 
 	repo, err := worker.Store.RepositoryForIndex(jobCtx, job.RepositoryID)
 	if err != nil {
-		return fail("repository_failed", true)
+		return fail("repository_failed", true, err)
 	}
 	if RepositoryTooLarge(repo.SizeBytes, worker.MaxRepositoryBytes) {
-		return fail("repository_too_large", false)
+		return fail("repository_too_large", false, nil)
 	}
 	desired, err := worker.Store.DesiredSHA(jobCtx, repo.ID)
 	if err != nil {
-		return fail("repository_failed", true)
+		return fail("repository_failed", true, err)
 	}
 	if desired != job.TargetSHA {
-		return fail("superseded", false)
+		return fail("superseded", false, nil)
 	}
 	token, err := worker.Tokens.InstallationToken(jobCtx, repo.InstallationID, []int64{repo.GitHubID})
 	if err != nil {
-		return fail("token_failed", true)
+		return fail("token_failed", true, err)
 	}
 	if enough, err := worker.enoughSpace(); err != nil || !enough {
-		return fail("insufficient_space", true)
+		return fail("insufficient_space", true, err)
 	}
 	started := time.Now()
 	snapshot, err := worker.Snapshots.Prepare(jobCtx, SnapshotRequest{RepositoryID: job.RepositoryID, Repository: repo, JobID: job.ID, CommitSHA: job.TargetSHA, AccessToken: token.Value})
@@ -182,34 +189,34 @@ func (worker *Worker) RunOne(ctx context.Context) (worked bool, resultErr error)
 	worker.observePhase("fetch", started, err)
 	if err != nil {
 		if errors.Is(err, ErrTargetMissing) {
-			return fail("target_missing", false)
+			return fail("target_missing", false, err)
 		}
-		return fail("git_failed", true)
+		return fail("git_failed", true, err)
 	}
 	desired, err = worker.Store.DesiredSHA(jobCtx, repo.ID)
 	if err != nil {
-		return fail("repository_failed", true)
+		return fail("repository_failed", true, err)
 	}
 	if desired != job.TargetSHA {
-		return fail("superseded", false)
+		return fail("superseded", false, nil)
 	}
 	started = time.Now()
 	if err := worker.Zoekt.Index(jobCtx, repo, snapshot.Root); err != nil {
 		worker.observePhase("index", started, err)
-		return fail("index_failed", true)
+		return fail("index_failed", true, err)
 	}
 	worker.observePhase("index", started, nil)
 	started = time.Now()
 	if err := worker.Zoekt.WaitVisible(jobCtx, repo.ZoektID, repo.Branch, job.TargetSHA); err != nil {
 		worker.observePhase("visibility", started, err)
-		return fail("visibility_failed", true)
+		return fail("visibility_failed", true, err)
 	}
 	worker.observePhase("visibility", started, nil)
 	if leaseErr := readError(renewErrors); leaseErr != nil {
 		return true, leaseErr
 	}
 	if err := worker.Queue.PublishIndex(jobCtx, job.ID, worker.ID); err != nil {
-		return fail("publish_failed", true)
+		return fail("publish_failed", true, err)
 	}
 	status := EnrichmentStatus{ErrorCode: "enrichment_disabled"}
 	if worker.Enricher != nil {

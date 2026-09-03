@@ -20,10 +20,19 @@ func IsInteractiveMethod(method string) bool {
 
 type Identity struct {
 	Provider, Issuer, Subject, LinkID, DisplayName string
+	// Login is the provider's mutable account name; it is only used to name
+	// just-in-time provisioned users and is never an identity.
+	Login string
+	// AccessSync, when non-nil, provisions the user on first login and replaces
+	// that user's provider-derived repository grants with RepositoryIDs.
+	AccessSync *AccessSync
 }
 
+type AccessSync struct{ RepositoryIDs []int64 }
+
 func validIdentity(identity Identity) bool {
-	return validIdentityField(identity.Provider) && validIdentityField(identity.Issuer) && validIdentityField(identity.Subject) && validIdentityField(identity.LinkID) && validIdentityDisplayName(identity.DisplayName)
+	return validIdentityField(identity.Provider) && validIdentityField(identity.Issuer) && validIdentityField(identity.Subject) && validIdentityField(identity.LinkID) && validIdentityDisplayName(identity.DisplayName) &&
+		(identity.AccessSync == nil || validIdentityField(identity.Login))
 }
 
 func validIdentityField(value string) bool {
