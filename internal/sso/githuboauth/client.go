@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -20,7 +21,13 @@ import (
 	"golang.org/x/oauth2"
 )
 
-const maxResponseBytes = 64 * 1024
+const (
+	maxResponseBytes = 64 * 1024
+	// maxRepositoryPages bounds the accessible-repository walk per installation;
+	// GitHub serves at most 100 repositories per page.
+	maxRepositoryPages = 50
+	maxInstallations   = 500
+)
 
 type Client struct {
 	endpoints  githubapp.Endpoints
@@ -28,6 +35,12 @@ type Client struct {
 	http       *http.Client
 	issuer     string
 	apiVersion string
+	// AccessSyncAppID enables GitHub-derived access. The OAuth client must then
+	// be the GitHub App's own OAuth credential: after identity lookup the
+	// user-to-server token lists the user's installations of that App and the
+	// repositories the user can access through each, which become the user's
+	// provider-derived grants. Zero disables the sync.
+	AccessSyncAppID int64
 }
 
 func NewClient(endpoints githubapp.Endpoints, publicURL *url.URL, clientID string, clientSecret []byte, apiVersion string, httpClient *http.Client) (*Client, error) {
@@ -128,7 +141,119 @@ func (client *Client) Exchange(ctx context.Context, code, verifier, _ string) (a
 	if len(client.issuer) > 2048 || len(linkID) > 2048 {
 		return authn.Identity{}, errors.New("GitHub user identity is invalid")
 	}
-	return authn.Identity{Provider: authn.ProviderOAuth, Issuer: client.issuer, Subject: subject, LinkID: linkID, DisplayName: displayName}, nil
+	identity := authn.Identity{Provider: authn.ProviderOAuth, Issuer: client.issuer, Subject: subject, LinkID: linkID, DisplayName: displayName}
+	if client.AccessSyncAppID > 0 {
+		repositories, err := client.accessibleRepositories(ctx, token.AccessToken)
+		if err != nil {
+			return authn.Identity{}, err
+		}
+		identity.Login = user.Login
+		identity.AccessSync = &authn.AccessSync{RepositoryIDs: repositories}
+	}
+	return identity, nil
+}
+
+// accessibleRepositories returns the sorted, de-duplicated GitHub repository
+// IDs the user can access through installations of the configured App. Any
+// failure denies the login: a partial list would silently narrow access while
+// an unchecked one could widen it.
+func (client *Client) accessibleRepositories(ctx context.Context, accessToken string) ([]int64, error) {
+	var installations struct {
+		Installations []struct {
+			ID    int64 `json:"id"`
+			AppID int64 `json:"app_id"`
+		} `json:"installations"`
+	}
+	if _, err := client.getJSON(ctx, githubapp.EndpointURL(client.endpoints.API, "user", "installations")+"?per_page=100", accessToken, &installations); err != nil {
+		return nil, fmt.Errorf("GitHub user installations: %w", err)
+	}
+	if len(installations.Installations) > maxInstallations {
+		return nil, errors.New("GitHub user installations exceed the supported bound")
+	}
+	seen := map[int64]struct{}{}
+	for _, installation := range installations.Installations {
+		if installation.AppID != client.AccessSyncAppID || installation.ID <= 0 {
+			continue
+		}
+		next := githubapp.EndpointURL(client.endpoints.API, "user", "installations", strconv.FormatInt(installation.ID, 10), "repositories") + "?per_page=100"
+		for page := 0; next != ""; page++ {
+			if page >= maxRepositoryPages {
+				return nil, errors.New("GitHub installation repositories exceed the supported bound")
+			}
+			var body struct {
+				Repositories []struct {
+					ID int64 `json:"id"`
+				} `json:"repositories"`
+			}
+			header, err := client.getJSON(ctx, next, accessToken, &body)
+			if err != nil {
+				return nil, fmt.Errorf("GitHub installation repositories: %w", err)
+			}
+			for _, repository := range body.Repositories {
+				if repository.ID > 0 {
+					seen[repository.ID] = struct{}{}
+				}
+			}
+			next = nextPage(header.Get("Link"))
+			if next != "" && !client.sameAPIOrigin(next) {
+				return nil, errors.New("GitHub pagination left the API origin")
+			}
+		}
+	}
+	ids := make([]int64, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids, nil
+}
+
+// sameAPIOrigin keeps server-supplied pagination links, and therefore the
+// bearer token, on the configured GitHub API origin.
+func (client *Client) sameAPIOrigin(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	return err == nil && parsed.Scheme == client.endpoints.API.Scheme && parsed.Host == client.endpoints.API.Host
+}
+
+func (client *Client) getJSON(ctx context.Context, rawURL, accessToken string, target any) (http.Header, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, errors.New("build request")
+	}
+	githubapp.SetAPIHeaders(request.Header, client.apiVersion)
+	request.Header.Set("Authorization", "Bearer "+accessToken)
+	response, err := client.http.Do(request)
+	if err != nil {
+		return nil, errors.New("request failed")
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", response.StatusCode)
+	}
+	data, err := boundedBody(response.Body)
+	if err != nil {
+		return nil, errors.New("read response")
+	}
+	if err := decodeOne(data, target); err != nil {
+		return nil, errors.New("response is invalid")
+	}
+	return response.Header, nil
+}
+
+// nextPage extracts the rel="next" target from a GitHub Link header.
+func nextPage(link string) string {
+	for _, part := range strings.Split(link, ",") {
+		segments := strings.Split(strings.TrimSpace(part), ";")
+		if len(segments) < 2 || !strings.HasPrefix(segments[0], "<") || !strings.HasSuffix(segments[0], ">") {
+			continue
+		}
+		for _, parameter := range segments[1:] {
+			if strings.TrimSpace(parameter) == `rel="next"` {
+				return strings.TrimSuffix(strings.TrimPrefix(segments[0], "<"), ">")
+			}
+		}
+	}
+	return ""
 }
 
 func canonicalIssuer(web *url.URL) (string, error) {
