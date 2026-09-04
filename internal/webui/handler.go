@@ -33,6 +33,7 @@ func RegisterWithBreakGlass(mux *http.ServeMux, breakGlass bool) {
 	mux.Handle("GET /{$}", handler(index, policy))
 	mux.Handle("GET /index.html", handler(index, policy))
 	mux.Handle("GET /admin", handler(adminDocument, adminContentSecurityPolicy))
+	mux.Handle("GET /account", handler(adminDocument, adminContentSecurityPolicy))
 }
 
 func withoutMarked(document []byte, opening, closing string) []byte {

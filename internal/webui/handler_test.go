@@ -42,7 +42,7 @@ func TestRegisterServesBoundedConsoleAtExactPaths(t *testing.T) {
 		for _, want := range []string{
 			`id="token-form"`, `id="search-form"`, `id="repository-picker"`,
 			`id="status"`, `id="file-view"`, `id="navigation-panel"`,
-			"prefers-reduced-motion: reduce",
+			`href="/account"`, "prefers-reduced-motion: reduce",
 		} {
 			if !bytes.Contains(body, []byte(want)) {
 				t.Fatalf("%s missing %q", path, want)
@@ -87,20 +87,22 @@ func TestRegisterWithBreakGlassServesOIDCFirstRecovery(t *testing.T) {
 }
 
 func TestRegisterServesAdminWithConsoleSecurityHeaders(t *testing.T) {
-	mux := http.NewServeMux()
-	Register(mux)
-	response := httptest.NewRecorder()
-	mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/admin", nil))
+	for _, path := range []string{"/admin", "/account"} {
+		mux := http.NewServeMux()
+		Register(mux)
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
 
-	if response.Code != http.StatusOK {
-		t.Fatalf("status=%d", response.Code)
-	}
-	if got := response.Header().Get("Cache-Control"); got != "no-store" {
-		t.Fatalf("Cache-Control=%q", got)
-	}
-	policy := response.Header().Get("Content-Security-Policy")
-	if !strings.Contains(policy, "script-src 'sha256-") || strings.Contains(policy, "unsafe-inline") {
-		t.Fatalf("CSP=%q", policy)
+		if response.Code != http.StatusOK {
+			t.Fatalf("status=%d", response.Code)
+		}
+		if got := response.Header().Get("Cache-Control"); got != "no-store" {
+			t.Fatalf("Cache-Control=%q", got)
+		}
+		policy := response.Header().Get("Content-Security-Policy")
+		if !strings.Contains(policy, "script-src 'sha256-") || strings.Contains(policy, "unsafe-inline") {
+			t.Fatalf("CSP=%q", policy)
+		}
 	}
 }
 
