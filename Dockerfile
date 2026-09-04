@@ -7,11 +7,13 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN GOWORK=off go mod download
 COPY . .
-RUN go build -trimpath -ldflags="-s -w" -o /out/graphnest-server ./cmd/graphnest-server && \
-    go build -trimpath -ldflags="-s -w" -o /out/graphnest-admin ./cmd/graphnest-admin && \
-    go build -trimpath -ldflags="-s -w" -o /out/graphnest-migrate ./cmd/graphnest-migrate && \
-    go build -trimpath -ldflags="-s -w" -o /out/graphnest-mcp ./cmd/graphnest-mcp && \
-    go build -trimpath -ldflags="-s -w" -o /out/graphnest-indexer ./cmd/graphnest-indexer
+# GOWORK=off: the module is self-contained; the workspace (go.work) would pull
+# the optional scanner's tree-sitter dependencies into the image build.
+RUN GOWORK=off go build -trimpath -ldflags="-s -w" -o /out/graphnest-server ./cmd/graphnest-server && \
+    GOWORK=off go build -trimpath -ldflags="-s -w" -o /out/graphnest-admin ./cmd/graphnest-admin && \
+    GOWORK=off go build -trimpath -ldflags="-s -w" -o /out/graphnest-migrate ./cmd/graphnest-migrate && \
+    GOWORK=off go build -trimpath -ldflags="-s -w" -o /out/graphnest-mcp ./cmd/graphnest-mcp && \
+    GOWORK=off go build -trimpath -ldflags="-s -w" -o /out/graphnest-indexer ./cmd/graphnest-indexer
 RUN CGO_ENABLED=0 GOBIN=/out go install github.com/sourcegraph/zoekt/cmd/zoekt-index@"$ZOEKT_VERSION" && \
     CGO_ENABLED=0 GOBIN=/out go install github.com/sourcegraph/zoekt/cmd/zoekt-webserver@"$ZOEKT_VERSION"
 
