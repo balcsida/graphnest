@@ -388,7 +388,7 @@ func (server *Server) startAuthorization(writer http.ResponseWriter, request *ht
 		return
 	}
 	http.SetCookie(writer, &http.Cookie{
-		Name: RequestCookie, Value: handle, Path: "/oauth", Secure: true, HttpOnly: true,
+		Name: RequestCookie, Value: handle, Path: "/", Secure: true, HttpOnly: true,
 		SameSite: http.SameSiteLaxMode, Expires: now.Add(pendingTTL), MaxAge: int(pendingTTL / time.Second),
 	})
 	if _, ok := server.sessionPrincipal(request); !ok {
@@ -480,7 +480,7 @@ func (server *Server) decide(writer http.ResponseWriter, request *http.Request) 
 		server.authorizeErrorPage(writer, "Your session cannot authorize clients.")
 		return
 	}
-	http.SetCookie(writer, &http.Cookie{Name: RequestCookie, Value: "", Path: "/oauth", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	http.SetCookie(writer, &http.Cookie{Name: RequestCookie, Value: "", Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
 	now := server.now()
 	if request.PostForm.Get("decision") != "allow" {
 		_ = server.Store.DeleteOAuthAuthorizationRequest(request.Context(), pending.ID)

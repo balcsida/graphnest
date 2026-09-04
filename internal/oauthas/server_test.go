@@ -352,7 +352,7 @@ func (h *harness) runConsent(t *testing.T, clientID, redirect, challenge, decisi
 		}
 	}
 	requestCookie := cookieNamed(response, RequestCookie)
-	if requestCookie == nil || !requestCookie.HttpOnly || !requestCookie.Secure || requestCookie.Path != "/oauth" {
+	if requestCookie == nil || !requestCookie.HttpOnly || !requestCookie.Secure || requestCookie.Path != "/" || requestCookie.Domain != "" {
 		t.Fatalf("request cookie = %+v", requestCookie)
 	}
 	form := url.Values{"request_id": {requestCookie.Value}, "decision": {decision}}
@@ -597,7 +597,7 @@ func TestFullCodeFlowIssuesRefreshesAndRevokes(t *testing.T) {
 	if response.Code != http.StatusSeeOther || !strings.HasPrefix(code, CodePrefix) || location.Query().Get("state") != "st4te" || location.Host != "127.0.0.1:5000" {
 		t.Fatalf("status=%d location=%q", response.Code, response.Header().Get("Location"))
 	}
-	if cleared := cookieNamed(response, RequestCookie); cleared == nil || cleared.MaxAge != -1 {
+	if cleared := cookieNamed(response, RequestCookie); cleared == nil || cleared.MaxAge != -1 || cleared.Path != "/" || !cleared.Secure || cleared.Domain != "" {
 		t.Fatal("request cookie must be cleared after consent")
 	}
 
