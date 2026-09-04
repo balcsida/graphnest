@@ -131,9 +131,11 @@ let delayedOverview;
 let delayedJobs;
 let accountTokenDenied = false;
 let bearerIdentityDenied = false;
+let nonAdmin = false;
 const sessionAuthorized = true;
 globalThis.fetch = async (path, options = {}) => {
   requests.push({path, options});
+  if (nonAdmin && path.startsWith("/v1/admin/")) return {ok:false,status:403,json:async()=>({})};
   if (path === "/auth/logout") return {ok:true,status:204};
   if (path === "/v1/auth/session") return {ok:sessionAuthorized,status:sessionAuthorized ? 200 : 401};
   if (path === "/healthz" || path === "/readyz") return {ok:true,status:200};
@@ -394,5 +396,29 @@ resolveOverview({ok:true,status:200,json:async()=>responses["/v1/admin/overview"
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(ids.get("admin-shell").hidden, true, "a stale load must not reopen privileged content after lock");
 assert.equal(ids.get("access-panel").hidden, false, "a stale load must not hide the access panel after lock");
+
+nonAdmin = true;
+accountTokenDenied = false;
+location.pathname = "/account";
+location.hash = "users";
+const accountRequestStart = requests.length;
+vm.runInThisContext(script, {filename:"account.html"});
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(ids.get("admin-shell").hidden, false, "a nonadministrator can open account settings");
+assert.equal(ids.get("access-panel").hidden, true);
+assert.equal(requests.slice(accountRequestStart).some(({path}) => path.startsWith("/v1/admin/")), false, "account settings do not probe administrator APIs");
+assert.ok(all.filter(node => node.dataset.nav && node.dataset.nav !== "tokens").every(node => node.hidden), "account settings hide administrator navigation");
+await all.find(node => node.dataset.nav === "users").dispatch("click");
+assert.ok(all.filter(node => node.dataset.screen && node.dataset.screen !== "tokens").every(node => node.hidden), "account settings cannot switch to administrator screens");
+assert.equal(location.hash, "tokens");
+const accountGrantRow = ids.get("grant-rows").children[0];
+assert.match(text(accountGrantRow), /OpenCode/);
+responses["/v1/account/oauth-grants"] = {grants:[]};
+await accountGrantRow.children.at(-1).children[0].dispatch("click");
+assert.equal(requests.findLast(({path}) => path === "/v1/account/oauth-grants/9").options.method, "DELETE");
+assert.equal(ids.get("admin-shell").hidden, false, "disconnect refresh keeps account settings available");
+assert.equal(ids.get("grant-rows").children.length, 0, "the disconnected client is removed after refreshing");
+assert.equal(ids.get("grant-empty").hidden, false);
+assert.equal(requests.slice(accountRequestStart).some(({path}) => path.startsWith("/v1/admin/")), false);
 
 assert.doesNotMatch(source, /\.aside-foot\{display:none/);
