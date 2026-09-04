@@ -31,43 +31,57 @@ func RegisterAccount(mux *http.ServeMux, authenticator authn.RequestAuthenticato
 			Tokens []account.Token `json:"tokens"`
 		}{items}, maxResponseBytes)
 	}))
-	create := AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Header.Get("Content-Type") != "application/json" {
-			writeError(writer, http.StatusUnsupportedMediaType, "invalid_request", "request is invalid", false)
-			return
-		}
-		request.Body = http.MaxBytesReader(writer, request.Body, maxRequestBytes)
-		decoder := json.NewDecoder(request.Body)
-		decoder.DisallowUnknownFields()
-		var input createTokenRequest
-		if err := decoder.Decode(&input); err != nil {
-			writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
-			return
-		}
-		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-			writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
-			return
-		}
-		expires, ok := tokenExpiry(input.ExpiresAt)
-		if !ok || !validTokenRepositoryIDs(input.RepositoryIDs) {
-			writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
-			return
-		}
-		token, plaintext, err := service.CreateToken(request.Context(), PrincipalFromContext(request.Context()), expires, input.RepositoryIDs)
-		if err != nil {
-			writeAccountError(writer, err)
-			return
-		}
-		writeBoundedJSONStatus(writer, http.StatusCreated, struct {
-			ID            int64      `json:"id"`
-			Prefix        string     `json:"prefix"`
-			RepositoryIDs []int64    `json:"repository_ids,omitempty"`
-			CreatedAt     time.Time  `json:"created_at"`
-			LastUsedAt    *time.Time `json:"last_used_at,omitempty"`
-			ExpiresAt     *time.Time `json:"expires_at,omitempty"`
-			Token         string     `json:"token"`
-		}{token.ID, token.Prefix, token.RepositoryIDs, token.CreatedAt, token.LastUsedAt, token.ExpiresAt, plaintext}, maxResponseBytes)
-	}))
+	// mint parses a token-creation body and answers with the created token;
+	// issue decides which service path (interactive self-service or
+	// administrator delegation) performs the creation.
+	mint := func(issue func(*http.Request, *time.Time, []int64) (account.Token, string, error)) http.Handler {
+		return AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if request.Header.Get("Content-Type") != "application/json" {
+				writeError(writer, http.StatusUnsupportedMediaType, "invalid_request", "request is invalid", false)
+				return
+			}
+			request.Body = http.MaxBytesReader(writer, request.Body, maxRequestBytes)
+			decoder := json.NewDecoder(request.Body)
+			decoder.DisallowUnknownFields()
+			var input createTokenRequest
+			if err := decoder.Decode(&input); err != nil {
+				writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
+				return
+			}
+			if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+				writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
+				return
+			}
+			expires, ok := tokenExpiry(input.ExpiresAt)
+			if !ok || !validTokenRepositoryIDs(input.RepositoryIDs) {
+				writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
+				return
+			}
+			token, plaintext, err := issue(request, expires, input.RepositoryIDs)
+			if err != nil {
+				writeAccountError(writer, err)
+				return
+			}
+			writeBoundedJSONStatus(writer, http.StatusCreated, struct {
+				ID            int64      `json:"id"`
+				Prefix        string     `json:"prefix"`
+				RepositoryIDs []int64    `json:"repository_ids,omitempty"`
+				CreatedAt     time.Time  `json:"created_at"`
+				LastUsedAt    *time.Time `json:"last_used_at,omitempty"`
+				ExpiresAt     *time.Time `json:"expires_at,omitempty"`
+				Token         string     `json:"token"`
+			}{token.ID, token.Prefix, token.RepositoryIDs, token.CreatedAt, token.LastUsedAt, token.ExpiresAt, plaintext}, maxResponseBytes)
+		}))
+	}
+	create := mint(func(request *http.Request, expires *time.Time, repositoryIDs []int64) (account.Token, string, error) {
+		return service.CreateToken(request.Context(), PrincipalFromContext(request.Context()), expires, repositoryIDs)
+	})
+	// Administrators authenticated with an API token delegate a narrower,
+	// short-lived token for one job (for example a CI step uploading a SCIP
+	// index for a single repository).
+	mux.Handle("/v1/admin/api-tokens", privateAuth(exactMethod(http.MethodPost, mint(func(request *http.Request, expires *time.Time, repositoryIDs []int64) (account.Token, string, error) {
+		return service.Delegate(request.Context(), PrincipalFromContext(request.Context()), expires, repositoryIDs)
+	}))))
 	mux.Handle("/v1/account/api-tokens", privateAuth(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.Method {
 		case http.MethodGet:
