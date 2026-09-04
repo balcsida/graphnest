@@ -38,9 +38,36 @@ import (
 func TestMCPOAuthAuthorizationCodeFlow(t *testing.T) {
 	database := newMilestoneDatabase(t)
 	idp := newGitHubOAuthTestProvider(t)
-	seedGitHubOAuthAuthorization(t, database, idp.linkID())
+	idp.server.Config.Handler = http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var body any
+		switch request.URL.Path {
+		case "/user/installations":
+			body = map[string]any{"installations": []map[string]int64{{"id": 10, "app_id": 7}}}
+		case "/user/installations/10/repositories":
+			body = map[string]any{"repositories": []map[string]int64{{"id": 101}}}
+		default:
+			idp.serveHTTP(writer, request)
+			return
+		}
+		if request.Header.Get("Authorization") != "Bearer "+githubOAuthTokenCanary {
+			writer.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(writer).Encode(body)
+	})
+	// Access sync creates its own GitHub account without taking over SCIM users.
+	seedGitHubOAuthAuthorization(t, database, idp.linkID()+"-scim")
 	public := newOIDCPublicServer(t)
-	public.Config.Handler = newMCPOAuthServer(t, database, idp, public.URL)
+	primary := newMCPOAuthServer(t, database, idp, public.URL)
+	secondary := newMCPOAuthServer(t, database, idp, public.URL)
+	public.Config.Handler = http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("X-Replica") == "B" {
+			secondary.ServeHTTP(writer, request)
+			return
+		}
+		primary.ServeHTTP(writer, request)
+	})
 	base := public.URL
 
 	// 1. An unauthenticated MCP request advertises the authorization server.
@@ -135,46 +162,84 @@ func TestMCPOAuthAuthorizationCodeFlow(t *testing.T) {
 
 	// 6. The access token drives MCP as the user (repository 101 only).
 	assertMCPRepositoryAccess(t, public, access)
-	assertBearerStatus(t, public.Client(), base, access, "/v1/repositories/101", http.StatusOK)
+	assertBearerStatus(t, public.Client(), base, access, "/v1/repositories/101", http.StatusUnauthorized)
 	// ...but cannot manage credentials.
-	assertBearerStatus(t, public.Client(), base, access, "/v1/account/api-tokens", http.StatusForbidden)
+	assertBearerStatus(t, public.Client(), base, access, "/v1/account/api-tokens", http.StatusUnauthorized)
 
 	// 7. Refresh rotates; the old access token dies; replay after the grace window revokes.
 	rotated := postForm(t, public.Client(), metadata.Token, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refresh}, "client_id": {clientID}}, http.StatusOK)
 	newAccess := rotated["access_token"].(string)
-	assertBearerStatus(t, public.Client(), base, newAccess, "/v1/repositories/101", http.StatusOK)
-	assertBearerStatus(t, public.Client(), base, access, "/v1/repositories/101", http.StatusUnauthorized)
-	if _, err := database.pool.Exec(t.Context(), `update oauth_grants set last_used_at = last_used_at - interval '2 minutes'`); err != nil {
+	assertMCPRepositoryAccess(t, public, newAccess)
+	assertBearerStatus(t, public.Client(), base, access, "/mcp", http.StatusUnauthorized)
+	if _, err := database.pool.Exec(t.Context(), `update oauth_refresh_tokens set consumed_at = consumed_at - interval '2 minutes'`); err != nil {
 		t.Fatal(err)
 	}
 	postForm(t, public.Client(), metadata.Token, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refresh}, "client_id": {clientID}}, http.StatusBadRequest)
-	assertBearerStatus(t, public.Client(), base, newAccess, "/v1/repositories/101", http.StatusUnauthorized)
+	assertBearerStatus(t, public.Client(), base, newAccess, "/mcp", http.StatusUnauthorized)
 
 	// 8. A second grant appears in the account and can be revoked from the browser.
 	grantsBefore := countGrants(t, browser, base)
-	consent = browserRequest(t, browser, authorize, "A")
-	page, _ = io.ReadAll(consent.Body)
-	consent.Body.Close()
-	requestID = regexp.MustCompile(`name="request_id" value="([^"]+)"`).FindSubmatch(page)
-	if consent.StatusCode != http.StatusOK || requestID == nil {
-		t.Fatalf("second authorize with session: status=%d", consent.StatusCode)
+	for _, replica := range []string{"B", "A"} {
+		consent = browserRequest(t, browser, authorize, "A")
+		consent.Body.Close()
+		if consent.StatusCode != http.StatusSeeOther || !strings.HasPrefix(consent.Header.Get("Location"), "/auth/oauth/github/login?return_to=") {
+			t.Fatalf("existing session did not require fresh GitHub login: status=%d location=%q", consent.StatusCode, consent.Header.Get("Location"))
+		}
+		login := browserRequest(t, browser, base+consent.Header.Get("Location"), "A")
+		login.Body.Close()
+		if login.StatusCode != http.StatusSeeOther {
+			t.Fatalf("fresh GitHub login status=%d", login.StatusCode)
+		}
+		completeGitHubOAuthLogin(t, browser, login.Header.Get("Location"), "A")
+		consent = browserRequest(t, browser, base+"/oauth/authorize/resume", "A")
+		page, _ = io.ReadAll(consent.Body)
+		consent.Body.Close()
+		requestID = regexp.MustCompile(`name="request_id" value="([^"]+)"`).FindSubmatch(page)
+		if consent.StatusCode != http.StatusOK || requestID == nil {
+			t.Fatalf("second authorize with session: status=%d", consent.StatusCode)
+		}
+		decision, _ = http.NewRequestWithContext(t.Context(), http.MethodPost, base+"/oauth/authorize", strings.NewReader(url.Values{"request_id": {string(requestID[1])}, "decision": {"allow"}}.Encode()))
+		decision.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		decision.Header.Set("Origin", base)
+		decision.Header.Set("X-Replica", "A")
+		response, err = browser.Do(decision)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		redirect, _ = url.Parse(response.Header.Get("Location"))
+		exchangeForm := url.Values{
+			"grant_type": {"authorization_code"}, "code": {redirect.Query().Get("code")}, "client_id": {clientID},
+			"redirect_uri": {"http://127.0.0.1:61000/mcp/oauth/callback"}, "code_verifier": {verifier},
+		}
+		exchange, err := http.NewRequestWithContext(t.Context(), http.MethodPost, metadata.Token, strings.NewReader(exchangeForm.Encode()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		exchange.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		exchange.Header.Set("X-Replica", replica)
+		response, err = public.Client().Do(exchange)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var exchanged map[string]any
+		if err := json.NewDecoder(response.Body).Decode(&exchanged); err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if replica == "B" {
+			if response.StatusCode != http.StatusBadRequest || exchanged["error"] != "invalid_grant" || exchanged["access_token"] != nil || countGrants(t, browser, base) != grantsBefore {
+				t.Fatalf("missing provider handoff: status=%d body=%v", response.StatusCode, exchanged)
+			}
+			continue
+		}
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("fresh code exchange status=%d body=%v", response.StatusCode, exchanged)
+		}
+		tokens = exchanged
+		access = tokens["access_token"].(string)
+		assertMCPRepositoryAccess(t, public, access)
 	}
-	decision, _ = http.NewRequestWithContext(t.Context(), http.MethodPost, base+"/oauth/authorize", strings.NewReader(url.Values{"request_id": {string(requestID[1])}, "decision": {"allow"}}.Encode()))
-	decision.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	decision.Header.Set("Origin", base)
-	decision.Header.Set("X-Replica", "A")
-	response, err = browser.Do(decision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response.Body.Close()
-	redirect, _ = url.Parse(response.Header.Get("Location"))
-	tokens = postForm(t, public.Client(), metadata.Token, url.Values{
-		"grant_type": {"authorization_code"}, "code": {redirect.Query().Get("code")}, "client_id": {clientID},
-		"redirect_uri": {"http://127.0.0.1:61000/mcp/oauth/callback"}, "code_verifier": {verifier},
-	}, http.StatusOK)
-	access = tokens["access_token"].(string)
-	assertBearerStatus(t, public.Client(), base, access, "/v1/repositories/101", http.StatusOK)
 	if countGrants(t, browser, base) != grantsBefore+1 {
 		t.Fatal("new grant not listed in the account")
 	}
@@ -200,7 +265,7 @@ func TestMCPOAuthAuthorizationCodeFlow(t *testing.T) {
 	if response.StatusCode != http.StatusNoContent {
 		t.Fatalf("revoke status=%d", response.StatusCode)
 	}
-	assertBearerStatus(t, public.Client(), base, access, "/v1/repositories/101", http.StatusUnauthorized)
+	assertBearerStatus(t, public.Client(), base, access, "/mcp", http.StatusUnauthorized)
 }
 
 func newMCPOAuthServer(t *testing.T, database milestoneDatabase, github *githubOAuthTestProvider, publicURL string) http.Handler {
@@ -218,7 +283,7 @@ func newMCPOAuthServer(t *testing.T, database milestoneDatabase, github *githubO
 	sessions := &authn.SessionManager{Store: database.store, IdleTTL: time.Hour, TTL: 2 * time.Hour}
 	apiTokens := authn.TokenManager{Store: database.store}
 	bearer := authn.BearerRouter{APITokens: apiTokens, OAuth: authn.OAuthTokenAuthenticator{Store: database.store}}
-	requestAuth := authn.RequestAuthenticator{Bearer: bearer, Session: sessions, PublicOrigin: publicURL}
+	requestAuth := authn.RequestAuthenticator{Bearer: apiTokens, Session: sessions, PublicOrigin: publicURL}
 	repositories := &repository.Service{Store: database.store}
 	searchService := search.NewService(oidcSearchBackend{}, authz.NewPostgres(database.store), search.Limits{MaxResults: 10, MaxResponseBytes: 64 << 10})
 	sealer, err := oauthas.NewSealer(bytes.Repeat([]byte{9}, 32))
@@ -226,7 +291,14 @@ func newMCPOAuthServer(t *testing.T, database milestoneDatabase, github *githubO
 		t.Fatal(err)
 	}
 	provider := githuboauth.NewProvider(client, database.store, sessions, nil, time.Minute)
-	authorizationServer := &oauthas.Server{Origin: publicURL, Store: database.store, Sessions: sessions, Sealer: sealer}
+	client.AccessSyncAppID = 7
+	providerTokens := oauthas.NewProviderTokens(nil)
+	provider.Tokens = providerTokens
+	authorizationServer := &oauthas.Server{
+		Origin: publicURL, Store: database.store, Sessions: sessions, Sealer: sealer,
+		Limiter: database.store, LoginPath: provider.Metadata().LoginURL,
+		GitHub: client, GitHubTokens: providerTokens, GitHubLoginPath: provider.Metadata().LoginURL,
+	}
 	mux := http.NewServeMux()
 	httpapi.RegisterAuth(mux, false, false, true, []sso.Provider{provider}, requestAuth, sessions, nil)
 	httpapi.RegisterRepositories(mux, requestAuth, repositories, 64<<10, 10, 64<<10)
