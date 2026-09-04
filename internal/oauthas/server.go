@@ -445,7 +445,7 @@ func (server *Server) sessionPrincipal(request *http.Request) (authn.Principal, 
 		return authn.Principal{}, false
 	}
 	principal, err := server.Sessions.Authenticate(request.Context(), token)
-	if err != nil || !authn.IsInteractiveMethod(principal.Method) {
+	if err != nil || principal.ForceRotation || !authn.IsInteractiveMethod(principal.Method) {
 		return authn.Principal{}, false
 	}
 	return principal, true
