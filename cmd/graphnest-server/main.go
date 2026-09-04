@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -27,6 +29,7 @@ import (
 	"github.com/balcsida/graphnest/internal/graphservice"
 	"github.com/balcsida/graphnest/internal/httpapi"
 	"github.com/balcsida/graphnest/internal/mcpserver"
+	"github.com/balcsida/graphnest/internal/oauthas"
 	"github.com/balcsida/graphnest/internal/observability"
 	"github.com/balcsida/graphnest/internal/postgres"
 	"github.com/balcsida/graphnest/internal/repository"
@@ -34,6 +37,7 @@ import (
 	"github.com/balcsida/graphnest/internal/scipgraph"
 	"github.com/balcsida/graphnest/internal/search"
 	"github.com/balcsida/graphnest/internal/sso"
+	"github.com/balcsida/graphnest/internal/sso/browserflow"
 	"github.com/balcsida/graphnest/internal/sso/githuboauth"
 	"github.com/balcsida/graphnest/internal/sso/oidc"
 	"github.com/balcsida/graphnest/internal/webhook"
@@ -50,6 +54,7 @@ const (
 	maxCABytes                = 1 << 20
 	maxOIDCClientSecretBytes  = 64 << 10
 	maxGitHubOAuthSecretBytes = 64 << 10
+	maxMCPOAuthKeyBytes       = 4 << 10
 	maxOIDCCABytes            = 1 << 20
 	maxSCIMTokenBytes         = 64 << 10
 	maxGitHubResponseBytes    = 2 << 20
@@ -144,7 +149,7 @@ func newHandler(settings config.Config) (http.Handler, error) {
 		DefaultTimeout: settings.Limits.DefaultTimeout, MaxTimeout: settings.Limits.MaxTimeout,
 		MaxResponseBytes: settings.Limits.MaxResponseBytes,
 	})
-	return newAPIHandler(settings, metrics, authn.RequestAuthenticator{Bearer: authenticator, Metrics: metrics}, service, &repository.Service{Store: registry}, nil, nil, nil, nil, nil, nil, backend, nil, nil, nil, nil), nil
+	return newAPIHandler(settings, metrics, authn.RequestAuthenticator{Bearer: authenticator, Metrics: metrics}, service, &repository.Service{Store: registry}, nil, nil, nil, nil, nil, nil, backend, nil, nil, nil, nil, nil), nil
 }
 
 func staticRepositoryIDs(registry repository.Registry, names []string) []int64 {
@@ -165,6 +170,8 @@ type authRuntime struct {
 	requestAuth authn.RequestAuthenticator
 	sessions    *authn.SessionManager
 	providers   []sso.Provider
+	// mcpOAuth is the MCP authorization server; nil when GRAPHNEST_MCP_OAUTH is off.
+	mcpOAuth *oauthas.Server
 }
 
 func newAuthRuntime(ctx context.Context, settings config.Config, store authn.SessionStore, bearer authn.Authenticator, metrics *observability.Metrics, endpoints githubapp.Endpoints, httpClient *http.Client) (*authRuntime, error) {
@@ -198,6 +205,7 @@ func newAuthRuntime(ctx context.Context, settings config.Config, store authn.Ses
 		}
 		runtime.providers = append(runtime.providers, oidc.NewProvider(client, store, runtime.sessions, recorder, settings.SSO.LoginFlowTTL))
 	}
+	var githubClient *githuboauth.Client
 	if settings.SSO.OAuth.GitHub.Enabled {
 		secret, err := readBoundedRegularFile(settings.SSO.OAuth.GitHub.ClientSecretFile, maxGitHubOAuthSecretBytes)
 		if err != nil {
@@ -213,9 +221,65 @@ func newAuthRuntime(ctx context.Context, settings config.Config, store authn.Ses
 		if settings.SSO.OAuth.GitHub.AccessSync {
 			client.AccessSyncAppID = settings.GitHub.AppID
 		}
+		githubClient = client
 		runtime.providers = append(runtime.providers, githuboauth.NewProvider(client, store, runtime.sessions, recorder, settings.SSO.LoginFlowTTL))
 	}
+	if settings.SSO.MCPOAuth.Enabled {
+		oauthStore, ok := store.(authn.OAuthStore)
+		if !ok {
+			return nil, errors.New("MCP OAuth requires the durable store")
+		}
+		server := &oauthas.Server{
+			Origin: runtime.requestAuth.PublicOrigin, Store: oauthStore, Sessions: runtime.sessions, Audit: recorder,
+			UserName: func(ctx context.Context, principal authn.Principal) string {
+				return displayNameFor(ctx, store, principal)
+			},
+		}
+		if settings.SSO.MCPOAuth.KeyFile != "" {
+			key, err := readBoundedRegularFile(settings.SSO.MCPOAuth.KeyFile, maxMCPOAuthKeyBytes)
+			if err != nil {
+				return nil, fmt.Errorf("read MCP OAuth key: %w", err)
+			}
+			sealer, err := oauthas.NewSealer(bytes.TrimSpace(key))
+			if err != nil {
+				return nil, fmt.Errorf("MCP OAuth key: %w", err)
+			}
+			server.Sealer = sealer
+		}
+		if githubClient != nil && settings.SSO.OAuth.GitHub.AccessSync && server.Sealer != nil {
+			tokens := oauthas.NewProviderTokens(nil)
+			server.GitHub = githubClient
+			server.GitHubTokens = tokens
+			for _, provider := range runtime.providers {
+				if flow, ok := provider.(*browserflow.Provider); ok && flow.Spec.IdentityProvider == authn.ProviderOAuth {
+					flow.Tokens = tokens
+				}
+			}
+		}
+		runtime.mcpOAuth = server
+		runtime.requestAuth.Bearer = authn.BearerRouter{APITokens: bearer, OAuth: authn.OAuthTokenAuthenticator{Store: oauthStore}}
+	}
 	return runtime, nil
+}
+
+// displayNameFor renders the consent page's account name from the directory;
+// it degrades to the numeric subject when the lookup fails.
+func displayNameFor(ctx context.Context, store authn.SessionStore, principal authn.Principal) string {
+	lookup, ok := store.(interface {
+		UserDisplayName(context.Context, int64) (string, error)
+	})
+	if !ok {
+		return ""
+	}
+	userID, err := strconv.ParseInt(principal.Subject, 10, 64)
+	if err != nil {
+		return ""
+	}
+	name, err := lookup.UserDisplayName(ctx, userID)
+	if err != nil {
+		return ""
+	}
+	return name
 }
 
 func newRuntime(ctx context.Context, settings config.Config, logger *slog.Logger) (http.Handler, func(), error) {
@@ -276,7 +340,10 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	done, err := startPeriodic(loopCtx, reconcileInterval, reconciler.All, func(ctx context.Context) error {
 		return refreshQueueDepths(ctx, store, metrics)
 	}, func(ctx context.Context) error {
-		_, _, err := store.DeleteExpiredAuth(ctx, time.Now())
+		if _, _, err := store.DeleteExpiredAuth(ctx, time.Now()); err != nil {
+			return err
+		}
+		_, _, _, err := store.DeleteExpiredOAuth(ctx, time.Now())
 		return err
 	}, func(error) { logger.Error("durable background refresh failed") })
 	if err != nil {
@@ -341,7 +408,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 			CAConfigured: settings.GitHub.CAFile != "",
 		},
 	}
-	handler := newAPIHandler(settings, metrics, auth.requestAuth, searchService, repositoryService, scipService, graphService, graphQueries, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend}, auth.providers, auth.sessions, provisioning, scimService)
+	handler := newAPIHandler(settings, metrics, auth.requestAuth, searchService, repositoryService, scipService, graphService, graphQueries, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend}, auth.providers, auth.sessions, provisioning, scimService, auth.mcpOAuth)
 	if localAuth != nil {
 		mux := http.NewServeMux()
 		httpapi.RegisterLocalAuth(mux, auth.requestAuth.PublicOrigin, localAuth, store)
@@ -364,8 +431,13 @@ func durableAuthenticator(store authn.APITokenStore) authn.Authenticator {
 	return manager
 }
 
-func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scipGraph *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker, providers []sso.Provider, sessions *authn.SessionManager, provisioning *authn.ProvisioningAuthenticator, scimService *scim.Service) http.Handler {
+func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scipGraph *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker, providers []sso.Provider, sessions *authn.SessionManager, provisioning *authn.ProvisioningAuthenticator, scimService *scim.Service, mcpOAuth *oauthas.Server) http.Handler {
 	mux := http.NewServeMux()
+	var challenge httpapi.BearerChallenge
+	if mcpOAuth != nil {
+		mcpOAuth.Register(mux)
+		challenge = mcpOAuth.Challenge
+	}
 	fileReads := repositories != nil && repositories.GitHub != nil
 	httpapi.RegisterAuth(mux, true, settings.SSO.BreakGlass, fileReads, providers, authenticator, sessions, metrics)
 	webui.RegisterWithBreakGlass(mux, settings.SSO.BreakGlass)
@@ -401,7 +473,7 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 		MaxItems: settings.Limits.MaxResults, MaxOutputBytes: settings.Limits.MaxResponseBytes, GraphMaxOutputBytes: settings.Graph.MaxResponseBytes,
 	})
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer }, nil)
-	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator.Bearer, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	mux.Handle("/mcp", httpapi.AuthenticateBearerWithChallenge(authenticator.Bearer, challenge, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		request.Body = http.MaxBytesReader(writer, request.Body, settings.Limits.MaxRequestBytes)
 		mcpHandler.ServeHTTP(writer, request)
 	})))

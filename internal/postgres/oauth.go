@@ -273,3 +273,15 @@ func scanGrant(row pgx.Row) (authn.OAuthGrant, error) {
 	}
 	return grant, nil
 }
+
+// UserDisplayName renders "Display Name (user_name)" for the consent page.
+func (s *Store) UserDisplayName(ctx context.Context, userID int64) (string, error) {
+	var displayName, userName string
+	if err := s.pool.QueryRow(ctx, `select display_name, user_name from users where id=$1 and deleted_at is null`, userID).Scan(&displayName, &userName); err != nil {
+		return "", err
+	}
+	if displayName == "" || displayName == userName {
+		return userName, nil
+	}
+	return displayName + " (" + userName + ")", nil
+}

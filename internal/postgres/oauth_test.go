@@ -249,3 +249,20 @@ func TestLoginFlowReturnToAcceptsOAuthResume(t *testing.T) {
 		t.Fatal("arbitrary return_to must be rejected by the schema")
 	}
 }
+
+func TestUserDisplayNameForConsent(t *testing.T) {
+	store := migratedStore(t)
+	userID := insertIdentityUser(t, store, "directory-8", "hal")
+	if name, err := store.UserDisplayName(t.Context(), userID); err != nil || name != "hal" {
+		t.Fatalf("name=%q err=%v", name, err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `update users set display_name='Hal Abelson' where id=$1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if name, err := store.UserDisplayName(t.Context(), userID); err != nil || name != "Hal Abelson (hal)" {
+		t.Fatalf("name=%q err=%v", name, err)
+	}
+	if _, err := store.UserDisplayName(t.Context(), 404); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("unknown user err=%v", err)
+	}
+}
