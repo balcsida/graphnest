@@ -136,9 +136,13 @@ func (s *Store) RotateOAuthGrant(ctx context.Context, refreshHash [32]byte, rota
 		from users where oauth_grants.refresh_hash=$1 and `+liveOAuthGrantSQL+`
 		returning `+grantColumns, refreshHash[:], rotation.Now, rotation.AccessHash[:], rotation.AccessExpiresAt, rotation.RefreshHash[:]))
 	if errors.Is(err, pgx.ErrNoRows) {
-		// Not a current token: was it a rotated one? Then revoke the whole grant.
+		// Not a current token: was it a rotated one? Within the grace window
+		// the client most likely lost the rotation response and will retry
+		// with whichever token it holds, so the grant is left intact and the
+		// request simply fails. Later use is treated as theft and revokes the
+		// whole grant.
 		result, replayErr := tx.Exec(ctx, `update oauth_grants set revoked_at=coalesce(revoked_at, $2)
-			where previous_refresh_hash=$1`, refreshHash[:], rotation.Now)
+			where previous_refresh_hash=$1 and last_used_at <= $3`, refreshHash[:], rotation.Now, rotation.Now.Add(-rotation.Grace))
 		if replayErr != nil {
 			return authn.OAuthGrant{}, replayErr
 		}

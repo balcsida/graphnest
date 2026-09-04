@@ -121,8 +121,15 @@ func TestOAuthGrantAuthenticatesRotatesAndDetectsReplay(t *testing.T) {
 		t.Fatalf("old access token must be dead after rotation: %v", err)
 	}
 
-	// Replaying the rotated refresh token revokes the whole grant.
-	if _, err := store.RotateOAuthGrant(t.Context(), [32]byte{11}, authn.OAuthRotation{AccessHash: [32]byte{30}, AccessExpiresAt: now.Add(4 * time.Hour), RefreshHash: [32]byte{31}, Now: now.Add(3 * time.Hour)}); !errors.Is(err, authn.ErrOAuthReplay) {
+	// Within the grace window the rotated token fails without revoking.
+	if _, err := store.RotateOAuthGrant(t.Context(), [32]byte{11}, authn.OAuthRotation{AccessHash: [32]byte{30}, AccessExpiresAt: now.Add(4 * time.Hour), RefreshHash: [32]byte{31}, Now: now.Add(2*time.Hour + 10*time.Second), Grace: 30 * time.Second}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("retry within grace err=%v, want ErrNoRows", err)
+	}
+	if _, err := store.OAuthPrincipal(t.Context(), [32]byte{20}, now.Add(2*time.Hour+10*time.Second)); err != nil {
+		t.Fatalf("grant must survive a retry within grace: %v", err)
+	}
+	// Replaying the rotated refresh token later revokes the whole grant.
+	if _, err := store.RotateOAuthGrant(t.Context(), [32]byte{11}, authn.OAuthRotation{AccessHash: [32]byte{30}, AccessExpiresAt: now.Add(4 * time.Hour), RefreshHash: [32]byte{31}, Now: now.Add(3 * time.Hour), Grace: 30 * time.Second}); !errors.Is(err, authn.ErrOAuthReplay) {
 		t.Fatalf("replay err=%v, want ErrOAuthReplay", err)
 	}
 	if _, err := store.OAuthPrincipal(t.Context(), [32]byte{20}, now.Add(3*time.Hour)); !errors.Is(err, pgx.ErrNoRows) {
