@@ -86,6 +86,9 @@ spec:
             {{- if .Values.server.sso.githubOAuth.enabled }}
             - {name: oauth-github-client-secret, mountPath: /var/run/secrets/graphnest/oauth-github/client-secret, subPath: client-secret, readOnly: true}
             {{- end }}
+            {{- if and .Values.server.sso.mcpOAuth.enabled .Values.secrets.mcpOAuth.name }}
+            - {name: mcp-oauth-key, mountPath: /var/run/secrets/graphnest/mcp-oauth/sealing-key, subPath: sealing-key, readOnly: true}
+            {{- end }}
             {{- if .Values.server.scim.enabled }}
             - {name: scim-token, mountPath: /var/run/secrets/graphnest/scim/token, subPath: token, readOnly: true}
             {{- end }}
@@ -133,6 +136,13 @@ spec:
             secretName: {{ .Values.secrets.githubOAuth.name }}
             items:
               - {key: {{ .Values.secrets.githubOAuth.clientSecretKey }}, path: client-secret}
+        {{- end }}
+        {{- if and .Values.server.sso.mcpOAuth.enabled .Values.secrets.mcpOAuth.name }}
+        - name: mcp-oauth-key
+          secret:
+            secretName: {{ .Values.secrets.mcpOAuth.name }}
+            items:
+              - {key: {{ .Values.secrets.mcpOAuth.keyKey }}, path: sealing-key}
         {{- end }}
         {{- if .Values.server.scim.enabled }}
         - name: scim-token

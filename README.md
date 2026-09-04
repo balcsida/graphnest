@@ -70,11 +70,11 @@ superseded design decisions.
 | --- | --- | --- |
 | Browser console | `/` | Development bearer token or durable OIDC or GitHub OAuth session |
 | REST API | `/v1/...` | Bearer token or, where supported, same-origin browser session |
-| Streamable HTTP MCP | `/mcp` | Bearer token |
+| Streamable HTTP MCP | `/mcp` | Bearer API token, or an OAuth access token obtained through the built-in authorization server |
 | Stdio MCP proxy | `graphnest-mcp` | Uses `GRAPHNEST_SERVER_URL` and `GRAPHNEST_TOKEN` |
 | Health and observability | `/healthz`, `/readyz`, `/metrics` | Intended for deployment health checks and monitoring |
 
-REST routes accept exactly one bearer credential or browser session; mixed credentials are rejected. MCP remains bearer-only.
+REST routes accept exactly one bearer credential or browser session; mixed credentials are rejected. MCP remains bearer-only; with `GRAPHNEST_MCP_OAUTH=true` MCP clients obtain that bearer token themselves through OAuth 2.1 (see [Operations](docs/operations.md#mcp-oauth-authorization-server)).
 
 The complete REST contract is available in [`docs/openapi.yaml`](docs/openapi.yaml).
 
@@ -228,6 +228,7 @@ docker compose \
 | Local fixture access | Distinct development-only user and administrator bearer tokens |
 | Browser sign-in | OIDC or GitHub OAuth Authorization Code flow with PKCE and an opaque, HttpOnly GraphNest session |
 | REST and MCP access | Revocable bearer API tokens; `/mcp` remains bearer-only |
+| MCP client sign-in | Optional OAuth 2.1 authorization server (`GRAPHNEST_MCP_OAUTH`): dynamic client registration, PKCE, consent page, hour-long access tokens with rotating refresh |
 | Directory provisioning | Optional SCIM 2.0 endpoint protected by a dedicated secret-file token |
 | Emergency administration | Disabled-by-default local recovery flow provisioned offline with `graphnest-admin` |
 

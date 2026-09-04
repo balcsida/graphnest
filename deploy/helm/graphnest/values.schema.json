@@ -53,6 +53,7 @@
         "customCA",
         "oidc",
         "githubOAuth",
+        "mcpOAuth",
         "oidcCA",
         "scim"
       ],
@@ -71,6 +72,9 @@
         },
         "githubOAuth": {
           "$ref": "#/definitions/oidcSecret"
+        },
+        "mcpOAuth": {
+          "$ref": "#/definitions/mcpOAuthSecret"
         },
         "oidcCA": {
           "$ref": "#/definitions/optionalSecret"
@@ -211,7 +215,7 @@
         "sso": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["publicURL", "sessionIdle", "sessionTTL", "loginFlowTTL", "oidc", "githubOAuth"],
+          "required": ["publicURL", "sessionIdle", "sessionTTL", "loginFlowTTL", "oidc", "githubOAuth", "mcpOAuth"],
           "properties": {
             "publicURL": {"type": "string"},
             "sessionIdle": {"$ref": "#/definitions/duration"},
@@ -238,6 +242,14 @@
                 "enabled": {"type": "boolean"},
                 "clientID": {"type": "string"},
                 "accessSync": {"type": "boolean"}
+              }
+            },
+            "mcpOAuth": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled"],
+              "properties": {
+                "enabled": {"type": "boolean"}
               }
             }
           }
@@ -690,6 +702,17 @@
       "then": {"properties": {"server": {"properties": {"sso": {"properties": {"githubOAuth": {"properties": {"enabled": {"const": true}}}}}}}}}
     },
     {
+      "if": {"properties": {"server": {"properties": {"sso": {"properties": {"mcpOAuth": {"properties": {"enabled": {"const": true}}}}}}}}},
+      "then": {"properties": {"server": {"properties": {"sso": {"anyOf": [
+        {"properties": {"oidc": {"properties": {"enabled": {"const": true}}}}},
+        {"properties": {"githubOAuth": {"properties": {"enabled": {"const": true}}}}}
+      ]}}}}}
+    },
+    {
+      "if": {"properties": {"server": {"properties": {"sso": {"properties": {"mcpOAuth": {"properties": {"enabled": {"const": true}}}, "githubOAuth": {"properties": {"accessSync": {"const": true}}}}}}}}},
+      "then": {"properties": {"secrets": {"properties": {"mcpOAuth": {"properties": {"name": {"$ref": "#/definitions/kubernetesObjectName"}}}}}}}
+    },
+    {
       "if": {"properties": {"networkPolicy": {"properties": {"externalEgress": {"properties": {"enabled": {"const": true}}}}}, "server": {"properties": {"sso": {"properties": {"oidc": {"properties": {"enabled": {"const": true}}}}}}}}},
       "then": {"properties": {"networkPolicy": {"properties": {"externalEgress": {"properties": {"identityProvider": {"properties": {"cidrs": {"minItems": 1}}}}}}}}}
     },
@@ -1001,6 +1024,15 @@
       "properties": {
         "name": {"$ref": "#/definitions/optionalKubernetesObjectName"},
         "tokenKey": {"$ref": "#/definitions/secretKey"}
+      }
+    },
+    "mcpOAuthSecret": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "keyKey"],
+      "properties": {
+        "name": {"$ref": "#/definitions/optionalKubernetesObjectName"},
+        "keyKey": {"$ref": "#/definitions/secretKey"}
       }
     },
     "array": {

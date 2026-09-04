@@ -101,6 +101,20 @@ helm template github-access-sync "$chart" -n graphnest -f "$minimal" \
   --set-string=server.sso.githubOAuth.clientID=graphnest-github \
   --set-string=server.sso.publicURL=https://graphnest.example.invalid \
   --set-string=secrets.githubOAuth.name=graphnest-github-oauth >"$tmp/github-access-sync.yaml"
+helm template mcp-oauth "$chart" -n graphnest -f "$minimal" \
+  --set=server.sso.githubOAuth.enabled=true \
+  --set=server.sso.mcpOAuth.enabled=true \
+  --set-string=server.sso.githubOAuth.clientID=graphnest-github \
+  --set-string=server.sso.publicURL=https://graphnest.example.invalid \
+  --set-string=secrets.githubOAuth.name=graphnest-github-oauth >"$tmp/mcp-oauth.yaml"
+helm template mcp-oauth-sync "$chart" -n graphnest -f "$minimal" \
+  --set=server.sso.githubOAuth.enabled=true \
+  --set=server.sso.githubOAuth.accessSync=true \
+  --set=server.sso.mcpOAuth.enabled=true \
+  --set-string=server.sso.githubOAuth.clientID=graphnest-github \
+  --set-string=server.sso.publicURL=https://graphnest.example.invalid \
+  --set-string=secrets.githubOAuth.name=graphnest-github-oauth \
+  --set-string=secrets.mcpOAuth.name=graphnest-mcp-oauth >"$tmp/mcp-oauth-sync.yaml"
 helm template github-break-glass "$chart" -n graphnest -f "$minimal" \
   --set=breakGlass.enabled=true \
   --set=server.sso.githubOAuth.enabled=true \
@@ -351,6 +365,12 @@ require 'readOnly: true' "$tmp/github-oauth.yaml"
 reject 'GRAPHNEST_OAUTH_GITHUB_(CA|CLIENT_SECRET):|oauth-github-ca|allow-github-oauth' "$tmp/github-oauth.yaml"
 reject 'GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC' "$tmp/github-oauth.yaml"
 require 'GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC: "true"' "$tmp/github-access-sync.yaml"
+reject 'GRAPHNEST_MCP_OAUTH' "$tmp/github-oauth.yaml"
+require 'GRAPHNEST_MCP_OAUTH: "true"' "$tmp/mcp-oauth.yaml"
+reject 'GRAPHNEST_MCP_OAUTH_KEY_FILE|mcp-oauth-key' "$tmp/mcp-oauth.yaml"
+require 'GRAPHNEST_MCP_OAUTH_KEY_FILE: /var/run/secrets/graphnest/mcp-oauth/sealing-key' "$tmp/mcp-oauth-sync.yaml"
+require 'mountPath: /var/run/secrets/graphnest/mcp-oauth/sealing-key' "$tmp/mcp-oauth-sync.yaml"
+require 'secretName: graphnest-mcp-oauth' "$tmp/mcp-oauth-sync.yaml"
 for key in GRAPHNEST_SSO_SESSION_IDLE GRAPHNEST_SSO_SESSION_TTL GRAPHNEST_SSO_LOGIN_FLOW_TTL; do
   [ "$(grep -E -c -e "^  $key:" "$tmp/optional.yaml")" -eq 1 ] || exit 1
 done
@@ -389,6 +409,15 @@ expect_failure "$tmp/github-oauth-enabled-type.err" helm template bad "$chart" -
   --set-string=server.sso.githubOAuth.enabled=true
 expect_failure "$tmp/github-access-sync-without-oauth.err" helm template bad "$chart" -f "$minimal" \
   --set=server.sso.githubOAuth.accessSync=true
+expect_failure "$tmp/mcp-oauth-without-provider.err" helm template bad "$chart" -f "$minimal" \
+  --set=server.sso.mcpOAuth.enabled=true
+expect_failure "$tmp/mcp-oauth-sync-without-key.err" helm template bad "$chart" -f "$minimal" \
+  --set=server.sso.githubOAuth.enabled=true \
+  --set=server.sso.githubOAuth.accessSync=true \
+  --set=server.sso.mcpOAuth.enabled=true \
+  --set-string=server.sso.githubOAuth.clientID=graphnest-github \
+  --set-string=server.sso.publicURL=https://graphnest.example.invalid \
+  --set-string=secrets.githubOAuth.name=graphnest-github-oauth
 
 expect_failure "$tmp/scim-secret.err" helm template bad "$chart" -f "$minimal" \
   --set=server.scim.enabled=true

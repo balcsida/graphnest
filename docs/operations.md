@@ -243,6 +243,53 @@ that window is too long. Grant the first administrator by user ID:
 `PUT /v1/admin/users/{id}/access` with `direct_administrator: true` from a
 bootstrap credential, or the offline `graphnest-admin` break-glass account.
 
+### MCP OAuth authorization server
+
+`GRAPHNEST_MCP_OAUTH=true` (Helm `server.sso.mcpOAuth.enabled=true`) turns
+GraphNest into an OAuth 2.1 authorization server for MCP clients so tools such
+as pi, OpenCode, Claude Code or Cursor connect to `/mcp` with no configured
+secret. It requires a browser sign-in provider (OIDC or GitHub OAuth) and the
+durable store.
+
+Flow: an unauthenticated `/mcp` request receives `WWW-Authenticate: Bearer
+resource_metadata=".../.well-known/oauth-protected-resource"`; the client reads
+that and `/.well-known/oauth-authorization-server`, registers itself at
+`POST /oauth/register` (public clients only, PKCE S256 mandatory, loopback
+`http://127.0.0.1:<any port>` or `https://` redirect URIs), and opens
+`/oauth/authorize` in the browser. GraphNest signs the user in through the
+normal provider when needed and then renders a **consent page** naming the
+client and its loopback redirect; the user must click Allow. The code is
+exchanged at `POST /oauth/token` for an access token valid **one hour** and a
+refresh token; the grant itself expires **30 days** after consent and every
+refresh rotates both tokens. Presenting a rotated refresh token again more than
+30 seconds after rotation revokes the whole grant and records
+`oauth_grant_reuse_detected`.
+
+Access tokens (`gno_…`) act as the user with the user's roles and GitHub-
+derived grants; they authenticate `/mcp` and read-only REST routes but cannot
+create or manage API tokens, so a leaked token stays an hour-long token. Users
+see and disconnect their clients under **API tokens → Connected MCP clients** in
+the console (`GET`/`DELETE /v1/account/oauth-grants`); administrators' "revoke
+credentials" also revokes grants. `scope` is accepted, persisted and echoed but
+not yet enforced, so finer scopes can be introduced later with a
+`WWW-Authenticate: Bearer error="insufficient_scope"` step-up rather than a
+migration.
+
+With `GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC`, each grant stores the user's GitHub
+token encrypted with AES-256-GCM under `GRAPHNEST_MCP_OAUTH_KEY_FILE` (32
+bytes; required in that combination) and every refresh re-runs the GitHub
+installation query, so repository access removed on GitHub disappears from
+agents within the hour without a browser round-trip. GitHub rejecting the token
+drops it and keeps the last-synced grants; a GitHub outage changes nothing.
+Expired authorization requests, week-old dead grants and clients idle for 90
+days are swept by the periodic cleanup.
+
+Not supported by design: confidential clients, `client_credentials`
+(services keep using API tokens and `POST /v1/admin/api-tokens` delegation),
+remembered consent, and client-ID metadata documents. The provider-token
+hand-off between login and code exchange is process-local, so multi-replica
+deployments must route a user's browser to one replica during authorization.
+
 ### GitHub.com smoke and negative procedure
 
 1. Use a public HTTPS origin and create a dedicated GitHub.com OAuth App for
