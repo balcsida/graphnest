@@ -155,6 +155,28 @@ func (client *Client) Exchange(ctx context.Context, code, verifier, _ string) (a
 	return identity, nil
 }
 
+// TokenRejectedError reports that GitHub refused the user token itself (401 or
+// 403), as opposed to a transient failure. Refresh-time access sync drops the
+// stored token on this error and keeps it on any other.
+type TokenRejectedError struct{ Status int }
+
+func (err TokenRejectedError) Error() string {
+	return fmt.Sprintf("GitHub rejected the user token: status %d", err.Status)
+}
+
+// Unauthorized marks the error for callers that only know the interface.
+func (TokenRejectedError) Unauthorized() bool { return true }
+
+// AccessibleRepositories re-derives the repositories a user token can reach
+// through installations of the configured App; it is the refresh-time
+// counterpart of the login sync and shares its bounds and fail-closed rules.
+func (client *Client) AccessibleRepositories(ctx context.Context, accessToken string) ([]int64, error) {
+	if client.AccessSyncAppID <= 0 {
+		return nil, errors.New("GitHub access sync is not configured")
+	}
+	return client.accessibleRepositories(ctx, accessToken)
+}
+
 // accessibleRepositories returns the sorted, de-duplicated GitHub repository
 // IDs the user can access through installations of the configured App. Any
 // failure denies the login: a partial list would silently narrow access while
@@ -229,6 +251,9 @@ func (client *Client) getJSON(ctx context.Context, rawURL, accessToken string, t
 		return nil, errors.New("request failed")
 	}
 	defer response.Body.Close()
+	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+		return nil, TokenRejectedError{Status: response.StatusCode}
+	}
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("status %d", response.StatusCode)
 	}
