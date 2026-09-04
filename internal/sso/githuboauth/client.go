@@ -156,7 +156,7 @@ func (client *Client) Exchange(ctx context.Context, code, verifier, _ string) (a
 }
 
 // TokenRejectedError reports that GitHub refused the user token itself (401 or
-// 403), as opposed to a transient failure. Refresh-time access sync drops the
+// non-rate-limited 403), as opposed to a transient failure. Refresh-time access sync drops the
 // stored token on this error and keeps it on any other.
 type TokenRejectedError struct{ Status int }
 
@@ -251,7 +251,7 @@ func (client *Client) getJSON(ctx context.Context, rawURL, accessToken string, t
 		return nil, errors.New("request failed")
 	}
 	defer response.Body.Close()
-	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden && response.Header.Get("X-RateLimit-Remaining") != "0" && response.Header.Get("Retry-After") == "" {
 		return nil, TokenRejectedError{Status: response.StatusCode}
 	}
 	if response.StatusCode != http.StatusOK {
