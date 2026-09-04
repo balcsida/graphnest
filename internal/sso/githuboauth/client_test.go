@@ -401,3 +401,54 @@ func TestAccessibleRepositoriesReportsRejectedTokens(t *testing.T) {
 		t.Fatalf("without access sync err=%v, want a plain configuration error", err)
 	}
 }
+
+func TestAccessibleRepositoriesDistinguishesRateLimitsFromRejectedTokens(t *testing.T) {
+	for _, failedPath := range []string{
+		"/api/v3/user/installations?per_page=100",
+		"/api/v3/user/installations/10/repositories?per_page=100",
+		"/api/v3/user/installations/10/repositories?page=2",
+	} {
+		for _, test := range []struct {
+			name, header, value string
+			status              int
+			rejected            bool
+		}{
+			{"unauthorized", "", "", http.StatusUnauthorized, true},
+			{"forbidden", "", "", http.StatusForbidden, true},
+			{"primary rate limit", "X-RateLimit-Remaining", "0", http.StatusForbidden, false},
+			{"secondary rate limit", "Retry-After", "60", http.StatusForbidden, false},
+			{"too many requests", "", "", http.StatusTooManyRequests, false},
+			{"unavailable", "", "", http.StatusBadGateway, false},
+		} {
+			t.Run(failedPath+"/"+test.name, func(t *testing.T) {
+				fixture := newSyncFixture(t, 532, func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.RequestURI() == failedPath {
+						if test.header != "" {
+							w.Header().Set(test.header, test.value)
+						}
+						w.WriteHeader(test.status)
+						fmt.Fprint(w, bodyCanary)
+						return
+					}
+					switch r.URL.Path {
+					case "/api/v3/user/installations":
+						fmt.Fprint(w, `{"installations":[{"id":10,"app_id":532}]}`)
+					case "/api/v3/user/installations/10/repositories":
+						w.Header().Set("Link", `<https://`+r.Host+r.URL.Path+`?page=2>; rel="next"`)
+						fmt.Fprint(w, `{"repositories":[{"id":101}]}`)
+					default:
+						t.Errorf("unexpected request %s", r.URL)
+					}
+				})
+				_, err := fixture.client.AccessibleRepositories(t.Context(), testToken)
+				var rejected TokenRejectedError
+				if err == nil || errors.As(err, &rejected) != test.rejected {
+					t.Fatalf("error=%v, want rejected=%v", err, test.rejected)
+				}
+				if strings.Contains(err.Error(), bodyCanary) || strings.Contains(err.Error(), testToken) {
+					t.Fatalf("error leaked response or token: %v", err)
+				}
+			})
+		}
+	}
+}
