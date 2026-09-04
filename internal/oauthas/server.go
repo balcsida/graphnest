@@ -82,8 +82,8 @@ type Server struct {
 	Rand            io.Reader
 	// UserName renders the consent page; nil falls back to the subject.
 	UserName func(context.Context, authn.Principal) string
-	// Limiter is consulted for registration and token requests; nil allows all.
-	Limiter interface{ Allow(remoteAddr string) bool }
+	// Limiter must enforce shared budgets before registration or token requests.
+	Limiter authn.OAuthRequestLimiter
 }
 
 func (server *Server) now() time.Time {
@@ -164,8 +164,7 @@ type registrationRequest struct {
 }
 
 func (server *Server) register(writer http.ResponseWriter, request *http.Request) {
-	if !server.allow(request) {
-		writeOAuthError(writer, http.StatusTooManyRequests, "invalid_request", "too many requests")
+	if !server.allow(writer, request) {
 		return
 	}
 	if !strings.HasPrefix(request.Header.Get("Content-Type"), "application/json") {
@@ -212,6 +211,10 @@ func (server *Server) register(writer http.ResponseWriter, request *http.Request
 	now := server.now()
 	client := authn.OAuthClient{ID: id, Name: name, RedirectURIs: input.RedirectURIs, CreatedAt: now}
 	if err := server.Store.CreateOAuthClient(request.Context(), client); err != nil {
+		if errors.Is(err, authn.ErrOAuthClientQuota) {
+			writeOAuthError(writer, http.StatusTooManyRequests, "invalid_request", "client registration quota reached")
+			return
+		}
 		writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "could not register client")
 		return
 	}
@@ -523,8 +526,7 @@ func (server *Server) decide(writer http.ResponseWriter, request *http.Request) 
 // ---- token endpoint -------------------------------------------------------------
 
 func (server *Server) token(writer http.ResponseWriter, request *http.Request) {
-	if !server.allow(request) {
-		writeOAuthError(writer, http.StatusTooManyRequests, "invalid_request", "too many requests")
+	if !server.allow(writer, request) {
 		return
 	}
 	if !strings.HasPrefix(request.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
@@ -771,8 +773,21 @@ func (server *Server) authorizeErrorPage(writer http.ResponseWriter, message str
 
 // ---- helpers ------------------------------------------------------------------------
 
-func (server *Server) allow(request *http.Request) bool {
-	return server.Limiter == nil || server.Limiter.Allow(request.RemoteAddr)
+func (server *Server) allow(writer http.ResponseWriter, request *http.Request) bool {
+	if server.Limiter == nil {
+		writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "request limiter unavailable")
+		return false
+	}
+	allowed, err := server.Limiter.AllowOAuthRequest(request.Context(), request.RemoteAddr, request.URL.Path, server.now())
+	if err != nil {
+		writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "request limiter unavailable")
+		return false
+	}
+	if !allowed {
+		writeOAuthError(writer, http.StatusTooManyRequests, "invalid_request", "too many requests")
+		return false
+	}
+	return true
 }
 
 func (server *Server) record(ctx context.Context, event audit.Event) {

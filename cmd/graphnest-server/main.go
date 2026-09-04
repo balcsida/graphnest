@@ -230,7 +230,7 @@ func newAuthRuntime(ctx context.Context, settings config.Config, store authn.Ses
 		}
 		server := &oauthas.Server{
 			Origin: runtime.requestAuth.PublicOrigin, Store: oauthStore, Sessions: runtime.sessions, Audit: recorder,
-			LoginPath: runtime.providers[0].Metadata().LoginURL,
+			LoginPath: runtime.providers[0].Metadata().LoginURL, Limiter: oauthStore,
 			UserName: func(ctx context.Context, principal authn.Principal) string {
 				return displayNameFor(ctx, store, principal)
 			},

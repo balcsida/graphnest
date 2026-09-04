@@ -1212,6 +1212,32 @@ func TestMCPOAuthUsesConfiguredBrowserLogin(t *testing.T) {
 		})
 	}
 }
+
+func TestMCPOAuthWiresDurableRequestLimits(t *testing.T) {
+	settings, endpoints, httpClient := authRuntimeSettings(t)
+	settings.SSO.OIDC.Enabled = false
+	settings.SSO.MCPOAuth.Enabled = true
+	for _, allow := range []bool{false, true} {
+		runtime, err := newAuthRuntime(t.Context(), settings, oauthCapableStore{allowRequests: allow}, nil, observability.New(), endpoints, httpClient)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mux := http.NewServeMux()
+		runtime.mcpOAuth.Register(mux)
+		for _, path := range []string{"/oauth/register", "/oauth/token"} {
+			response := httptest.NewRecorder()
+			mux.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, nil))
+			want := http.StatusTooManyRequests
+			if allow {
+				want = http.StatusBadRequest
+			}
+			if response.Code != want {
+				t.Errorf("%s allow=%t status=%d, want %d", path, allow, response.Code, want)
+			}
+		}
+	}
+}
+
 func TestMCPOAuthBearerOnlyAuthenticatesMCP(t *testing.T) {
 	settings, endpoints, httpClient := authRuntimeSettings(t)
 	settings.SSO.OIDC.Enabled = false
