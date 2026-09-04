@@ -39,6 +39,8 @@ type repositoryAuthorizer interface {
 type Service struct {
 	Manager    authn.TokenManager
 	Authorizer repositoryAuthorizer
+	// Audit records grant revocations; nil disables auditing.
+	Audit audit.Recorder
 }
 
 func (s *Service) CreateToken(ctx context.Context, principal authn.Principal, expires *time.Time, repositoryIDs []int64) (Token, string, error) {
@@ -182,4 +184,66 @@ func granted(grants, requested []int64) bool {
 		}
 	}
 	return true
+}
+
+// Grant is a connected MCP client as the account owner sees it.
+type Grant struct {
+	ID         int64     `json:"id"`
+	ClientName string    `json:"client_name"`
+	Scope      string    `json:"scope,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	LastUsedAt time.Time `json:"last_used_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+}
+
+// oauthGrantStore is the slice of authn.OAuthStore the account surface needs.
+type oauthGrantStore interface {
+	ListOAuthGrants(context.Context, int64) ([]authn.OAuthGrantMetadata, error)
+	RevokeUserOAuthGrant(ctx context.Context, userID, grantID int64) error
+}
+
+// Grants lists the caller's live MCP OAuth grants. Like token management this
+// is reserved for interactive sessions: an access token must not enumerate or
+// revoke its siblings.
+func (s *Service) Grants(ctx context.Context, principal authn.Principal) ([]Grant, error) {
+	userID, err := userID(principal)
+	if err != nil {
+		return nil, ErrForbidden
+	}
+	store, ok := s.Manager.Store.(oauthGrantStore)
+	if !ok {
+		return []Grant{}, nil
+	}
+	items, err := store.ListOAuthGrants(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	grants := make([]Grant, len(items))
+	for i, item := range items {
+		grants[i] = Grant{ID: item.ID, ClientName: item.ClientName, Scope: item.Scope, CreatedAt: item.CreatedAt, LastUsedAt: item.LastUsedAt, ExpiresAt: item.ExpiresAt}
+	}
+	return grants, nil
+}
+
+// RevokeGrant revokes one of the caller's MCP OAuth grants.
+func (s *Service) RevokeGrant(ctx context.Context, principal authn.Principal, id int64) error {
+	userID, err := userID(principal)
+	if err != nil || id < 1 {
+		return ErrForbidden
+	}
+	store, ok := s.Manager.Store.(oauthGrantStore)
+	if !ok {
+		return ErrForbidden
+	}
+	err = store.RevokeUserOAuthGrant(ctx, userID, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrForbidden
+	}
+	if err == nil && s.Audit != nil {
+		_ = s.Audit.Record(ctx, audit.Event{
+			ActorType: "user", ActorID: principal.Subject, TargetType: "oauth_grant", TargetID: strconv.FormatInt(id, 10),
+			AuthenticationMethod: principal.Method, Operation: "oauth_grant_revoked", Outcome: "success", RequestID: audit.RequestID(ctx),
+		})
+	}
+	return err
 }

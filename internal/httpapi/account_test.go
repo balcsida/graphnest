@@ -212,3 +212,53 @@ func TestAdminDelegatedTokenRouteMintsNarrowedToken(t *testing.T) {
 		t.Fatalf("GET status=%d", response.Code)
 	}
 }
+
+type grantAccountStore struct {
+	accountStoreStub
+	grants  []authn.OAuthGrantMetadata
+	revoked []int64
+}
+
+func (s *grantAccountStore) ListOAuthGrants(context.Context, int64) ([]authn.OAuthGrantMetadata, error) {
+	return s.grants, nil
+}
+func (s *grantAccountStore) RevokeUserOAuthGrant(_ context.Context, _ int64, grantID int64) error {
+	s.revoked = append(s.revoked, grantID)
+	return nil
+}
+
+func TestAccountOAuthGrantRoutes(t *testing.T) {
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	store := &grantAccountStore{grants: []authn.OAuthGrantMetadata{{ID: 7, ClientName: "OpenCode", CreatedAt: now, LastUsedAt: now, ExpiresAt: now.Add(time.Hour)}}}
+	service := &account.Service{Manager: authn.TokenManager{Store: store}}
+	mux := http.NewServeMux()
+	RegisterAccount(mux, authn.RequestAuthenticator{Bearer: authn.NewStatic(map[string]authn.Principal{
+		"user":   {Subject: "11", Method: "oauth"},
+		"gno_ag": {Subject: "11", Method: authn.ProviderOAuthToken},
+	})}, service, 1024, 4096)
+	call := func(method, path, token string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(method, path, nil)
+		request.Header.Set("Authorization", "Bearer "+token)
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, request)
+		return response
+	}
+	response := call(http.MethodGet, "/v1/account/oauth-grants", "user")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"client_name":"OpenCode"`) || response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("list status=%d body=%s", response.Code, response.Body.String())
+	}
+	if response := call(http.MethodGet, "/v1/account/oauth-grants", "gno_ag"); response.Code != http.StatusForbidden {
+		t.Fatalf("access token listing status=%d", response.Code)
+	}
+	if response := call(http.MethodDelete, "/v1/account/oauth-grants/7", "user"); response.Code != http.StatusNoContent || len(store.revoked) != 1 || store.revoked[0] != 7 {
+		t.Fatalf("revoke status=%d revoked=%v", response.Code, store.revoked)
+	}
+	for _, path := range []string{"/v1/account/oauth-grants/0", "/v1/account/oauth-grants/x", "/v1/account/oauth-grants/7/extra"} {
+		if response := call(http.MethodDelete, path, "user"); response.Code != http.StatusBadRequest {
+			t.Errorf("%s: status=%d", path, response.Code)
+		}
+	}
+	if response := call(http.MethodPost, "/v1/account/oauth-grants", "user"); response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST status=%d", response.Code)
+	}
+}
