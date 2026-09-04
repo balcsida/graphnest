@@ -266,3 +266,33 @@ func TestUserDisplayNameForConsent(t *testing.T) {
 		t.Fatalf("unknown user err=%v", err)
 	}
 }
+
+func TestAdminCredentialRevocationCoversOAuthGrants(t *testing.T) {
+	store := migratedStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	userID := insertIdentityUser(t, store, "directory-9", "ivy")
+	client := seedOAuthClient(t, store, now)
+	if _, err := store.CreateOAuthGrant(t.Context(), authn.OAuthGrant{
+		ClientID: client.ID, UserID: userID, AccessHash: [32]byte{80}, AccessExpiresAt: now.Add(time.Hour),
+		RefreshHash: [32]byte{81}, GitHubTokenCiphertext: []byte("ct"), CreatedAt: now, ExpiresAt: now.Add(30 * 24 * time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := store.pool.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := revokeAdminCredentials(t.Context(), tx, userID); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.OAuthPrincipal(t.Context(), [32]byte{80}, now); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("grant must be revoked with the user's other credentials: %v", err)
+	}
+	var ciphertext []byte
+	if err := store.pool.QueryRow(t.Context(), `select github_token_ct from oauth_grants where user_id=$1`, userID).Scan(&ciphertext); err != nil || ciphertext != nil {
+		t.Fatalf("ciphertext=%q err=%v, want cleared", ciphertext, err)
+	}
+}

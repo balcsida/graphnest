@@ -93,6 +93,33 @@ func RegisterAccount(mux *http.ServeMux, authenticator authn.RequestAuthenticato
 			writeError(writer, http.StatusMethodNotAllowed, "invalid_request", "request is invalid", false)
 		}
 	})))
+	// Connected MCP clients: list and revoke the caller's OAuth grants.
+	mux.Handle("/v1/account/oauth-grants", privateAuth(exactMethod(http.MethodGet, AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		grants, err := service.Grants(request.Context(), PrincipalFromContext(request.Context()))
+		if err != nil {
+			writeAccountError(writer, err)
+			return
+		}
+		if grants == nil {
+			grants = []account.Grant{}
+		}
+		writeBoundedJSON(writer, struct {
+			Grants []account.Grant `json:"grants"`
+		}{grants}, maxResponseBytes)
+	})))))
+	mux.Handle("/v1/account/oauth-grants/", privateAuth(exactMethod(http.MethodDelete, AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		rest := strings.TrimPrefix(request.URL.Path, "/v1/account/oauth-grants/")
+		id, err := strconv.ParseInt(rest, 10, 64)
+		if err != nil || id < 1 || strings.Contains(rest, "/") {
+			writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
+			return
+		}
+		if err := service.RevokeGrant(request.Context(), PrincipalFromContext(request.Context()), id); err != nil {
+			writeAccountError(writer, err)
+			return
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	})))))
 	mux.Handle("/v1/account/api-tokens/", privateAuth(exactMethod(http.MethodDelete, AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		id, err := strconv.ParseInt(strings.TrimPrefix(request.URL.Path, "/v1/account/api-tokens/"), 10, 64)
 		if err != nil || id < 1 || strings.Contains(strings.TrimPrefix(request.URL.Path, "/v1/account/api-tokens/"), "/") {

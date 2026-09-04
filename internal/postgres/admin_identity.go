@@ -346,7 +346,11 @@ func revokeAdminCredentials(ctx context.Context, tx pgx.Tx, userID int64) error 
 		where user_id=$1 and revoked_at is null`, userID); err != nil {
 		return err
 	}
-	_, err := tx.Exec(ctx, `update api_tokens set revoked_at=coalesce(revoked_at, now())
+	if _, err := tx.Exec(ctx, `update api_tokens set revoked_at=coalesce(revoked_at, now())
+		where user_id=$1 and revoked_at is null`, userID); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, `update oauth_grants set revoked_at=coalesce(revoked_at, now()), github_token_ct=null
 		where user_id=$1 and revoked_at is null`, userID)
 	return err
 }

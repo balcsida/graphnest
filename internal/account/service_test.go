@@ -9,6 +9,7 @@ import (
 
 	"github.com/balcsida/graphnest/internal/audit"
 	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/jackc/pgx/v5"
 )
 
 type storeStub struct {
@@ -211,5 +212,51 @@ func TestOAuthAccessTokensCannotManageCredentials(t *testing.T) {
 	}
 	if err := s.RevokeToken(t.Context(), principal, 1); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("RevokeToken err=%v", err)
+	}
+}
+
+type grantStoreStub struct {
+	storeStub
+	grants  []authn.OAuthGrantMetadata
+	revoked [][2]int64
+}
+
+func (s *grantStoreStub) ListOAuthGrants(context.Context, int64) ([]authn.OAuthGrantMetadata, error) {
+	return s.grants, nil
+}
+func (s *grantStoreStub) RevokeUserOAuthGrant(_ context.Context, userID, grantID int64) error {
+	s.revoked = append(s.revoked, [2]int64{userID, grantID})
+	for _, grant := range s.grants {
+		if grant.ID == grantID {
+			return nil
+		}
+	}
+	return pgx.ErrNoRows
+}
+
+func TestGrantsAreListedAndRevokedByInteractiveOwnersOnly(t *testing.T) {
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	store := &grantStoreStub{grants: []authn.OAuthGrantMetadata{{ID: 5, ClientName: "OpenCode", CreatedAt: now, LastUsedAt: now, ExpiresAt: now.Add(time.Hour)}}}
+	s := &Service{Manager: authn.TokenManager{Store: store}}
+	owner := authn.Principal{Subject: "11", Method: "oauth"}
+	grants, err := s.Grants(t.Context(), owner)
+	if err != nil || len(grants) != 1 || grants[0].ClientName != "OpenCode" || grants[0].ID != 5 {
+		t.Fatalf("grants=%+v err=%v", grants, err)
+	}
+	if _, err := s.Grants(t.Context(), authn.Principal{Subject: "11", Method: authn.ProviderOAuthToken}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("access token listing err=%v", err)
+	}
+	if err := s.RevokeGrant(t.Context(), owner, 5); err != nil || len(store.revoked) != 1 || store.revoked[0] != [2]int64{11, 5} {
+		t.Fatalf("revoke err=%v revoked=%v", err, store.revoked)
+	}
+	if err := s.RevokeGrant(t.Context(), owner, 6); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("unknown grant err=%v", err)
+	}
+	if err := s.RevokeGrant(t.Context(), authn.Principal{Subject: "11", Method: "api_token"}, 5); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("api token revoke err=%v", err)
+	}
+	plain := &Service{Manager: authn.TokenManager{Store: &storeStub{}}}
+	if grants, err := plain.Grants(t.Context(), owner); err != nil || len(grants) != 0 {
+		t.Fatalf("store without grants: %+v err=%v", grants, err)
 	}
 }
