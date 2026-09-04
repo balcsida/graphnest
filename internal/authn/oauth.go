@@ -12,8 +12,8 @@ import (
 // may not mint further credentials.
 const ProviderOAuthToken = "oauth_token"
 
-// ErrOAuthReplay reports that a rotated refresh token was presented again. The
-// store revokes the whole grant when this happens.
+// ErrOAuthReplay reports that a rotated refresh token was presented again
+// outside the grace window. The store revokes the whole grant when this happens.
 var ErrOAuthReplay = errors.New("refresh token replayed")
 
 // OAuthClient is a dynamically registered public MCP client.
@@ -73,11 +73,14 @@ type OAuthGrantMetadata struct {
 }
 
 // OAuthRotation carries the new token hashes and expiries for a refresh.
+// Grace is how long after a rotation the previous refresh token is tolerated
+// as a lost-response retry rather than treated as replay.
 type OAuthRotation struct {
 	AccessHash      [32]byte
 	AccessExpiresAt time.Time
 	RefreshHash     [32]byte
 	Now             time.Time
+	Grace           time.Duration
 }
 
 // OAuthStore is the persistence contract of the authorization server.
