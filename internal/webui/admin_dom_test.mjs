@@ -114,7 +114,7 @@ const responses = {
   "/v1/admin/users": {users:[{id:7,user_name:"ada",display_name:"Ada",scim_active:true,suspended:false,administrator:true,repository_ids:[101,102],direct_administrator:false,direct_repository_ids:[101]}],truncated:true},
   "/v1/admin/groups": {groups:[{id:9,display_name:"Engineering",administrator:true,repository_ids:[101,102],member_count:2}],truncated:true},
   "/v1/account/api-tokens": {tokens:[{id:3,prefix:"gnp_visible",repository_ids:[101],created_at:"2026-01-01T00:00:00Z",expires_at:"2026-08-29T00:00:00Z"}]},
-  "/v1/account/oauth-grants": {grants:[{id:9,client_name:"OpenCode",created_at:"2026-09-01T00:00:00Z",last_used_at:"2026-09-04T00:00:00Z",expires_at:"2026-10-01T00:00:00Z"}]},
+  "/v1/account/oauth-grants": {grants:Array.from({length:101},(_,index)=>({id:index+9,client_name:index === 0 ? "OpenCode" : "MCP client "+(index+1),scope:"",created_at:"2026-09-01T00:00:00Z",last_used_at:"2026-09-04T00:00:00Z",expires_at:"2026-10-01T00:00:00Z"}))},
   "/v1/admin/scip/uploads": {uploads:[],truncated:true},
   "/v1/admin/scip/dependencies": {dependencies:[],truncated:true},
   "/v1/admin/webhook-deliveries": {deliveries:[
@@ -143,6 +143,7 @@ globalThis.fetch = async (path, options = {}) => {
   if (path === "/v1/account/api-tokens" && options.method === "POST") return {ok:true,status:201,json:async()=>({id:4,prefix:"gnp_new",repository_ids:[101],created_at:"2026-01-01T00:00:00Z",expires_at:"2026-08-29T00:00:00Z",token:"gnp_reveal_once"})};
   if (path === "/v1/account/api-tokens/3" && options.method === "DELETE") return {ok:true,status:204};
   if (path === "/v1/account/oauth-grants/9" && options.method === "DELETE") return {ok:true,status:204};
+  if (path === "/v1/account/oauth-grants/109" && options.method === "DELETE") return {ok:true,status:204};
   if (bearerIdentityDenied && ["/v1/admin/users", "/v1/admin/groups", "/v1/admin/audit-events"].includes(path)) return {ok:false,status:403,json:async()=>({})};
   if (path === "/v1/admin/overview" && delayedOverview) return delayedOverview;
   if (path === "/v1/admin/jobs?cursor=page-2" && delayedJobs) return delayedJobs;
@@ -294,6 +295,11 @@ const grantRow = ids.get("grant-rows").children[0];
 assert.match(text(grantRow), /OpenCode/, "connected MCP clients are listed next to API tokens");
 await grantRow.children.at(-1).children[0].dispatch("click");
 assert.equal(requests.findLast(request => request.path === "/v1/account/oauth-grants/9").options.method, "DELETE", "revoking a grant calls the account API");
+assert.equal(ids.get("grant-rows").children.length, 101, "the administrator view lists every connected MCP client");
+const newestGrantRow = ids.get("grant-rows").children.at(-1);
+assert.match(text(newestGrantRow), /MCP client 101/);
+await newestGrantRow.children.at(-1).children[0].dispatch("click");
+assert.equal(requests.findLast(request => request.path === "/v1/account/oauth-grants/109").options.method, "DELETE", "the administrator can revoke the newest client beyond the first 100");
 ids.get("token-expires").value = "2026-08-29T00:00";
 ids.get("token-repositories").value = "101";
 await ids.get("token-create").dispatch("submit");
@@ -411,6 +417,15 @@ assert.ok(all.filter(node => node.dataset.nav && node.dataset.nav !== "tokens").
 await all.find(node => node.dataset.nav === "users").dispatch("click");
 assert.ok(all.filter(node => node.dataset.screen && node.dataset.screen !== "tokens").every(node => node.hidden), "account settings cannot switch to administrator screens");
 assert.equal(location.hash, "tokens");
+assert.equal(ids.get("grant-rows").children.length, 101, "account settings list every connected MCP client");
+const newestAccountGrantRow = ids.get("grant-rows").children.at(-1);
+assert.match(text(newestAccountGrantRow), /MCP client 101/);
+responses["/v1/account/oauth-grants"].grants.pop();
+const accountRevokeRequestStart = requests.length;
+await newestAccountGrantRow.children.at(-1).children[0].dispatch("click");
+assert.equal(requests.slice(accountRevokeRequestStart).find(({path}) => path === "/v1/account/oauth-grants/109")?.options.method, "DELETE", "the account owner can revoke the newest client beyond the first 100");
+assert.equal(ids.get("grant-rows").children.length, 100);
+assert.doesNotMatch(text(ids.get("grant-rows")), /MCP client 101/);
 const accountGrantRow = ids.get("grant-rows").children[0];
 assert.match(text(accountGrantRow), /OpenCode/);
 responses["/v1/account/oauth-grants"] = {grants:[]};
