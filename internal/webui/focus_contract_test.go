@@ -8,8 +8,9 @@ import (
 func TestConsoleUsesAccentForSharedFocusOutline(t *testing.T) {
 	for _, want := range []string{
 		`:focus-visible{outline:3px solid var(--accent);outline-offset:3px}`,
-		`.match-block{border-top:1px solid var(--border);border-left:4px solid var(--match)}`,
-		`@media(forced-colors: active){button,input,summary,fieldset,.file-result,.repository-table,.match-block,#navigation-panel{border:1px solid CanvasText}.match-block{border-left-width:4px}}`,
+		`.match-block{border-top:1px solid var(--border);padding:4px 0}`,
+		`.identifier.selected{background:var(--accent-soft);color:var(--accent);outline:1px solid color-mix(in oklab,var(--accent) 40%,transparent)`,
+		`@media(forced-colors: active){button,input,summary,fieldset,.file-result,.repository-table,#navigation-panel{border:1px solid CanvasText}.selected-line,.identifier.selected{outline:1px solid Highlight}}`,
 	} {
 		if !bytes.Contains(document, []byte(want)) {
 			t.Fatalf("console is missing grouped result style %q", want)

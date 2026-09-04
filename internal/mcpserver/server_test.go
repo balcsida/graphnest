@@ -218,6 +218,10 @@ func TestRepositoryToolsUseAuthenticatedService(t *testing.T) {
 			}
 		}
 	}
+	listSchema := repositoryToolSchema(t, tools.Tools, "list_repositories")
+	if listSchema["properties"].(map[string]any)["cursor"].(map[string]any)["minLength"] != float64(1) {
+		t.Fatalf("list_repositories.cursor schema = %#v", listSchema["properties"].(map[string]any)["cursor"])
+	}
 	readSchema := repositoryToolSchema(t, tools.Tools, "read_file")
 	if readSchema["properties"].(map[string]any)["path"].(map[string]any)["minLength"] != float64(1) {
 		t.Fatalf("read_file.path schema = %#v", readSchema["properties"])
@@ -444,8 +448,9 @@ func TestRepositoryToolBudgetsBoundActualCallToolResult(t *testing.T) {
 		{GitHubID: 102, Name: strings.Repeat("b", 80)},
 		{GitHubID: 103, Name: strings.Repeat("c", 80)},
 	}
-	list, err := limitRepositoryList(items, listInput{Limit: 2, MaxOutputBytes: 400}, Limits{MaxItems: 100, MaxOutputBytes: 256 << 10})
-	if err != nil || len(list.Repositories) != 1 || !list.Truncated || mcpResultSize(t, list) > 400 {
+	// One 80-character repository plus its cursor fits in 560 bytes; two do not.
+	list, err := limitRepositoryList(items, listInput{Limit: 2, MaxOutputBytes: 560}, Limits{MaxItems: 100, MaxOutputBytes: 256 << 10})
+	if err != nil || len(list.Repositories) != 1 || !list.Truncated || list.NextCursor == "" || mcpResultSize(t, list) > 560 {
 		t.Fatalf("list=%#v size=%d err=%v", list, mcpResultSize(t, list), err)
 	}
 
@@ -464,9 +469,23 @@ func TestRepositoryToolBudgetsBoundActualCallToolResult(t *testing.T) {
 		t.Fatalf("configured file=%#v size=%d err=%v", configured, mcpResultSize(t, configured), err)
 	}
 	list, err = limitRepositoryList(items, listInput{}, Limits{MaxItems: 2, MaxOutputBytes: 256 << 10})
-	if err != nil || len(list.Repositories) != 2 || !list.Truncated {
+	if err != nil || len(list.Repositories) != 2 || !list.Truncated || list.NextCursor == "" {
 		t.Fatalf("configured item limit list=%#v err=%v", list, err)
 	}
+	// The cursor resumes after the last returned repository; the final page carries none.
+	rest, err := limitRepositoryList(httpapi.PageRepositoriesAfter(items, mustDecodeCursor(t, list.NextCursor)), listInput{}, Limits{MaxItems: 2, MaxOutputBytes: 256 << 10})
+	if err != nil || len(rest.Repositories) != 1 || rest.Repositories[0].GitHubID != 103 || rest.Truncated || rest.NextCursor != "" {
+		t.Fatalf("second page=%#v err=%v", rest, err)
+	}
+}
+
+func mustDecodeCursor(t *testing.T, cursor string) string {
+	t.Helper()
+	after, ok := httpapi.DecodeRepositoryCursor(cursor)
+	if !ok {
+		t.Fatalf("invalid cursor %q", cursor)
+	}
+	return after
 }
 
 func TestReadFileBudgetFindsLargestWholeLinePrefix(t *testing.T) {
