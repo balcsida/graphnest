@@ -16,6 +16,9 @@ const ProviderOAuthToken = "oauth_token"
 // outside the grace window. The store revokes the whole grant when this happens.
 var ErrOAuthReplay = errors.New("refresh token replayed")
 
+// ErrOAuthClientQuota reports that the deployment's registration capacity is full.
+var ErrOAuthClientQuota = errors.New("oauth client registration limit reached")
+
 // OAuthClient is a dynamically registered public MCP client.
 type OAuthClient struct {
 	ID           string
@@ -83,8 +86,14 @@ type OAuthRotation struct {
 	Grace           time.Duration
 }
 
+// OAuthRequestLimiter enforces shared registration and token request budgets.
+type OAuthRequestLimiter interface {
+	AllowOAuthRequest(ctx context.Context, remoteAddr, endpoint string, now time.Time) (bool, error)
+}
+
 // OAuthStore is the persistence contract of the authorization server.
 type OAuthStore interface {
+	OAuthRequestLimiter
 	CreateOAuthClient(context.Context, OAuthClient) error
 	OAuthClient(ctx context.Context, id string, now time.Time) (OAuthClient, error)
 

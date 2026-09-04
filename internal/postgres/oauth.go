@@ -15,9 +15,26 @@ const liveOAuthGrantSQL = `oauth_grants.revoked_at is null and oauth_grants.expi
 	and users.id = oauth_grants.user_id and users.scim_active and users.suspended_at is null and users.deleted_at is null`
 
 func (s *Store) CreateOAuthClient(ctx context.Context, client authn.OAuthClient) error {
-	_, err := s.pool.Exec(ctx, `insert into oauth_clients (id, client_name, redirect_uris, created_at, last_used_at)
-		values ($1,$2,$3,$4,$4)`, client.ID, client.Name, client.RedirectURIs, client.CreatedAt)
-	return err
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock($1,hashtext('/oauth/register'))`, oauthRequestLockNamespace); err != nil {
+		return err
+	}
+	var clients int
+	if err := tx.QueryRow(ctx, `select count(*) from oauth_clients`).Scan(&clients); err != nil {
+		return err
+	}
+	if clients >= 10000 {
+		return authn.ErrOAuthClientQuota
+	}
+	if _, err := tx.Exec(ctx, `insert into oauth_clients (id, client_name, redirect_uris, created_at, last_used_at)
+		values ($1,$2,$3,$4,$4)`, client.ID, client.Name, client.RedirectURIs, client.CreatedAt); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // OAuthClient loads a client and records that it is still in use.

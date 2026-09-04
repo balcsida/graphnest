@@ -304,7 +304,7 @@ func newHarness(t *testing.T) *harness {
 	tokens.StoreProviderToken(context.Background(), sessionTokenValue, "gho_user")
 	h.server = &Server{
 		Origin: origin, LoginPath: "/auth/oauth/github/login", GitHubLoginPath: "/auth/oauth/github/login", Store: store, Sessions: staticSessions{authn.Principal{Subject: "11", Method: authn.ProviderOAuth, RepositoryIDs: []int64{101}}},
-		Sealer: sealer, GitHub: github, GitHubTokens: tokens, Audit: recorder,
+		Sealer: sealer, GitHub: github, GitHubTokens: tokens, Audit: recorder, Limiter: store,
 		Now:      func() time.Time { return h.clock },
 		UserName: func(context.Context, authn.Principal) string { return "Ada Lovelace" },
 	}
@@ -840,7 +840,30 @@ func TestLimiterGatesRegistrationAndTokens(t *testing.T) {
 
 type denyAll struct{}
 
-func (denyAll) Allow(string) bool { return false }
+func (denyAll) AllowOAuthRequest(context.Context, string, string, time.Time) (bool, error) {
+	return false, nil
+}
+
+func TestMissingLimiterFailsClosed(t *testing.T) {
+	h := newHarness(t)
+	h.server.Limiter = nil
+	request := httptest.NewRequest(http.MethodPost, "/oauth/register", strings.NewReader(`{"redirect_uris":["http://127.0.0.1:5000/cb"]}`))
+	request.Header.Set("Content-Type", "application/json")
+	if response := h.do(request); response.Code != http.StatusServiceUnavailable || len(h.store.clients) != 0 {
+		t.Fatalf("missing limiter status=%d clients=%d", response.Code, len(h.store.clients))
+	}
+}
+
+func TestClientQuotaReturnsTooManyRequests(t *testing.T) {
+	h := newHarness(t)
+	h.store.fail = authn.ErrOAuthClientQuota
+	request := httptest.NewRequest(http.MethodPost, "/oauth/register", strings.NewReader(`{"redirect_uris":["http://127.0.0.1:5000/cb"]}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := h.do(request)
+	if response.Code != http.StatusTooManyRequests || len(h.store.clients) != 0 || len(h.audit.events) != 0 {
+		t.Fatalf("quota status=%d clients=%d audit=%d", response.Code, len(h.store.clients), len(h.audit.events))
+	}
+}
 
 func TestRedirectMatchingAllowsEphemeralLoopbackPortsOnly(t *testing.T) {
 	cases := []struct {
