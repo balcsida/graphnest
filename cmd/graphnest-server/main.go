@@ -230,6 +230,7 @@ func newAuthRuntime(ctx context.Context, settings config.Config, store authn.Ses
 		}
 		server := &oauthas.Server{
 			Origin: runtime.requestAuth.PublicOrigin, Store: oauthStore, Sessions: runtime.sessions, Audit: recorder,
+			LoginPath: runtime.providers[0].Metadata().LoginURL,
 			UserName: func(ctx context.Context, principal authn.Principal) string {
 				return displayNameFor(ctx, store, principal)
 			},
@@ -252,6 +253,7 @@ func newAuthRuntime(ctx context.Context, settings config.Config, store authn.Ses
 			for _, provider := range runtime.providers {
 				if flow, ok := provider.(*browserflow.Provider); ok && flow.Spec.IdentityProvider == authn.ProviderOAuth {
 					flow.Tokens = tokens
+					server.GitHubLoginPath = flow.Metadata().LoginURL
 				}
 			}
 		}
