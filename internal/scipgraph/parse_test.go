@@ -94,9 +94,6 @@ func TestParseRejectsInvalidIndex(t *testing.T) {
 	}{
 		{"missing metadata", func(index *scip.Index) { index.Metadata = nil }},
 		{"missing tool info", func(index *scip.Index) { index.Metadata.ToolInfo = nil }},
-		{"unspecified position encoding", func(index *scip.Index) {
-			index.Documents[0].PositionEncoding = scip.PositionEncoding_UnspecifiedPositionEncoding
-		}},
 		{"unknown position encoding", func(index *scip.Index) {
 			index.Documents[0].PositionEncoding = scip.PositionEncoding(99)
 		}},
@@ -104,8 +101,6 @@ func TestParseRejectsInvalidIndex(t *testing.T) {
 			index.Documents = append(index.Documents, proto.Clone(index.Documents[0]).(*scip.Document))
 		}},
 		{"unclean path", func(index *scip.Index) { index.Documents[0].RelativePath = "pkg/../a.go" }},
-		{"parent path", func(index *scip.Index) { index.Documents[0].RelativePath = ".." }},
-		{"parent descendant path", func(index *scip.Index) { index.Documents[0].RelativePath = "../a.go" }},
 		{"invalid symbol", func(index *scip.Index) {
 			index.Documents[0].Occurrences = []*scip.Occurrence{{Range: []int32{0, 0, 1}, Symbol: "invalid"}}
 		}},
@@ -344,4 +339,46 @@ func marshalIndex(t *testing.T, index *scip.Index) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+// scip-go (the reference Go indexer) still emits documents without a
+// position encoding; its offsets are UTF-8 code units, so unspecified is
+// normalised to UTF-8 instead of rejecting every Go index.
+func TestParseNormalizesUnspecifiedPositionEncodingToUTF8(t *testing.T) {
+	index := &scip.Index{
+		Metadata: &scip.Metadata{ProjectRoot: "file:///workspace", ToolInfo: &scip.ToolInfo{Name: "scip-go", Version: "0.2.7"}},
+		Documents: []*scip.Document{{
+			RelativePath:     "main.go",
+			PositionEncoding: scip.PositionEncoding_UnspecifiedPositionEncoding,
+			Occurrences:      []*scip.Occurrence{{Range: []int32{2, 4, 9}, Symbol: "scip-go gomod example.com/a v1.0.0 A#", SymbolRoles: int32(scip.SymbolRole_Definition)}},
+		}},
+	}
+	upload, err := Parse(marshalIndex(t, index))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if len(upload.Occurrences) != 1 || upload.Occurrences[0].PositionEncoding != int32(scip.PositionEncoding_UTF8CodeUnitOffsetFromLineStart) {
+		t.Fatalf("occurrences = %#v, want one UTF-8 occurrence", upload.Occurrences)
+	}
+}
+
+// scip-go emits a synthetic document for each generated test main under the
+// Go build cache, i.e. outside the checkout. Such documents cannot be served
+// from the repository, so they are dropped instead of failing the upload.
+func TestParseSkipsDocumentsOutsideProjectRoot(t *testing.T) {
+	inside := &scip.Document{RelativePath: "pkg/a.go", PositionEncoding: scip.PositionEncoding_UTF8CodeUnitOffsetFromLineStart,
+		Occurrences: []*scip.Occurrence{{Range: []int32{0, 0, 1}, Symbol: "scip-go gomod example.com/a v1.0.0 A#"}}}
+	for _, outside := range []string{"..", "../a.go", "../../Library/Caches/go-build/ab/abc-d"} {
+		index := &scip.Index{
+			Metadata:  &scip.Metadata{ProjectRoot: "file:///workspace", ToolInfo: &scip.ToolInfo{Name: "scip-go", Version: "1"}},
+			Documents: []*scip.Document{inside, {RelativePath: outside, PositionEncoding: scip.PositionEncoding_UTF8CodeUnitOffsetFromLineStart, Occurrences: []*scip.Occurrence{{Range: []int32{0, 0, 1}, Symbol: "scip-go gomod example.com/a v1.0.0 B#"}}}},
+		}
+		upload, err := Parse(marshalIndex(t, index))
+		if err != nil {
+			t.Fatalf("%s: Parse() error = %v", outside, err)
+		}
+		if len(upload.Occurrences) != 1 || upload.Occurrences[0].Path != "pkg/a.go" {
+			t.Fatalf("%s: occurrences = %#v, want only the in-project document", outside, upload.Occurrences)
+		}
+	}
 }
