@@ -139,11 +139,10 @@ func TestOAuthGrantAuthenticatesRotatesAndDetectsReplay(t *testing.T) {
 		t.Fatalf("current refresh token must be dead after replay revocation: %v", err)
 	}
 	var ciphertext []byte
-	if err := store.pool.QueryRow(t.Context(), `select github_token_ct from oauth_grants where id=$1`, grantID).Scan(&ciphertext); err != nil {
-		t.Fatal(err)
+	if err := store.pool.QueryRow(t.Context(), `select github_token_ct from oauth_grants where id=$1`, grantID).Scan(&ciphertext); err != nil || ciphertext != nil {
+		t.Fatalf("replay ciphertext=%q err=%v, want cleared", ciphertext, err)
 	}
-	// Replay revocation is store-internal; the ciphertext is cleared by the
-	// explicit revoke paths, which the authorization server calls next.
+	// Explicit revocation remains idempotent after replay revocation.
 	if err := store.RevokeOAuthGrant(t.Context(), grantID); err != nil {
 		t.Fatal(err)
 	}

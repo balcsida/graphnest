@@ -23,13 +23,14 @@ import (
 // ---- in-memory store -----------------------------------------------------------
 
 type memoryStore struct {
-	mu       sync.Mutex
-	clients  map[string]authn.OAuthClient
-	requests map[[32]byte]authn.OAuthAuthorizationRequest
-	grants   map[int64]*authn.OAuthGrant
-	nextID   int64
-	github   map[int64][]int64
-	fail     error
+	mu              sync.Mutex
+	clients         map[string]authn.OAuthClient
+	requests        map[[32]byte]authn.OAuthAuthorizationRequest
+	grants          map[int64]*authn.OAuthGrant
+	consumedRefresh map[int64]map[[32]byte]time.Time
+	nextID          int64
+	github          map[int64][]int64
+	fail            error
 }
 
 func newMemoryStore() *memoryStore {
@@ -150,6 +151,13 @@ func (m *memoryStore) RotateOAuthGrant(_ context.Context, refreshHash [32]byte, 
 	defer m.mu.Unlock()
 	for _, grant := range m.grants {
 		if grant.RefreshHash == refreshHash && m.live(grant, rotation.Now) {
+			if m.consumedRefresh == nil {
+				m.consumedRefresh = make(map[int64]map[[32]byte]time.Time)
+			}
+			if m.consumedRefresh[grant.ID] == nil {
+				m.consumedRefresh[grant.ID] = make(map[[32]byte]time.Time)
+			}
+			m.consumedRefresh[grant.ID][refreshHash] = rotation.Now
 			previous := grant.RefreshHash
 			grant.PreviousRefreshHash = &previous
 			grant.RefreshHash, grant.AccessHash, grant.AccessExpiresAt, grant.LastUsedAt = rotation.RefreshHash, rotation.AccessHash, rotation.AccessExpiresAt, rotation.Now
@@ -157,9 +165,12 @@ func (m *memoryStore) RotateOAuthGrant(_ context.Context, refreshHash [32]byte, 
 		}
 	}
 	for _, grant := range m.grants {
-		if grant.PreviousRefreshHash != nil && *grant.PreviousRefreshHash == refreshHash && !grant.LastUsedAt.After(rotation.Now.Add(-rotation.Grace)) {
-			revoked := rotation.Now
-			grant.RevokedAt = &revoked
+		if consumedAt, ok := m.consumedRefresh[grant.ID][refreshHash]; ok && !consumedAt.After(rotation.Now.Add(-rotation.Grace)) {
+			if grant.RevokedAt == nil {
+				revoked := rotation.Now
+				grant.RevokedAt = &revoked
+			}
+			grant.GitHubTokenCiphertext = nil
 			return authn.OAuthGrant{}, authn.ErrOAuthReplay
 		}
 	}
@@ -189,9 +200,13 @@ func (m *memoryStore) RevokeOAuthGrantByToken(_ context.Context, hash [32]byte, 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, grant := range m.grants {
-		if grant.ClientID == clientID && (grant.AccessHash == hash || grant.RefreshHash == hash) {
-			now := time.Now()
-			grant.RevokedAt = &now
+		_, consumed := m.consumedRefresh[grant.ID][hash]
+		if grant.ClientID == clientID && (grant.AccessHash == hash || grant.RefreshHash == hash || consumed) {
+			if grant.RevokedAt == nil {
+				now := time.Now()
+				grant.RevokedAt = &now
+			}
+			grant.GitHubTokenCiphertext = nil
 		}
 	}
 	return nil

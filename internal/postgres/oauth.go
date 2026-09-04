@@ -132,9 +132,8 @@ func (s *Store) OAuthGrantByRefresh(ctx context.Context, refreshHash [32]byte, n
 }
 
 // RotateOAuthGrant implements refresh-token rotation with replay detection.
-// Presenting the previous refresh token after rotation is treated as theft:
-// the grant is revoked and ErrOAuthReplay returned. A short grace period is
-// provided by the authorization server before it calls this, not here.
+// Presenting any consumed refresh token after its rotation grace period revokes
+// the grant and returns ErrOAuthReplay. Access use does not extend that grace.
 func (s *Store) RotateOAuthGrant(ctx context.Context, refreshHash [32]byte, rotation authn.OAuthRotation) (authn.OAuthGrant, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -151,8 +150,10 @@ func (s *Store) RotateOAuthGrant(ctx context.Context, refreshHash [32]byte, rota
 		// with whichever token it holds, so the grant is left intact and the
 		// request simply fails. Later use is treated as theft and revokes the
 		// whole grant.
-		result, replayErr := tx.Exec(ctx, `update oauth_grants set revoked_at=coalesce(revoked_at, $2)
-			where previous_refresh_hash=$1 and last_used_at <= $3`, refreshHash[:], rotation.Now, rotation.Now.Add(-rotation.Grace))
+		result, replayErr := tx.Exec(ctx, `update oauth_grants set revoked_at=coalesce(revoked_at, $2), github_token_ct=null
+			from oauth_refresh_tokens
+			where oauth_refresh_tokens.grant_id=oauth_grants.id
+			and oauth_refresh_tokens.refresh_hash=$1 and oauth_refresh_tokens.consumed_at <= $3`, refreshHash[:], rotation.Now, rotation.Now.Add(-rotation.Grace))
 		if replayErr != nil {
 			return authn.OAuthGrant{}, replayErr
 		}
@@ -165,6 +166,9 @@ func (s *Store) RotateOAuthGrant(ctx context.Context, refreshHash [32]byte, rota
 		return authn.OAuthGrant{}, pgx.ErrNoRows
 	}
 	if err != nil {
+		return authn.OAuthGrant{}, err
+	}
+	if _, err := tx.Exec(ctx, `insert into oauth_refresh_tokens(refresh_hash, grant_id, consumed_at) values($1,$2,$3)`, refreshHash[:], grant.ID, rotation.Now); err != nil {
 		return authn.OAuthGrant{}, err
 	}
 	return grant, tx.Commit(ctx)
@@ -182,7 +186,8 @@ func (s *Store) RevokeOAuthGrant(ctx context.Context, grantID int64) error {
 
 func (s *Store) RevokeOAuthGrantByToken(ctx context.Context, hash [32]byte, clientID string) error {
 	_, err := s.pool.Exec(ctx, `update oauth_grants set revoked_at=coalesce(revoked_at, now()), github_token_ct=null
-		where client_id=$2 and (access_hash=$1 or refresh_hash=$1 or previous_refresh_hash=$1)`, hash[:], clientID)
+		where client_id=$2 and (access_hash=$1 or refresh_hash=$1
+		or exists(select 1 from oauth_refresh_tokens where grant_id=oauth_grants.id and oauth_refresh_tokens.refresh_hash=$1))`, hash[:], clientID)
 	return err
 }
 
