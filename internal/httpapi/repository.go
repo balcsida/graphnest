@@ -1,11 +1,14 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -18,6 +21,42 @@ import (
 type repositoryList struct {
 	Repositories []api.RepositorySummary `json:"repositories"`
 	Truncated    bool                    `json:"truncated"`
+	NextCursor   string                  `json:"next_cursor,omitempty"`
+}
+
+// repositoryCursor is the opaque page token of GET /v1/repositories: the full
+// name of the last repository returned. Pages are ordered by full name, so a
+// stale cursor still resumes at the right place after additions or removals.
+type repositoryCursor struct {
+	Version int    `json:"v"`
+	Name    string `json:"name"`
+}
+
+// DecodeRepositoryCursor returns the full name a repository page cursor points
+// past; an empty cursor is valid and means the first page.
+func DecodeRepositoryCursor(value string) (string, bool) {
+	if value == "" {
+		return "", true
+	}
+	data, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return "", false
+	}
+	var cursor repositoryCursor
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&cursor); err != nil {
+		return "", false
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF || cursor.Version != 1 || cursor.Name == "" {
+		return "", false
+	}
+	return cursor.Name, true
+}
+
+// EncodeRepositoryCursor builds the opaque cursor that resumes after name.
+func EncodeRepositoryCursor(name string) string {
+	data, _ := json.Marshal(repositoryCursor{Version: 1, Name: name})
+	return base64.RawURLEncoding.EncodeToString(data)
 }
 
 type readFileRequest struct {
@@ -47,12 +86,18 @@ func RegisterRepositories(mux *http.ServeMux, authenticator authn.RequestAuthent
 
 func RegisterRepositoryInventory(mux *http.ServeMux, authenticator authn.RequestAuthenticator, service *repository.Service, maxResults int, maxResponseBytes int64) {
 	mux.Handle("/v1/repositories", exactMethod(http.MethodGet, AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		query := request.URL.Query()
+		after, ok := DecodeRepositoryCursor(query.Get("cursor"))
+		if !ok || (query.Has("cursor") && query.Get("cursor") == "") {
+			writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
+			return
+		}
 		repositories, err := service.List(request.Context(), PrincipalFromContext(request.Context()))
 		if err != nil {
 			writeRepositoryError(writer, err)
 			return
 		}
-		response := limitRepositoryList(repositories, maxResults, maxResponseBytes)
+		response := limitRepositoryList(PageRepositoriesAfter(repositories, after), maxResults, maxResponseBytes)
 		writeBoundedJSON(writer, response, maxResponseBytes)
 	}))))
 	mux.Handle("/v1/repositories/", exactMethod(http.MethodGet, AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -108,6 +153,24 @@ func RegisterFileReads(mux *http.ServeMux, authenticator authn.RequestAuthentica
 	}))))
 }
 
+// PageRepositoriesAfter orders the authorized repositories by full name and drops those at
+// or before the cursor. The authorized set is already bounded by the
+// principal's grants, so paging in memory costs nothing extra.
+func PageRepositoriesAfter(repositories []api.RepositorySummary, after string) []api.RepositorySummary {
+	sorted := slices.Clone(repositories)
+	slices.SortStableFunc(sorted, func(a, b api.RepositorySummary) int { return strings.Compare(a.Name, b.Name) })
+	if after == "" {
+		return sorted
+	}
+	start, _ := slices.BinarySearchFunc(sorted, after, func(candidate api.RepositorySummary, target string) int {
+		return strings.Compare(candidate.Name, target)
+	})
+	for start < len(sorted) && sorted[start].Name <= after {
+		start++
+	}
+	return sorted[start:]
+}
+
 func limitRepositoryList(repositories []api.RepositorySummary, maxResults int, maxResponseBytes int64) repositoryList {
 	result := repositoryList{Repositories: []api.RepositorySummary{}}
 	for index, repository := range repositories {
@@ -115,13 +178,23 @@ func limitRepositoryList(repositories []api.RepositorySummary, maxResults int, m
 			result.Truncated = true
 			break
 		}
+		// A candidate is sized exactly as it would be sent: the cursor is part
+		// of the envelope only while more repositories remain.
 		candidate := repositoryList{Repositories: append(result.Repositories, repository), Truncated: index+1 < len(repositories)}
+		if candidate.Truncated {
+			candidate.NextCursor = EncodeRepositoryCursor(repository.Name)
+		}
 		data, _ := json.Marshal(candidate)
 		if int64(len(data)+1) > maxResponseBytes {
 			result.Truncated = true
 			break
 		}
 		result = candidate
+	}
+	if result.Truncated && len(result.Repositories) > 0 {
+		result.NextCursor = EncodeRepositoryCursor(result.Repositories[len(result.Repositories)-1].Name)
+	} else {
+		result.NextCursor = ""
 	}
 	return result
 }
