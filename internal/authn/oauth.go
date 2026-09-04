@@ -76,8 +76,8 @@ type OAuthGrantMetadata struct {
 }
 
 // OAuthRotation carries the new token hashes and expiries for a refresh.
-// Grace is how long after a rotation the previous refresh token is tolerated
-// as a lost-response retry rather than treated as replay.
+// Grace suppresses grant revocation for consumed-token retries after rotation.
+// Such retries still fail; a lost refresh response requires fresh authorization.
 type OAuthRotation struct {
 	AccessHash      [32]byte
 	AccessExpiresAt time.Time

@@ -263,9 +263,12 @@ exchanged at `POST /oauth/token` for an access token valid **up to one hour** an
 refresh token; the grant itself expires **30 days** after consent and every
 refresh rotates both tokens. `expires_in` reports the remaining token lifetime,
 capped by the grant expiry. Every consumed refresh-token hash is retained for
-the grant's lifetime. Presenting any consumed token again more than 30 seconds
+the grant's lifetime. Presenting any consumed token again 30 seconds or more
 after its rotation revokes the whole grant and records
-`oauth_grant_reuse_detected`.
+`oauth_grant_reuse_detected`. Before that deadline, a consumed token still
+returns `invalid_grant`, but does not revoke the grant. The grace window does
+not replay or recover a successful refresh response: if that response is lost,
+the client must authorize again because only token hashes are retained.
 
 Access tokens (`gno_…`) carry the user's repository read access, including
 GitHub-derived grants, without administrative privileges. They authenticate
