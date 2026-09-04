@@ -486,7 +486,7 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 	httpapi.RegisterSearch(mux, authenticator, service, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
 	if manager, ok := authenticator.Bearer.(authn.TokenManager); ok {
 		if store, ok := manager.Store.(*postgres.Store); ok {
-			httpapi.RegisterAccount(mux, authenticator, &account.Service{Manager: manager, Authorizer: authz.NewPostgres(store)}, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
+			httpapi.RegisterAccount(mux, authenticator, &account.Service{Manager: manager, Authorizer: authz.NewPostgres(store), Audit: manager.Audit}, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
 		}
 	}
 	if repositories != nil {
