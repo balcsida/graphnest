@@ -70,8 +70,8 @@ func TestRevokeOAuthGrantByConsumedRefresh(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := store.RevokeOAuthGrantByToken(t.Context(), original.RefreshHash, original.ClientID); err != nil {
-		t.Fatal(err)
+	if revoked, err := store.RevokeOAuthGrantByToken(t.Context(), original.RefreshHash, original.ClientID); err != nil || !revoked {
+		t.Fatalf("consumed refresh revocation: revoked=%v err=%v", revoked, err)
 	}
 	if _, err := store.OAuthPrincipal(t.Context(), current.AccessHash, original.CreatedAt.Add(time.Hour)); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("access after revocation by old refresh token=%v, want no rows", err)

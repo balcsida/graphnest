@@ -693,6 +693,9 @@ func (server *Server) syncGitHubAccess(ctx context.Context, grant authn.OAuthGra
 // ---- revocation (RFC 7009) ------------------------------------------------------
 
 func (server *Server) revoke(writer http.ResponseWriter, request *http.Request) {
+	if !server.allow(writer, request) {
+		return
+	}
 	request.Body = http.MaxBytesReader(writer, request.Body, maxFormBytes)
 	if err := request.ParseForm(); err != nil {
 		writeOAuthError(writer, http.StatusBadRequest, "invalid_request", "request body is invalid")
@@ -706,11 +709,14 @@ func (server *Server) revoke(writer http.ResponseWriter, request *http.Request) 
 	}
 	for _, prefix := range []string{AccessTokenPrefix, RefreshTokenPrefix} {
 		if hash, ok := hashSecret(token, prefix); ok {
-			if err := server.Store.RevokeOAuthGrantByToken(request.Context(), hash, clientID); err != nil {
+			revoked, err := server.Store.RevokeOAuthGrantByToken(request.Context(), hash, clientID)
+			if err != nil {
 				writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "could not revoke")
 				return
 			}
-			server.record(request.Context(), audit.Event{ActorType: "anonymous", TargetType: "oauth_client", TargetID: clientID, Operation: OperationGrantRevoked, Outcome: "success"})
+			if revoked {
+				server.record(request.Context(), audit.Event{ActorType: "anonymous", TargetType: "oauth_client", TargetID: clientID, Operation: OperationGrantRevoked, Outcome: "success"})
+			}
 		}
 	}
 	writer.WriteHeader(http.StatusOK)
