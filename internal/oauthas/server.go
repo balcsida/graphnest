@@ -69,15 +69,17 @@ type GitHubTokenSource interface {
 
 // Server is the authorization server. All URLs derive from Origin.
 type Server struct {
-	Origin       string
-	Store        authn.OAuthStore
-	Sessions     SessionAuthenticator
-	Sealer       *Sealer
-	GitHub       GitHubAccess
-	GitHubTokens GitHubTokenSource
-	Audit        audit.Recorder
-	Now          func() time.Time
-	Rand         io.Reader
+	Origin          string
+	LoginPath       string
+	GitHubLoginPath string
+	Store           authn.OAuthStore
+	Sessions        SessionAuthenticator
+	Sealer          *Sealer
+	GitHub          GitHubAccess
+	GitHubTokens    GitHubTokenSource
+	Audit           audit.Recorder
+	Now             func() time.Time
+	Rand            io.Reader
 	// UserName renders the consent page; nil falls back to the subject.
 	UserName func(context.Context, authn.Principal) string
 	// Limiter is consulted for registration and token requests; nil allows all.
@@ -391,8 +393,18 @@ func (server *Server) startAuthorization(writer http.ResponseWriter, request *ht
 		Name: RequestCookie, Value: handle, Path: "/", Secure: true, HttpOnly: true,
 		SameSite: http.SameSiteLaxMode, Expires: now.Add(pendingTTL), MaxAge: int(pendingTTL / time.Second),
 	})
-	if _, ok := server.sessionPrincipal(request); !ok {
-		http.Redirect(writer, request, "/auth/oauth/github/login?return_to="+url.QueryEscape(ResumePath), http.StatusSeeOther)
+	loginPath := server.LoginPath
+	_, signedIn := server.sessionPrincipal(request)
+	if server.GitHub != nil {
+		// Access-synced grants need a fresh GitHub token even for an existing session.
+		loginPath, signedIn = server.GitHubLoginPath, false
+	}
+	if !signedIn {
+		if loginPath == "" {
+			server.authorizeErrorPage(writer, "No sign-in provider is available for this authorization.")
+			return
+		}
+		http.Redirect(writer, request, loginPath+"?return_to="+url.QueryEscape(ResumePath), http.StatusSeeOther)
 		return
 	}
 	server.consent(writer, request, handle, pending, client)
@@ -792,7 +804,7 @@ func redirectError(writer http.ResponseWriter, request *http.Request, redirect, 
 
 func writeTokens(writer http.ResponseWriter, access, refresh, scope string, lifetime time.Duration) {
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"access_token": access, "token_type": "Bearer", "expires_in": max(0, int(lifetime / time.Second)),
+		"access_token": access, "token_type": "Bearer", "expires_in": max(0, int(lifetime/time.Second)),
 		"refresh_token": refresh, "scope": scope,
 	})
 }
