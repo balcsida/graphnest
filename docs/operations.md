@@ -294,11 +294,17 @@ days are swept by the periodic cleanup.
 
 PostgreSQL shares fixed one-minute request budgets across server replicas:
 registration allows 10 requests per source IP and 100 across the deployment;
-token exchange allows 60 per source and 1,000 across the deployment. Registration
-also has an atomic deployment-wide cap of 10,000 clients. Limits return HTTP 429;
+token exchange and revocation each allow 60 per source and 1,000 across the
+deployment. Registration also has an atomic deployment-wide cap of 10,000
+clients. Limits return HTTP 429;
 an unavailable limiter returns HTTP 503. Source limits use the socket peer IP,
 ignoring forwarded headers, so clients behind the same ingress proxy share a
 source budget. Idle-client cleanup releases registration capacity.
+
+Migration 024 extends the shared budgets to `/oauth/revoke`. Unknown,
+wrong-client and already-revoked tokens still return HTTP 200 when within
+budget, but only a newly revoked grant records a successful revocation audit.
+Disconnecting a client through the account UI also records a revocation audit.
 
 Migration 022 revokes grants already rotated by earlier MCP OAuth builds,
 because their discarded token history cannot be recovered. Those clients must
