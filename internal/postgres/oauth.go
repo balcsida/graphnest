@@ -99,8 +99,8 @@ func (s *Store) CreateOAuthGrant(ctx context.Context, grant authn.OAuthGrant) (i
 	return id, err
 }
 
-// OAuthPrincipal resolves a live access token. The principal carries the
-// user's own roles and grants; scope narrowing is the caller's concern.
+// OAuthPrincipal resolves a live access token with the user's repository read
+// access, without delegating administrative or write privileges.
 func (s *Store) OAuthPrincipal(ctx context.Context, accessHash [32]byte, now time.Time) (authn.Principal, error) {
 	var userID int64
 	if err := s.pool.QueryRow(ctx, `update oauth_grants set last_used_at=$2
@@ -111,6 +111,16 @@ func (s *Store) OAuthPrincipal(ctx context.Context, accessHash [32]byte, now tim
 	principal, err := s.UserPrincipal(ctx, userID, nil)
 	if err != nil {
 		return authn.Principal{}, err
+	}
+	if principal.Administrator {
+		repositories, err := s.GraphRepositories(ctx, principal)
+		if err != nil {
+			return authn.Principal{}, err
+		}
+		for _, repository := range repositories {
+			principal.RepositoryIDs = append(principal.RepositoryIDs, repository.GitHubID)
+		}
+		principal.Administrator = false
 	}
 	principal.Method = authn.ProviderOAuthToken
 	return principal, nil
