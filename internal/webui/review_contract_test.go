@@ -50,8 +50,8 @@ func TestConsoleMatchesSuppliedApplicationVisualSystem(t *testing.T) {
 		`class="token-panel"`,
 		`class="search-rail"`,
 		`class="results-panel"`,
-		`grid-template-columns:252px minmax(0,1fr)`,
-		`height:56px`,
+		`grid-template-columns:232px minmax(0,1fr)`,
+		`height:52px`,
 		`@media(max-width:800px)`,
 		`link.rel="noopener noreferrer"`,
 	} {
@@ -66,7 +66,7 @@ func TestConsoleRemovesTheObsoleteSearchWorkspaceShell(t *testing.T) {
 		`--canvas:#F6F8FA`,
 		`class="search-strip"`,
 		`class="context-rail"`,
-		`grid-template-columns:232px minmax(0,1fr)`,
+		`grid-template-columns:252px minmax(0,1fr)`,
 	} {
 		if bytes.Contains(document, []byte(obsolete)) {
 			t.Fatalf("console retains obsolete shell rule %q", obsolete)

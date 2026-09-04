@@ -99,19 +99,20 @@ func TestConsoleClearsPrincipalFileAndNavigationStateOnSignOut(t *testing.T) {
 	}
 }
 
-func TestConsoleKeepsTouchTargetsAtLeast44Pixels(t *testing.T) {
+func TestConsoleUsesCompactControlScaleWithCoarsePointerFallback(t *testing.T) {
 	for _, want := range []string{
-		`.wordmark{display:flex;align-items:center;gap:9px;padding:9px`,
-		".nav-button{min-height:44px",
-		"#query{min-height:44px",
-		"fieldset label{display:flex;gap:8px;align-items:center;min-width:0;min-height:44px;overflow-wrap:anywhere}",
-		"fieldset input{width:44px;min-width:44px;min-height:44px}",
-		".file-header a,.repository-link{color:var(--accent);display:inline-flex;min-height:44px;align-items:center}",
-		".file-line{display:grid;grid-template-columns:58px max-content;min-width:max-content;min-height:44px}",
-		".identifier{min-width:44px;min-height:44px",
+		"button,input,select,summary{font:inherit;min-height:36px",
+		".nav-button{min-height:32px",
+		".icon-button{width:32px",
+		"input[type=checkbox]{width:16px;height:16px;min-height:0",
+		".file-header a,.repository-link{color:var(--accent);display:inline-flex;min-height:28px",
+		".file-line{display:grid;grid-template-columns:56px max-content;min-width:max-content;min-height:22px}",
+		".file-code{white-space:pre;padding-right:20px;color:var(--code);font:12.5px/22px var(--mono)}",
+		".identifier{min-width:0;min-height:0",
+		"@media(pointer:coarse){button,input,select,summary,.nav-button,.example,.location-link,.navigation-tabs button,.file-header a,.repository-link,#syntax-rail,#file-back,#syntax-close,#error button{min-height:44px}input[type=checkbox]{width:22px;height:22px}.file-line,.file-code{min-height:32px;line-height:32px}}",
 	} {
 		if !bytes.Contains(document, []byte(want)) {
-			t.Fatalf("console is missing 44px touch target %q", want)
+			t.Fatalf("console is missing control scale rule %q", want)
 		}
 	}
 }
