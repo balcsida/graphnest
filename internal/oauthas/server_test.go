@@ -36,6 +36,10 @@ func newMemoryStore() *memoryStore {
 	return &memoryStore{clients: map[string]authn.OAuthClient{}, requests: map[[32]byte]authn.OAuthAuthorizationRequest{}, grants: map[int64]*authn.OAuthGrant{}, github: map[int64][]int64{}}
 }
 
+func (m *memoryStore) AllowOAuthRequest(context.Context, string, string, time.Time) (bool, error) {
+	return true, nil
+}
+
 func (m *memoryStore) CreateOAuthClient(_ context.Context, client authn.OAuthClient) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -284,7 +288,7 @@ func newHarness(t *testing.T) *harness {
 	// The login that preceded consent deposited the GitHub token for this session.
 	tokens.StoreProviderToken(context.Background(), sessionTokenValue, "gho_user")
 	h.server = &Server{
-		Origin: origin, Store: store, Sessions: staticSessions{authn.Principal{Subject: "11", Method: authn.ProviderOAuth, RepositoryIDs: []int64{101}}},
+		Origin: origin, LoginPath: "/auth/oauth/github/login", GitHubLoginPath: "/auth/oauth/github/login", Store: store, Sessions: staticSessions{authn.Principal{Subject: "11", Method: authn.ProviderOAuth, RepositoryIDs: []int64{101}}},
 		Sealer: sealer, GitHub: github, GitHubTokens: tokens, Audit: recorder,
 		Now:      func() time.Time { return h.clock },
 		UserName: func(context.Context, authn.Principal) string { return "Ada Lovelace" },
@@ -342,6 +346,15 @@ func (h *harness) runConsent(t *testing.T, clientID, redirect, challenge, decisi
 	request := httptest.NewRequest(http.MethodGet, authorizeURL(clientID, redirect, challenge), nil)
 	request.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: sessionTokenValue})
 	response := h.do(request)
+	requestCookie := cookieNamed(response, RequestCookie)
+	if response.Code == http.StatusSeeOther && strings.HasPrefix(response.Header().Get("Location"), h.server.GitHubLoginPath+"?") {
+		// Complete the forced provider login before resuming consent.
+		h.server.GitHubTokens.(*ProviderTokens).StoreProviderToken(t.Context(), sessionTokenValue, "gho_user")
+		resume := httptest.NewRequest(http.MethodGet, ResumePath, nil)
+		resume.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: sessionTokenValue})
+		resume.AddCookie(requestCookie)
+		response = h.do(resume)
+	}
 	if response.Code != http.StatusOK {
 		t.Fatalf("authorize status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -351,7 +364,6 @@ func (h *harness) runConsent(t *testing.T, clientID, redirect, challenge, decisi
 			t.Fatalf("consent page missing %q:\n%s", want, page)
 		}
 	}
-	requestCookie := cookieNamed(response, RequestCookie)
 	if requestCookie == nil || !requestCookie.HttpOnly || !requestCookie.Secure || requestCookie.Path != "/" || requestCookie.Domain != "" {
 		t.Fatalf("request cookie = %+v", requestCookie)
 	}
