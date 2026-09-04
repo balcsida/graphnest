@@ -1066,7 +1066,21 @@ func (reader *countingReader) Read(buffer []byte) (int, error) {
 type oauthCapableStore struct {
 	authn.SessionStore
 	authn.OAuthStore
-	accessHash [32]byte
+	accessHash    [32]byte
+	client        authn.OAuthClient
+	allowRequests bool
+}
+
+func (store oauthCapableStore) OAuthClient(context.Context, string, time.Time) (authn.OAuthClient, error) {
+	return store.client, nil
+}
+
+func (oauthCapableStore) CreateOAuthAuthorizationRequest(context.Context, authn.OAuthAuthorizationRequest) error {
+	return nil
+}
+
+func (store oauthCapableStore) AllowOAuthRequest(context.Context, string, string, time.Time) (bool, error) {
+	return store.allowRequests, nil
 }
 
 func (store oauthCapableStore) OAuthPrincipal(_ context.Context, hash [32]byte, _ time.Time) (authn.Principal, error) {
@@ -1156,6 +1170,48 @@ func TestMCPOAuthPreservesAccountRoutes(t *testing.T) {
 	}
 }
 
+func TestMCPOAuthUsesConfiguredBrowserLogin(t *testing.T) {
+	settings, endpoints, httpClient := authRuntimeSettings(t)
+	settings.SSO.MCPOAuth.Enabled = true
+	settings.SSO.MCPOAuth.KeyFile = filepath.Join(t.TempDir(), "oauth-key")
+	if err := os.WriteFile(settings.SSO.MCPOAuth.KeyFile, bytes.Repeat([]byte("k"), 32), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client := authn.OAuthClient{ID: "gnc_runtime", Name: "client", RedirectURIs: []string{"http://127.0.0.1/callback"}}
+	query := url.Values{
+		"client_id": {client.ID}, "redirect_uri": {client.RedirectURIs[0]}, "response_type": {"code"},
+		"code_challenge": {"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"}, "code_challenge_method": {"S256"},
+	}
+	for _, test := range []struct {
+		name               string
+		oidc, github, sync bool
+		want               string
+	}{
+		{"OIDC only", true, false, false, "/auth/oidc/login"},
+		{"GitHub only", false, true, false, "/auth/oauth/github/login"},
+		{"default provider", true, true, false, "/auth/oidc/login"},
+		{"GitHub access sync", true, true, true, "/auth/oauth/github/login"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			configured := settings
+			configured.SSO.OIDC.Enabled = test.oidc
+			configured.SSO.OAuth.GitHub.Enabled = test.github
+			configured.SSO.OAuth.GitHub.AccessSync = test.sync
+			runtime, err := newAuthRuntime(t.Context(), configured, oauthCapableStore{client: client}, nil, observability.New(), endpoints, httpClient)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mux := http.NewServeMux()
+			runtime.mcpOAuth.Register(mux)
+			response := httptest.NewRecorder()
+			mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+query.Encode(), nil))
+			location, err := url.Parse(response.Header().Get("Location"))
+			if err != nil || response.Code != http.StatusSeeOther || location.Path != test.want || location.Query().Get("return_to") != "/oauth/authorize/resume" {
+				t.Fatalf("status=%d location=%s err=%v", response.Code, response.Header().Get("Location"), err)
+			}
+		})
+	}
+}
 func TestMCPOAuthBearerOnlyAuthenticatesMCP(t *testing.T) {
 	settings, endpoints, httpClient := authRuntimeSettings(t)
 	settings.SSO.OIDC.Enabled = false
