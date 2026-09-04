@@ -37,6 +37,20 @@ paths:
         '403': {$ref: '#/components/responses/AccountForbidden'}
         '405': {$ref: '#/components/responses/InvalidRequest'}
         '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/admin/api-tokens:
+    post:
+      description: Administrator API-token delegation. The caller must authenticate with an administrator API token; the new token belongs to the same user, is restricted to a non-empty subset of the caller's repository ceiling, and must expire within one hour. Interactive sessions use /v1/account/api-tokens instead.
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DelegateAPITokenRequest'}}}}
+      responses:
+        '201': {description: Token created; retain token now, it is never returned again, content: {application/json: {schema: {$ref: '#/components/schemas/CreatedAPIToken'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccountForbidden'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
   /v1/admin/overview:
     get:
       security: [{bearerAuth: []}, {sessionCookie: []}]
@@ -659,6 +673,13 @@ components:
       properties:
         expires_at: {type: string, format: date-time, description: Optional UTC expiry no more than 90 days after creation.}
         repository_ids: {type: array, maxItems: 100, uniqueItems: true, description: Optional ceiling for ordinary users and required non-empty ceiling for administrators., items: {type: integer, format: int64, minimum: 1}}
+    DelegateAPITokenRequest:
+      type: object
+      additionalProperties: false
+      required: [expires_at, repository_ids]
+      properties:
+        expires_at: {type: string, format: date-time, description: Required UTC expiry no more than one hour after creation.}
+        repository_ids: {type: array, minItems: 1, maxItems: 100, uniqueItems: true, description: Required non-empty ceiling inside the calling token's own ceiling., items: {type: integer, format: int64, minimum: 1}}
     CreatedAPIToken:
       type: object
       additionalProperties: false
