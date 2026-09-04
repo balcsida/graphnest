@@ -584,7 +584,7 @@ func (server *Server) exchangeCode(writer http.ResponseWriter, request *http.Req
 		}
 	}
 	server.record(request.Context(), audit.Event{ActorType: "user", ActorID: strconv.FormatInt(pending.UserID, 10), TargetType: "oauth_grant", TargetID: strconv.FormatInt(grantID, 10), AuthenticationMethod: authn.ProviderOAuthToken, Operation: OperationGrantCreated, Outcome: "success"})
-	writeTokens(writer, access, refresh, pending.Scope)
+	writeTokens(writer, access, refresh, pending.Scope, grant.AccessExpiresAt.Sub(server.now()))
 }
 
 func (server *Server) refresh(writer http.ResponseWriter, request *http.Request) {
@@ -630,7 +630,7 @@ func (server *Server) refresh(writer http.ResponseWriter, request *http.Request)
 	}
 	server.syncGitHubAccess(request.Context(), grant)
 	server.record(request.Context(), audit.Event{ActorType: "user", ActorID: strconv.FormatInt(grant.UserID, 10), TargetType: "oauth_grant", TargetID: strconv.FormatInt(grant.ID, 10), AuthenticationMethod: authn.ProviderOAuthToken, Operation: OperationGrantRefreshed, Outcome: "success"})
-	writeTokens(writer, access, refresh, grant.Scope)
+	writeTokens(writer, access, refresh, grant.Scope, grant.AccessExpiresAt.Sub(server.now()))
 }
 
 // syncGitHubAccess re-derives the user's GitHub grants with the stored GitHub
@@ -790,9 +790,9 @@ func redirectError(writer http.ResponseWriter, request *http.Request, redirect, 
 	http.Redirect(writer, request, target.String(), http.StatusSeeOther)
 }
 
-func writeTokens(writer http.ResponseWriter, access, refresh, scope string) {
+func writeTokens(writer http.ResponseWriter, access, refresh, scope string, lifetime time.Duration) {
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"access_token": access, "token_type": "Bearer", "expires_in": int(AccessTokenTTL / time.Second),
+		"access_token": access, "token_type": "Bearer", "expires_in": max(0, int(lifetime / time.Second)),
 		"refresh_token": refresh, "scope": scope,
 	})
 }
