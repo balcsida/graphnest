@@ -49,3 +49,7 @@ Every access-synced authorization requires a fresh GitHub sign-in. PostgreSQL
 retains all consumed refresh hashes with their rotation times, shares request
 budgets across replicas, and caps client registrations. Migration 022 revokes
 previously rotated grants whose complete history cannot be recovered.
+The 30-second refresh replay grace only suppresses grant revocation; consumed
+tokens still return `invalid_grant`. A lost refresh response requires fresh
+authorization. Recoverable retries would need a separate, bounded mechanism
+to retain the replacement credentials securely across replicas.
