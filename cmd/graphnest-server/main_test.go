@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -34,6 +35,7 @@ import (
 	"github.com/balcsida/graphnest/internal/graphservice"
 	"github.com/balcsida/graphnest/internal/observability"
 	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/postgres"
 	scimapi "github.com/balcsida/graphnest/internal/scim"
 	"github.com/balcsida/graphnest/internal/scipgraph"
 	"github.com/balcsida/graphnest/internal/sso/browserflow"
@@ -1064,6 +1066,14 @@ type oauthCapableStore struct {
 	authn.SessionStore
 	authn.OAuthStore
 }
+	accessHash [32]byte
+}
+
+func (store oauthCapableStore) OAuthPrincipal(_ context.Context, hash [32]byte, _ time.Time) (authn.Principal, error) {
+	if hash != store.accessHash {
+		return authn.Principal{}, authn.ErrUnauthenticated
+	}
+	return authn.Principal{Subject: "11", Method: authn.ProviderOAuthToken}, nil
 
 func TestAuthRuntimeWiresMCPOAuth(t *testing.T) {
 	settings, endpoints, httpClient := authRuntimeSettings(t)
@@ -1092,9 +1102,8 @@ func TestAuthRuntimeWiresMCPOAuth(t *testing.T) {
 		if runtime.mcpOAuth == nil || runtime.mcpOAuth.Origin != "https://graphnest.example" || runtime.mcpOAuth.Sealer == nil || runtime.mcpOAuth.GitHub == nil || runtime.mcpOAuth.GitHubTokens == nil {
 			t.Fatalf("mcpOAuth=%#v", runtime.mcpOAuth)
 		}
-		router, ok := runtime.requestAuth.Bearer.(authn.BearerRouter)
-		if !ok || router.APITokens != bearer || router.OAuth == nil {
-			t.Fatalf("bearer=%#v, want a router over API and OAuth tokens", runtime.requestAuth.Bearer)
+		if runtime.requestAuth.Bearer != authn.Authenticator(bearer) {
+			t.Fatalf("REST bearer=%#v, want the original API token authenticator", runtime.requestAuth.Bearer)
 		}
 		var flow *browserflow.Provider
 		for _, provider := range runtime.providers {
@@ -1125,4 +1134,65 @@ func TestAuthRuntimeWiresMCPOAuth(t *testing.T) {
 			t.Fatalf("runtime=%#v err=%v", runtime, err)
 		}
 	})
+}
+
+func TestMCPOAuthPreservesAccountRoutes(t *testing.T) {
+	settings, endpoints, httpClient := authRuntimeSettings(t)
+	settings.SSO.OIDC.Enabled = false
+	settings.SSO.MCPOAuth.Enabled = true
+	settings.Limits = config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}
+	runtime, err := newAuthRuntime(t.Context(), settings, oauthCapableStore{}, authn.TokenManager{Store: &postgres.Store{}}, observability.New(), endpoints, httpClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := newAPIHandler(settings, observability.New(), runtime.requestAuth, nil, nil, nil, nil, nil, nil, nil, nil, nil, runtime.providers, runtime.sessions, nil, nil, runtime.mcpOAuth)
+	for _, path := range []string{"/v1/account/api-tokens", "/v1/account/oauth-grants"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusUnauthorized {
+			t.Errorf("%s status=%d, want an authenticated account route", path, response.Code)
+		}
+	}
+}
+
+func TestMCPOAuthBearerOnlyAuthenticatesMCP(t *testing.T) {
+	settings, endpoints, httpClient := authRuntimeSettings(t)
+	settings.SSO.OIDC.Enabled = false
+	settings.SSO.MCPOAuth.Enabled = true
+	settings.Limits = config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}
+	store := &mainTokenStore{principal: authn.Principal{Subject: "11", Method: "api_token"}}
+	manager := authn.TokenManager{Store: store}
+	_, pat, err := manager.Create(t.Context(), 11, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := bytes.Repeat([]byte("o"), 32)
+	oauthToken := "gno_" + base64.RawURLEncoding.EncodeToString(raw)
+	runtime, err := newAuthRuntime(t.Context(), settings, oauthCapableStore{accessHash: sha256.Sum256(raw)}, manager, observability.New(), endpoints, httpClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := newAPIHandler(settings, observability.New(), runtime.requestAuth, nil, nil, nil, nil, nil, nil, nil, nil, nil, runtime.providers, runtime.sessions, nil, nil, runtime.mcpOAuth)
+	for _, test := range []struct {
+		name, path, token string
+		want              int
+	}{
+		{"OAuth REST", "/v1/auth/session", oauthToken, http.StatusUnauthorized},
+		{"OAuth MCP", "/mcp", oauthToken, http.StatusUnsupportedMediaType},
+		{"PAT REST", "/v1/auth/session", pat, http.StatusOK},
+		{"PAT MCP", "/mcp", pat, http.StatusUnsupportedMediaType},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, test.path, nil)
+			if test.path == "/v1/auth/session" {
+				request.Method = http.MethodGet
+			}
+			request.Header.Set("Authorization", "Bearer "+test.token)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.want {
+				t.Fatalf("status=%d, want %d: %s", response.Code, test.want, response.Body.String())
+			}
+		})
+	}
 }

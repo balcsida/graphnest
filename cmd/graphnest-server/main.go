@@ -257,7 +257,6 @@ func newAuthRuntime(ctx context.Context, settings config.Config, store authn.Ses
 			}
 		}
 		runtime.mcpOAuth = server
-		runtime.requestAuth.Bearer = authn.BearerRouter{APITokens: bearer, OAuth: authn.OAuthTokenAuthenticator{Store: oauthStore}}
 	}
 	return runtime, nil
 }
@@ -433,9 +432,11 @@ func durableAuthenticator(store authn.APITokenStore) authn.Authenticator {
 
 func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scipGraph *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker, providers []sso.Provider, sessions *authn.SessionManager, provisioning *authn.ProvisioningAuthenticator, scimService *scim.Service, mcpOAuth *oauthas.Server) http.Handler {
 	mux := http.NewServeMux()
+	mcpBearer := authenticator.Bearer
 	var challenge httpapi.BearerChallenge
 	if mcpOAuth != nil {
 		mcpOAuth.Register(mux)
+		mcpBearer = authn.BearerRouter{APITokens: authenticator.Bearer, OAuth: authn.OAuthTokenAuthenticator{Store: mcpOAuth.Store}}
 		challenge = mcpOAuth.Challenge
 	}
 	fileReads := repositories != nil && repositories.GitHub != nil
@@ -473,7 +474,7 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 		MaxItems: settings.Limits.MaxResults, MaxOutputBytes: settings.Limits.MaxResponseBytes, GraphMaxOutputBytes: settings.Graph.MaxResponseBytes,
 	})
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer }, nil)
-	mux.Handle("/mcp", httpapi.AuthenticateBearerWithChallenge(authenticator.Bearer, challenge, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	mux.Handle("/mcp", httpapi.AuthenticateBearerWithChallenge(mcpBearer, challenge, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		request.Body = http.MaxBytesReader(writer, request.Body, settings.Limits.MaxRequestBytes)
 		mcpHandler.ServeHTTP(writer, request)
 	})))
