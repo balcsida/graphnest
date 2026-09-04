@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -204,4 +205,53 @@ func writeSecret(t *testing.T, value string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestLoadMCPOAuth(t *testing.T) {
+	t.Run("disabled by default", func(t *testing.T) {
+		setValidGitHubOAuthEnvironment(t)
+		got, err := Load()
+		if err != nil || got.SSO.MCPOAuth.Enabled {
+			t.Fatalf("MCPOAuth = %#v, error = %v", got.SSO.MCPOAuth, err)
+		}
+	})
+	t.Run("requires a browser provider", func(t *testing.T) {
+		setValidEnvironment(t)
+		t.Setenv("GRAPHNEST_MCP_OAUTH", "true")
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "GRAPHNEST_MCP_OAUTH requires") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+	t.Run("enabled without access sync needs no key", func(t *testing.T) {
+		setValidGitHubOAuthEnvironment(t)
+		t.Setenv("GRAPHNEST_MCP_OAUTH", "true")
+		got, err := Load()
+		if err != nil || !got.SSO.MCPOAuth.Enabled || got.SSO.MCPOAuth.KeyFile != "" {
+			t.Fatalf("MCPOAuth = %#v, error = %v", got.SSO.MCPOAuth, err)
+		}
+	})
+	t.Run("access sync requires the sealing key", func(t *testing.T) {
+		setValidGitHubOAuthEnvironment(t)
+		t.Setenv("GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC", "true")
+		t.Setenv("GRAPHNEST_MCP_OAUTH", "true")
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "GRAPHNEST_MCP_OAUTH_KEY_FILE") {
+			t.Fatalf("error = %v", err)
+		}
+		key := filepath.Join(t.TempDir(), "key")
+		if err := os.WriteFile(key, []byte("0123456789abcdef0123456789abcdef"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("GRAPHNEST_MCP_OAUTH_KEY_FILE", key)
+		got, err := Load()
+		if err != nil || !got.SSO.MCPOAuth.Enabled || got.SSO.MCPOAuth.KeyFile != key {
+			t.Fatalf("MCPOAuth = %#v, error = %v", got.SSO.MCPOAuth, err)
+		}
+	})
+	t.Run("rejects garbage", func(t *testing.T) {
+		setValidGitHubOAuthEnvironment(t)
+		t.Setenv("GRAPHNEST_MCP_OAUTH", "yes")
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "GRAPHNEST_MCP_OAUTH must be true or false") {
+			t.Fatalf("error = %v", err)
+		}
+	})
 }
