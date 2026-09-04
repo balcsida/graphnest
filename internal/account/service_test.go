@@ -138,3 +138,57 @@ func TestRevokeTokenUsesAuthenticatedOwner(t *testing.T) {
 		t.Fatalf("revoked user=%d id=%d", store.revokedUser, store.revokedID)
 	}
 }
+
+func TestDelegateMintsNarrowedTokenForAdministratorAPIToken(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	store := &storeStub{}
+	s := &Service{Manager: authn.TokenManager{Store: store, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+	admin := authn.Principal{Subject: "11", Method: "api_token", Administrator: true, RepositoryIDs: []int64{101, 102}}
+	expires := now.Add(15 * time.Minute)
+	token, plaintext, err := s.Delegate(t.Context(), admin, &expires, []int64{101})
+	if err != nil || plaintext == "" || token.ExpiresAt == nil || !token.ExpiresAt.Equal(expires) {
+		t.Fatalf("token=%#v plaintext=%q err=%v", token, plaintext, err)
+	}
+	if store.created.UserID != 11 || len(store.created.RepositoryIDs) != 1 || store.created.RepositoryIDs[0] != 101 || store.created.ExpiresAt == nil {
+		t.Fatalf("stored=%#v", store.created)
+	}
+}
+
+func TestDelegateRequiresAdministratorAPIToken(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	s := &Service{Manager: authn.TokenManager{Store: &storeStub{}, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+	expires := now.Add(15 * time.Minute)
+	for name, principal := range map[string]authn.Principal{
+		"ordinary api token": {Subject: "11", Method: "api_token", RepositoryIDs: []int64{101}},
+		"interactive admin":  {Subject: "11", Method: "oidc", Administrator: true, RepositoryIDs: []int64{101}},
+		"static token":       {Method: "static", Administrator: true, RepositoryIDs: []int64{101}},
+	} {
+		if _, _, err := s.Delegate(t.Context(), principal, &expires, []int64{101}); !errors.Is(err, ErrForbidden) {
+			t.Fatalf("%s: err=%v, want ErrForbidden", name, err)
+		}
+	}
+}
+
+func TestDelegateRequiresCeilingWithinGrantAndShortExpiry(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	s := &Service{Manager: authn.TokenManager{Store: &storeStub{}, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+	admin := authn.Principal{Subject: "11", Method: "api_token", Administrator: true, RepositoryIDs: []int64{101}}
+	soon := now.Add(15 * time.Minute)
+	if _, _, err := s.Delegate(t.Context(), admin, &soon, nil); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("empty ceiling err=%v", err)
+	}
+	if _, _, err := s.Delegate(t.Context(), admin, nil, []int64{101}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("missing expiry err=%v", err)
+	}
+	tooLate := now.Add(MaxDelegatedTokenLifetime + time.Second)
+	if _, _, err := s.Delegate(t.Context(), admin, &tooLate, []int64{101}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("overlong expiry err=%v", err)
+	}
+	past := now.Add(-time.Second)
+	if _, _, err := s.Delegate(t.Context(), admin, &past, []int64{101}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("past expiry err=%v", err)
+	}
+	if _, _, err := s.Delegate(t.Context(), admin, &soon, []int64{999}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("repository outside the caller's ceiling err=%v", err)
+	}
+}

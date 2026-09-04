@@ -19,6 +19,10 @@ var (
 
 const MaxTokenLifetime = 90 * 24 * time.Hour
 
+// MaxDelegatedTokenLifetime bounds tokens minted by Delegate: they exist so a
+// service account can hand a narrowed credential to a single job.
+const MaxDelegatedTokenLifetime = time.Hour
+
 type Token struct {
 	ID            int64      `json:"id"`
 	Prefix        string     `json:"prefix"`
@@ -72,6 +76,33 @@ func (s *Service) CreateToken(ctx context.Context, principal authn.Principal, ex
 		expiry = &value
 	}
 	return Token{ID: id, Prefix: plaintext[:12], RepositoryIDs: append([]int64(nil), repositoryIDs...), CreatedAt: now, ExpiresAt: expiry}, plaintext, nil
+}
+
+// Delegate lets an administrator authenticated with an API token mint a
+// further token for the same user that is narrower than its own: a non-empty
+// repository ceiling inside the caller's, and a mandatory expiry within
+// MaxDelegatedTokenLifetime. Interactive sessions use CreateToken instead.
+func (s *Service) Delegate(ctx context.Context, principal authn.Principal, expires *time.Time, repositoryIDs []int64) (Token, string, error) {
+	if principal.Method != "api_token" || !principal.Administrator {
+		return Token{}, "", ErrForbidden
+	}
+	userID, err := strconv.ParseInt(principal.Subject, 10, 64)
+	if err != nil || userID < 1 {
+		return Token{}, "", ErrForbidden
+	}
+	now := s.now()
+	if len(repositoryIDs) == 0 || expires == nil || !expires.After(now) || expires.After(now.Add(MaxDelegatedTokenLifetime)) {
+		return Token{}, "", ErrInvalid
+	}
+	if !granted(principal.RepositoryIDs, repositoryIDs) {
+		return Token{}, "", ErrForbidden
+	}
+	id, plaintext, err := s.Manager.CreateWithMethod(ctx, userID, principal.Method, repositoryIDs, expires)
+	if err != nil {
+		return Token{}, "", err
+	}
+	expiry := *expires
+	return Token{ID: id, Prefix: plaintext[:12], RepositoryIDs: append([]int64(nil), repositoryIDs...), CreatedAt: now, ExpiresAt: &expiry}, plaintext, nil
 }
 
 func (s *Service) now() time.Time {
