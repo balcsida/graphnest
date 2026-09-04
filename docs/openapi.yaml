@@ -267,12 +267,19 @@ paths:
   /v1/repositories:
     get:
       security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: next_cursor from a previous truncated response.
+          schema: {type: string, minLength: 1}
       responses:
         '200':
-          description: Authorized repositories and index status
+          description: Authorized repositories and index status, ordered by full name and cursor-paginated
           content:
             application/json:
               schema: {$ref: '#/components/schemas/RepositoryList'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '405': {$ref: '#/components/responses/InvalidRequest'}
         '503': {$ref: '#/components/responses/Unavailable'}
@@ -929,6 +936,7 @@ components:
       properties:
         repositories: {type: array, items: {$ref: '#/components/schemas/RepositorySummary'}}
         truncated: {type: boolean}
+        next_cursor: {type: string, minLength: 1, description: Opaque cursor for the next page; present only when truncated is true.}
     RepositorySummary:
       type: object
       additionalProperties: false

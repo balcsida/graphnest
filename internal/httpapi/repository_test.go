@@ -7,6 +7,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -82,10 +84,12 @@ func TestRepositoryListBoundsWireResponse(t *testing.T) {
 	service := repositoryHTTPService()
 	service.Store = &repositoryHTTPStore{repositories: items}
 	first := api.RepositorySummary{ID: 101, GitHubID: 101, Name: items[0].Name, Branch: "main", DesiredSHA: items[0].DesiredSHA, IndexedSHA: items[0].IndexedSHA, Status: "ready", SearchNode: "node-a", SCIPStatus: api.SCIPStatusUnknown}
+	// The budget covers the whole truncated envelope, cursor included.
 	budgetBody, err := json.Marshal(struct {
 		Repositories []api.RepositorySummary `json:"repositories"`
 		Truncated    bool                    `json:"truncated"`
-	}{Repositories: []api.RepositorySummary{first}, Truncated: true})
+		NextCursor   string                  `json:"next_cursor"`
+	}{Repositories: []api.RepositorySummary{first}, Truncated: true, NextCursor: EncodeRepositoryCursor(first.Name)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,8 +102,16 @@ func TestRepositoryListBoundsWireResponse(t *testing.T) {
 		Truncated    bool                    `json:"truncated"`
 	}
 	decodeRepositoryResponse(t, response, &output)
-	if response.Code != http.StatusOK || len(response.Body.Bytes()) > len(budgetBody)+1 || len(output.Repositories) != 1 || !output.Truncated {
-		t.Fatalf("status=%d bytes=%d repositories=%d truncated=%v", response.Code, len(response.Body.Bytes()), len(output.Repositories), output.Truncated)
+	if response.Code != http.StatusOK || len(response.Body.Bytes()) > len(budgetBody)+1 || len(output.Repositories) != 1 || !output.Truncated || !strings.Contains(response.Body.String(), `"next_cursor":"`) {
+		t.Fatalf("status=%d bytes=%d repositories=%d truncated=%v body=%s", response.Code, len(response.Body.Bytes()), len(output.Repositories), output.Truncated, response.Body.String())
+	}
+	// One byte less than the cursor-inclusive envelope must not squeeze the cursor out.
+	mux = http.NewServeMux()
+	RegisterRepositories(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{"secret": {InstallationID: 10, RepositoryIDs: []int64{101, 102, 103}}})), service, 128, 2, int64(len(budgetBody)))
+	response = repositoryRequest(t, mux, http.MethodGet, "/v1/repositories", "", "secret", "")
+	decodeRepositoryResponse(t, response, &output)
+	if response.Code != http.StatusOK || len(output.Repositories) != 0 || !output.Truncated || strings.Contains(response.Body.String(), "next_cursor") {
+		t.Fatalf("under-budget status=%d body=%s", response.Code, response.Body.String())
 	}
 
 	mux = http.NewServeMux()
@@ -108,6 +120,86 @@ func TestRepositoryListBoundsWireResponse(t *testing.T) {
 	decodeRepositoryResponse(t, response, &output)
 	if response.Code != http.StatusOK || len(output.Repositories) != 1 || !output.Truncated {
 		t.Fatalf("result cap status=%d repositories=%d truncated=%v", response.Code, len(output.Repositories), output.Truncated)
+	}
+}
+
+func TestRepositoryListPaginatesWithOpaqueCursor(t *testing.T) {
+	items := make([]repository.Repository, 0, 7)
+	ids := make([]int64, 0, 7)
+	for index := range 7 {
+		owner := "acme"
+		if index%2 == 1 {
+			owner = "beta"
+		}
+		id := int64(101 + index)
+		ids = append(ids, id)
+		items = append(items, repository.Repository{ID: id, InstallationID: 10, GitHubID: id, Name: owner + "/repo-" + strconv.Itoa(index), Branch: "main", DesiredSHA: strings.Repeat("a", 40), IndexedSHA: strings.Repeat("a", 40), Status: "ready", SearchNode: "node-a"})
+	}
+	// The store returns its natural order; pagination must not depend on the wire order matching the cursor order.
+	slices.SortFunc(items, func(a, b repository.Repository) int { return strings.Compare(a.Name, b.Name) })
+	service := repositoryHTTPService()
+	service.Store = &repositoryHTTPStore{repositories: items}
+	mux := http.NewServeMux()
+	RegisterRepositories(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{"secret": {InstallationID: 10, RepositoryIDs: ids}})), service, 128, 3, 256<<10)
+
+	var names []string
+	cursor := ""
+	for page := 0; ; page++ {
+		path := "/v1/repositories"
+		if cursor != "" {
+			path += "?cursor=" + cursor
+		}
+		response := repositoryRequest(t, mux, http.MethodGet, path, "", "secret", "")
+		var output struct {
+			Repositories []api.RepositorySummary `json:"repositories"`
+			Truncated    bool                    `json:"truncated"`
+			NextCursor   string                  `json:"next_cursor"`
+		}
+		decodeRepositoryResponse(t, response, &output)
+		if response.Code != http.StatusOK {
+			t.Fatalf("page %d status=%d body=%s", page, response.Code, response.Body.String())
+		}
+		for _, item := range output.Repositories {
+			names = append(names, item.Name)
+		}
+		if !output.Truncated {
+			if output.NextCursor != "" || page != 2 || len(output.Repositories) != 1 {
+				t.Fatalf("final page=%d repositories=%d cursor=%q", page, len(output.Repositories), output.NextCursor)
+			}
+			if strings.Contains(response.Body.String(), "next_cursor") {
+				t.Fatalf("final page carries next_cursor: %s", response.Body.String())
+			}
+			break
+		}
+		if len(output.Repositories) != 3 || output.NextCursor == "" {
+			t.Fatalf("page %d repositories=%d cursor=%q", page, len(output.Repositories), output.NextCursor)
+		}
+		cursor = output.NextCursor
+	}
+	want := []string{"acme/repo-0", "acme/repo-2", "acme/repo-4", "acme/repo-6", "beta/repo-1", "beta/repo-3", "beta/repo-5"}
+	if !slices.Equal(names, want) {
+		t.Fatalf("paginated names = %v", names)
+	}
+
+	encode := func(value string) string { return base64.RawURLEncoding.EncodeToString([]byte(value)) }
+	for name, cursor := range map[string]string{
+		"empty":               "",
+		"not base64":          "not-base64",
+		"unsupported version": encode(`{"v":2,"name":"acme/repo-0"}`),
+		"missing name":        encode(`{"v":1}`),
+		"second JSON value":   encode(`{"v":1,"name":"acme/repo-0"} {}`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			response := repositoryRequest(t, mux, http.MethodGet, "/v1/repositories?cursor="+cursor, "", "secret", "")
+			if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"invalid_request"`) {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+	// A cursor past the end is an empty final page, never an error that reveals repository names.
+	response := repositoryRequest(t, mux, http.MethodGet, "/v1/repositories?cursor="+encode(`{"v":1,"name":"zzz/last"}`), "", "secret", "")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"repositories":[]`) || !strings.Contains(response.Body.String(), `"truncated":false`) {
+		t.Fatalf("past-end status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
