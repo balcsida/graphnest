@@ -65,7 +65,14 @@ func (s *Store) AdminOverview(ctx context.Context, installationID int64, reposit
 	return r, err
 }
 
-func (s *Store) AdminRepositories(ctx context.Context, installationID int64, repositoryIDs []int64, limit int) ([]admin.Repository, bool, error) {
+// AdminRepositories returns one page ordered by full name. The cursor is the
+// last full name of the previous page; the keyset comparison keeps pages
+// stable while repositories are added or renamed between requests.
+func (s *Store) AdminRepositories(ctx context.Context, installationID int64, repositoryIDs []int64, limit int, cursor *admin.RepositoryCursor) ([]admin.Repository, bool, error) {
+	var after *string
+	if cursor != nil {
+		after = &cursor.Name
+	}
 	rows, err := s.pool.Query(ctx, `select repositories.id,repositories.github_id,installations.github_id,
 		repositories.owner||'/'||repositories.name,repositories.default_branch,coalesce(repositories.desired_sha,''),
 		coalesce(repositories.indexed_sha,''),repositories.status,coalesce(repositories.error_code,''),
@@ -73,7 +80,8 @@ func (s *Store) AdminRepositories(ctx context.Context, installationID int64, rep
 		from repositories join installations on installations.id=repositories.installation_id
 		where ($1=0 and coalesce(cardinality($2::bigint[]),0)=0 and installations.status='active' and repositories.enabled and not repositories.archived
 			or ($1=0 or installations.github_id=$1) and repositories.github_id=any($2))
-		order by repositories.owner,repositories.name limit $3`, installationID, repositoryIDs, limit+1)
+		and ($4::text is null or repositories.owner||'/'||repositories.name > $4)
+		order by repositories.owner||'/'||repositories.name limit $3`, installationID, repositoryIDs, limit+1, after)
 	if err != nil {
 		return nil, false, err
 	}

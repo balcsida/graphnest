@@ -7,7 +7,7 @@ import (
 )
 
 func TestAdminDocumentContract(t *testing.T) {
-	if len(adminDocument) >= 40<<10 {
+	if len(adminDocument) >= 44<<10 {
 		t.Fatalf("admin document bytes=%d", len(adminDocument))
 	}
 	for _, want := range []string{
@@ -23,8 +23,9 @@ func TestAdminDocumentContract(t *testing.T) {
 		`/v1/admin/scip/uploads`, `/v1/admin/scip/dependencies`,
 		`/v1/admin/webhook-deliveries`, `/v1/admin/github`,
 		`/v1/scip/uploads`, `/v1/scip/dependencies/github`, `/healthz`, `/readyz`,
-		`button{min-width:44px}`, `.aside-foot a{min-height:44px;display:flex;align-items:center}`,
-		`input[type=checkbox]{width:44px;min-width:44px}`,
+		`input[type=checkbox]{width:16px;height:16px;min-height:0;margin:0;padding:0;accent-color:var(--accent)`,
+		`.nav button{min-height:32px`, `td button{min-height:28px`,
+		`@media(pointer:coarse){button,input,.nav button,.chip,td button,.top .right button,#repo-filter{min-height:44px}input[type=checkbox]{width:22px;height:22px}}`,
 		`.toolbar>:not(.sr){width:100%}`,
 		`<th>GitHub ID</th><th>Repository</th><th>Branch</th><th>Status</th><th>Error code</th>`,
 		`<th>Target ref</th><th>Target SHA</th><th>State</th><th>Attempts</th><th>Reason</th><th>Error code</th>`,

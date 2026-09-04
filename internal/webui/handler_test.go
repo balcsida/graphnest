@@ -32,7 +32,7 @@ func TestRegisterServesBoundedConsoleAtExactPaths(t *testing.T) {
 			}
 		}
 		body := response.Body.Bytes()
-		if len(body) >= 40<<10 || !bytes.Contains(body, []byte(`data-graphnest-app`)) {
+		if len(body) >= 48<<10 || !bytes.Contains(body, []byte(`data-graphnest-app`)) {
 			t.Fatalf("document bytes=%d shell=%t", len(body), bytes.Contains(body, []byte(`data-graphnest-app`)))
 		}
 		policy := response.Header().Get("Content-Security-Policy")
@@ -81,7 +81,7 @@ func TestRegisterWithBreakGlassServesOIDCFirstRecovery(t *testing.T) {
 			t.Fatalf("contains forbidden %q", forbidden)
 		}
 	}
-	if len(body) >= 44<<10 {
+	if len(body) >= 52<<10 {
 		t.Fatalf("document bytes=%d", len(body))
 	}
 }

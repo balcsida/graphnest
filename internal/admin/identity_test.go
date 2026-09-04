@@ -269,7 +269,7 @@ func (store *identityStore) RevokeAdminUserCredentialsAudited(ctx context.Contex
 func (*identityStore) AdminOverview(context.Context, int64, []int64) (Overview, error) {
 	return Overview{}, nil
 }
-func (*identityStore) AdminRepositories(context.Context, int64, []int64, int) ([]Repository, bool, error) {
+func (*identityStore) AdminRepositories(context.Context, int64, []int64, int, *RepositoryCursor) ([]Repository, bool, error) {
 	return nil, false, nil
 }
 func (*identityStore) AdminJobs(context.Context, int64, []int64, int, *JobCursor) ([]Job, bool, error) {

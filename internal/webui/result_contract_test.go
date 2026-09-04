@@ -179,7 +179,7 @@ func TestAuthenticatedHeaderHasAccessibleAdminNavigation(t *testing.T) {
 func TestConsoleBoundsLongRepositoryLabels(t *testing.T) {
 	for _, want := range []string{
 		`width:min(300px,calc(100vw - 40px))`,
-		`fieldset label{display:flex;gap:8px;align-items:center;min-width:0;min-height:44px;overflow-wrap:anywhere}`,
+		`fieldset label{display:flex;gap:8px;align-items:center;min-width:0;min-height:28px;padding:0 10px;overflow-wrap:anywhere;font-size:13px}`,
 		`.repository-group>h2{margin:0;min-width:0;overflow-wrap:anywhere`,
 	} {
 		if !bytes.Contains(document, []byte(want)) {

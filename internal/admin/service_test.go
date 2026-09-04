@@ -226,7 +226,7 @@ func (store *fakeStore) ReplaceAdminGroupAccessAudited(ctx context.Context, acto
 func (store *fakeStore) RevokeAdminUserCredentialsAudited(ctx context.Context, userID int64, _ audit.Event) error {
 	return store.RevokeAdminUserCredentials(ctx, userID)
 }
-func (*fakeStore) AdminRepositories(context.Context, int64, []int64, int) ([]Repository, bool, error) {
+func (*fakeStore) AdminRepositories(context.Context, int64, []int64, int, *RepositoryCursor) ([]Repository, bool, error) {
 	return nil, false, nil
 }
 func (store *fakeStore) AdminJobs(_ context.Context, _ int64, _ []int64, limit int, cursor *JobCursor) ([]Job, bool, error) {
