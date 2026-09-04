@@ -39,13 +39,13 @@ const (
 
 // Audit operations recorded by the authorization server.
 const (
-	OperationClientRegistered = "oauth_client_registered"
-	OperationConsentGranted   = "oauth_consent_granted"
-	OperationConsentDenied    = "oauth_consent_denied"
-	OperationGrantCreated     = "oauth_grant_created"
-	OperationGrantRefreshed   = "oauth_grant_refreshed"
-	OperationGrantRevoked     = "oauth_grant_revoked"
-	OperationGrantReplay      = "oauth_grant_reuse_detected"
+	OperationClientRegistered = audit.OperationOAuthClientRegistered
+	OperationConsentGranted   = audit.OperationOAuthConsentGranted
+	OperationConsentDenied    = audit.OperationOAuthConsentDenied
+	OperationGrantCreated     = audit.OperationOAuthGrantCreated
+	OperationGrantRefreshed   = audit.OperationOAuthGrantRefreshed
+	OperationGrantRevoked     = audit.OperationOAuthGrantRevoked
+	OperationGrantReplay      = audit.OperationOAuthGrantReplay
 )
 
 // SessionAuthenticator resolves the browser session cookie to a principal.

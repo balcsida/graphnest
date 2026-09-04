@@ -27,6 +27,24 @@ func TestEventAcceptsOAuthAuthentication(t *testing.T) {
 	}
 }
 
+func TestEventAcceptsOAuthAuthorizationServerEvents(t *testing.T) {
+	for _, event := range []Event{
+		{ActorType: "anonymous", TargetType: "oauth_client", Operation: "oauth_client_registered", Outcome: "success"},
+		{ActorType: "user", TargetType: "oauth_client", AuthenticationMethod: "oauth", Operation: "oauth_consent_granted", Outcome: "success"},
+		{ActorType: "user", TargetType: "oauth_client", AuthenticationMethod: "oidc", Operation: "oauth_consent_denied", Outcome: "denied"},
+		{ActorType: "user", TargetType: "oauth_grant", AuthenticationMethod: "oauth_token", Operation: "oauth_grant_created", Outcome: "success"},
+		{ActorType: "user", TargetType: "oauth_grant", AuthenticationMethod: "oauth_token", Operation: "oauth_grant_refreshed", Outcome: "success"},
+		{ActorType: "anonymous", TargetType: "oauth_client", Operation: "oauth_grant_revoked", Outcome: "success"},
+		{ActorType: "anonymous", TargetType: "oauth_client", AuthenticationMethod: "oauth_token", Operation: "oauth_grant_reuse_detected", Outcome: "denied"},
+	} {
+		t.Run(event.Operation, func(t *testing.T) {
+			if _, err := NewEvent(event); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestRequestIDContextRejectsUnboundedValues(t *testing.T) {
 	ctx := WithRequestID(t.Context(), "request-1")
 	if got := RequestID(ctx); got != "request-1" {
