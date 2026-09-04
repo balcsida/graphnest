@@ -16,7 +16,7 @@ services:
 
   zoekt-index:
     profiles: [fixture]
-    image: ghcr.io/sourcegraph/zoekt@sha256:6a763987f42a75a79ca0722433367dfaecda72dffe6dbde0e217ac1c7f01723c
+    image: ghcr.io/sourcegraph/zoekt@sha256:8fd1bec6553e5039f0a52ae6c3c3980bf734e5b105b5171e2aed104595b067aa
     platform: linux/amd64
     entrypoint: ["/bin/sh", "-ec"]
     command:
@@ -37,7 +37,7 @@ services:
 
   zoekt:
     profiles: [fixture]
-    image: ghcr.io/sourcegraph/zoekt@sha256:6a763987f42a75a79ca0722433367dfaecda72dffe6dbde0e217ac1c7f01723c
+    image: ghcr.io/sourcegraph/zoekt@sha256:8fd1bec6553e5039f0a52ae6c3c3980bf734e5b105b5171e2aed104595b067aa
     platform: linux/amd64
     entrypoint: ["zoekt-webserver"]
     command: ["-index", "/data/index", "-listen", ":6070", "-rpc", "-html=false"]
@@ -54,7 +54,7 @@ services:
 
   zoekt-durable:
     profiles: [durable]
-    image: ghcr.io/sourcegraph/zoekt@sha256:6a763987f42a75a79ca0722433367dfaecda72dffe6dbde0e217ac1c7f01723c
+    image: ghcr.io/sourcegraph/zoekt@sha256:8fd1bec6553e5039f0a52ae6c3c3980bf734e5b105b5171e2aed104595b067aa
     platform: linux/amd64
     entrypoint: ["zoekt-webserver"]
     command: ["-index", "/data/index", "-listen", ":6070", "-rpc", "-html=false"]
