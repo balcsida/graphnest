@@ -253,19 +253,37 @@ func isLoopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// redirectMatches compares a requested redirect with a registered one. For
-// loopback URIs the port may differ because clients bind an ephemeral port
-// per run (RFC 8252 §7.3); everything else must match exactly.
-func redirectMatches(registered, requested string) bool {
+// resolveRedirect matches a requested redirect against a registered one and
+// returns the URI the browser will actually be sent to. That URI is rebuilt
+// from the *registered* value: only the port is taken from the request, and
+// only for loopback clients, which bind an ephemeral port per run (RFC 8252
+// §7.3). Nothing else user-supplied ever becomes a redirect target.
+func resolveRedirect(registered, requested string) (string, bool) {
 	if registered == requested {
-		return true
+		return registered, true
 	}
 	a, errA := url.Parse(registered)
 	b, errB := url.Parse(requested)
 	if errA != nil || errB != nil || a.Scheme != "http" || b.Scheme != "http" || !isLoopbackHost(a.Hostname()) || !isLoopbackHost(b.Hostname()) {
-		return false
+		return "", false
 	}
-	return a.Hostname() == b.Hostname() && a.Path == b.Path && a.RawQuery == b.RawQuery
+	if a.Hostname() != b.Hostname() || a.Path != b.Path || a.RawQuery != b.RawQuery {
+		return "", false
+	}
+	port, err := strconv.Atoi(b.Port())
+	if err != nil || port < 1 || port > 65535 {
+		return "", false
+	}
+	resolved := *a
+	resolved.Host = net.JoinHostPort(a.Hostname(), strconv.Itoa(port))
+	return resolved.String(), true
+}
+
+// redirectMatches reports whether a requested redirect is acceptable for a
+// registration; see resolveRedirect for the URI that is actually used.
+func redirectMatches(registered, requested string) bool {
+	_, ok := resolveRedirect(registered, requested)
+	return ok
 }
 
 func sanitizeClientName(name string) string {
@@ -311,9 +329,15 @@ func (server *Server) startAuthorization(writer http.ResponseWriter, request *ht
 		server.authorizeErrorPage(writer, "Unknown client. Register the client first.")
 		return
 	}
-	redirect, ok := single(query, "redirect_uri")
-	if !ok || !anyRedirectMatches(client.RedirectURIs, redirect) {
-		// Never redirect to an unregistered URI (RFC 6749 §4.1.2.1).
+	requestedRedirect, ok := single(query, "redirect_uri")
+	if !ok {
+		server.authorizeErrorPage(writer, "The authorization request is missing a redirect_uri.")
+		return
+	}
+	// Never redirect to an unregistered URI (RFC 6749 §4.1.2.1). From here on
+	// `redirect` is derived from the registration, not from the request.
+	redirect, ok := registeredRedirect(client.RedirectURIs, requestedRedirect)
+	if !ok {
 		server.authorizeErrorPage(writer, "The redirect_uri does not match the client registration.")
 		return
 	}
@@ -528,7 +552,7 @@ func (server *Server) exchangeCode(writer http.ResponseWriter, request *http.Req
 		writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "authorization code is invalid, expired or already used")
 		return
 	}
-	if pending.ClientID != clientID || (redirect != "" && redirect != pending.RedirectURI) || !verifyPKCE(verifier, pending.CodeChallenge) {
+	if pending.ClientID != clientID || (redirect != "" && !redirectMatches(pending.RedirectURI, redirect)) || !verifyPKCE(verifier, pending.CodeChallenge) {
 		writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "authorization code does not match this client")
 		return
 	}
@@ -731,13 +755,15 @@ func (server *Server) record(ctx context.Context, event audit.Event) {
 	_ = server.Audit.Record(ctx, event)
 }
 
-func anyRedirectMatches(registered []string, requested string) bool {
+// registeredRedirect resolves the request's redirect_uri against every
+// registered URI and returns the registration-derived target.
+func registeredRedirect(registered []string, requested string) (string, bool) {
 	for _, candidate := range registered {
-		if redirectMatches(candidate, requested) {
-			return true
+		if resolved, ok := resolveRedirect(candidate, requested); ok {
+			return resolved, true
 		}
 	}
-	return false
+	return "", false
 }
 
 func single(values url.Values, key string) (string, bool) {

@@ -261,14 +261,13 @@ var sessionTokenValue = base64.RawURLEncoding.EncodeToString([]byte(strings.Repe
 const origin = "https://graphnest.example"
 
 type harness struct {
-	server  *Server
-	store   *memoryStore
-	audit   *recordingAudit
-	github  *githubStub
-	mux     *http.ServeMux
-	clock   time.Time
-	sealer  *Sealer
-	seedKey []byte
+	server *Server
+	store  *memoryStore
+	audit  *recordingAudit
+	github *githubStub
+	mux    *http.ServeMux
+	clock  time.Time
+	sealer *Sealer
 }
 
 func newHarness(t *testing.T) *harness {
@@ -863,5 +862,25 @@ func TestProviderTokensFollowTheFlowAndExpire(t *testing.T) {
 	tokens.Transfer(sessionTokenValue, code)
 	if _, ok := tokens.TakeForCode(code); ok {
 		t.Fatal("expired deposits must not transfer")
+	}
+}
+
+func TestResolveRedirectRebuildsTargetFromRegistration(t *testing.T) {
+	cases := []struct {
+		registered, requested, want string
+	}{
+		{"http://127.0.0.1:5000/cb", "http://127.0.0.1:61234/cb", "http://127.0.0.1:61234/cb"},
+		{"http://localhost:5000/cb?x=1", "http://localhost:7/cb?x=1", "http://localhost:7/cb?x=1"},
+		{"https://ide.example.com/cb", "https://ide.example.com/cb", "https://ide.example.com/cb"},
+		// A userinfo or fragment smuggled into an otherwise matching loopback URI never survives.
+		{"http://127.0.0.1:5000/cb", "http://evil@127.0.0.1:5000/cb", "http://127.0.0.1:5000/cb"},
+		{"http://127.0.0.1:5000/cb", "http://127.0.0.1:70000/cb", ""},
+		{"http://127.0.0.1:5000/cb", "http://127.0.0.1/cb", ""},
+	}
+	for _, tc := range cases {
+		got, ok := resolveRedirect(tc.registered, tc.requested)
+		if ok != (tc.want != "") || got != tc.want {
+			t.Errorf("resolveRedirect(%q, %q)=%q,%v want %q", tc.registered, tc.requested, got, ok, tc.want)
+		}
 	}
 }
