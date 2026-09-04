@@ -568,6 +568,16 @@ func (server *Server) exchangeCode(writer http.ResponseWriter, request *http.Req
 		writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "authorization code does not match this client")
 		return
 	}
+	var githubToken string
+	if server.GitHub != nil {
+		if server.GitHubTokens != nil && server.Sealer != nil {
+			githubToken, _ = server.GitHubTokens.TakeForCode(codeHash)
+		}
+		if githubToken == "" {
+			writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "GitHub sign-in expired or reached another server; start authorization again")
+			return
+		}
+	}
 	access, accessHash, err := newSecret(server.Rand, AccessTokenPrefix)
 	if err != nil {
 		writeOAuthError(writer, http.StatusInternalServerError, "server_error", "could not issue tokens")
@@ -588,11 +598,17 @@ func (server *Server) exchangeCode(writer http.ResponseWriter, request *http.Req
 		writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "could not issue tokens")
 		return
 	}
-	if server.GitHubTokens != nil && server.Sealer != nil {
-		if githubToken, ok := server.GitHubTokens.TakeForCode(codeHash); ok {
-			if ciphertext, err := server.Sealer.Seal(server.Rand, grantID, githubToken); err == nil {
-				_ = server.Store.UpdateOAuthGrantGitHubToken(request.Context(), grantID, ciphertext)
-			}
+	if githubToken != "" {
+		ciphertext, err := server.Sealer.Seal(server.Rand, grantID, githubToken)
+		if err == nil {
+			err = server.Store.UpdateOAuthGrantGitHubToken(request.Context(), grantID, ciphertext)
+		}
+		if err != nil {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), syncTimeout)
+			_ = server.Store.RevokeOAuthGrant(cleanupCtx, grantID)
+			cancel()
+			writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "could not secure GitHub credentials; start authorization again")
+			return
 		}
 	}
 	server.record(request.Context(), audit.Event{ActorType: "user", ActorID: strconv.FormatInt(pending.UserID, 10), TargetType: "oauth_grant", TargetID: strconv.FormatInt(grantID, 10), AuthenticationMethod: authn.ProviderOAuthToken, Operation: OperationGrantCreated, Outcome: "success"})
