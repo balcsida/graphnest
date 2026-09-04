@@ -192,3 +192,24 @@ func TestDelegateRequiresCeilingWithinGrantAndShortExpiry(t *testing.T) {
 		t.Fatalf("repository outside the caller's ceiling err=%v", err)
 	}
 }
+
+// MCP OAuth access tokens act as the user but must never mint or manage
+// long-lived credentials: a leaked hour-long token stays an hour-long token.
+func TestOAuthAccessTokensCannotManageCredentials(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	s := &Service{Manager: authn.TokenManager{Store: &storeStub{}, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+	principal := authn.Principal{Subject: "11", Method: authn.ProviderOAuthToken, Administrator: true, RepositoryIDs: []int64{101}}
+	expires := now.Add(15 * time.Minute)
+	if _, _, err := s.CreateToken(t.Context(), principal, &expires, []int64{101}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("CreateToken err=%v", err)
+	}
+	if _, _, err := s.Delegate(t.Context(), principal, &expires, []int64{101}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("Delegate err=%v", err)
+	}
+	if _, err := s.Tokens(t.Context(), principal); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("Tokens err=%v", err)
+	}
+	if err := s.RevokeToken(t.Context(), principal, 1); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("RevokeToken err=%v", err)
+	}
+}
