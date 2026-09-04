@@ -58,6 +58,12 @@ data:
   GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC: "true"
   {{- end }}
   {{- end }}
+  {{- if .Values.server.sso.mcpOAuth.enabled }}
+  GRAPHNEST_MCP_OAUTH: "true"
+  {{- if .Values.secrets.mcpOAuth.name }}
+  GRAPHNEST_MCP_OAUTH_KEY_FILE: /var/run/secrets/graphnest/mcp-oauth/sealing-key
+  {{- end }}
+  {{- end }}
   {{- if .Values.server.scim.enabled }}
   GRAPHNEST_SCIM_TOKEN_FILE: /var/run/secrets/graphnest/scim/token
   {{- end }}
