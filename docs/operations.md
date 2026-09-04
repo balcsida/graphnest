@@ -257,38 +257,58 @@ that and `/.well-known/oauth-authorization-server`, registers itself at
 `POST /oauth/register` (public clients only, PKCE S256 mandatory, loopback
 `http://127.0.0.1:<any port>` or `https://` redirect URIs), and opens
 `/oauth/authorize` in the browser. GraphNest signs the user in through the
-normal provider when needed and then renders a **consent page** naming the
+configured provider when needed and then renders a **consent page** naming the
 client and its loopback redirect; the user must click Allow. The code is
-exchanged at `POST /oauth/token` for an access token valid **one hour** and a
+exchanged at `POST /oauth/token` for an access token valid **up to one hour** and a
 refresh token; the grant itself expires **30 days** after consent and every
-refresh rotates both tokens. Presenting a rotated refresh token again more than
-30 seconds after rotation revokes the whole grant and records
+refresh rotates both tokens. `expires_in` reports the remaining token lifetime,
+capped by the grant expiry. Every consumed refresh-token hash is retained for
+the grant's lifetime. Presenting any consumed token again more than 30 seconds
+after its rotation revokes the whole grant and records
 `oauth_grant_reuse_detected`.
 
-Access tokens (`gno_…`) act as the user with the user's roles and GitHub-
-derived grants; they authenticate `/mcp` and read-only REST routes but cannot
-create or manage API tokens, so a leaked token stays an hour-long token. Users
-see and disconnect their clients under **API tokens → Connected MCP clients** in
-the console (`GET`/`DELETE /v1/account/oauth-grants`); administrators' "revoke
+Access tokens (`gno_…`) carry the user's repository read access, including
+GitHub-derived grants, without administrative privileges. They authenticate
+only `/mcp` and cannot create or manage credentials. Users see and disconnect
+clients under **Account → Connected MCP clients** at `/account`
+(`GET`/`DELETE /v1/account/oauth-grants`); administrators' "revoke
 credentials" also revokes grants. `scope` is accepted, persisted and echoed but
 not yet enforced, so finer scopes can be introduced later with a
 `WWW-Authenticate: Bearer error="insufficient_scope"` step-up rather than a
 migration.
 
-With `GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC`, each grant stores the user's GitHub
+With `GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC`, every new authorization requires a
+fresh GitHub sign-in, including users with an existing GraphNest session. Each
+grant stores the user's GitHub
 token encrypted with AES-256-GCM under `GRAPHNEST_MCP_OAUTH_KEY_FILE` (32
-bytes; required in that combination) and every refresh re-runs the GitHub
+bytes unchanged, with no trailing newline; required in that combination) and every refresh re-runs the GitHub
 installation query, so repository access removed on GitHub disappears from
 agents within the hour without a browser round-trip. GitHub rejecting the token
-drops it and keeps the last-synced grants; a GitHub outage changes nothing.
+drops it and keeps the last-synced grants; GitHub outages and rate limits leave
+the token and grants unchanged.
 Expired authorization requests, week-old dead grants and clients idle for 90
 days are swept by the periodic cleanup.
+
+PostgreSQL shares fixed one-minute request budgets across server replicas:
+registration allows 10 requests per source IP and 100 across the deployment;
+token exchange allows 60 per source and 1,000 across the deployment. Registration
+also has an atomic deployment-wide cap of 10,000 clients. Limits return HTTP 429;
+an unavailable limiter returns HTTP 503. Source limits use the socket peer IP,
+ignoring forwarded headers, so clients behind the same ingress proxy share a
+source budget. Idle-client cleanup releases registration capacity.
+
+Migration 022 revokes grants already rotated by earlier MCP OAuth builds,
+because their discarded token history cannot be recovered. Those clients must
+authorize again; unrotated grants remain valid.
 
 Not supported by design: confidential clients, `client_credentials`
 (services keep using API tokens and `POST /v1/admin/api-tokens` delegation),
 remembered consent, and client-ID metadata documents. The provider-token
-hand-off between login and code exchange is process-local, so multi-replica
-deployments must route a user's browser to one replica during authorization.
+hand-off is process-local: the GitHub callback, consent POST, and the MCP client's
+code exchange must reach the same replica. Browser-cookie affinity alone does
+not cover the client's exchange. Use one server replica or route the entire
+flow consistently. A missing hand-off fails code exchange and requires fresh
+authorization; it never issues an access-synced grant without GitHub credentials.
 
 ### GitHub.com smoke and negative procedure
 
