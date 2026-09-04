@@ -86,7 +86,7 @@ type OAuthRotation struct {
 	Grace           time.Duration
 }
 
-// OAuthRequestLimiter enforces shared registration and token request budgets.
+// OAuthRequestLimiter enforces shared registration, token and revocation budgets.
 type OAuthRequestLimiter interface {
 	AllowOAuthRequest(ctx context.Context, remoteAddr, endpoint string, now time.Time) (bool, error)
 }
@@ -120,8 +120,9 @@ type OAuthStore interface {
 	UpdateOAuthGrantGitHubToken(ctx context.Context, grantID int64, ciphertext []byte) error
 	RevokeOAuthGrant(ctx context.Context, grantID int64) error
 	// RevokeOAuthGrantByToken revokes the grant owning either token hash when
-	// it belongs to clientID; unknown tokens are not an error (RFC 7009).
-	RevokeOAuthGrantByToken(ctx context.Context, hash [32]byte, clientID string) error
+	// it belongs to clientID and reports whether a grant was newly revoked.
+	// Unknown tokens are not an error (RFC 7009).
+	RevokeOAuthGrantByToken(ctx context.Context, hash [32]byte, clientID string) (bool, error)
 	ListOAuthGrants(ctx context.Context, userID int64) ([]OAuthGrantMetadata, error)
 	RevokeUserOAuthGrant(ctx context.Context, userID, grantID int64) error
 	ReplaceGitHubGrants(ctx context.Context, userID int64, repositoryIDs []int64) error

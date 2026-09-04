@@ -17,7 +17,7 @@ func (s *Store) AllowOAuthRequest(ctx context.Context, remoteAddr, endpoint stri
 	switch endpoint {
 	case "/oauth/register":
 		sourceLimit, globalLimit = 10, 100
-	case "/oauth/token":
+	case "/oauth/token", "/oauth/revoke":
 		sourceLimit, globalLimit = 60, 1000
 	default:
 		return false, errors.New("oauth: unsupported rate-limited endpoint")

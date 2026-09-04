@@ -196,20 +196,20 @@ func (m *memoryStore) RevokeOAuthGrant(_ context.Context, grantID int64) error {
 	return nil
 }
 
-func (m *memoryStore) RevokeOAuthGrantByToken(_ context.Context, hash [32]byte, clientID string) error {
+func (m *memoryStore) RevokeOAuthGrantByToken(_ context.Context, hash [32]byte, clientID string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	revoked := false
 	for _, grant := range m.grants {
 		_, consumed := m.consumedRefresh[grant.ID][hash]
-		if grant.ClientID == clientID && (grant.AccessHash == hash || grant.RefreshHash == hash || consumed) {
-			if grant.RevokedAt == nil {
-				now := time.Now()
-				grant.RevokedAt = &now
-			}
+		if grant.RevokedAt == nil && grant.ClientID == clientID && (grant.AccessHash == hash || grant.RefreshHash == hash || consumed) {
+			now := time.Now()
+			grant.RevokedAt = &now
 			grant.GitHubTokenCiphertext = nil
+			revoked = true
 		}
 	}
-	return nil
+	return revoked, nil
 }
 
 func (m *memoryStore) ListOAuthGrants(context.Context, int64) ([]authn.OAuthGrantMetadata, error) {

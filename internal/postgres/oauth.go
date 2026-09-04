@@ -201,11 +201,14 @@ func (s *Store) RevokeOAuthGrant(ctx context.Context, grantID int64) error {
 	return err
 }
 
-func (s *Store) RevokeOAuthGrantByToken(ctx context.Context, hash [32]byte, clientID string) error {
-	_, err := s.pool.Exec(ctx, `update oauth_grants set revoked_at=coalesce(revoked_at, now()), github_token_ct=null
-		where client_id=$2 and (access_hash=$1 or refresh_hash=$1
+func (s *Store) RevokeOAuthGrantByToken(ctx context.Context, hash [32]byte, clientID string) (bool, error) {
+	result, err := s.pool.Exec(ctx, `update oauth_grants set revoked_at=now(), github_token_ct=null
+		where revoked_at is null and client_id=$2 and (access_hash=$1 or refresh_hash=$1
 		or exists(select 1 from oauth_refresh_tokens where grant_id=oauth_grants.id and oauth_refresh_tokens.refresh_hash=$1))`, hash[:], clientID)
-	return err
+	if err != nil {
+		return false, err
+	}
+	return result.RowsAffected() > 0, nil
 }
 
 func (s *Store) ListOAuthGrants(ctx context.Context, userID int64) ([]authn.OAuthGrantMetadata, error) {

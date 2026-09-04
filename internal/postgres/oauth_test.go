@@ -174,14 +174,27 @@ func TestOAuthGrantsAreListedRevokedAndSwept(t *testing.T) {
 	if err := store.RevokeUserOAuthGrant(t.Context(), other, grantID); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("another user must not revoke the grant: %v", err)
 	}
-	if err := store.RevokeOAuthGrantByToken(t.Context(), [32]byte{51}, "gnc_someone-else"); err != nil {
-		t.Fatal(err)
+	if revoked, err := store.RevokeOAuthGrantByToken(t.Context(), [32]byte{99}, client.ID); err != nil || revoked {
+		t.Fatalf("unknown token: revoked=%v err=%v", revoked, err)
+	}
+	if revoked, err := store.RevokeOAuthGrantByToken(t.Context(), [32]byte{51}, "gnc_someone-else"); err != nil || revoked {
+		t.Fatalf("wrong client: revoked=%v err=%v", revoked, err)
 	}
 	if _, err := store.OAuthPrincipal(t.Context(), [32]byte{50}, now); err != nil {
 		t.Fatalf("another client's revoke must not affect the grant: %v", err)
 	}
-	if err := store.RevokeOAuthGrantByToken(t.Context(), [32]byte{51}, client.ID); err != nil {
+	if revoked, err := store.RevokeOAuthGrantByToken(t.Context(), [32]byte{51}, client.ID); err != nil || !revoked {
+		t.Fatalf("new revocation: revoked=%v err=%v", revoked, err)
+	}
+	var before, after string
+	if err := store.pool.QueryRow(t.Context(), `select xmin::text from oauth_grants where id=$1`, grantID).Scan(&before); err != nil {
 		t.Fatal(err)
+	}
+	if revoked, err := store.RevokeOAuthGrantByToken(t.Context(), [32]byte{51}, client.ID); err != nil || revoked {
+		t.Fatalf("duplicate revocation: revoked=%v err=%v", revoked, err)
+	}
+	if err := store.pool.QueryRow(t.Context(), `select xmin::text from oauth_grants where id=$1`, grantID).Scan(&after); err != nil || before != after {
+		t.Fatalf("duplicate revocation rewrote the grant: before=%s after=%s err=%v", before, after, err)
 	}
 	if _, err := store.OAuthPrincipal(t.Context(), [32]byte{50}, now); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("revoked grant must not authenticate: %v", err)
