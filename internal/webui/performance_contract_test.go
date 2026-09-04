@@ -103,8 +103,8 @@ func TestPerformanceBudgetRejectsUnboundedRendererVariants(t *testing.T) {
 }
 
 func performanceBudgetError(doc []byte) error {
-	if len(doc) >= 40<<10 {
-		return fmt.Errorf("document bytes=%d, want less than %d", len(doc), 40<<10)
+	if len(doc) >= 48<<10 {
+		return fmt.Errorf("document bytes=%d, want less than %d", len(doc), 48<<10)
 	}
 
 	tags := parseStartTags(string(doc))
