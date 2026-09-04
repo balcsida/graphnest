@@ -28,6 +28,12 @@ type Spec struct {
 	Method, SuccessOperation, DeniedOperation                           string
 }
 
+// ProviderTokenSink receives the identity provider's user token for a login
+// that continues an MCP authorization, keyed by the browser session it created.
+type ProviderTokenSink interface {
+	StoreProviderToken(ctx context.Context, sessionToken, providerToken string)
+}
+
 type Provider struct {
 	Spec     Spec
 	Client   Client
@@ -37,9 +43,25 @@ type Provider struct {
 	Now      func() time.Time
 	Rand     io.Reader
 	Audit    audit.Recorder
+	// Tokens, when set, is handed the provider token of logins that return to
+	// the MCP authorization endpoint. Ordinary console logins never share it.
+	Tokens ProviderTokenSink
 }
 
 const maxCallbackValueLen = 2048
+
+// OAuthResumePath is the only non-root return target a login may carry: the
+// MCP authorization server's continuation after sign-in.
+const OAuthResumePath = "/oauth/authorize/resume"
+
+// returnTarget maps the login request's return_to onto the allow list.
+// Anything else, including repeated parameters, falls back to the console.
+func returnTarget(values []string) string {
+	if len(values) == 1 && values[0] == OAuthResumePath {
+		return OAuthResumePath
+	}
+	return "/"
+}
 
 func (provider *Provider) Metadata() sso.Metadata { return provider.Spec.Metadata }
 
@@ -70,7 +92,8 @@ func (provider *Provider) login(writer http.ResponseWriter, request *http.Reques
 	verifier := oauth2.GenerateVerifier()
 	flow := authn.LoginFlow{
 		StateHash: sha256.Sum256(stateRaw), BrowserHash: sha256.Sum256(browserRaw),
-		Provider: provider.Spec.FlowProvider, Nonce: nonce, CodeVerifier: verifier, ReturnTo: "/",
+		Provider: provider.Spec.FlowProvider, Nonce: nonce, CodeVerifier: verifier,
+		ReturnTo:  returnTarget(request.URL.Query()["return_to"]),
 		CreatedAt: now, ExpiresAt: expires,
 	}
 	if !provider.validSpec() || provider.Client == nil || provider.Store == nil || provider.LoginTTL <= 0 ||
@@ -150,8 +173,14 @@ func (provider *Provider) callback(writer http.ResponseWriter, request *http.Req
 		provider.callbackFail(request.Context(), writer, "error")
 		return
 	}
+	// The stored target is re-validated: the database is trusted for
+	// integrity, but a redirect target is worth a second look.
+	target := returnTarget([]string{flow.ReturnTo})
+	if target == OAuthResumePath && provider.Tokens != nil && identity.ProviderToken != "" {
+		provider.Tokens.StoreProviderToken(request.Context(), token, identity.ProviderToken)
+	}
 	http.SetCookie(writer, sso.SessionCookie(token, expires, provider.now()))
-	http.Redirect(writer, request, "/", http.StatusSeeOther)
+	http.Redirect(writer, request, target, http.StatusSeeOther)
 }
 
 func (provider *Provider) randomToken() (string, []byte, error) {
