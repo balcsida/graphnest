@@ -2,6 +2,7 @@ package githuboauth
 
 import (
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -380,4 +381,23 @@ func mustURL(t *testing.T, raw string) *url.URL {
 func serverCertificatePEM(t *testing.T, server *httptest.Server) []byte {
 	t.Helper()
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
+}
+
+func TestAccessibleRepositoriesReportsRejectedTokens(t *testing.T) {
+	fixture := newSyncFixture(t, 532, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v3/user/installations" {
+			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
+			return
+		}
+		http.NotFound(w, r)
+	})
+	_, err := fixture.client.AccessibleRepositories(t.Context(), "gho_stale")
+	var rejected TokenRejectedError
+	if !errors.As(err, &rejected) || rejected.Status != http.StatusUnauthorized || !rejected.Unauthorized() {
+		t.Fatalf("err=%v, want TokenRejectedError", err)
+	}
+	fixture.client.AccessSyncAppID = 0
+	if _, err := fixture.client.AccessibleRepositories(t.Context(), "gho_stale"); err == nil || errors.As(err, &rejected) {
+		t.Fatalf("without access sync err=%v, want a plain configuration error", err)
+	}
 }
