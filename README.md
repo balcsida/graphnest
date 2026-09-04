@@ -191,6 +191,15 @@ curl --fail-with-body -X POST \
 
 Uploads for any commit other than the repository's exact indexed SHA are rejected. Cross-repository navigation can use manually supplied package URLs or metadata refreshed from GitHub's dependency graph. The exact endpoints, limits, and response schemas are defined in the [OpenAPI contract](docs/openapi.yaml).
 
+A CI job should not hold a long-lived administrator token. Instead, a trusted broker that owns an administrator API token can delegate a narrower one per job with `POST /v1/admin/api-tokens`: the delegated token belongs to the same user, is restricted to a non-empty subset of the broker token's repository ceiling (typically the one repository being indexed), and must expire within one hour. Only administrator API tokens may delegate; browser sessions keep using `/v1/account/api-tokens`.
+
+```sh
+curl --fail-with-body -X POST "https://graphnest.example/v1/admin/api-tokens" \
+  -H "Authorization: Bearer $GRAPHNEST_BROKER_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"repository_ids":[101],"expires_at":"2026-08-01T00:15:00Z"}'
+```
+
 ## Durable mode
 
 Static fixture mode is intentionally small. Durable mode adds PostgreSQL-backed repository state, GitHub App reconciliation, verified webhook ingestion, queued indexing, exact-SHA file reads, identity management, and graph analysis.

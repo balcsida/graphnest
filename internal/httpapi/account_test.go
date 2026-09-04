@@ -148,3 +148,67 @@ func TestAccountTokenRouteAllowsOmittedOptionalControls(t *testing.T) {
 		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
 	}
 }
+
+func TestAdminDelegatedTokenRouteMintsNarrowedToken(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	service := &account.Service{Manager: authn.TokenManager{Store: &accountStoreStub{}, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+	mux := http.NewServeMux()
+	principals := map[string]authn.Principal{
+		"admin-token": {Subject: "11", Method: "api_token", Administrator: true, RepositoryIDs: []int64{101, 102}},
+		"user-token":  {Subject: "12", Method: "api_token", RepositoryIDs: []int64{101}},
+		"admin-oidc":  {Subject: "11", Method: "oidc", Administrator: true, RepositoryIDs: []int64{101}},
+	}
+	RegisterAccount(mux, authn.RequestAuthenticator{Bearer: authn.NewStatic(principals)}, service, 1024, 4096)
+	call := func(token, body string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/v1/admin/api-tokens", strings.NewReader(body))
+		request.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, request)
+		return response
+	}
+
+	response := call("admin-token", `{"expires_at":"2026-08-01T00:15:00Z","repository_ids":[101]}`)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var created struct {
+		Token         string  `json:"token"`
+		RepositoryIDs []int64 `json:"repository_ids"`
+		ExpiresAt     string  `json:"expires_at"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(created.Token, "gnp_") || len(created.RepositoryIDs) != 1 || created.RepositoryIDs[0] != 101 || created.ExpiresAt != "2026-08-01T00:15:00Z" {
+		t.Fatalf("created=%+v", created)
+	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control=%q: a secret-bearing response must not be cached", response.Header().Get("Cache-Control"))
+	}
+
+	for name, tc := range map[string]struct {
+		token, body string
+		want        int
+	}{
+		"ordinary token":        {"user-token", `{"expires_at":"2026-08-01T00:15:00Z","repository_ids":[101]}`, http.StatusForbidden},
+		"interactive admin":     {"admin-oidc", `{"expires_at":"2026-08-01T00:15:00Z","repository_ids":[101]}`, http.StatusForbidden},
+		"outside ceiling":       {"admin-token", `{"expires_at":"2026-08-01T00:15:00Z","repository_ids":[999]}`, http.StatusForbidden},
+		"missing expiry":        {"admin-token", `{"repository_ids":[101]}`, http.StatusBadRequest},
+		"expiry beyond an hour": {"admin-token", `{"expires_at":"2026-08-01T01:00:01Z","repository_ids":[101]}`, http.StatusBadRequest},
+		"empty ceiling":         {"admin-token", `{"expires_at":"2026-08-01T00:15:00Z","repository_ids":[]}`, http.StatusBadRequest},
+		"unknown field":         {"admin-token", `{"expires_at":"2026-08-01T00:15:00Z","repository_ids":[101],"admin":true}`, http.StatusBadRequest},
+	} {
+		if response := call(tc.token, tc.body); response.Code != tc.want {
+			t.Errorf("%s: status=%d want=%d body=%s", name, response.Code, tc.want, response.Body.String())
+		}
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/admin/api-tokens", nil)
+	request.Header.Set("Authorization", "Bearer admin-token")
+	response = httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET status=%d", response.Code)
+	}
+}

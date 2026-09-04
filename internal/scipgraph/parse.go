@@ -60,11 +60,25 @@ func Parse(data []byte) (Upload, error) {
 	}
 	paths := make(map[string]struct{}, len(index.Documents))
 	for _, document := range index.Documents {
+		if outsideProject(document) {
+			// Indexers emit synthetic documents that live outside the checkout
+			// (scip-go writes generated test mains under the Go build cache).
+			// They cannot be read back from the repository, so skip them
+			// rather than reject an otherwise valid index.
+			continue
+		}
 		if !validDocument(document, paths) {
 			return Upload{}, ErrInvalidIndex
 		}
 		paths[document.RelativePath] = struct{}{}
 
+		encoding := document.PositionEncoding
+		if encoding == scip.PositionEncoding_UnspecifiedPositionEncoding {
+			// scip-go, the reference Go indexer, leaves the encoding unset while
+			// producing UTF-8 code-unit offsets; SCIP's own tooling makes the
+			// same assumption.
+			encoding = scip.PositionEncoding_UTF8CodeUnitOffsetFromLineStart
+		}
 		for _, occurrence := range document.Occurrences {
 			sourceRange, ok := occurrence.SourceRange()
 			if !ok || sourceRange.Validate() != nil || !validSymbol(occurrence.Symbol) {
@@ -74,7 +88,7 @@ func Parse(data []byte) (Upload, error) {
 				Path: document.RelativePath, Symbol: occurrence.Symbol,
 				StartLine: sourceRange.Start.Line, StartCharacter: sourceRange.Start.Character,
 				EndLine: sourceRange.End.Line, EndCharacter: sourceRange.End.Character,
-				PositionEncoding: int32(document.PositionEncoding),
+				PositionEncoding: int32(encoding),
 				Roles:            occurrence.SymbolRoles, Local: scip.IsLocalSymbol(occurrence.Symbol),
 			})
 		}
@@ -288,12 +302,22 @@ func consumeWireVarints(data []byte, wireType protowire.Type) (elements, consume
 	return elements, consumed, true
 }
 
+// outsideProject reports whether a document's path escapes the project root.
+func outsideProject(document *scip.Document) bool {
+	if document == nil {
+		return false
+	}
+	clean := path.Clean(document.RelativePath)
+	return clean == ".." || strings.HasPrefix(clean, "../")
+}
+
 func validDocument(document *scip.Document, paths map[string]struct{}) bool {
 	if document == nil {
 		return false
 	}
 	switch document.PositionEncoding {
-	case scip.PositionEncoding_UTF8CodeUnitOffsetFromLineStart,
+	case scip.PositionEncoding_UnspecifiedPositionEncoding,
+		scip.PositionEncoding_UTF8CodeUnitOffsetFromLineStart,
 		scip.PositionEncoding_UTF16CodeUnitOffsetFromLineStart,
 		scip.PositionEncoding_UTF32CodeUnitOffsetFromLineStart:
 	default:
