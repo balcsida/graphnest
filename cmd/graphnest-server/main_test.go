@@ -36,6 +36,7 @@ import (
 	"github.com/balcsida/graphnest/internal/repository"
 	scimapi "github.com/balcsida/graphnest/internal/scim"
 	"github.com/balcsida/graphnest/internal/scipgraph"
+	"github.com/balcsida/graphnest/internal/sso/browserflow"
 	"github.com/balcsida/graphnest/internal/webhook"
 	"github.com/scip-code/scip/bindings/go/scip"
 	"google.golang.org/protobuf/proto"
@@ -44,7 +45,7 @@ import (
 func TestAdminRoutesRegisterOnlyWithDurableService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"admin": {Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}}})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}}
-	static := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	static := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	request := httptest.NewRequest(http.MethodGet, "/v1/admin/overview", nil)
 	request.Header.Set("Authorization", "Bearer admin")
 	response := httptest.NewRecorder()
@@ -54,7 +55,7 @@ func TestAdminRoutesRegisterOnlyWithDurableService(t *testing.T) {
 	}
 
 	durable := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil,
-		&admin.Service{Store: mainAdminStore{}}, nil, nil, nil, nil, nil)
+		&admin.Service{Store: mainAdminStore{}}, nil, nil, nil, nil, nil, nil)
 	response = httptest.NewRecorder()
 	durable.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
@@ -65,7 +66,7 @@ func TestAdminRoutesRegisterOnlyWithDurableService(t *testing.T) {
 func TestStaticHandlerHasNoBreakGlassSurface(t *testing.T) {
 	handler := newAPIHandler(
 		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}},
-		observability.New(), authn.RequestAuthenticator{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		observability.New(), authn.RequestAuthenticator{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	login := httptest.NewRecorder()
 	handler.ServeHTTP(login, httptest.NewRequest(http.MethodPost, "/auth/local", nil))
@@ -186,7 +187,7 @@ func TestAPITokensAuthenticateRESTAndMCPBearerOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}}, observability.New(), testRequestAuthenticator(manager), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}}, observability.New(), testRequestAuthenticator(manager), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	for _, test := range []struct {
 		name, path string
 		bearer     bool
@@ -227,7 +228,7 @@ func TestSCIMBearerIsIsolatedFromApplicationSurfaces(t *testing.T) {
 	handler := newAPIHandler(
 		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}},
 		observability.New(), testRequestAuthenticator(rest), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		&provisioning, &scimapi.Service{BaseURL: "https://graphnest.example", MaxResults: 10},
+		&provisioning, &scimapi.Service{BaseURL: "https://graphnest.example", MaxResults: 10}, nil,
 	)
 	for _, test := range []struct {
 		path, token string
@@ -258,8 +259,8 @@ func TestSCIMGuardAuthenticatesBeforeCanonicalRouting(t *testing.T) {
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}}
 	rest := testRequestAuthenticator(authn.NewStatic(map[string]authn.Principal{"rest": {Subject: "user"}}))
 	withSCIM := newAPIHandler(settings, observability.New(), rest, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		&provisioning, &scimapi.Service{BaseURL: "https://graphnest.example", MaxResults: 10})
-	withoutSCIM := newAPIHandler(settings, observability.New(), rest, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		&provisioning, &scimapi.Service{BaseURL: "https://graphnest.example", MaxResults: 10}, nil)
+	withoutSCIM := newAPIHandler(settings, observability.New(), rest, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	for _, path := range []string{
 		"/scim/v2//Users", "/scim/v2/../v1/auth/session", "/scim/v2/%2e%2e/v1/auth/session",
@@ -462,7 +463,7 @@ func TestServerDeadlinesIsolateSCIPUploads(t *testing.T) {
 		"admin": {Subject: "admin", Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}},
 	})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, SCIPMaxUploadBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}
-	handler := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, &scipgraph.Service{Store: store}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, &scipgraph.Service{Store: store}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	server := newHTTPServer("127.0.0.1:0", handler)
 	if server.ReadTimeout != 10*time.Second || server.WriteTimeout != 10*time.Second || server.ReadHeaderTimeout != 5*time.Second || server.IdleTimeout != time.Minute {
 		t.Fatalf("deadlines = read %s, write %s, header %s, idle %s", server.ReadTimeout, server.WriteTimeout, server.ReadHeaderTimeout, server.IdleTimeout)
@@ -820,7 +821,7 @@ func (stub *healthStub) Health(context.Context) error {
 
 func TestDurableRoutesKeepWebhookOutsideBearerAuthentication(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
-	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), testRequestAuthenticator(authenticator), nil, &repository.Service{Store: repositoryStoreStub{}}, nil, nil, nil, []byte("secret"), webhookProcessorStub{}, nil, nil, nil, nil, nil, nil)
+	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), testRequestAuthenticator(authenticator), nil, &repository.Service{Store: repositoryStoreStub{}}, nil, nil, nil, []byte("secret"), webhookProcessorStub{}, nil, nil, nil, nil, nil, nil, nil)
 
 	webhookResponse := httptest.NewRecorder()
 	handler.ServeHTTP(webhookResponse, httptest.NewRequest(http.MethodPost, "/webhooks/github", nil))
@@ -922,8 +923,8 @@ func TestStaticHandlerRegistersSystemRoutes(t *testing.T) {
 func TestSCIPRoutesRegisterOnlyWithDurableService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, SCIPMaxUploadBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}
-	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, &scipgraph.Service{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, &scipgraph.Service{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/scip/navigation", nil))
@@ -940,8 +941,8 @@ func TestSCIPRoutesRegisterOnlyWithDurableService(t *testing.T) {
 func TestGraphRoutesRegisterOnlyWithDurableService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	settings := config.Config{Limits: config.Limits{GraphMaxUploadBytes: 1024, MaxResponseBytes: 1024}}
-	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, &graphingest.Service{}, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, &graphingest.Service{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/graph/repositories/101/status", nil))
@@ -958,8 +959,8 @@ func TestGraphRoutesRegisterOnlyWithDurableService(t *testing.T) {
 func TestGraphQueryRoutesRegisterOnlyWithService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024}}
-	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, &graphservice.Service{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, &graphservice.Service{}, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/graph/context", nil))
@@ -977,7 +978,7 @@ func TestAPIHandlerMountsWebUIWithoutFallback(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	handler := newAPIHandler(
 		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}},
-		observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	for _, path := range []string{"/", "/index.html", "/admin"} {
 		response := httptest.NewRecorder()
@@ -1055,4 +1056,73 @@ func (reader *countingReader) Read(buffer []byte) (int, error) {
 	read, err := reader.Reader.Read(buffer)
 	reader.bytes += int64(read)
 	return read, err
+}
+
+// oauthCapableStore is the minimal SessionStore that also satisfies the OAuth
+// store, so newAuthRuntime can wire the MCP authorization server.
+type oauthCapableStore struct {
+	authn.SessionStore
+	authn.OAuthStore
+}
+
+func TestAuthRuntimeWiresMCPOAuth(t *testing.T) {
+	settings, endpoints, httpClient := authRuntimeSettings(t)
+	settings.SSO.OIDC.Enabled = false
+	settings.SSO.OAuth.GitHub.Enabled = true
+	settings.SSO.OAuth.GitHub.AccessSync = true
+	settings.GitHub.AppID = 532
+	settings.SSO.MCPOAuth.Enabled = true
+	keyFile := filepath.Join(t.TempDir(), "mcp-oauth-key")
+	if err := os.WriteFile(keyFile, []byte(strings.Repeat("k", 32)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings.SSO.MCPOAuth.KeyFile = keyFile
+	bearer := authn.NewStatic(map[string]authn.Principal{"gnp_static": {Subject: "api"}})
+
+	t.Run("store without OAuth support is rejected", func(t *testing.T) {
+		if _, err := newAuthRuntime(t.Context(), settings, nil, bearer, observability.New(), endpoints, httpClient); err == nil {
+			t.Fatal("nil store accepted for MCP OAuth")
+		}
+	})
+	t.Run("wired", func(t *testing.T) {
+		runtime, err := newAuthRuntime(t.Context(), settings, oauthCapableStore{}, bearer, observability.New(), endpoints, httpClient)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if runtime.mcpOAuth == nil || runtime.mcpOAuth.Origin != "https://graphnest.example" || runtime.mcpOAuth.Sealer == nil || runtime.mcpOAuth.GitHub == nil || runtime.mcpOAuth.GitHubTokens == nil {
+			t.Fatalf("mcpOAuth=%#v", runtime.mcpOAuth)
+		}
+		router, ok := runtime.requestAuth.Bearer.(authn.BearerRouter)
+		if !ok || router.APITokens != bearer || router.OAuth == nil {
+			t.Fatalf("bearer=%#v, want a router over API and OAuth tokens", runtime.requestAuth.Bearer)
+		}
+		var flow *browserflow.Provider
+		for _, provider := range runtime.providers {
+			if candidate, ok := provider.(*browserflow.Provider); ok && candidate.Spec.IdentityProvider == authn.ProviderOAuth {
+				flow = candidate
+			}
+		}
+		if flow == nil || flow.Tokens == nil {
+			t.Fatal("GitHub login does not hand tokens to the authorization server")
+		}
+	})
+	t.Run("bad key fails closed", func(t *testing.T) {
+		badKey := filepath.Join(t.TempDir(), "short")
+		if err := os.WriteFile(badKey, []byte("short"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		bad := settings
+		bad.SSO.MCPOAuth.KeyFile = badKey
+		if _, err := newAuthRuntime(t.Context(), bad, oauthCapableStore{}, bearer, observability.New(), endpoints, httpClient); err == nil {
+			t.Fatal("short key accepted")
+		}
+	})
+	t.Run("off leaves the bearer path alone", func(t *testing.T) {
+		off := settings
+		off.SSO.MCPOAuth.Enabled = false
+		runtime, err := newAuthRuntime(t.Context(), off, oauthCapableStore{}, bearer, observability.New(), endpoints, httpClient)
+		if err != nil || runtime.mcpOAuth != nil || runtime.requestAuth.Bearer != authn.Authenticator(bearer) {
+			t.Fatalf("runtime=%#v err=%v", runtime, err)
+		}
+	})
 }
