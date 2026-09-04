@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -240,7 +239,7 @@ func newAuthRuntime(ctx context.Context, settings config.Config, store authn.Ses
 			if err != nil {
 				return nil, fmt.Errorf("read MCP OAuth key: %w", err)
 			}
-			sealer, err := oauthas.NewSealer(bytes.TrimSpace(key))
+			sealer, err := oauthas.NewSealer(key)
 			if err != nil {
 				return nil, fmt.Errorf("MCP OAuth key: %w", err)
 			}
@@ -432,12 +431,12 @@ func durableAuthenticator(store authn.APITokenStore) authn.Authenticator {
 
 func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scipGraph *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker, providers []sso.Provider, sessions *authn.SessionManager, provisioning *authn.ProvisioningAuthenticator, scimService *scim.Service, mcpOAuth *oauthas.Server) http.Handler {
 	mux := http.NewServeMux()
-	mcpBearer := authenticator.Bearer
 	var challenge httpapi.BearerChallenge
+	mcpBearer := authenticator.Bearer
 	if mcpOAuth != nil {
 		mcpOAuth.Register(mux)
-		mcpBearer = authn.BearerRouter{APITokens: authenticator.Bearer, OAuth: authn.OAuthTokenAuthenticator{Store: mcpOAuth.Store}}
 		challenge = mcpOAuth.Challenge
+		mcpBearer = authn.BearerRouter{APITokens: authenticator.Bearer, OAuth: authn.OAuthTokenAuthenticator{Store: mcpOAuth.Store}}
 	}
 	fileReads := repositories != nil && repositories.GitHub != nil
 	httpapi.RegisterAuth(mux, true, settings.SSO.BreakGlass, fileReads, providers, authenticator, sessions, metrics)

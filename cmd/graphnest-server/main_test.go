@@ -33,9 +33,10 @@ import (
 	"github.com/balcsida/graphnest/internal/githubapp"
 	"github.com/balcsida/graphnest/internal/graphingest"
 	"github.com/balcsida/graphnest/internal/graphservice"
+	"github.com/balcsida/graphnest/internal/oauthas"
 	"github.com/balcsida/graphnest/internal/observability"
-	"github.com/balcsida/graphnest/internal/repository"
 	"github.com/balcsida/graphnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/repository"
 	scimapi "github.com/balcsida/graphnest/internal/scim"
 	"github.com/balcsida/graphnest/internal/scipgraph"
 	"github.com/balcsida/graphnest/internal/sso/browserflow"
@@ -1065,7 +1066,6 @@ func (reader *countingReader) Read(buffer []byte) (int, error) {
 type oauthCapableStore struct {
 	authn.SessionStore
 	authn.OAuthStore
-}
 	accessHash [32]byte
 }
 
@@ -1074,6 +1074,7 @@ func (store oauthCapableStore) OAuthPrincipal(_ context.Context, hash [32]byte, 
 		return authn.Principal{}, authn.ErrUnauthenticated
 	}
 	return authn.Principal{Subject: "11", Method: authn.ProviderOAuthToken}, nil
+}
 
 func TestAuthRuntimeWiresMCPOAuth(t *testing.T) {
 	settings, endpoints, httpClient := authRuntimeSettings(t)
@@ -1083,7 +1084,7 @@ func TestAuthRuntimeWiresMCPOAuth(t *testing.T) {
 	settings.GitHub.AppID = 532
 	settings.SSO.MCPOAuth.Enabled = true
 	keyFile := filepath.Join(t.TempDir(), "mcp-oauth-key")
-	if err := os.WriteFile(keyFile, []byte(strings.Repeat("k", 32)+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(keyFile, []byte(strings.Repeat("k", 32)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	settings.SSO.MCPOAuth.KeyFile = keyFile
@@ -1194,5 +1195,32 @@ func TestMCPOAuthBearerOnlyAuthenticatesMCP(t *testing.T) {
 				t.Fatalf("status=%d, want %d: %s", response.Code, test.want, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestMCPOAuthKeyPreservesBinaryWhitespace(t *testing.T) {
+	settings, endpoints, httpClient := authRuntimeSettings(t)
+	settings.SSO.OIDC.Enabled = false
+	settings.SSO.MCPOAuth.Enabled = true
+	settings.SSO.MCPOAuth.KeyFile = filepath.Join(t.TempDir(), "mcp-oauth-key")
+	key := []byte("\t " + strings.Repeat("k", 28) + "\r\n")
+	if err := os.WriteFile(settings.SSO.MCPOAuth.KeyFile, key, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := newAuthRuntime(t.Context(), settings, oauthCapableStore{}, nil, observability.New(), endpoints, httpClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealer, err := oauthas.NewSealer(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext, err := sealer.Seal(nil, 7, "provider-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plaintext, err := runtime.mcpOAuth.Sealer.Open(7, ciphertext)
+	if err != nil || plaintext != "provider-token" {
+		t.Fatalf("loaded key differs from file bytes: plaintext=%q err=%v", plaintext, err)
 	}
 }
