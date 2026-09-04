@@ -23,6 +23,7 @@ func TestConsoleInvalidatesCredentialScopedRepositoryState(t *testing.T) {
 		"function resetRepositories()",
 		"state.repositoryController.abort()",
 		"state.repositories=[]",
+		"state.repositoryCursor=null",
 		"$(\"repository-options\").replaceChildren()",
 		`$("repository-status").textContent=""`,
 		"$(\"all-repositories\").checked=true",
@@ -39,8 +40,14 @@ func TestConsoleRendersTruncatedAuthorizedRepositories(t *testing.T) {
 	for _, want := range []string{
 		`id="repository-status"`,
 		`if(!Array.isArray(response.repositories))return`,
-		`state.repositories=response.repositories`,
-		`$("repository-status").textContent=response.truncated?"Only the first authorized repositories are shown.":""`,
+		`state.repositories=state.repositories.concat(response.repositories.filter(`,
+		`state.repositoryCursor=response.truncated&&typeof response.next_cursor==="string"&&response.next_cursor?response.next_cursor:null`,
+		`"Showing the first "+state.repositories.length+" authorized repositories."`,
+		`$("repository-more").hidden=!state.repositoryCursor`,
+		`$("repository-view-more").hidden=!state.repositoryCursor`,
+		`function loadMoreRepositories(){if(!state.repositoryCursor||state.repositoryController)return;`,
+		`loadRepositories(state.repositoryCursor)`,
+		`"/v1/repositories"+(cursor?"?cursor="+encodeURIComponent(cursor):"")`,
 	} {
 		if !bytes.Contains(document, []byte(want)) {
 			t.Fatalf("console is missing truncated repository lifecycle %q", want)
