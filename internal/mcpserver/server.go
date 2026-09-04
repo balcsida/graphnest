@@ -75,13 +75,15 @@ type readFileInput struct {
 }
 
 type listInput struct {
-	Limit          int   `json:"limit,omitempty" jsonschema:"maximum repositories"`
-	MaxOutputBytes int64 `json:"max_output_bytes,omitempty" jsonschema:"maximum output bytes"`
+	Limit          int    `json:"limit,omitempty" jsonschema:"maximum repositories"`
+	MaxOutputBytes int64  `json:"max_output_bytes,omitempty" jsonschema:"maximum output bytes"`
+	Cursor         string `json:"cursor,omitempty" jsonschema:"next_cursor from a previous truncated call"`
 }
 
 type repositoryListOutput struct {
 	Repositories []api.RepositorySummary `json:"repositories"`
 	Truncated    bool                    `json:"truncated"`
+	NextCursor   string                  `json:"next_cursor,omitempty"`
 }
 
 func New(service *search.Service, repositoryServices ...*repository.Service) *mcp.Server {
@@ -148,13 +150,19 @@ func NewWithLimits(services Services, limits Limits) *mcp.Server {
 			"properties": map[string]any{
 				"limit":            positiveIntegerSchema("maximum repositories"),
 				"max_output_bytes": positiveIntegerSchema("maximum output bytes"),
+				"cursor":           map[string]any{"type": "string", "minLength": 1, "description": "next_cursor from a previous truncated call"},
 			},
 		},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input listInput) (*mcp.CallToolResult, repositoryListOutput, error) {
+		after, ok := httpapi.DecodeRepositoryCursor(input.Cursor)
+		if !ok {
+			return nil, repositoryListOutput{}, errors.New("cursor is invalid")
+		}
 		items, err := repositories.List(ctx, httpapi.PrincipalFromContext(ctx))
 		if err != nil {
 			return nil, repositoryListOutput{}, errors.New(httpapi.RepositoryErrorMessage(err))
 		}
+		items = httpapi.PageRepositoriesAfter(items, after)
 		if items == nil {
 			items = []api.RepositorySummary{}
 		}
@@ -220,11 +228,21 @@ func limitRepositoryList(items []api.RepositorySummary, input listInput, limits 
 		if index == maxItems {
 			break
 		}
+		// A candidate is sized exactly as it would be sent: the cursor is part
+		// of the envelope only while more repositories remain.
 		candidate := repositoryListOutput{Repositories: append(limited.Repositories, item), Truncated: index+1 < len(items)}
+		if candidate.Truncated {
+			candidate.NextCursor = httpapi.EncodeRepositoryCursor(item.Name)
+		}
 		if !fitsOutput(candidate, maxBytes) {
 			break
 		}
 		limited = candidate
+	}
+	if limited.Truncated && len(limited.Repositories) > 0 {
+		limited.NextCursor = httpapi.EncodeRepositoryCursor(limited.Repositories[len(limited.Repositories)-1].Name)
+	} else {
+		limited.NextCursor = ""
 	}
 	return limited, nil
 }
