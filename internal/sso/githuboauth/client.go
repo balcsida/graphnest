@@ -149,6 +149,8 @@ func (client *Client) Exchange(ctx context.Context, code, verifier, _ string) (a
 		}
 		identity.Login = user.Login
 		identity.AccessSync = &authn.AccessSync{RepositoryIDs: repositories}
+		// Kept only for MCP authorizations, which re-run this sync on refresh.
+		identity.ProviderToken = token.AccessToken
 	}
 	return identity, nil
 }

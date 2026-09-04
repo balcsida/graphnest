@@ -249,6 +249,9 @@ func TestExchangeWithAccessSyncCollectsInstallationRepositories(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if identity.ProviderToken != testToken {
+		t.Fatalf("access-sync identities must carry the provider token for MCP refresh, got %q", identity.ProviderToken)
+	}
 	if identity.Login != "ada" || identity.AccessSync == nil || fmt.Sprint(identity.AccessSync.RepositoryIDs) != "[101 102 103]" {
 		t.Fatalf("identity = %#v", identity)
 	}
@@ -271,7 +274,7 @@ func TestExchangeWithoutAccessSyncNeverListsInstallations(t *testing.T) {
 		}
 	})
 	identity, err := fixture.client.Exchange(t.Context(), testCode, "verifier", "")
-	if err != nil || identity.AccessSync != nil || identity.Login != "" {
+	if err != nil || identity.AccessSync != nil || identity.Login != "" || identity.ProviderToken != "" {
 		t.Fatalf("identity = %#v, error = %v", identity, err)
 	}
 }

@@ -476,3 +476,87 @@ func assertPrivateHeaders(t *testing.T, recorder *httptest.ResponseRecorder) {
 		t.Fatalf("privacy headers = %v", recorder.Header())
 	}
 }
+
+func TestLoginHonoursAllowListedReturnTo(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	newProvider := func(store *providerStore) *Provider {
+		return &Provider{
+			Spec:   oidcSpec,
+			Client: &providerClient{}, Store: store, LoginTTL: 10 * time.Minute, Now: func() time.Time { return now },
+			Rand: bytes.NewReader(bytes.Repeat([]byte{1}, 96)), Sessions: &authn.SessionManager{Store: store, TTL: time.Hour},
+		}
+	}
+	cases := map[string]struct {
+		query, want string
+	}{
+		"default":         {"", "/"},
+		"oauth resume":    {"?return_to=%2Foauth%2Fauthorize%2Fresume", "/oauth/authorize/resume"},
+		"open redirect":   {"?return_to=https%3A%2F%2Fevil.test", "/"},
+		"relative escape": {"?return_to=%2Fevil", "/"},
+		"repeated":        {"?return_to=%2Foauth%2Fauthorize%2Fresume&return_to=%2Foauth%2Fauthorize%2Fresume", "/"},
+	}
+	for name, tc := range cases {
+		store := &providerStore{}
+		mux := http.NewServeMux()
+		newProvider(store).Register(mux)
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/auth/oidc/login"+tc.query, nil))
+		if recorder.Code != http.StatusSeeOther || store.flow.ReturnTo != tc.want {
+			t.Errorf("%s: status=%d return_to=%q want %q", name, recorder.Code, store.flow.ReturnTo, tc.want)
+		}
+	}
+}
+
+func TestCallbackRedirectsToStoredReturnTo(t *testing.T) {
+	fixture := newCallbackFixture(t)
+	fixture.store.flow.ReturnTo = "/oauth/authorize/resume"
+	recorder := fixture.callback(t, "?state="+fixture.state+"&code=good", fixture.browser)
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/oauth/authorize/resume" {
+		t.Fatalf("response = %d %q", recorder.Code, recorder.Header().Get("Location"))
+	}
+	// A stored value outside the allow list (tampered database) falls back to /.
+	fixture = newCallbackFixture(t)
+	fixture.store.flow.ReturnTo = "https://evil.test"
+	recorder = fixture.callback(t, "?state="+fixture.state+"&code=good", fixture.browser)
+	if recorder.Header().Get("Location") != "/" {
+		t.Fatalf("tampered return_to followed: %q", recorder.Header().Get("Location"))
+	}
+}
+
+type capturingTokens struct {
+	sessionToken string
+	token        string
+}
+
+func (c *capturingTokens) StoreProviderToken(_ context.Context, sessionToken, providerToken string) {
+	c.sessionToken, c.token = sessionToken, providerToken
+}
+
+func TestCallbackHandsProviderTokenToSinkOnlyForOAuthResume(t *testing.T) {
+	for _, tc := range []struct {
+		returnTo string
+		want     string
+	}{{"/oauth/authorize/resume", "gho_secret"}, {"/", ""}} {
+		fixture := newCallbackFixture(t)
+		fixture.store.flow.ReturnTo = tc.returnTo
+		fixture.client.identity.ProviderToken = "gho_secret"
+		sink := &capturingTokens{}
+		fixture.provider.Tokens = sink
+		recorder := fixture.callback(t, "?state="+fixture.state+"&code=good", fixture.browser)
+		if recorder.Code != http.StatusSeeOther {
+			t.Fatalf("status=%d", recorder.Code)
+		}
+		sessionCookie := ""
+		for _, cookie := range recorder.Result().Cookies() {
+			if cookie.Name == authn.SessionCookieName {
+				sessionCookie = cookie.Value
+			}
+		}
+		if sink.token != tc.want || (tc.want != "" && (sink.sessionToken == "" || sink.sessionToken != sessionCookie)) {
+			t.Fatalf("return_to=%s: sink=%+v want token %q bound to the new session", tc.returnTo, sink, tc.want)
+		}
+		if strings.Contains(recorder.Header().Get("Set-Cookie")+recorder.Header().Get("Location"), "gho_secret") {
+			t.Fatal("provider token leaked to the browser")
+		}
+	}
+}
