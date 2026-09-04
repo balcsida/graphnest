@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/signal"
@@ -43,6 +46,7 @@ import (
 	"github.com/balcsida/graphnest/internal/webui"
 	"github.com/balcsida/graphnest/internal/zoekt"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/net/idna"
 )
 
 const (
@@ -185,7 +189,11 @@ func newAuthRuntime(ctx context.Context, settings config.Config, store authn.Ses
 		runtime.sessions.Audit = recorder
 	}
 	runtime.requestAuth.Session = runtime.sessions
-	runtime.requestAuth.PublicOrigin = settings.SSO.PublicURL.Scheme + "://" + settings.SSO.PublicURL.Host
+	publicOrigin, err := canonicalPublicOrigin(settings.SSO.PublicURL)
+	if err != nil {
+		return nil, err
+	}
+	runtime.requestAuth.PublicOrigin = publicOrigin
 	if settings.SSO.OIDC.Enabled {
 		secret, err := readBoundedRegularFile(settings.SSO.OIDC.ClientSecretFile, maxOIDCClientSecretBytes)
 		if err != nil {
@@ -260,6 +268,37 @@ func newAuthRuntime(ctx context.Context, settings config.Config, store authn.Ses
 		runtime.mcpOAuth = server
 	}
 	return runtime, nil
+}
+
+func canonicalPublicOrigin(publicURL *url.URL) (string, error) {
+	host := publicURL.Hostname()
+	if ip, err := netip.ParseAddr(host); err == nil {
+		host = ip.String()
+		if ip.Is4In6() {
+			// Browser origins use hexadecimal groups even for mapped IPv4.
+			raw := ip.As4()
+			host = fmt.Sprintf("::ffff:%x:%x", binary.BigEndian.Uint16(raw[:2]), binary.BigEndian.Uint16(raw[2:]))
+		}
+	} else {
+		host, err = idna.Lookup.ToASCII(host)
+		if err != nil {
+			return "", fmt.Errorf("public origin hostname: %w", err)
+		}
+	}
+	port := publicURL.Port()
+	if port != "" {
+		number, err := strconv.ParseUint(port, 10, 16)
+		if err != nil {
+			return "", fmt.Errorf("public origin port: %w", err)
+		}
+		port = strconv.FormatUint(number, 10)
+	}
+	if port != "" && port != "443" {
+		host = net.JoinHostPort(host, port)
+	} else if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	return (&url.URL{Scheme: publicURL.Scheme, Host: host}).String(), nil
 }
 
 // displayNameFor renders the consent page's account name from the directory;
