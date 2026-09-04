@@ -59,10 +59,12 @@ type GitHubAccess interface {
 	AccessibleRepositories(ctx context.Context, accessToken string) ([]int64, error)
 }
 
-// GitHubTokenSource hands the authorization server the GitHub token captured
-// by the login that completed a pending authorization request, exactly once.
+// GitHubTokenSource is the hand-off from the login that completed a pending
+// authorization to the code exchange: consent moves the identity provider's
+// token from the browser session to the authorization code, exchange takes it.
 type GitHubTokenSource interface {
-	TakeGitHubToken(ctx context.Context, userID int64) (string, bool)
+	Transfer(sessionToken string, codeHash [32]byte)
+	TakeForCode(codeHash [32]byte) (string, bool)
 }
 
 // Server is the authorization server. All URLs derive from Origin.
@@ -467,6 +469,10 @@ func (server *Server) decide(writer http.ResponseWriter, request *http.Request) 
 		redirectError(writer, request, pending.RedirectURI, pending.State, "server_error", "could not issue an authorization code")
 		return
 	}
+	if server.GitHubTokens != nil {
+		sessionToken, _ := namedCookie(request, authn.SessionCookieName)
+		server.GitHubTokens.Transfer(sessionToken, codeHash)
+	}
 	server.record(request.Context(), audit.Event{ActorType: "user", ActorID: principal.Subject, TargetType: "oauth_client", TargetID: client.ID, AuthenticationMethod: principal.Method, Operation: OperationConsentGranted, Outcome: "success"})
 	target, _ := url.Parse(pending.RedirectURI)
 	values := target.Query()
@@ -547,7 +553,7 @@ func (server *Server) exchangeCode(writer http.ResponseWriter, request *http.Req
 		return
 	}
 	if server.GitHubTokens != nil && server.Sealer != nil {
-		if githubToken, ok := server.GitHubTokens.TakeGitHubToken(request.Context(), pending.UserID); ok {
+		if githubToken, ok := server.GitHubTokens.TakeForCode(codeHash); ok {
 			if ciphertext, err := server.Sealer.Seal(server.Rand, grantID, githubToken); err == nil {
 				_ = server.Store.UpdateOAuthGrantGitHubToken(request.Context(), grantID, ciphertext)
 			}
