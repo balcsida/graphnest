@@ -54,7 +54,12 @@ func oauthCodeExchange(t *testing.T, store *Store) (*oauthas.Server, *http.Reque
 	}
 	codeBytes := []byte(strings.Repeat("c", 32))
 	codeHash := sha256.Sum256(codeBytes)
-	if err := store.IssueOAuthCode(t.Context(), pending.ID, codeHash, userID, now.Add(time.Minute), now); err != nil {
+	sessionHash := [32]byte{91}
+	if err := store.CreateSession(t.Context(), authn.SessionRecord{TokenHash: sessionHash, UserID: userID, Provider: authn.ProviderOIDC,
+		CreatedAt: now, LastSeenAt: now, IdleExpiresAt: now.Add(time.Minute), ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.IssueOAuthCode(t.Context(), pending.ID, codeHash, sessionHash, userID, now.Add(time.Minute), now); err != nil {
 		t.Fatal(err)
 	}
 	server := &oauthas.Server{Store: store, Limiter: store, Now: func() time.Time { return now }}

@@ -65,11 +65,30 @@ func (s *Store) OAuthAuthorizationRequest(ctx context.Context, id [32]byte, phas
 		from oauth_authorization_requests where id=$1 and phase=$2 and expires_at > $3`, id[:], phase, now))
 }
 
-// IssueOAuthCode turns a pending request into a single-use code in one
-// statement: the row is re-keyed so the request handle stops working the
-// moment consent is given.
-func (s *Store) IssueOAuthCode(ctx context.Context, pendingID, codeID [32]byte, userID int64, expiresAt, now time.Time) error {
-	result, err := s.pool.Exec(ctx, `update oauth_authorization_requests
+// IssueOAuthCode atomically validates the consent session and re-keys a pending request as a code.
+func (s *Store) IssueOAuthCode(ctx context.Context, pendingID, codeID, sessionHash [32]byte, userID int64, expiresAt, now time.Time) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	// Match administrative revocation's user-first lock order. Revalidate the
+	// session in a separate statement so revocation committed during this wait is visible.
+	var found int
+	if err := tx.QueryRow(ctx, `select 1 from users where id=$1 and scim_active
+		and suspended_at is null and deleted_at is null for update`, userID).Scan(&found); err != nil {
+		return err
+	}
+	if err := tx.QueryRow(ctx, `select 1 from auth_sessions session join users user_record on user_record.id=session.user_id
+		where session.token_hash=$1 and session.user_id=$2 and session.revoked_at is null
+		and session.expires_at>$3 and session.idle_expires_at>$3 and not session.force_rotation
+		and session.provider in ('oidc','oauth','local')
+		and (session.provider<>'local' or (user_record.source='local'
+			and exists(select 1 from user_roles where user_id=user_record.id)))
+		for update of session`, sessionHash[:], userID, now).Scan(&found); err != nil {
+		return err
+	}
+	result, err := tx.Exec(ctx, `update oauth_authorization_requests
 		set id=$2, phase='code', user_id=$3, created_at=$5, expires_at=$4
 		where id=$1 and phase='pending' and expires_at > $5`, pendingID[:], codeID[:], userID, expiresAt, now)
 	if err != nil {
@@ -78,7 +97,7 @@ func (s *Store) IssueOAuthCode(ctx context.Context, pendingID, codeID [32]byte, 
 	if result.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 func (s *Store) DeleteOAuthAuthorizationRequest(ctx context.Context, id [32]byte) error {

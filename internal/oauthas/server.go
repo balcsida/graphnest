@@ -508,13 +508,14 @@ func (server *Server) decide(writer http.ResponseWriter, request *http.Request) 
 		redirectError(writer, request, pending.RedirectURI, pending.State, "access_denied", "the user denied the request")
 		return
 	}
+	sessionToken, _ := namedCookie(request, authn.SessionCookieName)
+	sessionHash, validSession := hashSecret(sessionToken, "")
 	code, codeHash, err := newSecret(server.Rand, CodePrefix)
-	if err != nil || server.Store.IssueOAuthCode(request.Context(), pending.ID, codeHash, userID, now.Add(codeTTL), now) != nil {
+	if err != nil || !validSession || server.Store.IssueOAuthCode(request.Context(), pending.ID, codeHash, sessionHash, userID, now.Add(codeTTL), now) != nil {
 		redirectError(writer, request, pending.RedirectURI, pending.State, "server_error", "could not issue an authorization code")
 		return
 	}
 	if server.GitHubTokens != nil {
-		sessionToken, _ := namedCookie(request, authn.SessionCookieName)
 		server.GitHubTokens.Transfer(sessionToken, codeHash)
 	}
 	server.record(request.Context(), audit.Event{ActorType: "user", ActorID: principal.Subject, TargetType: "oauth_client", TargetID: client.ID, AuthenticationMethod: principal.Method, Operation: OperationConsentGranted, Outcome: "success"})
