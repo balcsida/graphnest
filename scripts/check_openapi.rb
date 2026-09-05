@@ -98,6 +98,22 @@ end
   require_value(reference, "#/components/schemas/OAuthError", "OAuth #{endpoint} HTTP #{status} response schema")
 end
 schemas = document.fetch("components").fetch("schemas")
+grant_list_operation = document.dig("paths", "/v1/account/oauth-grants", "get")
+grant_cursor = grant_list_operation.fetch("parameters", []).find { |parameter| parameter["name"] == "cursor" && parameter["in"] == "query" }
+raise OpenAPIError, "OAuth grant cursor is missing" unless grant_cursor
+require_value(grant_cursor.dig("schema", "type"), "string", "OAuth grant cursor type")
+require_value(grant_cursor.dig("schema", "minLength"), 1, "OAuth grant cursor minimum length")
+%w[400 500].each do |status|
+  raise OpenAPIError, "OAuth grant list HTTP #{status} response is missing" unless grant_list_operation.dig("responses", status).is_a?(Hash)
+end
+require_value(grant_list_operation.dig("responses", "500", "content", "application/json", "schema", "$ref"), "#/components/schemas/ErrorResponse", "OAuth grant list HTTP 500 response schema")
+grant_list = schemas.fetch("OAuthGrantList")
+%w[grants truncated].each do |field|
+  raise OpenAPIError, "OAuthGrantList must require #{field}" unless grant_list.fetch("required").include?(field)
+end
+require_value(grant_list.dig("properties", "grants", "maxItems"), 100, "OAuthGrantList grants cap")
+require_value(grant_list.dig("properties", "truncated", "type"), "boolean", "OAuthGrantList truncated type")
+require_value(grant_list.dig("properties", "next_cursor", "type"), "string", "OAuthGrantList next cursor type")
 audit_event = schemas.fetch("AuditEvent").fetch("properties")
 %w[oauth oauth_token].each do |method|
   raise OpenAPIError, "AuditEvent.authentication_method omits #{method}" unless audit_event.fetch("authentication_method").fetch("enum").include?(method)

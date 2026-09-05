@@ -246,24 +246,30 @@ func (s *Store) RevokeOAuthGrantByToken(ctx context.Context, hash [32]byte, clie
 	return result.RowsAffected() > 0, nil
 }
 
-func (s *Store) ListOAuthGrants(ctx context.Context, userID int64) ([]authn.OAuthGrantMetadata, error) {
+func (s *Store) ListOAuthGrants(ctx context.Context, userID, afterID int64, limit int) ([]authn.OAuthGrantMetadata, bool, error) {
 	rows, err := s.pool.Query(ctx, `select oauth_grants.id, oauth_clients.client_name, oauth_grants.scope, oauth_grants.created_at, oauth_grants.last_used_at, oauth_grants.expires_at
 		from oauth_grants join oauth_clients on oauth_clients.id=oauth_grants.client_id
-		where oauth_grants.user_id=$1 and oauth_grants.revoked_at is null and oauth_grants.expires_at > now()
-		order by oauth_grants.id`, userID)
+		where oauth_grants.user_id=$1 and oauth_grants.id>$2 and oauth_grants.revoked_at is null and oauth_grants.expires_at > now()
+		order by oauth_grants.id limit $3`, userID, afterID, limit+1)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer rows.Close()
 	var grants []authn.OAuthGrantMetadata
 	for rows.Next() {
 		var grant authn.OAuthGrantMetadata
 		if err := rows.Scan(&grant.ID, &grant.ClientName, &grant.Scope, &grant.CreatedAt, &grant.LastUsedAt, &grant.ExpiresAt); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		grants = append(grants, grant)
 	}
-	return grants, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	if len(grants) > limit {
+		return grants[:limit], true, nil
+	}
+	return grants, false, nil
 }
 
 func (s *Store) RevokeUserOAuthGrant(ctx context.Context, userID, grantID int64) error {

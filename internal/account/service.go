@@ -23,6 +23,8 @@ const MaxTokenLifetime = 90 * 24 * time.Hour
 // service account can hand a narrowed credential to a single job.
 const MaxDelegatedTokenLifetime = time.Hour
 
+const maxOAuthGrantPageSize = 100
+
 type Token struct {
 	ID            int64      `json:"id"`
 	Prefix        string     `json:"prefix"`
@@ -196,31 +198,31 @@ type Grant struct {
 
 // oauthGrantStore is the slice of authn.OAuthStore the account surface needs.
 type oauthGrantStore interface {
-	ListOAuthGrants(context.Context, int64) ([]authn.OAuthGrantMetadata, error)
+	ListOAuthGrants(context.Context, int64, int64, int) ([]authn.OAuthGrantMetadata, bool, error)
 	RevokeUserOAuthGrantAudited(context.Context, int64, int64, audit.Event) error
 }
 
 // Grants lists the caller's live MCP OAuth grants. Like token management this
 // is reserved for interactive sessions: an access token must not enumerate or
 // revoke its siblings.
-func (s *Service) Grants(ctx context.Context, principal authn.Principal) ([]Grant, error) {
+func (s *Service) Grants(ctx context.Context, principal authn.Principal, afterID int64) ([]Grant, bool, error) {
 	userID, err := userID(principal)
 	if err != nil {
-		return nil, ErrForbidden
+		return nil, false, ErrForbidden
 	}
 	store, ok := s.Manager.Store.(oauthGrantStore)
 	if !ok {
-		return []Grant{}, nil
+		return []Grant{}, false, nil
 	}
-	items, err := store.ListOAuthGrants(ctx, userID)
+	items, truncated, err := store.ListOAuthGrants(ctx, userID, afterID, maxOAuthGrantPageSize)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	grants := make([]Grant, len(items))
 	for i, item := range items {
 		grants[i] = Grant{ID: item.ID, ClientName: item.ClientName, Scope: item.Scope, CreatedAt: item.CreatedAt, LastUsedAt: item.LastUsedAt, ExpiresAt: item.ExpiresAt}
 	}
-	return grants, nil
+	return grants, truncated, nil
 }
 
 // RevokeGrant revokes one of the caller's MCP OAuth grants.

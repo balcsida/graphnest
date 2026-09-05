@@ -60,7 +60,7 @@ func TestAccountGrantRevocationRecordsAudit(t *testing.T) {
 	if response.Code != http.StatusNoContent {
 		t.Fatalf("revoke status=%d body=%s", response.Code, response.Body)
 	}
-	grants, err := store.ListOAuthGrants(t.Context(), userID)
+	grants, _, err := store.ListOAuthGrants(t.Context(), userID, 0, 100)
 	if err != nil || len(grants) != 0 {
 		t.Fatalf("grants after revocation=%v err=%v", grants, err)
 	}

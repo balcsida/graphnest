@@ -173,7 +173,7 @@ func TestOAuthGrantsAreListedRevokedAndSwept(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grants, err := store.ListOAuthGrants(t.Context(), userID)
+	grants, _, err := store.ListOAuthGrants(t.Context(), userID, 0, 100)
 	if err != nil || len(grants) != 1 || grants[0].ID != grantID || grants[0].ClientName != "OpenCode" {
 		t.Fatalf("grants=%+v err=%v", grants, err)
 	}
@@ -205,7 +205,7 @@ func TestOAuthGrantsAreListedRevokedAndSwept(t *testing.T) {
 	if _, err := store.OAuthPrincipal(t.Context(), [32]byte{50}, now); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("revoked grant must not authenticate: %v", err)
 	}
-	if grants, err := store.ListOAuthGrants(t.Context(), userID); err != nil || len(grants) != 0 {
+	if grants, _, err := store.ListOAuthGrants(t.Context(), userID, 0, 100); err != nil || len(grants) != 0 {
 		t.Fatalf("revoked grants must disappear from the account list: %+v err=%v", grants, err)
 	}
 	if _, grantsDeleted, _, err := store.DeleteExpiredOAuth(t.Context(), now.Add(6*24*time.Hour)); err != nil || grantsDeleted != 0 {

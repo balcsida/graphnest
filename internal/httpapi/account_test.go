@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -219,8 +220,17 @@ type grantAccountStore struct {
 	revoked []int64
 }
 
-func (s *grantAccountStore) ListOAuthGrants(context.Context, int64) ([]authn.OAuthGrantMetadata, error) {
-	return s.grants, nil
+func (s *grantAccountStore) ListOAuthGrants(_ context.Context, _ int64, afterID int64, limit int) ([]authn.OAuthGrantMetadata, bool, error) {
+	var grants []authn.OAuthGrantMetadata
+	for _, grant := range s.grants {
+		if grant.ID > afterID {
+			grants = append(grants, grant)
+		}
+	}
+	if len(grants) > limit {
+		return grants[:limit], true, nil
+	}
+	return grants, false, nil
 }
 func (s *grantAccountStore) RevokeUserOAuthGrantAudited(_ context.Context, _ int64, grantID int64, _ audit.Event) error {
 	s.revoked = append(s.revoked, grantID)
@@ -261,4 +271,116 @@ func TestAccountOAuthGrantRoutes(t *testing.T) {
 	if response := call(http.MethodPost, "/v1/account/oauth-grants", "user"); response.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST status=%d", response.Code)
 	}
+}
+
+func TestAccountOAuthGrantListPaginatesWithinWireBudget(t *testing.T) {
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	grants := []authn.OAuthGrantMetadata{
+		{ID: 7, ClientName: "Client One", CreatedAt: now, LastUsedAt: now, ExpiresAt: now.Add(time.Hour)},
+		{ID: 8, ClientName: "Client Two", CreatedAt: now, LastUsedAt: now, ExpiresAt: now.Add(time.Hour)},
+	}
+	cursor := base64.RawURLEncoding.EncodeToString([]byte(`{"v":1,"id":7}`))
+	expected, err := json.Marshal(struct {
+		Grants     []account.Grant `json:"grants"`
+		Truncated  bool            `json:"truncated"`
+		NextCursor string          `json:"next_cursor"`
+	}{
+		Grants:    []account.Grant{{ID: 7, ClientName: "Client One", CreatedAt: now, LastUsedAt: now, ExpiresAt: now.Add(time.Hour)}},
+		Truncated: true, NextCursor: cursor,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mux := http.NewServeMux()
+	service := &account.Service{Manager: authn.TokenManager{Store: &grantAccountStore{grants: grants}}}
+	RegisterAccount(mux, authn.RequestAuthenticator{Bearer: authn.NewStatic(map[string]authn.Principal{
+		"user": {Subject: "11", Method: "oauth"},
+	})}, service, 1024, int64(len(expected)+1))
+
+	first := accountGrantRequest(t, mux, "/v1/account/oauth-grants")
+	if first.Code != http.StatusOK || first.Body.String() != string(expected)+"\n" {
+		t.Fatalf("first status=%d bytes=%d body=%s", first.Code, first.Body.Len(), first.Body.String())
+	}
+	second := accountGrantRequest(t, mux, "/v1/account/oauth-grants?cursor="+cursor)
+	var page struct {
+		Grants     []account.Grant `json:"grants"`
+		Truncated  bool            `json:"truncated"`
+		NextCursor string          `json:"next_cursor"`
+	}
+	if err := json.Unmarshal(second.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if second.Code != http.StatusOK || len(page.Grants) != 1 || page.Grants[0].ID != 8 || page.Truncated || page.NextCursor != "" {
+		t.Fatalf("second status=%d page=%+v body=%s", second.Code, page, second.Body.String())
+	}
+}
+
+func TestAccountOAuthGrantListRejectsInvalidCursors(t *testing.T) {
+	mux := http.NewServeMux()
+	service := &account.Service{Manager: authn.TokenManager{Store: &grantAccountStore{}}}
+	RegisterAccount(mux, authn.RequestAuthenticator{Bearer: authn.NewStatic(map[string]authn.Principal{
+		"user": {Subject: "11", Method: "oauth"},
+	})}, service, 1024, 4096)
+	encode := func(value string) string { return base64.RawURLEncoding.EncodeToString([]byte(value)) }
+	for name, cursor := range map[string]string{
+		"empty":               "",
+		"not base64":          "not-base64",
+		"unsupported version": encode(`{"v":2,"id":7}`),
+		"missing id":          encode(`{"v":1}`),
+		"zero id":             encode(`{"v":1,"id":0}`),
+		"unknown field":       encode(`{"v":1,"id":7,"extra":true}`),
+		"second JSON value":   encode(`{"v":1,"id":7} {}`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			response := accountGrantRequest(t, mux, "/v1/account/oauth-grants?cursor="+cursor)
+			if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"invalid_request"`) {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestAccountOAuthGrantListRejectsImpossibleWireBudgets(t *testing.T) {
+	principal := authn.RequestAuthenticator{Bearer: authn.NewStatic(map[string]authn.Principal{
+		"user": {Subject: "11", Method: "oauth"},
+	})}
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+
+	t.Run("first grant cannot fit", func(t *testing.T) {
+		mux := http.NewServeMux()
+		service := &account.Service{Manager: authn.TokenManager{Store: &grantAccountStore{grants: []authn.OAuthGrantMetadata{{
+			ID: 7, ClientName: strings.Repeat("x", 512), CreatedAt: now, LastUsedAt: now, ExpiresAt: now.Add(time.Hour),
+		}}}}}
+		const budget = int64(160)
+		RegisterAccount(mux, principal, service, 1024, budget)
+		request := httptest.NewRequest(http.MethodGet, "/v1/account/oauth-grants", nil)
+		request.Header.Set("Authorization", "Bearer user")
+		response := httptest.NewRecorder()
+		response.Header().Set("X-Request-ID", "request-42")
+		mux.ServeHTTP(response, request)
+		if response.Code != http.StatusInternalServerError || response.Body.Len() == 0 || int64(response.Body.Len()) > budget || !json.Valid(response.Body.Bytes()) || !strings.Contains(response.Body.String(), `"request_id":"request-42"`) {
+			t.Fatalf("status=%d bytes=%d body=%q", response.Code, response.Body.Len(), response.Body.String())
+		}
+	})
+
+	t.Run("empty envelope cannot fit", func(t *testing.T) {
+		mux := http.NewServeMux()
+		service := &account.Service{Manager: authn.TokenManager{Store: &grantAccountStore{}}}
+		budget := int64(len(`{"grants":[],"truncated":false}`))
+		RegisterAccount(mux, principal, service, 1024, budget)
+		response := accountGrantRequest(t, mux, "/v1/account/oauth-grants")
+		if response.Code != http.StatusInternalServerError || response.Body.Len() != 0 {
+			t.Fatalf("status=%d bytes=%d body=%q", response.Code, response.Body.Len(), response.Body.String())
+		}
+	})
+}
+
+func accountGrantRequest(t *testing.T, mux *http.ServeMux, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	request.Header.Set("Authorization", "Bearer user")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	return response
 }

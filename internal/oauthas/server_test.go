@@ -217,8 +217,8 @@ func (m *memoryStore) RevokeOAuthGrantByToken(_ context.Context, hash [32]byte, 
 	return revoked, nil
 }
 
-func (m *memoryStore) ListOAuthGrants(context.Context, int64) ([]authn.OAuthGrantMetadata, error) {
-	return nil, nil
+func (m *memoryStore) ListOAuthGrants(context.Context, int64, int64, int) ([]authn.OAuthGrantMetadata, bool, error) {
+	return nil, false, nil
 }
 func (m *memoryStore) RevokeUserOAuthGrant(context.Context, int64, int64) error { return nil }
 
