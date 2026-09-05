@@ -81,12 +81,14 @@ type OAuthGrantMetadata struct {
 // Grace suppresses grant revocation for consumed-token retries after rotation.
 // Such retries still fail; a lost refresh response requires fresh authorization.
 type OAuthRotation struct {
-	AccessHash      [32]byte
-	AccessExpiresAt time.Time
-	RefreshHash     [32]byte
-	Now             time.Time
-	Grace           time.Duration
-	Audit           audit.Event
+	AccessHash          [32]byte
+	AccessExpiresAt     time.Time
+	RefreshHash         [32]byte
+	Now                 time.Time
+	Grace               time.Duration
+	Audit               audit.Event
+	RepositoryIDs       []int64
+	ReplaceRepositories bool
 }
 
 // OAuthRequestLimiter enforces shared registration, token and revocation budgets.
