@@ -16,6 +16,7 @@ import (
 
 	"github.com/balcsida/graphnest/internal/audit"
 	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/jackc/pgx/v5"
 )
 
 const (
@@ -633,6 +634,10 @@ func (server *Server) refresh(writer http.ResponseWriter, request *http.Request)
 	// The client binding is checked before rotating so a wrong client cannot
 	// burn another client's refresh token; the lookup is read-only.
 	current, err := server.Store.OAuthGrantByRefresh(request.Context(), refreshHash, now)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "could not refresh token")
+		return
+	}
 	if err == nil && current.ClientID != clientID {
 		writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "refresh token does not belong to this client")
 		return
