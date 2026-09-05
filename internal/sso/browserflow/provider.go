@@ -5,9 +5,11 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/balcsida/graphnest/internal/audit"
@@ -28,6 +30,12 @@ type Spec struct {
 	Method, SuccessOperation, DeniedOperation                           string
 }
 
+// ProviderTokenSink receives the identity provider token for one pending MCP
+// authorization, bound to the authenticated GraphNest subject.
+type ProviderTokenSink interface {
+	Deposit(ctx context.Context, requestHash [32]byte, subject, providerToken string)
+}
+
 type Provider struct {
 	Spec     Spec
 	Client   Client
@@ -37,9 +45,47 @@ type Provider struct {
 	Now      func() time.Time
 	Rand     io.Reader
 	Audit    audit.Recorder
+	// Tokens, when set, is handed the provider token of logins that return to
+	// the MCP authorization endpoint. Ordinary console logins never share it.
+	Tokens ProviderTokenSink
 }
 
 const maxCallbackValueLen = 2048
+
+// OAuthResumePath is the only non-root return target a login may carry: the
+// MCP authorization server's continuation after sign-in.
+const OAuthResumePath = "/oauth/authorize/resume"
+
+// returnTarget maps the login request's return_to onto the allow list.
+// Anything else, including repeated parameters, falls back to the console.
+func returnTarget(values []string) string {
+	if len(values) == 1 {
+		if values[0] == OAuthResumePath {
+			return OAuthResumePath
+		}
+		if _, ok := oauthResumeRequest(values[0]); ok {
+			return values[0]
+		}
+	}
+	return "/"
+}
+
+func oauthResumeRequest(target string) ([32]byte, bool) {
+	const prefix = OAuthResumePath + "?request_id="
+	requestID := strings.TrimPrefix(target, prefix)
+	if requestID == target || len(requestID) != sha256.Size*2 || strings.ToLower(requestID) != requestID {
+		return [32]byte{}, false
+	}
+	raw, err := hex.DecodeString(requestID)
+	if err != nil {
+		return [32]byte{}, false
+	}
+	return [32]byte(raw), true
+}
+
+func loginCookieName(base string, stateHash [32]byte) string {
+	return base + "_" + hex.EncodeToString(stateHash[:])
+}
 
 func (provider *Provider) Metadata() sso.Metadata { return provider.Spec.Metadata }
 
@@ -70,7 +116,8 @@ func (provider *Provider) login(writer http.ResponseWriter, request *http.Reques
 	verifier := oauth2.GenerateVerifier()
 	flow := authn.LoginFlow{
 		StateHash: sha256.Sum256(stateRaw), BrowserHash: sha256.Sum256(browserRaw),
-		Provider: provider.Spec.FlowProvider, Nonce: nonce, CodeVerifier: verifier, ReturnTo: "/",
+		Provider: provider.Spec.FlowProvider, Nonce: nonce, CodeVerifier: verifier,
+		ReturnTo:  returnTarget(request.URL.Query()["return_to"]),
 		CreatedAt: now, ExpiresAt: expires,
 	}
 	if !provider.validSpec() || provider.Client == nil || provider.Store == nil || provider.LoginTTL <= 0 ||
@@ -78,7 +125,7 @@ func (provider *Provider) login(writer http.ResponseWriter, request *http.Reques
 		provider.loginFail(request.Context(), writer)
 		return
 	}
-	http.SetCookie(writer, sso.LoginCookie(provider.Spec.CookieName, browser, expires, now))
+	http.SetCookie(writer, sso.LoginCookie(loginCookieName(provider.Spec.CookieName, flow.StateHash), browser, expires, now))
 	http.Redirect(writer, request, provider.Client.AuthorizationURL(state, nonce, verifier), http.StatusSeeOther)
 }
 
@@ -88,18 +135,9 @@ func (provider *Provider) callback(writer http.ResponseWriter, request *http.Req
 		provider.callbackFail(request.Context(), writer, "error")
 		return
 	}
-	http.SetCookie(writer, sso.ClearLoginCookie(provider.Spec.CookieName))
 	query := request.URL.Query()
 	state, ok := exactlyOne(query["state"])
 	if !ok {
-		provider.callbackFail(request.Context(), writer, "invalid")
-		return
-	}
-	codeValues, codePresent := query["code"]
-	errorValues, errorPresent := query["error"]
-	code, validCode := exactlyOne(codeValues)
-	oauthError, validError := exactlyOne(errorValues)
-	if !((validCode && !errorPresent) || (validError && !codePresent)) {
 		provider.callbackFail(request.Context(), writer, "invalid")
 		return
 	}
@@ -108,7 +146,17 @@ func (provider *Provider) callback(writer http.ResponseWriter, request *http.Req
 		provider.callbackFail(request.Context(), writer, "invalid")
 		return
 	}
-	browser, count := cookieValue(request, provider.Spec.CookieName)
+	cookieName := loginCookieName(provider.Spec.CookieName, stateHash)
+	http.SetCookie(writer, sso.ClearLoginCookie(cookieName))
+	codeValues, codePresent := query["code"]
+	errorValues, errorPresent := query["error"]
+	code, validCode := exactlyOne(codeValues)
+	oauthError, validError := exactlyOne(errorValues)
+	if !((validCode && !errorPresent) || (validError && !codePresent)) {
+		provider.callbackFail(request.Context(), writer, "invalid")
+		return
+	}
+	browser, count := cookieValue(request, cookieName)
 	browserHash, validBrowser := tokenHash(browser)
 	if count != 1 || !validBrowser {
 		provider.callbackFail(request.Context(), writer, "invalid")
@@ -150,8 +198,19 @@ func (provider *Provider) callback(writer http.ResponseWriter, request *http.Req
 		provider.callbackFail(request.Context(), writer, "error")
 		return
 	}
+	// The stored target is re-validated: the database is trusted for
+	// integrity, but a redirect target is worth a second look.
+	target := returnTarget([]string{flow.ReturnTo})
+	if requestHash, resume := oauthResumeRequest(target); resume && provider.Tokens != nil && identity.ProviderToken != "" {
+		principal, err := provider.Sessions.Authenticate(request.Context(), token)
+		if err != nil || principal.Subject == "" || principal.ForceRotation || !authn.IsInteractiveMethod(principal.Method) {
+			provider.callbackFail(request.Context(), writer, "error")
+			return
+		}
+		provider.Tokens.Deposit(request.Context(), requestHash, principal.Subject, identity.ProviderToken)
+	}
 	http.SetCookie(writer, sso.SessionCookie(token, expires, provider.now()))
-	http.Redirect(writer, request, "/", http.StatusSeeOther)
+	http.Redirect(writer, request, target, http.StatusSeeOther)
 }
 
 func (provider *Provider) randomToken() (string, []byte, error) {

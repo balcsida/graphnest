@@ -24,6 +24,7 @@ corresponding values. The key names below are the defaults.
 | `secrets.customCA.name` | `ca.crt` | Optional GitHub CA bundle; set the key with `secrets.customCA.key` |
 | `secrets.oidc.name` | `client-secret` | OIDC client secret; set `secrets.oidc.clientSecretKey` to override |
 | `secrets.githubOAuth.name` | `client-secret` | GitHub OAuth client secret; set `secrets.githubOAuth.clientSecretKey` to override |
+| `secrets.mcpOAuth.name` | `sealing-key` | 32-byte key sealing GitHub user tokens kept for MCP OAuth refresh; required only with `server.sso.githubOAuth.accessSync`; set `secrets.mcpOAuth.keyKey` to override |
 | `secrets.oidcCA.name` | `ca.crt` | Optional IdP CA bundle; set `secrets.oidcCA.key` to override |
 | `secrets.scim.name` | `token` | Optional SCIM bearer token; set `secrets.scim.tokenKey` to override |
 | `images.pullSecrets[]` | Kubernetes pull-secret contract | Optional private-registry credentials |
@@ -130,6 +131,18 @@ Set `server.sso.githubOAuth.accessSync=true` to provision users on first
 sign-in and mirror the repositories they can access through the configured
 GitHub App; the referenced OAuth Secret must then hold that GitHub App's own
 OAuth client secret. See the repository operations guide for the access model.
+
+Enable the MCP authorization server with `server.sso.mcpOAuth.enabled=true`
+alongside OIDC or GitHub OAuth. MCP clients then discover it from `/mcp`,
+register themselves, sign the user in through the browser provider, and obtain
+hour-long access tokens after an explicit consent page; no client configuration
+or shared secret is needed. With GitHub access sync the server keeps each
+grant's GitHub user token encrypted at rest so refreshes re-derive repository
+access; that requires an existing `secrets.mcpOAuth` Secret holding 32 random
+bytes (`head -c 32 /dev/urandom`), mounted read-only at
+`/var/run/secrets/graphnest/mcp-oauth/sealing-key`. Rotating the key
+invalidates stored GitHub tokens (grants keep their last-synced access until
+the user signs in again); it does not revoke grants.
 
 Enable SCIM with `server.scim.enabled=true`, the same HTTPS
 `server.sso.publicURL`, and an existing `secrets.scim` Secret. The token is

@@ -88,14 +88,22 @@ func TestMigrateIsConcurrentAndIdempotent(t *testing.T) {
 	if err := Migrate(t.Context(), pool); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"installations", "repositories", "webhook_deliveries", "index_jobs", "search_nodes", "scip_uploads", "scip_occurrences", "scip_relationships", "repository_packages", "graph_uploads", "graph_nodes", "graph_edges", "graph_jobs", "users", "user_identities", "user_roles", "user_repository_grants", "auth_login_flows", "auth_sessions", "groups", "group_memberships", "group_roles", "group_repository_grants", "api_tokens", "password_credentials", "login_throttles", "audit_events"} {
+	for _, name := range []string{"installations", "repositories", "webhook_deliveries", "index_jobs", "search_nodes", "scip_uploads", "scip_occurrences", "scip_relationships", "repository_packages", "graph_uploads", "graph_nodes", "graph_edges", "graph_jobs", "users", "user_identities", "user_roles", "user_repository_grants", "auth_login_flows", "auth_sessions", "groups", "group_memberships", "group_roles", "group_repository_grants", "api_tokens", "password_credentials", "login_throttles", "audit_events", "oauth_clients", "oauth_authorization_requests", "oauth_grants", "oauth_refresh_tokens", "oauth_request_limits"} {
 		var found bool
 		if err := pool.QueryRow(t.Context(), `select to_regclass($1) is not null`, name).Scan(&found); err != nil || !found {
 			t.Fatalf("relation %s: found=%v err=%v", name, found, err)
 		}
 	}
 	var count int
-	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != 20 {
+	entries, err := fs.ReadDir(migrationFiles, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrations, err := migrationDescriptors(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(t.Context(), `select count(*) from schema_migrations`).Scan(&count); err != nil || count != len(migrations) {
 		t.Fatalf("migrations=%d err=%v", count, err)
 	}
 	for index, test := range []struct {

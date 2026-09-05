@@ -20,24 +20,41 @@ func AuthenticateRequest(authenticator authn.RequestAuthenticator, next http.Han
 }
 
 func AuthenticateBearer(authenticator authn.Authenticator, next http.Handler) http.Handler {
+	return AuthenticateBearerWithChallenge(authenticator, nil, next)
+}
+
+// BearerChallenge decorates a 401 with a WWW-Authenticate header. invalidToken
+// is true when a credential was presented and rejected, false when none was.
+type BearerChallenge func(writer http.ResponseWriter, invalidToken bool)
+
+// AuthenticateBearerWithChallenge is AuthenticateBearer with an optional OAuth
+// discovery challenge on every 401 (RFC 9728 §5.1), so MCP clients learn where
+// to obtain a token.
+func AuthenticateBearerWithChallenge(authenticator authn.Authenticator, challenge BearerChallenge, next http.Handler) http.Handler {
+	reject := func(writer http.ResponseWriter, invalidToken bool) {
+		if challenge != nil {
+			challenge(writer, invalidToken)
+		}
+		writeUnauthenticated(writer)
+	}
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if hasSessionCookie(request) {
-			writeUnauthenticated(writer)
+			reject(writer, false)
 			return
 		}
 		values := request.Header.Values("Authorization")
 		if len(values) != 1 {
-			writeUnauthenticated(writer)
+			reject(writer, false)
 			return
 		}
 		parts := strings.Fields(values[0])
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-			writeUnauthenticated(writer)
+			reject(writer, false)
 			return
 		}
 		principal, err := authenticator.Authenticate(request.Context(), parts[1])
 		if err != nil {
-			writeUnauthenticated(writer)
+			reject(writer, true)
 			return
 		}
 		next.ServeHTTP(writer, request.WithContext(context.WithValue(request.Context(), principalContextKey{}, principal)))
