@@ -95,8 +95,14 @@ graph_queries.each do |name, query|
 end
 schemas = document.fetch("components").fetch("schemas")
 audit_event = schemas.fetch("AuditEvent").fetch("properties")
-raise OpenAPIError, "AuditEvent.authentication_method omits oauth" unless audit_event.fetch("authentication_method").fetch("enum").include?("oauth")
-%w[oauth_login_succeeded oauth_login_denied].each do |operation|
+%w[oauth oauth_token].each do |method|
+  raise OpenAPIError, "AuditEvent.authentication_method omits #{method}" unless audit_event.fetch("authentication_method").fetch("enum").include?(method)
+end
+%w[oauth_client oauth_grant].each do |target|
+  raise OpenAPIError, "AuditEvent.target_type omits #{target}" unless audit_event.fetch("target_type").fetch("enum").include?(target)
+end
+%w[oauth_login_succeeded oauth_login_denied oauth_client_registered oauth_consent_granted oauth_consent_denied
+   oauth_grant_created oauth_grant_refreshed oauth_grant_revoked oauth_grant_reuse_detected].each do |operation|
   raise OpenAPIError, "AuditEvent.operation omits #{operation}" unless audit_event.fetch("operation").fetch("enum").include?(operation)
 end
 auth_config = schemas.fetch("AuthConfig")
