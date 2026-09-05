@@ -653,6 +653,18 @@ func (server *Server) refresh(writer http.ResponseWriter, request *http.Request)
 		writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "refresh token does not belong to this client")
 		return
 	}
+	githubToken := ""
+	if server.GitHub != nil && len(current.GitHubTokenCiphertext) != 0 {
+		if server.Sealer == nil {
+			writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "could not decrypt GitHub credentials; restore the key or authorize again")
+			return
+		}
+		githubToken, err = server.Sealer.Open(current.ID, current.GitHubTokenCiphertext)
+		if err != nil {
+			writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "could not decrypt GitHub credentials; restore the key or authorize again")
+			return
+		}
+	}
 	access, accessHash, err := newSecret(server.Rand, AccessTokenPrefix)
 	if err != nil {
 		writeOAuthError(writer, http.StatusInternalServerError, "server_error", "could not issue tokens")
@@ -678,23 +690,18 @@ func (server *Server) refresh(writer http.ResponseWriter, request *http.Request)
 		writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "refresh token is invalid or expired")
 		return
 	}
-	server.syncGitHubAccess(request.Context(), grant)
+	server.syncGitHubAccess(request.Context(), grant, githubToken)
 	server.record(request.Context(), audit.Event{ActorType: "user", ActorID: strconv.FormatInt(grant.UserID, 10), TargetType: "oauth_grant", TargetID: strconv.FormatInt(grant.ID, 10), AuthenticationMethod: authn.ProviderOAuthToken, Operation: OperationGrantRefreshed, Outcome: "success"})
 	writeTokens(writer, access, refresh, grant.Scope, grant.AccessExpiresAt.Sub(server.now()))
 }
 
-// syncGitHubAccess re-derives the user's GitHub grants with the stored GitHub
+// syncGitHubAccess re-derives the user's GitHub grants with the decrypted GitHub
 // token. GitHub rejecting the token drops it (a later browser login re-seeds
 // it); any other failure changes nothing. Access can narrow here, never widen
 // without GitHub confirming it, and the token response never waits on GitHub
 // for longer than githubSyncTimeout.
-func (server *Server) syncGitHubAccess(ctx context.Context, grant authn.OAuthGrant) {
-	if server.GitHub == nil || server.Sealer == nil || len(grant.GitHubTokenCiphertext) == 0 {
-		return
-	}
-	githubToken, err := server.Sealer.Open(grant.ID, grant.GitHubTokenCiphertext)
-	if err != nil {
-		_ = server.Store.UpdateOAuthGrantGitHubToken(ctx, grant.ID, nil)
+func (server *Server) syncGitHubAccess(ctx context.Context, grant authn.OAuthGrant, githubToken string) {
+	if server.GitHub == nil || githubToken == "" {
 		return
 	}
 	ctx, cancel := context.WithTimeout(ctx, githubSyncTimeout)
