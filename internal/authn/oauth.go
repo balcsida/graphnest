@@ -110,9 +110,10 @@ type OAuthStore interface {
 	// OAuthPrincipal resolves a live access token to the user's principal and
 	// bumps last_used_at.
 	OAuthPrincipal(ctx context.Context, accessHash [32]byte, now time.Time) (Principal, error)
-	// RotateOAuthGrant rotates the tokens of the grant owning refreshHash. If the
-	// hash matches a previous (already rotated) refresh token, the grant is
-	// revoked and ErrOAuthReplay is returned.
+	// RotateOAuthGrant rotates the tokens of the grant owning refreshHash.
+	// A consumed refresh token returns pgx.ErrNoRows without revoking the grant
+	// within rotation.Grace of its consumption; at or after that deadline,
+	// the grant is revoked and ErrOAuthReplay is returned.
 	RotateOAuthGrant(ctx context.Context, refreshHash [32]byte, rotation OAuthRotation) (OAuthGrant, error)
 	// OAuthGrantByRefresh loads the grant owning a current refresh token.
 	OAuthGrantByRefresh(ctx context.Context, refreshHash [32]byte, now time.Time) (OAuthGrant, error)

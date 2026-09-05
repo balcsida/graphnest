@@ -691,7 +691,7 @@ paths:
         '400': {description: Nothing to resume (HTML)}
   /oauth/token:
     post:
-      description: Token endpoint (RFC 6749 §4.1.3 and §6). Public clients only; refresh rotates both tokens and replaying a rotated refresh token revokes the grant.
+      description: Token endpoint (RFC 6749 §4.1.3 and §6). Public clients only; refresh rotates both tokens. Consumed-token retries return invalid_grant without revoking the grant within 30 seconds of consumption; at or after that deadline they also revoke the grant. A lost refresh response requires fresh authorization.
       requestBody: {required: true, content: {application/x-www-form-urlencoded: {schema: {$ref: '#/components/schemas/TokenRequest'}}}}
       responses:
         '200': {description: Tokens, content: {application/json: {schema: {$ref: '#/components/schemas/TokenResponse'}}}}
