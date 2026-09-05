@@ -182,20 +182,34 @@ func (client *Client) AccessibleRepositories(ctx context.Context, accessToken st
 // failure denies the login: a partial list would silently narrow access while
 // an unchecked one could widen it.
 func (client *Client) accessibleRepositories(ctx context.Context, accessToken string) ([]int64, error) {
-	var installations struct {
-		Installations []struct {
-			ID    int64 `json:"id"`
-			AppID int64 `json:"app_id"`
-		} `json:"installations"`
+	type installation struct {
+		ID    int64 `json:"id"`
+		AppID int64 `json:"app_id"`
 	}
-	if _, err := client.getJSON(ctx, githubapp.EndpointURL(client.endpoints.API, "user", "installations")+"?per_page=100", accessToken, &installations); err != nil {
-		return nil, fmt.Errorf("GitHub user installations: %w", err)
-	}
-	if len(installations.Installations) > maxInstallations {
-		return nil, errors.New("GitHub user installations exceed the supported bound")
+	var installations []installation
+	next := githubapp.EndpointURL(client.endpoints.API, "user", "installations") + "?per_page=100"
+	for page := 0; next != ""; page++ {
+		if page >= maxRepositoryPages {
+			return nil, errors.New("GitHub user installations exceed the supported bound")
+		}
+		var body struct {
+			Installations []installation `json:"installations"`
+		}
+		header, err := client.getJSON(ctx, next, accessToken, &body)
+		if err != nil {
+			return nil, fmt.Errorf("GitHub user installations: %w", err)
+		}
+		installations = append(installations, body.Installations...)
+		if len(installations) > maxInstallations {
+			return nil, errors.New("GitHub user installations exceed the supported bound")
+		}
+		next, err = client.nextAPIPage(next, header.Get("Link"))
+		if err != nil {
+			return nil, err
+		}
 	}
 	seen := map[int64]struct{}{}
-	for _, installation := range installations.Installations {
+	for _, installation := range installations {
 		if installation.AppID != client.AccessSyncAppID || installation.ID <= 0 {
 			continue
 		}
@@ -218,9 +232,9 @@ func (client *Client) accessibleRepositories(ctx context.Context, accessToken st
 					seen[repository.ID] = struct{}{}
 				}
 			}
-			next = nextPage(header.Get("Link"))
-			if next != "" && !client.sameAPIOrigin(next) {
-				return nil, errors.New("GitHub pagination left the API origin")
+			next, err = client.nextAPIPage(next, header.Get("Link"))
+			if err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -237,6 +251,26 @@ func (client *Client) accessibleRepositories(ctx context.Context, accessToken st
 func (client *Client) sameAPIOrigin(rawURL string) bool {
 	parsed, err := url.Parse(rawURL)
 	return err == nil && parsed.Scheme == client.endpoints.API.Scheme && parsed.Host == client.endpoints.API.Host
+}
+
+func (client *Client) nextAPIPage(currentURL, link string) (string, error) {
+	rawURL := nextPage(link)
+	if rawURL == "" {
+		return "", nil
+	}
+	current, err := url.Parse(currentURL)
+	if err != nil {
+		return "", errors.New("GitHub pagination URL is invalid")
+	}
+	reference, err := url.Parse(rawURL)
+	if err != nil {
+		return "", errors.New("GitHub pagination URL is invalid")
+	}
+	next := current.ResolveReference(reference).String()
+	if !client.sameAPIOrigin(next) {
+		return "", errors.New("GitHub pagination left the API origin")
+	}
+	return next, nil
 }
 
 func (client *Client) getJSON(ctx context.Context, rawURL, accessToken string, target any) (http.Header, error) {

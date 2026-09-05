@@ -232,16 +232,21 @@ func TestExchangeWithAccessSyncCollectsInstallationRepositories(t *testing.T) {
 		case "/api/v3/user":
 			fmt.Fprint(w, `{"id":42,"login":"ada","name":"Ada"}`)
 		case "/api/v3/user/installations":
-			fmt.Fprint(w, `{"total_count":3,"installations":[{"id":10,"app_id":532},{"id":11,"app_id":999},{"id":12,"app_id":532}]}`)
+			if r.URL.Query().Get("page") == "2" {
+				fmt.Fprint(w, `{"total_count":3,"installations":[{"id":12,"app_id":532}]}`)
+				return
+			}
+			w.Header().Set("Link", `</api/v3/user/installations?per_page=100&page=2>; rel="next"`)
+			fmt.Fprint(w, `{"total_count":3,"installations":[{"id":10,"app_id":532},{"id":11,"app_id":999}]}`)
 		case "/api/v3/user/installations/10/repositories":
 			if r.URL.Query().Get("page") == "2" {
 				fmt.Fprint(w, `{"total_count":3,"repositories":[{"id":103}]}`)
 				return
 			}
-			w.Header().Set("Link", `<https://`+r.Host+`/api/v3/user/installations/10/repositories?per_page=100&page=2>; rel="next"`)
+			w.Header().Set("Link", `<?per_page=100&page=2>; rel="next"`)
 			fmt.Fprint(w, `{"total_count":3,"repositories":[{"id":101},{"id":102}]}`)
 		case "/api/v3/user/installations/12/repositories":
-			fmt.Fprint(w, `{"total_count":1,"repositories":[{"id":102},{"id":0},{"id":-5}]}`)
+			fmt.Fprint(w, `{"total_count":1,"repositories":[{"id":104},{"id":0},{"id":-5}]}`)
 		default:
 			t.Errorf("unexpected request %s", r.URL.Path)
 		}
@@ -253,7 +258,7 @@ func TestExchangeWithAccessSyncCollectsInstallationRepositories(t *testing.T) {
 	if identity.ProviderToken != testToken {
 		t.Fatalf("access-sync identities must carry the provider token for MCP refresh, got %q", identity.ProviderToken)
 	}
-	if identity.Login != "ada" || identity.AccessSync == nil || fmt.Sprint(identity.AccessSync.RepositoryIDs) != "[101 102 103]" {
+	if identity.Login != "ada" || identity.AccessSync == nil || fmt.Sprint(identity.AccessSync.RepositoryIDs) != "[101 102 103 104]" {
 		t.Fatalf("identity = %#v", identity)
 	}
 	for _, path := range paths {
@@ -323,6 +328,103 @@ func TestExchangeWithAccessSyncFailsClosed(t *testing.T) {
 				if strings.Contains(err.Error(), canary) {
 					t.Fatalf("error leaked canary: %q", err)
 				}
+			}
+		})
+	}
+}
+
+func TestAccessibleRepositoriesRejectsCumulativeInstallationOverflow(t *testing.T) {
+	writeInstallations := func(w http.ResponseWriter, start, count int) {
+		fmt.Fprint(w, `{"installations":[`)
+		for index := 0; index < count; index++ {
+			if index > 0 {
+				fmt.Fprint(w, ",")
+			}
+			fmt.Fprintf(w, `{"id":%d,"app_id":999}`, start+index)
+		}
+		fmt.Fprint(w, `]}`)
+	}
+	pages, repositoryCalls := 0, 0
+	fixture := newSyncFixture(t, 532, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v3/user/installations" {
+			repositoryCalls++
+			return
+		}
+		pages++
+		if r.URL.Query().Get("page") == "2" {
+			writeInstallations(w, 301, 201)
+			return
+		}
+		w.Header().Set("Link", `<https://`+r.Host+`/api/v3/user/installations?per_page=100&page=2>; rel="next"`)
+		writeInstallations(w, 1, 300)
+	})
+	ids, err := fixture.client.AccessibleRepositories(t.Context(), testToken)
+	if err == nil || ids != nil || pages != 2 || repositoryCalls != 0 {
+		t.Fatalf("ids=%v, err=%v, pages=%d, repository calls=%d", ids, err, pages, repositoryCalls)
+	}
+}
+
+func TestAccessibleRepositoriesBoundsCyclicEmptyInstallationPages(t *testing.T) {
+	pages := 0
+	fixture := newSyncFixture(t, 532, func(w http.ResponseWriter, r *http.Request) {
+		pages++
+		w.Header().Set("Link", `<https://`+r.Host+r.URL.Path+`?page=again>; rel="next"`)
+		fmt.Fprint(w, `{"installations":[]}`)
+	})
+	ids, err := fixture.client.AccessibleRepositories(t.Context(), testToken)
+	if err == nil || ids != nil || pages != maxRepositoryPages {
+		t.Fatalf("ids=%v, err=%v, pages=%d", ids, err, pages)
+	}
+}
+
+func TestAccessibleRepositoriesRejectsCrossOriginInstallationPages(t *testing.T) {
+	for _, link := range []string{"http://example.invalid/installations", "//example.invalid/installations"} {
+		t.Run(link, func(t *testing.T) {
+			fixture := newSyncFixture(t, 532, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Link", `<`+link+`>; rel="next"`)
+				fmt.Fprint(w, `{"installations":[]}`)
+			})
+			ids, err := fixture.client.AccessibleRepositories(t.Context(), testToken)
+			if err == nil || ids != nil {
+				t.Fatalf("ids=%v, err=%v", ids, err)
+			}
+		})
+	}
+}
+
+func TestAccessibleRepositoriesFailsOnLaterInstallationPage(t *testing.T) {
+	for _, test := range []struct {
+		name, body string
+		status     int
+	}{
+		{"HTTP error", bodyCanary, http.StatusBadGateway},
+		{"JSON error", `{"installations":[}`, http.StatusOK},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repositoryCalls := 0
+			fixture := newSyncFixture(t, 532, func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/v3/user/installations":
+					if r.URL.Query().Get("page") == "2" {
+						w.WriteHeader(test.status)
+						fmt.Fprint(w, test.body)
+						return
+					}
+					w.Header().Set("Link", `<https://`+r.Host+r.URL.Path+`?page=2>; rel="next"`)
+					fmt.Fprint(w, `{"installations":[{"id":10,"app_id":532}]}`)
+				case "/api/v3/user/installations/10/repositories":
+					repositoryCalls++
+					fmt.Fprint(w, `{"repositories":[{"id":101}]}`)
+				default:
+					t.Errorf("unexpected request %s", r.URL)
+				}
+			})
+			ids, err := fixture.client.AccessibleRepositories(t.Context(), testToken)
+			if err == nil || ids != nil || repositoryCalls != 0 {
+				t.Fatalf("ids=%v, err=%v, repository calls=%d", ids, err, repositoryCalls)
+			}
+			if strings.Contains(err.Error(), test.body) || strings.Contains(err.Error(), testToken) {
+				t.Fatalf("error leaked response or token: %v", err)
 			}
 		})
 	}
