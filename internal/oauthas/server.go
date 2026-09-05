@@ -174,7 +174,12 @@ func (server *Server) register(writer http.ResponseWriter, request *http.Request
 		return
 	}
 	var input registrationRequest
-	if err := json.NewDecoder(io.LimitReader(request.Body, maxFormBytes)).Decode(&input); err != nil {
+	decoder := json.NewDecoder(http.MaxBytesReader(writer, request.Body, maxFormBytes))
+	if err := decoder.Decode(&input); err != nil {
+		writeOAuthError(writer, http.StatusBadRequest, "invalid_client_metadata", "request body is not valid JSON")
+		return
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		writeOAuthError(writer, http.StatusBadRequest, "invalid_client_metadata", "request body is not valid JSON")
 		return
 	}
