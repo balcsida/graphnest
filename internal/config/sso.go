@@ -15,6 +15,17 @@ type SSO struct {
 	BreakGlass   bool
 	OIDC         OIDC
 	OAuth        OAuth
+	MCPOAuth     MCPOAuth
+}
+
+// MCPOAuth turns GraphNest into an OAuth 2.1 authorization server for MCP
+// clients: they sign in through the browser provider and receive short-lived
+// access tokens for /mcp. KeyFile holds the 32-byte key that seals the GitHub
+// token kept for refresh-time access sync; it is required only when GitHub
+// access sync is enabled.
+type MCPOAuth struct {
+	Enabled bool
+	KeyFile string
 }
 
 type OAuth struct{ GitHub GitHubOAuth }
@@ -66,6 +77,9 @@ func loadSSO(databaseURL string) (SSO, error) {
 	if !oidcEnabled && !githubEnabled {
 		if os.Getenv("GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC") != "" && os.Getenv("GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC") != "false" {
 			return SSO{}, invalid("GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC requires GitHub OAuth")
+		}
+		if os.Getenv("GRAPHNEST_MCP_OAUTH") != "" && os.Getenv("GRAPHNEST_MCP_OAUTH") != "false" {
+			return SSO{}, invalid("GRAPHNEST_MCP_OAUTH requires a browser sign-in provider")
 		}
 		switch os.Getenv("GRAPHNEST_BREAK_GLASS_ENABLED") {
 		case "", "false":
@@ -155,6 +169,22 @@ func loadSSO(databaseURL string) (SSO, error) {
 		sso.BreakGlass = true
 	default:
 		return SSO{}, invalid("GRAPHNEST_BREAK_GLASS_ENABLED must be true or false")
+	}
+	switch os.Getenv("GRAPHNEST_MCP_OAUTH") {
+	case "", "false":
+	case "true":
+		sso.MCPOAuth.Enabled = true
+		sso.MCPOAuth.KeyFile = os.Getenv("GRAPHNEST_MCP_OAUTH_KEY_FILE")
+		if sso.MCPOAuth.KeyFile != "" {
+			info, err := os.Stat(sso.MCPOAuth.KeyFile)
+			if err != nil || !info.Mode().IsRegular() {
+				return SSO{}, invalid("GRAPHNEST_MCP_OAUTH_KEY_FILE must be a regular file")
+			}
+		} else if sso.OAuth.GitHub.AccessSync {
+			return SSO{}, invalid("GRAPHNEST_MCP_OAUTH_KEY_FILE is required when GitHub access sync is enabled")
+		}
+	default:
+		return SSO{}, invalid("GRAPHNEST_MCP_OAUTH must be true or false")
 	}
 	return sso, nil
 }

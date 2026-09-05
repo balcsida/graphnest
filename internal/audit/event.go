@@ -37,6 +37,13 @@ const (
 	OperationOIDCLoginDenied        = "oidc_login_denied"
 	OperationOAuthLoginSucceeded    = "oauth_login_succeeded"
 	OperationOAuthLoginDenied       = "oauth_login_denied"
+	OperationOAuthClientRegistered  = "oauth_client_registered"
+	OperationOAuthConsentGranted    = "oauth_consent_granted"
+	OperationOAuthConsentDenied     = "oauth_consent_denied"
+	OperationOAuthGrantCreated      = "oauth_grant_created"
+	OperationOAuthGrantRefreshed    = "oauth_grant_refreshed"
+	OperationOAuthGrantRevoked      = "oauth_grant_revoked"
+	OperationOAuthGrantReplay       = "oauth_grant_reuse_detected"
 	OperationLocalLoginSucceeded    = "local_login_succeeded"
 	OperationLocalLoginDenied       = "local_login_denied"
 	OperationLogout                 = "logout"
@@ -71,6 +78,8 @@ const (
 var operations = map[string]struct{}{
 	OperationOIDCLoginSucceeded: {}, OperationOIDCLoginDenied: {},
 	OperationOAuthLoginSucceeded: {}, OperationOAuthLoginDenied: {},
+	OperationOAuthClientRegistered: {}, OperationOAuthConsentGranted: {}, OperationOAuthConsentDenied: {},
+	OperationOAuthGrantCreated: {}, OperationOAuthGrantRefreshed: {}, OperationOAuthGrantRevoked: {}, OperationOAuthGrantReplay: {},
 	OperationLocalLoginSucceeded: {}, OperationLocalLoginDenied: {},
 	OperationLogout: {}, OperationSessionCreated: {}, OperationSessionRevoked: {},
 	OperationAPITokenCreated: {}, OperationAPITokenUseRejected: {}, OperationAPITokenRevoked: {},
@@ -108,8 +117,8 @@ func NewEvent(event Event) (Event, error) {
 
 func (event Event) Validate() error {
 	if !oneOf(event.ActorType, "anonymous", "operator", "scim", "system", "user") ||
-		!oneOf(event.TargetType, "api_token", "authentication", "group", "session", "user") ||
-		!oneOf(event.AuthenticationMethod, "", "api_token", "local", "oauth", "oidc", "operator", "scim_token") ||
+		!oneOf(event.TargetType, "api_token", "authentication", "group", "oauth_client", "oauth_grant", "session", "user") ||
+		!oneOf(event.AuthenticationMethod, "", "api_token", "local", "oauth", "oauth_token", "oidc", "operator", "scim_token") ||
 		!oneOf(event.Outcome, "success", "denied", "invalid", "error") ||
 		!bounded(event.ActorID, 128) || !bounded(event.TargetID, 128) ||
 		!bounded(event.RequestID, 128) || !operation(event.Operation) {

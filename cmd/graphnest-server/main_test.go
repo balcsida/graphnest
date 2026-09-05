@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -32,10 +33,13 @@ import (
 	"github.com/balcsida/graphnest/internal/githubapp"
 	"github.com/balcsida/graphnest/internal/graphingest"
 	"github.com/balcsida/graphnest/internal/graphservice"
+	"github.com/balcsida/graphnest/internal/oauthas"
 	"github.com/balcsida/graphnest/internal/observability"
+	"github.com/balcsida/graphnest/internal/postgres"
 	"github.com/balcsida/graphnest/internal/repository"
 	scimapi "github.com/balcsida/graphnest/internal/scim"
 	"github.com/balcsida/graphnest/internal/scipgraph"
+	"github.com/balcsida/graphnest/internal/sso/browserflow"
 	"github.com/balcsida/graphnest/internal/webhook"
 	"github.com/scip-code/scip/bindings/go/scip"
 	"google.golang.org/protobuf/proto"
@@ -44,7 +48,7 @@ import (
 func TestAdminRoutesRegisterOnlyWithDurableService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"admin": {Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}}})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}}
-	static := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	static := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	request := httptest.NewRequest(http.MethodGet, "/v1/admin/overview", nil)
 	request.Header.Set("Authorization", "Bearer admin")
 	response := httptest.NewRecorder()
@@ -54,7 +58,7 @@ func TestAdminRoutesRegisterOnlyWithDurableService(t *testing.T) {
 	}
 
 	durable := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil,
-		&admin.Service{Store: mainAdminStore{}}, nil, nil, nil, nil, nil)
+		&admin.Service{Store: mainAdminStore{}}, nil, nil, nil, nil, nil, nil)
 	response = httptest.NewRecorder()
 	durable.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
@@ -65,7 +69,7 @@ func TestAdminRoutesRegisterOnlyWithDurableService(t *testing.T) {
 func TestStaticHandlerHasNoBreakGlassSurface(t *testing.T) {
 	handler := newAPIHandler(
 		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}},
-		observability.New(), authn.RequestAuthenticator{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		observability.New(), authn.RequestAuthenticator{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	login := httptest.NewRecorder()
 	handler.ServeHTTP(login, httptest.NewRequest(http.MethodPost, "/auth/local", nil))
@@ -186,7 +190,7 @@ func TestAPITokensAuthenticateRESTAndMCPBearerOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}}, observability.New(), testRequestAuthenticator(manager), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}}, observability.New(), testRequestAuthenticator(manager), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	for _, test := range []struct {
 		name, path string
 		bearer     bool
@@ -227,7 +231,7 @@ func TestSCIMBearerIsIsolatedFromApplicationSurfaces(t *testing.T) {
 	handler := newAPIHandler(
 		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}},
 		observability.New(), testRequestAuthenticator(rest), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		&provisioning, &scimapi.Service{BaseURL: "https://graphnest.example", MaxResults: 10},
+		&provisioning, &scimapi.Service{BaseURL: "https://graphnest.example", MaxResults: 10}, nil,
 	)
 	for _, test := range []struct {
 		path, token string
@@ -258,8 +262,8 @@ func TestSCIMGuardAuthenticatesBeforeCanonicalRouting(t *testing.T) {
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}}
 	rest := testRequestAuthenticator(authn.NewStatic(map[string]authn.Principal{"rest": {Subject: "user"}}))
 	withSCIM := newAPIHandler(settings, observability.New(), rest, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		&provisioning, &scimapi.Service{BaseURL: "https://graphnest.example", MaxResults: 10})
-	withoutSCIM := newAPIHandler(settings, observability.New(), rest, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		&provisioning, &scimapi.Service{BaseURL: "https://graphnest.example", MaxResults: 10}, nil)
+	withoutSCIM := newAPIHandler(settings, observability.New(), rest, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	for _, path := range []string{
 		"/scim/v2//Users", "/scim/v2/../v1/auth/session", "/scim/v2/%2e%2e/v1/auth/session",
@@ -462,7 +466,7 @@ func TestServerDeadlinesIsolateSCIPUploads(t *testing.T) {
 		"admin": {Subject: "admin", Administrator: true, InstallationID: 10, RepositoryIDs: []int64{101}},
 	})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, SCIPMaxUploadBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}
-	handler := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, &scipgraph.Service{Store: store}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, &scipgraph.Service{Store: store}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	server := newHTTPServer("127.0.0.1:0", handler)
 	if server.ReadTimeout != 10*time.Second || server.WriteTimeout != 10*time.Second || server.ReadHeaderTimeout != 5*time.Second || server.IdleTimeout != time.Minute {
 		t.Fatalf("deadlines = read %s, write %s, header %s, idle %s", server.ReadTimeout, server.WriteTimeout, server.ReadHeaderTimeout, server.IdleTimeout)
@@ -820,7 +824,7 @@ func (stub *healthStub) Health(context.Context) error {
 
 func TestDurableRoutesKeepWebhookOutsideBearerAuthentication(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
-	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), testRequestAuthenticator(authenticator), nil, &repository.Service{Store: repositoryStoreStub{}}, nil, nil, nil, []byte("secret"), webhookProcessorStub{}, nil, nil, nil, nil, nil, nil)
+	handler := newAPIHandler(config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}, observability.New(), testRequestAuthenticator(authenticator), nil, &repository.Service{Store: repositoryStoreStub{}}, nil, nil, nil, []byte("secret"), webhookProcessorStub{}, nil, nil, nil, nil, nil, nil, nil)
 
 	webhookResponse := httptest.NewRecorder()
 	handler.ServeHTTP(webhookResponse, httptest.NewRequest(http.MethodPost, "/webhooks/github", nil))
@@ -922,8 +926,8 @@ func TestStaticHandlerRegistersSystemRoutes(t *testing.T) {
 func TestSCIPRoutesRegisterOnlyWithDurableService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, SCIPMaxUploadBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}}
-	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, &scipgraph.Service{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, &scipgraph.Service{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/scip/navigation", nil))
@@ -940,8 +944,8 @@ func TestSCIPRoutesRegisterOnlyWithDurableService(t *testing.T) {
 func TestGraphRoutesRegisterOnlyWithDurableService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	settings := config.Config{Limits: config.Limits{GraphMaxUploadBytes: 1024, MaxResponseBytes: 1024}}
-	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, &graphingest.Service{}, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, &graphingest.Service{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/graph/repositories/101/status", nil))
@@ -958,8 +962,8 @@ func TestGraphRoutesRegisterOnlyWithDurableService(t *testing.T) {
 func TestGraphQueryRoutesRegisterOnlyWithService(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024}}
-	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, &graphservice.Service{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, &graphservice.Service{}, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/graph/context", nil))
@@ -977,7 +981,7 @@ func TestAPIHandlerMountsWebUIWithoutFallback(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	handler := newAPIHandler(
 		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}},
-		observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	for _, path := range []string{"/", "/index.html", "/admin"} {
 		response := httptest.NewRecorder()
@@ -1055,4 +1059,251 @@ func (reader *countingReader) Read(buffer []byte) (int, error) {
 	read, err := reader.Reader.Read(buffer)
 	reader.bytes += int64(read)
 	return read, err
+}
+
+// oauthCapableStore is the minimal SessionStore that also satisfies the OAuth
+// store, so newAuthRuntime can wire the MCP authorization server.
+type oauthCapableStore struct {
+	authn.SessionStore
+	authn.OAuthStore
+	accessHash    [32]byte
+	client        authn.OAuthClient
+	allowRequests bool
+}
+
+func (store oauthCapableStore) OAuthClient(context.Context, string, time.Time) (authn.OAuthClient, error) {
+	return store.client, nil
+}
+
+func (oauthCapableStore) CreateOAuthAuthorizationRequest(context.Context, authn.OAuthAuthorizationRequest) error {
+	return nil
+}
+
+func (store oauthCapableStore) AllowOAuthRequest(context.Context, string, string, time.Time) (bool, error) {
+	return store.allowRequests, nil
+}
+
+func (store oauthCapableStore) OAuthPrincipal(_ context.Context, hash [32]byte, _ time.Time) (authn.Principal, error) {
+	if hash != store.accessHash {
+		return authn.Principal{}, authn.ErrUnauthenticated
+	}
+	return authn.Principal{Subject: "11", Method: authn.ProviderOAuthToken}, nil
+}
+
+func TestAuthRuntimeWiresMCPOAuth(t *testing.T) {
+	settings, endpoints, httpClient := authRuntimeSettings(t)
+	settings.SSO.OIDC.Enabled = false
+	settings.SSO.OAuth.GitHub.Enabled = true
+	settings.SSO.OAuth.GitHub.AccessSync = true
+	settings.GitHub.AppID = 532
+	settings.SSO.MCPOAuth.Enabled = true
+	keyFile := filepath.Join(t.TempDir(), "mcp-oauth-key")
+	if err := os.WriteFile(keyFile, []byte(strings.Repeat("k", 32)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings.SSO.MCPOAuth.KeyFile = keyFile
+	bearer := authn.NewStatic(map[string]authn.Principal{"gnp_static": {Subject: "api"}})
+
+	t.Run("store without OAuth support is rejected", func(t *testing.T) {
+		if _, err := newAuthRuntime(t.Context(), settings, nil, bearer, observability.New(), endpoints, httpClient); err == nil {
+			t.Fatal("nil store accepted for MCP OAuth")
+		}
+	})
+	t.Run("wired", func(t *testing.T) {
+		runtime, err := newAuthRuntime(t.Context(), settings, oauthCapableStore{}, bearer, observability.New(), endpoints, httpClient)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if runtime.mcpOAuth == nil || runtime.mcpOAuth.Origin != "https://graphnest.example" || runtime.mcpOAuth.Sealer == nil || runtime.mcpOAuth.GitHub == nil || runtime.mcpOAuth.GitHubTokens == nil {
+			t.Fatalf("mcpOAuth=%#v", runtime.mcpOAuth)
+		}
+		if runtime.requestAuth.Bearer != authn.Authenticator(bearer) {
+			t.Fatalf("REST bearer=%#v, want the original API token authenticator", runtime.requestAuth.Bearer)
+		}
+		var flow *browserflow.Provider
+		for _, provider := range runtime.providers {
+			if candidate, ok := provider.(*browserflow.Provider); ok && candidate.Spec.IdentityProvider == authn.ProviderOAuth {
+				flow = candidate
+			}
+		}
+		if flow == nil || flow.Tokens == nil {
+			t.Fatal("GitHub login does not hand tokens to the authorization server")
+		}
+	})
+	t.Run("bad key fails closed", func(t *testing.T) {
+		badKey := filepath.Join(t.TempDir(), "short")
+		if err := os.WriteFile(badKey, []byte("short"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		bad := settings
+		bad.SSO.MCPOAuth.KeyFile = badKey
+		if _, err := newAuthRuntime(t.Context(), bad, oauthCapableStore{}, bearer, observability.New(), endpoints, httpClient); err == nil {
+			t.Fatal("short key accepted")
+		}
+	})
+	t.Run("off leaves the bearer path alone", func(t *testing.T) {
+		off := settings
+		off.SSO.MCPOAuth.Enabled = false
+		runtime, err := newAuthRuntime(t.Context(), off, oauthCapableStore{}, bearer, observability.New(), endpoints, httpClient)
+		if err != nil || runtime.mcpOAuth != nil || runtime.requestAuth.Bearer != authn.Authenticator(bearer) {
+			t.Fatalf("runtime=%#v err=%v", runtime, err)
+		}
+	})
+}
+
+func TestMCPOAuthPreservesAccountRoutes(t *testing.T) {
+	settings, endpoints, httpClient := authRuntimeSettings(t)
+	settings.SSO.OIDC.Enabled = false
+	settings.SSO.MCPOAuth.Enabled = true
+	settings.Limits = config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}
+	runtime, err := newAuthRuntime(t.Context(), settings, oauthCapableStore{}, authn.TokenManager{Store: &postgres.Store{}}, observability.New(), endpoints, httpClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := newAPIHandler(settings, observability.New(), runtime.requestAuth, nil, nil, nil, nil, nil, nil, nil, nil, nil, runtime.providers, runtime.sessions, nil, nil, runtime.mcpOAuth)
+	for _, path := range []string{"/v1/account/api-tokens", "/v1/account/oauth-grants"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusUnauthorized {
+			t.Errorf("%s status=%d, want an authenticated account route", path, response.Code)
+		}
+	}
+}
+
+func TestMCPOAuthUsesConfiguredBrowserLogin(t *testing.T) {
+	settings, endpoints, httpClient := authRuntimeSettings(t)
+	settings.SSO.MCPOAuth.Enabled = true
+	settings.SSO.MCPOAuth.KeyFile = filepath.Join(t.TempDir(), "oauth-key")
+	if err := os.WriteFile(settings.SSO.MCPOAuth.KeyFile, bytes.Repeat([]byte("k"), 32), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client := authn.OAuthClient{ID: "gnc_runtime", Name: "client", RedirectURIs: []string{"http://127.0.0.1/callback"}}
+	query := url.Values{
+		"client_id": {client.ID}, "redirect_uri": {client.RedirectURIs[0]}, "response_type": {"code"},
+		"code_challenge": {"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"}, "code_challenge_method": {"S256"},
+	}
+	for _, test := range []struct {
+		name               string
+		oidc, github, sync bool
+		want               string
+	}{
+		{"OIDC only", true, false, false, "/auth/oidc/login"},
+		{"GitHub only", false, true, false, "/auth/oauth/github/login"},
+		{"default provider", true, true, false, "/auth/oidc/login"},
+		{"GitHub access sync", true, true, true, "/auth/oauth/github/login"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			configured := settings
+			configured.SSO.OIDC.Enabled = test.oidc
+			configured.SSO.OAuth.GitHub.Enabled = test.github
+			configured.SSO.OAuth.GitHub.AccessSync = test.sync
+			runtime, err := newAuthRuntime(t.Context(), configured, oauthCapableStore{client: client, allowRequests: true}, nil, observability.New(), endpoints, httpClient)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mux := http.NewServeMux()
+			runtime.mcpOAuth.Register(mux)
+			response := httptest.NewRecorder()
+			mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+query.Encode(), nil))
+			location, err := url.Parse(response.Header().Get("Location"))
+			returnTo := location.Query().Get("return_to")
+			if err != nil || response.Code != http.StatusSeeOther || location.Path != test.want || !strings.HasPrefix(returnTo, "/oauth/authorize/resume?request_id=") || len(returnTo) != len("/oauth/authorize/resume?request_id=")+64 {
+				t.Fatalf("status=%d location=%s err=%v", response.Code, response.Header().Get("Location"), err)
+			}
+		})
+	}
+}
+
+func TestMCPOAuthWiresDurableRequestLimits(t *testing.T) {
+	settings, endpoints, httpClient := authRuntimeSettings(t)
+	settings.SSO.OIDC.Enabled = false
+	settings.SSO.MCPOAuth.Enabled = true
+	for _, allow := range []bool{false, true} {
+		runtime, err := newAuthRuntime(t.Context(), settings, oauthCapableStore{allowRequests: allow}, nil, observability.New(), endpoints, httpClient)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mux := http.NewServeMux()
+		runtime.mcpOAuth.Register(mux)
+		for _, path := range []string{"/oauth/register", "/oauth/token"} {
+			response := httptest.NewRecorder()
+			mux.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, nil))
+			want := http.StatusTooManyRequests
+			if allow {
+				want = http.StatusBadRequest
+			}
+			if response.Code != want {
+				t.Errorf("%s allow=%t status=%d, want %d", path, allow, response.Code, want)
+			}
+		}
+	}
+}
+
+func TestMCPOAuthBearerOnlyAuthenticatesMCP(t *testing.T) {
+	settings, endpoints, httpClient := authRuntimeSettings(t)
+	settings.SSO.OIDC.Enabled = false
+	settings.SSO.MCPOAuth.Enabled = true
+	settings.Limits = config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 4096, MaxResults: 10}
+	store := &mainTokenStore{principal: authn.Principal{Subject: "11", Method: "api_token"}}
+	manager := authn.TokenManager{Store: store}
+	_, pat, err := manager.Create(t.Context(), 11, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := bytes.Repeat([]byte("o"), 32)
+	oauthToken := "gno_" + base64.RawURLEncoding.EncodeToString(raw)
+	runtime, err := newAuthRuntime(t.Context(), settings, oauthCapableStore{accessHash: sha256.Sum256(raw)}, manager, observability.New(), endpoints, httpClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := newAPIHandler(settings, observability.New(), runtime.requestAuth, nil, nil, nil, nil, nil, nil, nil, nil, nil, runtime.providers, runtime.sessions, nil, nil, runtime.mcpOAuth)
+	for _, test := range []struct {
+		name, path, token string
+		want              int
+	}{
+		{"OAuth REST", "/v1/auth/session", oauthToken, http.StatusUnauthorized},
+		{"OAuth MCP", "/mcp", oauthToken, http.StatusUnsupportedMediaType},
+		{"PAT REST", "/v1/auth/session", pat, http.StatusOK},
+		{"PAT MCP", "/mcp", pat, http.StatusUnsupportedMediaType},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, test.path, nil)
+			if test.path == "/v1/auth/session" {
+				request.Method = http.MethodGet
+			}
+			request.Header.Set("Authorization", "Bearer "+test.token)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.want {
+				t.Fatalf("status=%d, want %d: %s", response.Code, test.want, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestMCPOAuthKeyPreservesBinaryWhitespace(t *testing.T) {
+	settings, endpoints, httpClient := authRuntimeSettings(t)
+	settings.SSO.OIDC.Enabled = false
+	settings.SSO.MCPOAuth.Enabled = true
+	settings.SSO.MCPOAuth.KeyFile = filepath.Join(t.TempDir(), "mcp-oauth-key")
+	key := []byte("\t " + strings.Repeat("k", 28) + "\r\n")
+	if err := os.WriteFile(settings.SSO.MCPOAuth.KeyFile, key, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := newAuthRuntime(t.Context(), settings, oauthCapableStore{}, nil, observability.New(), endpoints, httpClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealer, err := oauthas.NewSealer(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext, err := sealer.Seal(nil, 7, "provider-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plaintext, err := runtime.mcpOAuth.Sealer.Open(7, ciphertext)
+	if err != nil || plaintext != "provider-token" {
+		t.Fatalf("loaded key differs from file bytes: plaintext=%q err=%v", plaintext, err)
+	}
 }

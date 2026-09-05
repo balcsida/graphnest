@@ -10,6 +10,8 @@ secrets:
   customCA: {name: "", key: ca.crt}
   oidc: {name: "", clientSecretKey: client-secret}
   githubOAuth: {name: "", clientSecretKey: client-secret}
+  # 32-byte key sealing GitHub user tokens kept for MCP OAuth refresh; required when mcpOAuth and githubOAuth.accessSync are both on.
+  mcpOAuth: {name: "", keyKey: sealing-key}
   oidcCA: {name: "", key: ca.crt}
   scim: {name: "", tokenKey: token}
 breakGlass: {enabled: false}
@@ -47,6 +49,8 @@ server:
       linkClaim: ""
       displayNameClaim: name
     githubOAuth: {enabled: false, clientID: "", accessSync: false}
+    # OAuth 2.1 authorization server for MCP clients (dynamic registration, PKCE, consent). Needs oidc or githubOAuth.
+    mcpOAuth: {enabled: false}
   scim: {enabled: false}
   resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
   nodeSelector: {}

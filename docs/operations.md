@@ -243,6 +243,100 @@ that window is too long. Grant the first administrator by user ID:
 `PUT /v1/admin/users/{id}/access` with `direct_administrator: true` from a
 bootstrap credential, or the offline `graphnest-admin` break-glass account.
 
+### MCP OAuth authorization server
+
+`GRAPHNEST_MCP_OAUTH=true` (Helm `server.sso.mcpOAuth.enabled=true`) turns
+GraphNest into an OAuth 2.1 authorization server for MCP clients so tools such
+as pi, OpenCode, Claude Code or Cursor connect to `/mcp` with no configured
+secret. It requires a browser sign-in provider (OIDC or GitHub OAuth) and the
+durable store.
+
+Flow: an unauthenticated `/mcp` request receives `WWW-Authenticate: Bearer
+resource_metadata=".../.well-known/oauth-protected-resource"`; the client reads
+that and `/.well-known/oauth-authorization-server`, registers itself at
+`POST /oauth/register` (public clients only, PKCE S256 mandatory, loopback
+`http://127.0.0.1:<any port>` or `https://` redirect URIs), and opens
+`/oauth/authorize` in the browser. GraphNest signs the user in through the
+configured provider when needed and then renders a **consent page** naming the
+client and its loopback redirect; the user must click Allow. The code is
+exchanged at `POST /oauth/token` for an access token valid **up to one hour** and a
+refresh token; the grant itself expires **30 days** after consent and every
+refresh rotates both tokens. `expires_in` reports the remaining token lifetime,
+capped by the grant expiry. Every consumed refresh-token hash is retained for
+the grant's lifetime. Presenting any consumed token again 30 seconds or more
+after its rotation revokes the whole grant and records
+`oauth_grant_reuse_detected`. Before that deadline, a consumed token still
+returns `invalid_grant`, but does not revoke the grant. The grace window does
+not replay or recover a successful refresh response: if that response is lost,
+the client must authorize again because only token hashes are retained.
+
+Each browser authorization has a public 64-character `request_id` and a
+request-specific `__Host-graphnest_oauth_req_<request_id>` secret cookie, so
+multiple tabs may sign in and decide consent independently. The provider
+callback resumes only the exact `request_id` supplied by GraphNest; malformed
+or altered continuations require restarting that authorization.
+
+Access tokens (`gno_…`) carry the user's repository read access, including
+GitHub-derived grants, without administrative privileges. They authenticate
+only `/mcp` and cannot create or manage credentials. Users see and disconnect
+clients under **Account → Connected MCP clients** at `/account`
+(`GET`/`DELETE /v1/account/oauth-grants`); administrators' "revoke
+credentials" also revokes grants. `scope` is accepted, persisted and echoed but
+not yet enforced, so finer scopes can be introduced later with a
+`WWW-Authenticate: Bearer error="insufficient_scope"` step-up rather than a
+migration.
+
+With `GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC`, every new authorization requires a
+fresh GitHub sign-in, including users with an existing GraphNest session. Each
+grant stores the user's GitHub
+token encrypted with AES-256-GCM under `GRAPHNEST_MCP_OAUTH_KEY_FILE` (32
+bytes unchanged, with no trailing newline; required in that combination) and every refresh queries GitHub before
+rotating. A successful repository snapshot commits atomically with the token
+rotation, so repository access removed on GitHub disappears from agents within
+the hour without a browser round-trip. A rejected, expired, or missing stored
+credential returns terminal `invalid_grant` and atomically revokes only that MCP
+OAuth grant and clears its ciphertext; the user's shared GitHub-derived grants
+are unchanged. If the revocation cannot be persisted, refresh returns HTTP 503
+without changing the grant, so the same refresh token can retry the revocation.
+GitHub outages and rate limits leave the credential and grants unchanged and do
+not prevent token rotation. Refresh waits at most two seconds for this GitHub
+synchronization. Revoking a new grant after encrypted-token storage
+fails has a separate ten-second cleanup budget.
+Unreadable stored GitHub credentials make refresh return HTTP 503 without
+rotating tokens or changing grants. Restore the original encryption key or
+authorize the client again.
+Expired authorization requests, week-old dead grants and clients idle for 90
+days are swept by the periodic cleanup.
+
+PostgreSQL shares fixed one-minute request budgets across server replicas:
+registration and authorization each allow 10 requests per source IP and 100
+across the deployment;
+token exchange and revocation each allow 60 per source and 1,000 across the
+deployment. Registration also has an atomic deployment-wide cap of 10,000
+clients. Limits return HTTP 429;
+an unavailable limiter returns HTTP 503. Source limits use the socket peer IP,
+ignoring forwarded headers, so clients behind the same ingress proxy share a
+source budget. Idle-client cleanup releases registration capacity.
+
+Migration 025 extends the shared budgets to `/oauth/authorize`; migration 024
+added `/oauth/revoke`. Unknown, wrong-client and already-revoked tokens still
+return HTTP 200 when within budget, but only a newly revoked grant records a
+successful revocation audit.
+Disconnecting a client through the account UI also records a revocation audit.
+
+Migration 022 revokes grants already rotated by earlier MCP OAuth builds,
+because their discarded token history cannot be recovered. Those clients must
+authorize again; unrotated grants remain valid.
+
+Not supported by design: confidential clients, `client_credentials`
+(services keep using API tokens and `POST /v1/admin/api-tokens` delegation),
+remembered consent, and client-ID metadata documents. The provider-token
+hand-off is process-local: the GitHub callback, consent POST, and the MCP client's
+code exchange must reach the same replica. Browser-cookie affinity alone does
+not cover the client's exchange. Use one server replica or route the entire
+flow consistently. A missing hand-off fails code exchange and requires fresh
+authorization; it never issues an access-synced grant without GitHub credentials.
+
 ### GitHub.com smoke and negative procedure
 
 1. Use a public HTTPS origin and create a dedicated GitHub.com OAuth App for

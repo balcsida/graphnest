@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -18,6 +20,42 @@ const maxTokenRepositories = 100
 type createTokenRequest struct {
 	ExpiresAt     *string `json:"expires_at"`
 	RepositoryIDs []int64 `json:"repository_ids"`
+}
+
+type oauthGrantList struct {
+	Grants     []account.Grant `json:"grants"`
+	Truncated  bool            `json:"truncated"`
+	NextCursor string          `json:"next_cursor,omitempty"`
+}
+
+type oauthGrantCursor struct {
+	Version int   `json:"v"`
+	ID      int64 `json:"id"`
+}
+
+func decodeOAuthGrantCursor(value string) (int64, bool) {
+	if value == "" {
+		return 0, true
+	}
+	data, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return 0, false
+	}
+	var cursor oauthGrantCursor
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&cursor); err != nil {
+		return 0, false
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) || cursor.Version != 1 || cursor.ID < 1 {
+		return 0, false
+	}
+	return cursor.ID, true
+}
+
+func encodeOAuthGrantCursor(id int64) string {
+	data, _ := json.Marshal(oauthGrantCursor{Version: 1, ID: id})
+	return base64.RawURLEncoding.EncodeToString(data)
 }
 
 func RegisterAccount(mux *http.ServeMux, authenticator authn.RequestAuthenticator, service *account.Service, maxRequestBytes, maxResponseBytes int64) {
@@ -93,6 +131,41 @@ func RegisterAccount(mux *http.ServeMux, authenticator authn.RequestAuthenticato
 			writeError(writer, http.StatusMethodNotAllowed, "invalid_request", "request is invalid", false)
 		}
 	})))
+	// Connected MCP clients: list and revoke the caller's OAuth grants.
+	mux.Handle("/v1/account/oauth-grants", privateAuth(exactMethod(http.MethodGet, AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		query := request.URL.Query()
+		afterID, ok := decodeOAuthGrantCursor(query.Get("cursor"))
+		if !ok || (query.Has("cursor") && query.Get("cursor") == "") {
+			writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
+			return
+		}
+		grants, truncated, err := service.Grants(request.Context(), PrincipalFromContext(request.Context()), afterID)
+		if err != nil {
+			writeAccountError(writer, err)
+			return
+		}
+		response, ok := limitOAuthGrantList(grants, truncated, maxResponseBytes)
+		if !ok {
+			writeBoundedJSONStatus(writer, http.StatusInternalServerError, map[string]any{"error": map[string]any{
+				"code": "response_too_large", "message": "response exceeds configured byte limit", "request_id": writer.Header().Get("X-Request-ID"), "retryable": false,
+			}}, maxResponseBytes)
+			return
+		}
+		writeBoundedJSON(writer, response, maxResponseBytes)
+	})))))
+	mux.Handle("/v1/account/oauth-grants/", privateAuth(exactMethod(http.MethodDelete, AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		rest := strings.TrimPrefix(request.URL.Path, "/v1/account/oauth-grants/")
+		id, err := strconv.ParseInt(rest, 10, 64)
+		if err != nil || id < 1 || strings.Contains(rest, "/") {
+			writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
+			return
+		}
+		if err := service.RevokeGrant(request.Context(), PrincipalFromContext(request.Context()), id); err != nil {
+			writeAccountError(writer, err)
+			return
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	})))))
 	mux.Handle("/v1/account/api-tokens/", privateAuth(exactMethod(http.MethodDelete, AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		id, err := strconv.ParseInt(strings.TrimPrefix(request.URL.Path, "/v1/account/api-tokens/"), 10, 64)
 		if err != nil || id < 1 || strings.Contains(strings.TrimPrefix(request.URL.Path, "/v1/account/api-tokens/"), "/") {
@@ -105,6 +178,35 @@ func RegisterAccount(mux *http.ServeMux, authenticator authn.RequestAuthenticato
 		}
 		writer.WriteHeader(http.StatusNoContent)
 	})))))
+}
+
+func limitOAuthGrantList(grants []account.Grant, truncated bool, maxResponseBytes int64) (oauthGrantList, bool) {
+	result := oauthGrantList{Grants: []account.Grant{}}
+	data, _ := json.Marshal(result)
+	if int64(len(data)+1) > maxResponseBytes {
+		return oauthGrantList{}, false
+	}
+	for index, grant := range grants {
+		more := truncated || index+1 < len(grants)
+		candidate := oauthGrantList{Grants: append(result.Grants, grant), Truncated: more}
+		if more {
+			candidate.NextCursor = encodeOAuthGrantCursor(grant.ID)
+		}
+		data, _ = json.Marshal(candidate)
+		if int64(len(data)+1) > maxResponseBytes {
+			if len(result.Grants) == 0 {
+				return oauthGrantList{}, false
+			}
+			result.Truncated = true
+			result.NextCursor = encodeOAuthGrantCursor(result.Grants[len(result.Grants)-1].ID)
+			return result, true
+		}
+		result = candidate
+	}
+	if result.Truncated && result.NextCursor == "" {
+		return oauthGrantList{}, false
+	}
+	return result, true
 }
 
 func tokenExpiry(value *string) (*time.Time, bool) {

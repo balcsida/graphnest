@@ -87,7 +87,7 @@ for (const id of [
   "scip-commit", "dependency-refresh", "dependency-repo", "inventory-notices",
   "user-rows", "user-empty", "group-rows", "group-empty", "user-access", "user-id", "user-admin",
   "user-repositories", "group-access", "group-id", "group-admin", "group-repositories",
-  "token-rows", "token-empty", "token-create", "token-expires", "token-repositories", "token-reveal",
+  "token-rows", "token-empty", "grant-rows", "grant-empty", "token-create", "token-expires", "token-repositories", "token-reveal",
   "audit-rows", "audit-empty",
 ]) {
   const node = document.createElement(id.includes("form") || id.includes("upload") || id.includes("refresh") ? "form" : "div");
@@ -114,6 +114,8 @@ const responses = {
   "/v1/admin/users": {users:[{id:7,user_name:"ada",display_name:"Ada",scim_active:true,suspended:false,administrator:true,repository_ids:[101,102],direct_administrator:false,direct_repository_ids:[101]}],truncated:true},
   "/v1/admin/groups": {groups:[{id:9,display_name:"Engineering",administrator:true,repository_ids:[101,102],member_count:2}],truncated:true},
   "/v1/account/api-tokens": {tokens:[{id:3,prefix:"gnp_visible",repository_ids:[101],created_at:"2026-01-01T00:00:00Z",expires_at:"2026-08-29T00:00:00Z"}]},
+  "/v1/account/oauth-grants": {grants:Array.from({length:100},(_,index)=>({id:index+9,client_name:index === 0 ? "OpenCode" : "MCP client "+(index+1),scope:"",created_at:"2026-09-01T00:00:00Z",last_used_at:"2026-09-04T00:00:00Z",expires_at:"2026-10-01T00:00:00Z"})),truncated:true,next_cursor:"grants-page-2"},
+  "/v1/account/oauth-grants?cursor=grants-page-2": {grants:[{id:109,client_name:"MCP client 101",scope:"",created_at:"2026-09-01T00:00:00Z",last_used_at:"2026-09-04T00:00:00Z",expires_at:"2026-10-01T00:00:00Z"}],truncated:false},
   "/v1/admin/scip/uploads": {uploads:[],truncated:true},
   "/v1/admin/scip/dependencies": {dependencies:[],truncated:true},
   "/v1/admin/webhook-deliveries": {deliveries:[
@@ -129,16 +131,22 @@ let allowMutation = false;
 let delayedOverview;
 let delayedJobs;
 let accountTokenDenied = false;
+let grantPageDenied = false;
 let bearerIdentityDenied = false;
+let nonAdmin = false;
 const sessionAuthorized = true;
 globalThis.fetch = async (path, options = {}) => {
   requests.push({path, options});
+  if (nonAdmin && path.startsWith("/v1/admin/")) return {ok:false,status:403,json:async()=>({})};
   if (path === "/auth/logout") return {ok:true,status:204};
   if (path === "/v1/auth/session") return {ok:sessionAuthorized,status:sessionAuthorized ? 200 : 401};
   if (path === "/healthz" || path === "/readyz") return {ok:true,status:200};
   if (path === "/v1/account/api-tokens" && accountTokenDenied && !options.method) return {ok:false,status:403,json:async()=>({})};
+  if (path === "/v1/account/oauth-grants?cursor=grants-page-2" && grantPageDenied) return {ok:false,status:503,json:async()=>({error:{message:"Grant pagination failed."}})};
   if (path === "/v1/account/api-tokens" && options.method === "POST") return {ok:true,status:201,json:async()=>({id:4,prefix:"gnp_new",repository_ids:[101],created_at:"2026-01-01T00:00:00Z",expires_at:"2026-08-29T00:00:00Z",token:"gnp_reveal_once"})};
   if (path === "/v1/account/api-tokens/3" && options.method === "DELETE") return {ok:true,status:204};
+  if (path === "/v1/account/oauth-grants/9" && options.method === "DELETE") return {ok:true,status:204};
+  if (path === "/v1/account/oauth-grants/109" && options.method === "DELETE") return {ok:true,status:204};
   if (bearerIdentityDenied && ["/v1/admin/users", "/v1/admin/groups", "/v1/admin/audit-events"].includes(path)) return {ok:false,status:403,json:async()=>({})};
   if (path === "/v1/admin/overview" && delayedOverview) return delayedOverview;
   if (path === "/v1/admin/jobs?cursor=page-2" && delayedJobs) return delayedJobs;
@@ -286,6 +294,23 @@ assert.match(text(tokenRow), /gnp_visible.*101/);
 const revokeToken = tokenRow.children.at(-1).children[0];
 await revokeToken.dispatch("click");
 assert.equal(requests.findLast(request => request.path === "/v1/account/api-tokens/3").options.method, "DELETE");
+const grantRow = ids.get("grant-rows").children[0];
+assert.match(text(grantRow), /OpenCode/, "connected MCP clients are listed next to API tokens");
+await grantRow.children.at(-1).children[0].dispatch("click");
+assert.equal(requests.findLast(request => request.path === "/v1/account/oauth-grants/9").options.method, "DELETE", "revoking a grant calls the account API");
+assert.equal(ids.get("grant-rows").children.length, 101, "the administrator view lists every connected MCP client");
+assert.ok(requests.some(request => request.path === "/v1/account/oauth-grants?cursor=grants-page-2"), "the administrator follows the connected-client cursor");
+const newestGrantRow = ids.get("grant-rows").children.at(-1);
+assert.match(text(newestGrantRow), /MCP client 101/);
+await newestGrantRow.children.at(-1).children[0].dispatch("click");
+assert.equal(requests.findLast(request => request.path === "/v1/account/oauth-grants/109").options.method, "DELETE", "the administrator can revoke the newest client beyond the first 100");
+grantPageDenied = true;
+refresh();
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(ids.get("admin-status").textContent, "Grant pagination failed.", "a connected-client page failure remains visible");
+grantPageDenied = false;
+refresh();
+await new Promise(resolve => setTimeout(resolve, 0));
 ids.get("token-expires").value = "2026-08-29T00:00";
 ids.get("token-repositories").value = "101";
 await ids.get("token-create").dispatch("submit");
@@ -388,5 +413,39 @@ resolveOverview({ok:true,status:200,json:async()=>responses["/v1/admin/overview"
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(ids.get("admin-shell").hidden, true, "a stale load must not reopen privileged content after lock");
 assert.equal(ids.get("access-panel").hidden, false, "a stale load must not hide the access panel after lock");
+
+nonAdmin = true;
+accountTokenDenied = false;
+location.pathname = "/account";
+location.hash = "users";
+const accountRequestStart = requests.length;
+vm.runInThisContext(script, {filename:"account.html"});
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(ids.get("admin-shell").hidden, false, "a nonadministrator can open account settings");
+assert.equal(ids.get("access-panel").hidden, true);
+assert.equal(requests.slice(accountRequestStart).some(({path}) => path.startsWith("/v1/admin/")), false, "account settings do not probe administrator APIs");
+assert.ok(all.filter(node => node.dataset.nav && node.dataset.nav !== "tokens").every(node => node.hidden), "account settings hide administrator navigation");
+await all.find(node => node.dataset.nav === "users").dispatch("click");
+assert.ok(all.filter(node => node.dataset.screen && node.dataset.screen !== "tokens").every(node => node.hidden), "account settings cannot switch to administrator screens");
+assert.equal(location.hash, "tokens");
+assert.equal(ids.get("grant-rows").children.length, 101, "account settings list every connected MCP client");
+assert.ok(requests.slice(accountRequestStart).some(({path}) => path === "/v1/account/oauth-grants?cursor=grants-page-2"), "account settings follow the connected-client cursor");
+const newestAccountGrantRow = ids.get("grant-rows").children.at(-1);
+assert.match(text(newestAccountGrantRow), /MCP client 101/);
+responses["/v1/account/oauth-grants?cursor=grants-page-2"].grants = [];
+const accountRevokeRequestStart = requests.length;
+await newestAccountGrantRow.children.at(-1).children[0].dispatch("click");
+assert.equal(requests.slice(accountRevokeRequestStart).find(({path}) => path === "/v1/account/oauth-grants/109")?.options.method, "DELETE", "the account owner can revoke the newest client beyond the first 100");
+assert.equal(ids.get("grant-rows").children.length, 100);
+assert.doesNotMatch(text(ids.get("grant-rows")), /MCP client 101/);
+const accountGrantRow = ids.get("grant-rows").children[0];
+assert.match(text(accountGrantRow), /OpenCode/);
+responses["/v1/account/oauth-grants"] = {grants:[]};
+await accountGrantRow.children.at(-1).children[0].dispatch("click");
+assert.equal(requests.findLast(({path}) => path === "/v1/account/oauth-grants/9").options.method, "DELETE");
+assert.equal(ids.get("admin-shell").hidden, false, "disconnect refresh keeps account settings available");
+assert.equal(ids.get("grant-rows").children.length, 0, "the disconnected client is removed after refreshing");
+assert.equal(ids.get("grant-empty").hidden, false);
+assert.equal(requests.slice(accountRequestStart).some(({path}) => path.startsWith("/v1/admin/")), false);
 
 assert.doesNotMatch(source, /\.aside-foot\{display:none/);

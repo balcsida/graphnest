@@ -122,3 +122,42 @@ func TestBearerMiddlewarePassesCanceledRequestContext(t *testing.T) {
 		})
 	}
 }
+
+func TestAuthenticateBearerWithChallengeAdvertisesOAuthDiscovery(t *testing.T) {
+	challenge := func(writer http.ResponseWriter, invalidToken bool) {
+		value := `Bearer resource_metadata="https://gn.example/.well-known/oauth-protected-resource"`
+		if invalidToken {
+			value = `Bearer error="invalid_token", resource_metadata="https://gn.example/.well-known/oauth-protected-resource"`
+		}
+		writer.Header().Set("WWW-Authenticate", value)
+	}
+	handler := AuthenticateBearerWithChallenge(authn.NewStatic(map[string]authn.Principal{"good": {Subject: "s"}}), challenge, http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	cases := map[string]struct {
+		authorization string
+		wantStatus    int
+		wantHeader    string
+	}{
+		"no credential":   {"", http.StatusUnauthorized, `Bearer resource_metadata="https://gn.example/.well-known/oauth-protected-resource"`},
+		"bad credential":  {"Bearer nope", http.StatusUnauthorized, `Bearer error="invalid_token", resource_metadata="https://gn.example/.well-known/oauth-protected-resource"`},
+		"good credential": {"Bearer good", http.StatusNoContent, ""},
+	}
+	for name, tc := range cases {
+		request := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+		if tc.authorization != "" {
+			request.Header.Set("Authorization", tc.authorization)
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != tc.wantStatus || response.Header().Get("WWW-Authenticate") != tc.wantHeader {
+			t.Errorf("%s: status=%d WWW-Authenticate=%q", name, response.Code, response.Header().Get("WWW-Authenticate"))
+		}
+	}
+	plain := AuthenticateBearer(authn.NewStatic(nil), http.NotFoundHandler())
+	response := httptest.NewRecorder()
+	plain.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+	if response.Header().Get("WWW-Authenticate") != "" {
+		t.Fatal("plain bearer authentication must not advertise OAuth")
+	}
+}

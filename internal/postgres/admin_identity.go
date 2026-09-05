@@ -342,11 +342,18 @@ const activeAdministratorSQL = `select 1 from users
 				where group_memberships.user_id=users.id))`
 
 func revokeAdminCredentials(ctx context.Context, tx pgx.Tx, userID int64) error {
+	if _, err := tx.Exec(ctx, `delete from oauth_authorization_requests where user_id=$1`, userID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `update auth_sessions set revoked_at=coalesce(revoked_at, now())
 		where user_id=$1 and revoked_at is null`, userID); err != nil {
 		return err
 	}
-	_, err := tx.Exec(ctx, `update api_tokens set revoked_at=coalesce(revoked_at, now())
+	if _, err := tx.Exec(ctx, `update api_tokens set revoked_at=coalesce(revoked_at, now())
+		where user_id=$1 and revoked_at is null`, userID); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, `update oauth_grants set revoked_at=coalesce(revoked_at, now()), github_token_ct=null
 		where user_id=$1 and revoked_at is null`, userID)
 	return err
 }

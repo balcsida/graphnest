@@ -93,10 +93,36 @@ graph_queries.each do |name, query|
   require_value(response["$ref"], "#/components/schemas/Graph#{name.capitalize}Response", "graph #{name} response schema")
   raise OpenAPIError, "graph #{name} timeout response is missing" unless query.dig("responses", "504").is_a?(Hash)
 end
+[["register", "503"], ["token", "503"], ["revoke", "429"], ["revoke", "503"]].each do |endpoint, status|
+  reference = document.dig("paths", "/oauth/#{endpoint}", "post", "responses", status, "content", "application/json", "schema", "$ref")
+  require_value(reference, "#/components/schemas/OAuthError", "OAuth #{endpoint} HTTP #{status} response schema")
+end
 schemas = document.fetch("components").fetch("schemas")
+grant_list_operation = document.dig("paths", "/v1/account/oauth-grants", "get")
+grant_cursor = grant_list_operation.fetch("parameters", []).find { |parameter| parameter["name"] == "cursor" && parameter["in"] == "query" }
+raise OpenAPIError, "OAuth grant cursor is missing" unless grant_cursor
+require_value(grant_cursor.dig("schema", "type"), "string", "OAuth grant cursor type")
+require_value(grant_cursor.dig("schema", "minLength"), 1, "OAuth grant cursor minimum length")
+%w[400 500].each do |status|
+  raise OpenAPIError, "OAuth grant list HTTP #{status} response is missing" unless grant_list_operation.dig("responses", status).is_a?(Hash)
+end
+require_value(grant_list_operation.dig("responses", "500", "content", "application/json", "schema", "$ref"), "#/components/schemas/ErrorResponse", "OAuth grant list HTTP 500 response schema")
+grant_list = schemas.fetch("OAuthGrantList")
+%w[grants truncated].each do |field|
+  raise OpenAPIError, "OAuthGrantList must require #{field}" unless grant_list.fetch("required").include?(field)
+end
+require_value(grant_list.dig("properties", "grants", "maxItems"), 100, "OAuthGrantList grants cap")
+require_value(grant_list.dig("properties", "truncated", "type"), "boolean", "OAuthGrantList truncated type")
+require_value(grant_list.dig("properties", "next_cursor", "type"), "string", "OAuthGrantList next cursor type")
 audit_event = schemas.fetch("AuditEvent").fetch("properties")
-raise OpenAPIError, "AuditEvent.authentication_method omits oauth" unless audit_event.fetch("authentication_method").fetch("enum").include?("oauth")
-%w[oauth_login_succeeded oauth_login_denied].each do |operation|
+%w[oauth oauth_token].each do |method|
+  raise OpenAPIError, "AuditEvent.authentication_method omits #{method}" unless audit_event.fetch("authentication_method").fetch("enum").include?(method)
+end
+%w[oauth_client oauth_grant].each do |target|
+  raise OpenAPIError, "AuditEvent.target_type omits #{target}" unless audit_event.fetch("target_type").fetch("enum").include?(target)
+end
+%w[oauth_login_succeeded oauth_login_denied oauth_client_registered oauth_consent_granted oauth_consent_denied
+   oauth_grant_created oauth_grant_refreshed oauth_grant_revoked oauth_grant_reuse_detected].each do |operation|
   raise OpenAPIError, "AuditEvent.operation omits #{operation}" unless audit_event.fetch("operation").fetch("enum").include?(operation)
 end
 auth_config = schemas.fetch("AuthConfig")
