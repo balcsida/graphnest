@@ -86,10 +86,34 @@ func (s *Store) DeleteOAuthAuthorizationRequest(ctx context.Context, id [32]byte
 	return err
 }
 
-func (s *Store) ConsumeOAuthCode(ctx context.Context, codeID [32]byte, now time.Time) (authn.OAuthAuthorizationRequest, error) {
-	return scanAuthorizationRequest(s.pool.QueryRow(ctx, `delete from oauth_authorization_requests
-		where id=$1 and phase='code' and expires_at > $2
-		returning id, phase, client_id, user_id, redirect_uri, code_challenge, state, scope, resource, created_at, expires_at`, codeID[:], now))
+func (s *Store) ExchangeOAuthCode(ctx context.Context, codeID [32]byte, grant authn.OAuthGrant) (int64, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	// Lock the user before the code or grant, matching administrator revocation.
+	// If revocation wins, its code deletion is visible to the next statement;
+	// if exchange wins, revocation will see and revoke the committed grant.
+	var userID int64
+	if err := tx.QueryRow(ctx, `select id from users where id=$1 and scim_active
+		and suspended_at is null and deleted_at is null for update`, grant.UserID).Scan(&userID); err != nil {
+		return 0, err
+	}
+	result, err := tx.Exec(ctx, `delete from oauth_authorization_requests
+		where id=$1 and phase='code' and expires_at > $2 and user_id=$3 and client_id=$4 and scope=$5`,
+		codeID[:], grant.CreatedAt, grant.UserID, grant.ClientID, grant.Scope)
+	if err != nil {
+		return 0, err
+	}
+	if result.RowsAffected() != 1 {
+		return 0, pgx.ErrNoRows
+	}
+	id, err := createOAuthGrant(ctx, tx, grant)
+	if err != nil {
+		return 0, err
+	}
+	return id, tx.Commit(ctx)
 }
 
 func scanAuthorizationRequest(row pgx.Row) (authn.OAuthAuthorizationRequest, error) {
@@ -108,8 +132,12 @@ func scanAuthorizationRequest(row pgx.Row) (authn.OAuthAuthorizationRequest, err
 }
 
 func (s *Store) CreateOAuthGrant(ctx context.Context, grant authn.OAuthGrant) (int64, error) {
+	return createOAuthGrant(ctx, s.pool, grant)
+}
+
+func createOAuthGrant(ctx context.Context, queryer principalQuerier, grant authn.OAuthGrant) (int64, error) {
 	var id int64
-	err := s.pool.QueryRow(ctx, `insert into oauth_grants
+	err := queryer.QueryRow(ctx, `insert into oauth_grants
 		(client_id, user_id, scope, access_hash, access_expires_at, refresh_hash, github_token_ct, created_at, last_used_at, expires_at)
 		values ($1,$2,$3,$4,$5,$6,$7,$8,$8,$9) returning id`,
 		grant.ClientID, grant.UserID, grant.Scope, grant.AccessHash[:], grant.AccessExpiresAt, grant.RefreshHash[:],
@@ -193,8 +221,14 @@ func (s *Store) RotateOAuthGrant(ctx context.Context, refreshHash [32]byte, rota
 }
 
 func (s *Store) UpdateOAuthGrantGitHubToken(ctx context.Context, grantID int64, ciphertext []byte) error {
-	_, err := s.pool.Exec(ctx, `update oauth_grants set github_token_ct=$2 where id=$1`, grantID, ciphertext)
-	return err
+	result, err := s.pool.Exec(ctx, `update oauth_grants set github_token_ct=$2 where id=$1 and revoked_at is null`, grantID, ciphertext)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() != 1 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }
 
 func (s *Store) RevokeOAuthGrant(ctx context.Context, grantID int64) error {

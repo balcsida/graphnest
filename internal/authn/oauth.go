@@ -103,11 +103,10 @@ type OAuthStore interface {
 	// IssueOAuthCode consumes a pending request and re-keys it as a code.
 	IssueOAuthCode(ctx context.Context, pendingID, codeID [32]byte, userID int64, expiresAt, now time.Time) error
 	DeleteOAuthAuthorizationRequest(ctx context.Context, id [32]byte) error
-	// ConsumeOAuthCode deletes and returns a live code-phase request. A second
-	// consumption fails with pgx.ErrNoRows; callers treat that as replay.
-	ConsumeOAuthCode(ctx context.Context, codeID [32]byte, now time.Time) (OAuthAuthorizationRequest, error)
-
-	CreateOAuthGrant(context.Context, OAuthGrant) (int64, error)
+	// ExchangeOAuthCode atomically consumes a live code and creates its grant,
+	// serialized with user credential revocation. Missing or used codes, mismatched
+	// grant ownership/scope, and inactive users return pgx.ErrNoRows.
+	ExchangeOAuthCode(ctx context.Context, codeID [32]byte, grant OAuthGrant) (int64, error)
 	// OAuthPrincipal resolves a live access token to the user's principal and
 	// bumps last_used_at.
 	OAuthPrincipal(ctx context.Context, accessHash [32]byte, now time.Time) (Principal, error)

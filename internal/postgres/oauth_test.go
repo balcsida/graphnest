@@ -53,11 +53,15 @@ func TestOAuthAuthorizationRequestBecomesSingleUseCode(t *testing.T) {
 	if err := store.IssueOAuthCode(t.Context(), pending.ID, [32]byte{3}, userID, now.Add(time.Minute), now); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("request handle must stop working once consent is given: %v", err)
 	}
-	consumed, err := store.ConsumeOAuthCode(t.Context(), code, now.Add(30*time.Second))
-	if err != nil || consumed.UserID != userID || consumed.Phase != "code" || consumed.CodeChallenge != pending.CodeChallenge {
-		t.Fatalf("consumed=%+v err=%v", consumed, err)
+	loaded, err = store.OAuthAuthorizationRequest(t.Context(), code, "code", now.Add(30*time.Second))
+	if err != nil || loaded.UserID != userID || loaded.Phase != "code" || loaded.CodeChallenge != pending.CodeChallenge {
+		t.Fatalf("code=%+v err=%v", loaded, err)
 	}
-	if _, err := store.ConsumeOAuthCode(t.Context(), code, now.Add(30*time.Second)); !errors.Is(err, pgx.ErrNoRows) {
+	grant := authn.OAuthGrant{UserID: userID, ClientID: client.ID, CreatedAt: now.Add(30 * time.Second), ExpiresAt: now.Add(time.Hour), AccessExpiresAt: now.Add(time.Hour)}
+	if _, err := store.ExchangeOAuthCode(t.Context(), code, grant); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ExchangeOAuthCode(t.Context(), code, grant); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("code must be single use: %v", err)
 	}
 }
@@ -74,7 +78,9 @@ func TestOAuthCodeExpiryAndCleanup(t *testing.T) {
 	if err := store.CreateOAuthAuthorizationRequest(t.Context(), code); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ConsumeOAuthCode(t.Context(), code.ID, now.Add(2*time.Minute)); !errors.Is(err, pgx.ErrNoRows) {
+	if _, err := store.ExchangeOAuthCode(t.Context(), code.ID, authn.OAuthGrant{
+		UserID: userID, ClientID: client.ID, CreatedAt: now.Add(2 * time.Minute),
+	}); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("expired code must not be exchangeable: %v", err)
 	}
 	requests, _, _, err := store.DeleteExpiredOAuth(t.Context(), now.Add(2*time.Minute))
