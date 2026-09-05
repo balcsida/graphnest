@@ -26,7 +26,8 @@ const (
 	codeTTL                         = 60 * time.Second
 	pendingTTL                      = 10 * time.Minute
 	refreshGrace                    = 30 * time.Second
-	syncTimeout                     = 10 * time.Second
+	cleanupTimeout                  = 10 * time.Second
+	githubSyncTimeout               = 2 * time.Second
 	maxRedirectURIs                 = 8
 	maxClientName                   = 64
 	maxFormBytes                    = 16 << 10
@@ -609,7 +610,7 @@ func (server *Server) exchangeCode(writer http.ResponseWriter, request *http.Req
 			err = server.Store.UpdateOAuthGrantGitHubToken(request.Context(), grantID, ciphertext)
 		}
 		if err != nil {
-			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), syncTimeout)
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), cleanupTimeout)
 			_ = server.Store.RevokeOAuthGrant(cleanupCtx, grantID)
 			cancel()
 			writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "could not secure GitHub credentials; start authorization again")
@@ -670,7 +671,7 @@ func (server *Server) refresh(writer http.ResponseWriter, request *http.Request)
 // token. GitHub rejecting the token drops it (a later browser login re-seeds
 // it); any other failure changes nothing. Access can narrow here, never widen
 // without GitHub confirming it, and the token response never waits on GitHub
-// for longer than syncTimeout.
+// for longer than githubSyncTimeout.
 func (server *Server) syncGitHubAccess(ctx context.Context, grant authn.OAuthGrant) {
 	if server.GitHub == nil || server.Sealer == nil || len(grant.GitHubTokenCiphertext) == 0 {
 		return
@@ -680,7 +681,7 @@ func (server *Server) syncGitHubAccess(ctx context.Context, grant authn.OAuthGra
 		_ = server.Store.UpdateOAuthGrantGitHubToken(ctx, grant.ID, nil)
 		return
 	}
-	ctx, cancel := context.WithTimeout(ctx, syncTimeout)
+	ctx, cancel := context.WithTimeout(ctx, githubSyncTimeout)
 	defer cancel()
 	repositories, err := server.GitHub.AccessibleRepositories(ctx, githubToken)
 	if err != nil {

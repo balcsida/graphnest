@@ -45,7 +45,10 @@ deliberately absent; services continue to use API tokens and delegation. The
 login-to-exchange hand-off of the GitHub token is process-local. The GitHub
 callback, consent POST and client code exchange must reach one replica;
 missing credentials fail code exchange and require fresh authorization.
-Every access-synced authorization requires a fresh GitHub sign-in. PostgreSQL
+Every access-synced authorization requires a fresh GitHub sign-in. Refresh-time
+GitHub synchronization has a two-second deadline inside the server's ten-second
+write deadline; code-exchange revocation cleanup keeps a separate ten-second
+budget. PostgreSQL
 retains all consumed refresh hashes with their rotation times, shares request
 budgets across replicas (including pending authorization starts), and caps
 client registrations. Migration 022 revokes
