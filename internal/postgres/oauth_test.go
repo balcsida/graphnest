@@ -47,10 +47,15 @@ func TestOAuthAuthorizationRequestBecomesSingleUseCode(t *testing.T) {
 	}
 
 	code := [32]byte{2}
-	if err := store.IssueOAuthCode(t.Context(), pending.ID, code, userID, now.Add(time.Minute), now); err != nil {
+	sessionHash := [32]byte{92}
+	if err := store.CreateSession(t.Context(), authn.SessionRecord{TokenHash: sessionHash, UserID: userID, Provider: authn.ProviderOIDC,
+		CreatedAt: now, LastSeenAt: now, IdleExpiresAt: now.Add(time.Minute), ExpiresAt: now.Add(time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.IssueOAuthCode(t.Context(), pending.ID, [32]byte{3}, userID, now.Add(time.Minute), now); !errors.Is(err, pgx.ErrNoRows) {
+	if err := store.IssueOAuthCode(t.Context(), pending.ID, code, sessionHash, userID, now.Add(time.Minute), now); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.IssueOAuthCode(t.Context(), pending.ID, [32]byte{3}, sessionHash, userID, now.Add(time.Minute), now); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("request handle must stop working once consent is given: %v", err)
 	}
 	loaded, err = store.OAuthAuthorizationRequest(t.Context(), code, "code", now.Add(30*time.Second))

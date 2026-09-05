@@ -100,8 +100,8 @@ type OAuthStore interface {
 	CreateOAuthAuthorizationRequest(context.Context, OAuthAuthorizationRequest) error
 	// OAuthAuthorizationRequest loads a live request without consuming it.
 	OAuthAuthorizationRequest(ctx context.Context, id [32]byte, phase string, now time.Time) (OAuthAuthorizationRequest, error)
-	// IssueOAuthCode consumes a pending request and re-keys it as a code.
-	IssueOAuthCode(ctx context.Context, pendingID, codeID [32]byte, userID int64, expiresAt, now time.Time) error
+	// IssueOAuthCode consumes a pending request using the user's live consent session.
+	IssueOAuthCode(ctx context.Context, pendingID, codeID, sessionHash [32]byte, userID int64, expiresAt, now time.Time) error
 	DeleteOAuthAuthorizationRequest(ctx context.Context, id [32]byte) error
 	// ExchangeOAuthCode atomically consumes a live code and creates its grant,
 	// serialized with user credential revocation. Missing or used codes, mismatched

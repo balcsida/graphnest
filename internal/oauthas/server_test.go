@@ -78,7 +78,7 @@ func (m *memoryStore) OAuthAuthorizationRequest(_ context.Context, id [32]byte, 
 	return request, nil
 }
 
-func (m *memoryStore) IssueOAuthCode(_ context.Context, pendingID, codeID [32]byte, userID int64, expiresAt, now time.Time) error {
+func (m *memoryStore) IssueOAuthCode(_ context.Context, pendingID, codeID, sessionHash [32]byte, userID int64, expiresAt, now time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	request, ok := m.requests[pendingID]
