@@ -688,7 +688,10 @@ func (server *Server) refresh(writer http.ResponseWriter, request *http.Request)
 	if current.ID != 0 && accessExpires.After(current.ExpiresAt) {
 		accessExpires = current.ExpiresAt
 	}
-	grant, err := server.Store.RotateOAuthGrant(request.Context(), refreshHash, authn.OAuthRotation{AccessHash: accessHash, AccessExpiresAt: accessExpires, RefreshHash: newRefreshHash, Now: now, Grace: refreshGrace})
+	grant, err := server.Store.RotateOAuthGrant(request.Context(), refreshHash, authn.OAuthRotation{
+		AccessHash: accessHash, AccessExpiresAt: accessExpires, RefreshHash: newRefreshHash, Now: now, Grace: refreshGrace,
+		Audit: audit.Event{ActorType: "user", ActorID: strconv.FormatInt(current.UserID, 10), TargetType: "oauth_grant", TargetID: strconv.FormatInt(current.ID, 10), AuthenticationMethod: authn.ProviderOAuthToken, Operation: OperationGrantRefreshed, Outcome: "success", RequestID: audit.RequestID(request.Context())},
+	})
 	if errors.Is(err, authn.ErrOAuthReplay) {
 		server.record(request.Context(), audit.Event{ActorType: "anonymous", TargetType: "oauth_client", TargetID: clientID, AuthenticationMethod: authn.ProviderOAuthToken, Operation: OperationGrantReplay, Outcome: "denied"})
 		writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "refresh token was already used; the grant has been revoked")
@@ -703,7 +706,6 @@ func (server *Server) refresh(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 	server.syncGitHubAccess(request.Context(), grant, githubToken)
-	server.record(request.Context(), audit.Event{ActorType: "user", ActorID: strconv.FormatInt(grant.UserID, 10), TargetType: "oauth_grant", TargetID: strconv.FormatInt(grant.ID, 10), AuthenticationMethod: authn.ProviderOAuthToken, Operation: OperationGrantRefreshed, Outcome: "success"})
 	writeTokens(writer, access, refresh, grant.Scope, grant.AccessExpiresAt.Sub(server.now()))
 }
 
