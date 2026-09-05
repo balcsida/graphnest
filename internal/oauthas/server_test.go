@@ -167,6 +167,9 @@ func (m *memoryStore) RotateOAuthGrant(ctx context.Context, refreshHash [32]byte
 			previous := grant.RefreshHash
 			grant.PreviousRefreshHash = &previous
 			grant.RefreshHash, grant.AccessHash, grant.AccessExpiresAt, grant.LastUsedAt = rotation.RefreshHash, rotation.AccessHash, rotation.AccessExpiresAt, rotation.Now
+			if rotation.ReplaceRepositories {
+				m.github[grant.UserID] = append([]int64(nil), rotation.RepositoryIDs...)
+			}
 			if m.audit != nil {
 				_ = m.audit.Record(ctx, rotation.Audit)
 			}

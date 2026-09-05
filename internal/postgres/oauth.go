@@ -241,6 +241,11 @@ func (s *Store) RotateOAuthGrant(ctx context.Context, refreshHash [32]byte, rota
 	if _, err := tx.Exec(ctx, `insert into oauth_refresh_tokens(refresh_hash, grant_id, consumed_at) values($1,$2,$3)`, refreshHash[:], grant.ID, rotation.Now); err != nil {
 		return authn.OAuthGrant{}, err
 	}
+	if rotation.ReplaceRepositories {
+		if err := replaceGitHubGrants(ctx, tx, grant.UserID, rotation.RepositoryIDs); err != nil {
+			return authn.OAuthGrant{}, err
+		}
+	}
 	if err := appendAudit(ctx, tx, rotation.Audit); err != nil {
 		return authn.OAuthGrant{}, err
 	}
@@ -342,14 +347,19 @@ func (s *Store) ReplaceGitHubGrants(ctx context.Context, userID int64, repositor
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, `delete from user_github_grants where user_id=$1`, userID); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `insert into user_github_grants (user_id, repository_id)
-		select $1, github_id from repositories where github_id=any($2)`, userID, repositoryIDs); err != nil {
+	if err := replaceGitHubGrants(ctx, tx, userID, repositoryIDs); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+func replaceGitHubGrants(ctx context.Context, tx pgx.Tx, userID int64, repositoryIDs []int64) error {
+	if _, err := tx.Exec(ctx, `delete from user_github_grants where user_id=$1`, userID); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, `insert into user_github_grants (user_id, repository_id)
+		select $1, github_id from repositories where github_id=any($2)`, userID, repositoryIDs)
+	return err
 }
 
 // DeleteExpiredOAuth removes finished browser interactions, grants that have

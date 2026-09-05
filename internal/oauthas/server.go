@@ -673,6 +673,19 @@ func (server *Server) refresh(writer http.ResponseWriter, request *http.Request)
 			return
 		}
 	}
+	var repositories []int64
+	replaceRepositories, dropGitHubToken := false, false
+	if server.GitHub != nil && githubToken != "" {
+		githubCtx, cancel := context.WithTimeout(request.Context(), githubSyncTimeout)
+		repositories, err = server.GitHub.AccessibleRepositories(githubCtx, githubToken)
+		cancel()
+		if err != nil {
+			var denied interface{ Unauthorized() bool }
+			dropGitHubToken = errors.As(err, &denied) && denied.Unauthorized()
+		} else {
+			replaceRepositories = true
+		}
+	}
 	access, accessHash, err := newSecret(server.Rand, AccessTokenPrefix)
 	if err != nil {
 		writeOAuthError(writer, http.StatusInternalServerError, "server_error", "could not issue tokens")
@@ -690,7 +703,8 @@ func (server *Server) refresh(writer http.ResponseWriter, request *http.Request)
 	}
 	grant, err := server.Store.RotateOAuthGrant(request.Context(), refreshHash, authn.OAuthRotation{
 		AccessHash: accessHash, AccessExpiresAt: accessExpires, RefreshHash: newRefreshHash, Now: now, Grace: refreshGrace,
-		Audit: audit.Event{ActorType: "user", ActorID: strconv.FormatInt(current.UserID, 10), TargetType: "oauth_grant", TargetID: strconv.FormatInt(current.ID, 10), AuthenticationMethod: authn.ProviderOAuthToken, Operation: OperationGrantRefreshed, Outcome: "success", RequestID: audit.RequestID(request.Context())},
+		Audit:         audit.Event{ActorType: "user", ActorID: strconv.FormatInt(current.UserID, 10), TargetType: "oauth_grant", TargetID: strconv.FormatInt(current.ID, 10), AuthenticationMethod: authn.ProviderOAuthToken, Operation: OperationGrantRefreshed, Outcome: "success", RequestID: audit.RequestID(request.Context())},
+		RepositoryIDs: repositories, ReplaceRepositories: replaceRepositories,
 	})
 	if errors.Is(err, authn.ErrOAuthReplay) {
 		server.record(request.Context(), audit.Event{ActorType: "anonymous", TargetType: "oauth_client", TargetID: clientID, AuthenticationMethod: authn.ProviderOAuthToken, Operation: OperationGrantReplay, Outcome: "denied"})
@@ -705,30 +719,10 @@ func (server *Server) refresh(writer http.ResponseWriter, request *http.Request)
 		writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "could not refresh token")
 		return
 	}
-	server.syncGitHubAccess(request.Context(), grant, githubToken)
+	if dropGitHubToken {
+		_ = server.Store.UpdateOAuthGrantGitHubToken(request.Context(), grant.ID, nil)
+	}
 	writeTokens(writer, access, refresh, grant.Scope, grant.AccessExpiresAt.Sub(server.now()))
-}
-
-// syncGitHubAccess re-derives the user's GitHub grants with the decrypted GitHub
-// token. GitHub rejecting the token drops it (a later browser login re-seeds
-// it); any other failure changes nothing. Access can narrow here, never widen
-// without GitHub confirming it, and the token response never waits on GitHub
-// for longer than githubSyncTimeout.
-func (server *Server) syncGitHubAccess(ctx context.Context, grant authn.OAuthGrant, githubToken string) {
-	if server.GitHub == nil || githubToken == "" {
-		return
-	}
-	ctx, cancel := context.WithTimeout(ctx, githubSyncTimeout)
-	defer cancel()
-	repositories, err := server.GitHub.AccessibleRepositories(ctx, githubToken)
-	if err != nil {
-		var denied interface{ Unauthorized() bool }
-		if errors.As(err, &denied) && denied.Unauthorized() {
-			_ = server.Store.UpdateOAuthGrantGitHubToken(ctx, grant.ID, nil)
-		}
-		return
-	}
-	_ = server.Store.ReplaceGitHubGrants(ctx, grant.UserID, repositories)
 }
 
 // ---- revocation (RFC 7009) ------------------------------------------------------
