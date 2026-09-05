@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"io"
@@ -54,7 +55,7 @@ func TestGitHubOAuthCrossReplicaPreservesCredentialBoundaries(t *testing.T) {
 
 	oidcLogin := startBrowserLogin(t, oidcBrowser, public.URL+"/auth/oidc/login", "A")
 	githubLogin := startBrowserLogin(t, oidcBrowser, public.URL+"/auth/oauth/github/login", "A")
-	githubCookie := loginCookie(t, oidcJar, public.URL, "__Host-graphnest_oauth_github_login")
+	githubCookie := stateLoginCookie(t, oidcJar, public.URL, "__Host-graphnest_oauth_github_login", githubLogin.state)
 	assertBrowserCallbackFails(t, database, oidcBrowser, public.URL+"/auth/oauth/github/callback", oidcLogin.state, "B", public.URL)
 	completeOIDCLogin(t, oidcBrowser, oidcLogin.authorize, "B")
 	assertOIDCRepositoryStatus(t, oidcBrowser, public.URL, "B", http.StatusOK)
@@ -70,8 +71,8 @@ func TestGitHubOAuthCrossReplicaPreservesCredentialBoundaries(t *testing.T) {
 	assertNoCookie(t, githubJar, public.URL, authn.SessionCookieName)
 
 	assertGitHubOAuthFlowPersistence(t, database, githubLogin.state, githubCookie)
-	startBrowserLogin(t, githubBrowser, public.URL+"/auth/oidc/login", "A")
-	loginCookie(t, githubJar, public.URL, "__Host-graphnest_oidc_login")
+	secondOIDCLogin := startBrowserLogin(t, githubBrowser, public.URL+"/auth/oidc/login", "A")
+	stateLoginCookie(t, githubJar, public.URL, sso.OIDCLoginCookieName, secondOIDCLogin.state)
 	assertBrowserCallbackFails(t, database, githubBrowser, public.URL+"/auth/oidc/callback", githubLogin.state, "B", public.URL)
 	githubCallback := completeGitHubOAuthLogin(t, githubBrowser, githubLogin.authorize, "B")
 	assertOIDCRepositoryStatus(t, githubBrowser, public.URL, "B", http.StatusOK)
@@ -349,6 +350,16 @@ func loginCookie(t *testing.T, jar http.CookieJar, baseURL, name string) *http.C
 	}
 	t.Fatal("expected cookie is missing")
 	return nil
+}
+
+func stateLoginCookie(t *testing.T, jar http.CookieJar, baseURL, name, state string) *http.Cookie {
+	t.Helper()
+	raw, err := base64.RawURLEncoding.DecodeString(state)
+	if err != nil || len(raw) != sha256.Size {
+		t.Fatal("login state is invalid")
+	}
+	hash := sha256.Sum256(raw)
+	return loginCookie(t, jar, baseURL, name+"_"+hex.EncodeToString(hash[:]))
 }
 
 func assertNoCookie(t *testing.T, jar http.CookieJar, baseURL, name string) {
