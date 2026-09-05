@@ -322,6 +322,9 @@ func (server *Server) authorize(writer http.ResponseWriter, request *http.Reques
 }
 
 func (server *Server) startAuthorization(writer http.ResponseWriter, request *http.Request) {
+	if !server.allow(writer, request) {
+		return
+	}
 	query := request.URL.Query()
 	now := server.now()
 	clientID, ok := single(query, "client_id")
