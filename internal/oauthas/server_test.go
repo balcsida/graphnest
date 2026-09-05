@@ -98,25 +98,30 @@ func (m *memoryStore) DeleteOAuthAuthorizationRequest(_ context.Context, id [32]
 	return nil
 }
 
-func (m *memoryStore) ConsumeOAuthCode(_ context.Context, codeID [32]byte, now time.Time) (authn.OAuthAuthorizationRequest, error) {
+func (m *memoryStore) ExchangeOAuthCode(_ context.Context, codeID [32]byte, grant authn.OAuthGrant) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	request, ok := m.requests[codeID]
-	if !ok || request.Phase != "code" || !request.ExpiresAt.After(now) {
-		return authn.OAuthAuthorizationRequest{}, pgx.ErrNoRows
+	if !ok || request.Phase != "code" || !request.ExpiresAt.After(grant.CreatedAt) ||
+		request.UserID != grant.UserID || request.ClientID != grant.ClientID || request.Scope != grant.Scope {
+		return 0, pgx.ErrNoRows
 	}
 	delete(m.requests, codeID)
-	return request, nil
+	return m.createOAuthGrant(grant), nil
 }
 
 func (m *memoryStore) CreateOAuthGrant(_ context.Context, grant authn.OAuthGrant) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.createOAuthGrant(grant), nil
+}
+
+func (m *memoryStore) createOAuthGrant(grant authn.OAuthGrant) int64 {
 	m.nextID++
 	grant.ID = m.nextID
 	grant.LastUsedAt = grant.CreatedAt
 	m.grants[grant.ID] = &grant
-	return grant.ID, nil
+	return grant.ID
 }
 
 func (m *memoryStore) live(grant *authn.OAuthGrant, now time.Time) bool {

@@ -566,12 +566,17 @@ func (server *Server) exchangeCode(writer http.ResponseWriter, request *http.Req
 		return
 	}
 	now := server.now()
-	pending, err := server.Store.ConsumeOAuthCode(request.Context(), codeHash, now)
+	pending, err := server.Store.OAuthAuthorizationRequest(request.Context(), codeHash, "code", now)
 	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "could not load authorization code")
+			return
+		}
 		writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "authorization code is invalid, expired or already used")
 		return
 	}
 	if pending.ClientID != clientID || (redirect != "" && !redirectMatches(pending.RedirectURI, redirect)) || !verifyPKCE(verifier, pending.CodeChallenge) {
+		_ = server.Store.DeleteOAuthAuthorizationRequest(request.Context(), codeHash)
 		writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "authorization code does not match this client")
 		return
 	}
@@ -581,6 +586,7 @@ func (server *Server) exchangeCode(writer http.ResponseWriter, request *http.Req
 			githubToken, _ = server.GitHubTokens.TakeForCode(codeHash)
 		}
 		if githubToken == "" {
+			_ = server.Store.DeleteOAuthAuthorizationRequest(request.Context(), codeHash)
 			writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "GitHub sign-in expired or reached another server; start authorization again")
 			return
 		}
@@ -600,8 +606,12 @@ func (server *Server) exchangeCode(writer http.ResponseWriter, request *http.Req
 		AccessHash: accessHash, AccessExpiresAt: now.Add(AccessTokenTTL), RefreshHash: refreshHash,
 		CreatedAt: now, ExpiresAt: now.Add(GrantTTL),
 	}
-	grantID, err := server.Store.CreateOAuthGrant(request.Context(), grant)
+	grantID, err := server.Store.ExchangeOAuthCode(request.Context(), codeHash, grant)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "authorization code is invalid, expired or already used")
+			return
+		}
 		writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "could not issue tokens")
 		return
 	}
