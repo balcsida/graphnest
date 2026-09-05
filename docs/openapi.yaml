@@ -671,6 +671,8 @@ paths:
         '200': {description: Consent page (HTML)}
         '303': {description: Redirect to sign-in, or to redirect_uri with an OAuth error}
         '400': {description: Unknown client or redirect_uri (HTML)}
+        '429': {description: Authorization request limit exceeded (10 per source IP and 100 across the deployment per minute), content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
+        '503': {description: Request limiter unavailable, content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
     post:
       description: Consent decision from the page rendered by GET. Requires the same-origin Origin header and the request cookie issued by GET.
       requestBody: {required: true, content: {application/x-www-form-urlencoded: {schema: {$ref: '#/components/schemas/ConsentDecision'}}}}
