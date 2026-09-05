@@ -288,7 +288,9 @@ bytes unchanged, with no trailing newline; required in that combination) and eve
 installation query, so repository access removed on GitHub disappears from
 agents within the hour without a browser round-trip. GitHub rejecting the token
 drops it and keeps the last-synced grants; GitHub outages and rate limits leave
-the token and grants unchanged.
+the token and grants unchanged. Refresh waits at most two seconds for this
+GitHub synchronization. Revoking a new grant after encrypted-token storage
+fails has a separate ten-second cleanup budget.
 Expired authorization requests, week-old dead grants and clients idle for 90
 days are swept by the periodic cleanup.
 
