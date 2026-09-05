@@ -655,6 +655,7 @@ paths:
         '201': {description: Registered client; no secret is issued, content: {application/json: {schema: {$ref: '#/components/schemas/ClientRegistration'}}}}
         '400': {description: Invalid metadata (RFC 7591 error body), content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
         '429': {description: Too many registrations, content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
+        '503': {description: Request limiter or registration service unavailable, content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
   /oauth/authorize:
     get:
       description: Authorization endpoint. Signs the user in through the browser provider when needed, then renders a consent page naming the client. An unknown client or unregistered redirect_uri yields a 400 HTML page and never a redirect.
@@ -694,6 +695,7 @@ paths:
         '400': {description: OAuth error (invalid_request, invalid_grant, unsupported_grant_type), content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
         '401': {description: invalid_client, content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
         '429': {description: Too many requests, content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
+        '503': {description: Request limiter or token service unavailable, content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
   /oauth/revoke:
     post:
       description: RFC 7009 revocation of an access or refresh token by the client that owns it. Unknown tokens still answer 200.
@@ -701,6 +703,8 @@ paths:
       responses:
         '200': {description: Processed}
         '400': {description: client_id missing, content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
+        '429': {description: Too many revocation requests, content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
+        '503': {description: Request limiter or revocation service unavailable, content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
   /healthz:
     get:
       responses:
