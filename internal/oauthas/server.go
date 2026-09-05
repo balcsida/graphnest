@@ -686,8 +686,12 @@ func (server *Server) refresh(writer http.ResponseWriter, request *http.Request)
 		writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "refresh token was already used; the grant has been revoked")
 		return
 	}
-	if err != nil {
+	if errors.Is(err, pgx.ErrNoRows) {
 		writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "refresh token is invalid or expired")
+		return
+	}
+	if err != nil {
+		writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "could not refresh token")
 		return
 	}
 	server.syncGitHubAccess(request.Context(), grant, githubToken)
