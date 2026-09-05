@@ -19,6 +19,7 @@ func TestOAuthRequestLimitsSharedByStores(t *testing.T) {
 		limit    int
 	}{
 		{"/oauth/register", 10},
+		{"/oauth/authorize", 10},
 		{"/oauth/token", 60},
 		{"/oauth/revoke", 60},
 	} {
@@ -52,6 +53,7 @@ func TestOAuthRequestLimitsBoundDistinctSources(t *testing.T) {
 		limit    int
 	}{
 		{"/oauth/register", 100},
+		{"/oauth/authorize", 100},
 		{"/oauth/token", 1000},
 		{"/oauth/revoke", 1000},
 	} {
@@ -72,9 +74,9 @@ func TestOAuthRequestLimitsBoundDistinctSources(t *testing.T) {
 	}
 }
 
-func TestOAuthRevocationLimiterMigrationUpgradesV23(t *testing.T) {
+func TestOAuthAuthorizationLimiterMigrationUpgradesV24(t *testing.T) {
 	pool := testPool(t)
-	if err := migrateThrough(t.Context(), pool, 23); err != nil {
+	if err := migrateThrough(t.Context(), pool, 24); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Minute)
@@ -85,8 +87,8 @@ func TestOAuthRevocationLimiterMigrationUpgradesV23(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(t.Context(), `insert into oauth_request_limits(endpoint,source_hash,window_start,request_count)
-		values('/oauth/revoke',''::bytea,$1,1)`, now); err != nil {
-		t.Fatalf("upgraded schema rejects revocation budgets: %v", err)
+		values('/oauth/authorize',''::bytea,$1,1)`, now); err != nil {
+		t.Fatalf("upgraded schema rejects authorization budgets: %v", err)
 	}
 	var tokenRows int
 	if err := pool.QueryRow(t.Context(), `select count(*) from oauth_request_limits where endpoint='/oauth/token'`).Scan(&tokenRows); err != nil || tokenRows != 2 {

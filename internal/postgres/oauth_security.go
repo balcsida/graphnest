@@ -15,7 +15,7 @@ const oauthRequestLockNamespace int32 = 0x676e6f61
 func (s *Store) AllowOAuthRequest(ctx context.Context, remoteAddr, endpoint string, now time.Time) (bool, error) {
 	var sourceLimit, globalLimit int
 	switch endpoint {
-	case "/oauth/register":
+	case "/oauth/register", "/oauth/authorize":
 		sourceLimit, globalLimit = 10, 100
 	case "/oauth/token", "/oauth/revoke":
 		sourceLimit, globalLimit = 60, 1000

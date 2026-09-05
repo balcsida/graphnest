@@ -47,7 +47,8 @@ callback, consent POST and client code exchange must reach one replica;
 missing credentials fail code exchange and require fresh authorization.
 Every access-synced authorization requires a fresh GitHub sign-in. PostgreSQL
 retains all consumed refresh hashes with their rotation times, shares request
-budgets across replicas, and caps client registrations. Migration 022 revokes
+budgets across replicas (including pending authorization starts), and caps
+client registrations. Migration 022 revokes
 previously rotated grants whose complete history cannot be recovered.
 The 30-second refresh replay grace only suppresses grant revocation; consumed
 tokens still return `invalid_grant`. A lost refresh response requires fresh

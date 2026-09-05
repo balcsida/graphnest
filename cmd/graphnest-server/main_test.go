@@ -1197,7 +1197,7 @@ func TestMCPOAuthUsesConfiguredBrowserLogin(t *testing.T) {
 			configured.SSO.OIDC.Enabled = test.oidc
 			configured.SSO.OAuth.GitHub.Enabled = test.github
 			configured.SSO.OAuth.GitHub.AccessSync = test.sync
-			runtime, err := newAuthRuntime(t.Context(), configured, oauthCapableStore{client: client}, nil, observability.New(), endpoints, httpClient)
+			runtime, err := newAuthRuntime(t.Context(), configured, oauthCapableStore{client: client, allowRequests: true}, nil, observability.New(), endpoints, httpClient)
 			if err != nil {
 				t.Fatal(err)
 			}
