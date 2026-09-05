@@ -3,6 +3,7 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -14,6 +15,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -248,8 +250,218 @@ func TestOAuthCodeExchangeRollsBackFailedGrant(t *testing.T) {
 
 type unusedOAuthGitHubAccess struct{}
 
+type failOAuthCodeExchangeOnce struct {
+	authn.OAuthStore
+	failed bool
+}
+
+func (s *failOAuthCodeExchangeOnce) ExchangeOAuthCode(ctx context.Context, codeID [32]byte, grant authn.OAuthGrant) (int64, error) {
+	if !s.failed {
+		s.failed = true
+		return 0, errors.New("injected OAuth code exchange failure")
+	}
+	return s.OAuthStore.ExchangeOAuthCode(ctx, codeID, grant)
+}
+
+type pauseFirstOAuthCodeExchange struct {
+	authn.OAuthStore
+	once    sync.Once
+	entered chan struct{}
+	release <-chan struct{}
+}
+
+func (s *pauseFirstOAuthCodeExchange) ExchangeOAuthCode(ctx context.Context, codeID [32]byte, grant authn.OAuthGrant) (int64, error) {
+	pause := false
+	s.once.Do(func() {
+		pause = true
+		close(s.entered)
+	})
+	if pause {
+		select {
+		case <-s.release:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
+	return s.OAuthStore.ExchangeOAuthCode(ctx, codeID, grant)
+}
+
 func (unusedOAuthGitHubAccess) AccessibleRepositories(context.Context, string) ([]int64, error) {
 	return nil, nil
+}
+
+func githubOAuthCodeExchange(t *testing.T, store *Store, now func() time.Time) (*oauthas.Server, *http.Request, int64) {
+	t.Helper()
+	server, request, userID := oauthCodeExchange(t, store)
+	var err error
+	server.Sealer, err = oauthas.NewSealer(make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens := oauthas.NewProviderTokens(now)
+	session := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
+	tokens.StoreProviderToken(t.Context(), session, "test-provider-token")
+	tokens.Transfer(session, sha256.Sum256([]byte(strings.Repeat("c", 32))))
+	server.GitHubTokens, server.GitHub = tokens, unusedOAuthGitHubAccess{}
+	return server, request, userID
+}
+
+func copyOAuthCodeExchangeRequest(t *testing.T, original *http.Request) *http.Request {
+	t.Helper()
+	if err := original.ParseForm(); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequestWithContext(t.Context(), original.Method, original.URL.String(), strings.NewReader(original.PostForm.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.RemoteAddr = original.RemoteAddr
+	return request
+}
+
+func oauthError(t *testing.T, response *httptest.ResponseRecorder) string {
+	t.Helper()
+	var result struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	return result.Error
+}
+
+func TestOAuthCodeExchangeRetainsGitHubHandoffAfterRandomFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		random int
+	}{
+		{name: "access token", random: 0},
+		{name: "refresh token", random: 32},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := migratedStore(t)
+			server, request, userID := githubOAuthCodeExchange(t, store, nil)
+			server.Rand = bytes.NewReader(make([]byte, tc.random))
+			mux := http.NewServeMux()
+			server.Register(mux)
+
+			failed := httptest.NewRecorder()
+			mux.ServeHTTP(failed, copyOAuthCodeExchangeRequest(t, request))
+			if failed.Code != http.StatusInternalServerError || oauthError(t, failed) != "server_error" {
+				t.Fatalf("failed exchange status=%d body=%s", failed.Code, failed.Body.String())
+			}
+
+			server.Rand = rand.Reader
+			retried := httptest.NewRecorder()
+			mux.ServeHTTP(retried, copyOAuthCodeExchangeRequest(t, request))
+			var grants int
+			if err := store.pool.QueryRow(t.Context(), `select count(*) from oauth_grants where user_id=$1 and revoked_at is null`, userID).Scan(&grants); err != nil {
+				t.Fatal(err)
+			}
+			if retried.Code != http.StatusOK || grants != 1 {
+				t.Fatalf("retry status=%d body=%s live grants=%d", retried.Code, retried.Body.String(), grants)
+			}
+		})
+	}
+}
+
+func TestOAuthCodeExchangeRetainsGitHubHandoffAfterStoreFailure(t *testing.T) {
+	store := migratedStore(t)
+	server, request, userID := githubOAuthCodeExchange(t, store, nil)
+	server.Store = &failOAuthCodeExchangeOnce{OAuthStore: store}
+	mux := http.NewServeMux()
+	server.Register(mux)
+
+	failed := httptest.NewRecorder()
+	mux.ServeHTTP(failed, copyOAuthCodeExchangeRequest(t, request))
+	if failed.Code != http.StatusServiceUnavailable || oauthError(t, failed) != "temporarily_unavailable" {
+		t.Fatalf("failed exchange status=%d body=%s", failed.Code, failed.Body.String())
+	}
+
+	retried := httptest.NewRecorder()
+	mux.ServeHTTP(retried, copyOAuthCodeExchangeRequest(t, request))
+	var grants int
+	if err := store.pool.QueryRow(t.Context(), `select count(*) from oauth_grants where user_id=$1 and revoked_at is null`, userID).Scan(&grants); err != nil {
+		t.Fatal(err)
+	}
+	if retried.Code != http.StatusOK || grants != 1 {
+		t.Fatalf("retry status=%d body=%s live grants=%d", retried.Code, retried.Body.String(), grants)
+	}
+}
+
+func TestOAuthCodeExchangeConcurrentRequestsIssueOneGitHubGrant(t *testing.T) {
+	store := migratedStore(t)
+	server, request, userID := githubOAuthCodeExchange(t, store, nil)
+	release := make(chan struct{})
+	paused := &pauseFirstOAuthCodeExchange{OAuthStore: store, entered: make(chan struct{}), release: release}
+	server.Store = paused
+	mux := http.NewServeMux()
+	server.Register(mux)
+
+	first, second := httptest.NewRecorder(), httptest.NewRecorder()
+	firstRequest := copyOAuthCodeExchangeRequest(t, request)
+	secondRequest := copyOAuthCodeExchangeRequest(t, request)
+	firstDone, secondDone := make(chan struct{}), make(chan struct{})
+	go func() {
+		mux.ServeHTTP(first, firstRequest)
+		close(firstDone)
+	}()
+	select {
+	case <-paused.entered:
+	case <-t.Context().Done():
+		t.Fatal(t.Context().Err())
+	}
+	go func() {
+		mux.ServeHTTP(second, secondRequest)
+		close(secondDone)
+	}()
+	select {
+	case <-secondDone:
+	case <-t.Context().Done():
+		t.Fatal(t.Context().Err())
+	}
+	close(release)
+	select {
+	case <-firstDone:
+	case <-t.Context().Done():
+		t.Fatal(t.Context().Err())
+	}
+
+	var grants int
+	if err := store.pool.QueryRow(t.Context(), `select count(*) from oauth_grants where user_id=$1 and revoked_at is null`, userID).Scan(&grants); err != nil {
+		t.Fatal(err)
+	}
+	if first.Code != http.StatusBadRequest || oauthError(t, first) != "invalid_grant" || second.Code != http.StatusOK || grants != 1 {
+		t.Fatalf("first status=%d body=%s second status=%d body=%s live grants=%d", first.Code, first.Body.String(), second.Code, second.Body.String(), grants)
+	}
+}
+
+func TestOAuthCodeExchangeRetryDoesNotExtendGitHubHandoff(t *testing.T) {
+	store := migratedStore(t)
+	handoffNow := time.Now()
+	handoffStarted := handoffNow
+	server, request, userID := githubOAuthCodeExchange(t, store, func() time.Time { return handoffNow })
+	mux := http.NewServeMux()
+	server.Register(mux)
+
+	for _, elapsed := range []time.Duration{30 * time.Second, 40 * time.Second} {
+		handoffNow = handoffStarted.Add(elapsed)
+		server.Rand = bytes.NewReader(nil)
+		failed := httptest.NewRecorder()
+		mux.ServeHTTP(failed, copyOAuthCodeExchangeRequest(t, request))
+		if failed.Code != http.StatusInternalServerError || oauthError(t, failed) != "server_error" {
+			t.Fatalf("after %s status=%d body=%s", elapsed, failed.Code, failed.Body.String())
+		}
+	}
+	handoffNow = handoffStarted.Add(61 * time.Second)
+	server.Rand = rand.Reader
+	expired := httptest.NewRecorder()
+	mux.ServeHTTP(expired, copyOAuthCodeExchangeRequest(t, request))
+	var grants int
+	if err := store.pool.QueryRow(t.Context(), `select count(*) from oauth_grants where user_id=$1 and revoked_at is null`, userID).Scan(&grants); err != nil {
+		t.Fatal(err)
+	}
+	if expired.Code != http.StatusBadRequest || oauthError(t, expired) != "invalid_grant" || grants != 0 {
+		t.Fatalf("expired retry status=%d body=%s live grants=%d", expired.Code, expired.Body.String(), grants)
+	}
 }
 
 func TestOAuthCodeExchangeCannotRestoreRevokedGitHubToken(t *testing.T) {
@@ -263,7 +475,8 @@ func TestOAuthCodeExchangeCannotRestoreRevokedGitHubToken(t *testing.T) {
 	tokens := oauthas.NewProviderTokens(server.Now)
 	session := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
 	tokens.StoreProviderToken(t.Context(), session, "test-provider-token")
-	tokens.Transfer(session, sha256.Sum256([]byte(strings.Repeat("c", 32))))
+	codeHash := sha256.Sum256([]byte(strings.Repeat("c", 32)))
+	tokens.Transfer(session, codeHash)
 	server.GitHubTokens, server.GitHub = tokens, unusedOAuthGitHubAccess{}
 	server.Rand = &revokeBeforeTokenGeneration{Reader: rand.Reader, readsBeforeRevoke: 2, revoke: func() {
 		// The third read seals the provider token after the exchange has committed.
@@ -282,6 +495,9 @@ func TestOAuthCodeExchangeCannotRestoreRevokedGitHubToken(t *testing.T) {
 	}
 	if response.Code != http.StatusServiceUnavailable || retained || active {
 		t.Fatalf("status=%d retained provider token=%t active=%t", response.Code, retained, active)
+	}
+	if _, ok := tokens.TokenForCode(codeHash); ok {
+		t.Fatal("provider token remained after committed exchange failed to store it")
 	}
 }
 

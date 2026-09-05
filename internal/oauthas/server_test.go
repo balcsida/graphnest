@@ -901,21 +901,25 @@ func TestProviderTokensFollowTheFlowAndExpire(t *testing.T) {
 	}
 	tokens.StoreProviderToken(context.Background(), sessionTokenValue, "gho_user")
 	code := [32]byte{1}
-	if _, ok := tokens.TakeForCode(code); ok {
+	if _, ok := tokens.TokenForCode(code); ok {
 		t.Fatal("nothing attached to the code yet")
 	}
 	tokens.Transfer(sessionTokenValue, code)
 	tokens.Transfer(sessionTokenValue, [32]byte{2}) // second consent without re-login: nothing left to move
-	if got, ok := tokens.TakeForCode(code); !ok || got != "gho_user" {
+	if got, ok := tokens.TokenForCode(code); !ok || got != "gho_user" {
 		t.Fatalf("token=%q ok=%v", got, ok)
 	}
-	if _, ok := tokens.TakeForCode(code); ok {
-		t.Fatal("token must be taken exactly once")
+	if got, ok := tokens.TokenForCode(code); !ok || got != "gho_user" {
+		t.Fatalf("second lookup token=%q ok=%v", got, ok)
+	}
+	tokens.DeleteForCode(code)
+	if _, ok := tokens.TokenForCode(code); ok {
+		t.Fatal("deleted token must not be returned")
 	}
 	tokens.StoreProviderToken(context.Background(), sessionTokenValue, "gho_user")
 	clock = clock.Add(pendingTTL + time.Second)
 	tokens.Transfer(sessionTokenValue, code)
-	if _, ok := tokens.TakeForCode(code); ok {
+	if _, ok := tokens.TokenForCode(code); ok {
 		t.Fatal("expired deposits must not transfer")
 	}
 }
