@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/balcsida/graphnest/internal/audit"
 	"github.com/balcsida/graphnest/internal/authn"
 	"github.com/jackc/pgx/v5"
 )
@@ -241,6 +242,29 @@ func (s *Store) RevokeUserOAuthGrant(ctx context.Context, userID, grantID int64)
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+func (s *Store) RevokeUserOAuthGrantAudited(ctx context.Context, userID, grantID int64, event audit.Event) error {
+	if err := event.Validate(); err != nil {
+		return err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	result, err := tx.Exec(ctx, `update oauth_grants set revoked_at=now(), github_token_ct=null
+		where id=$1 and user_id=$2 and revoked_at is null`, grantID, userID)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() != 1 {
+		return pgx.ErrNoRows
+	}
+	if err := appendAudit(ctx, tx, event); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // ReplaceGitHubGrants mirrors bindProviderUser's grant replacement for a

@@ -217,15 +217,21 @@ func TestOAuthAccessTokensCannotManageCredentials(t *testing.T) {
 
 type grantStoreStub struct {
 	storeStub
-	grants  []authn.OAuthGrantMetadata
-	revoked [][2]int64
+	grants    []authn.OAuthGrantMetadata
+	revoked   [][2]int64
+	events    []audit.Event
+	revokeErr error
 }
 
 func (s *grantStoreStub) ListOAuthGrants(context.Context, int64) ([]authn.OAuthGrantMetadata, error) {
 	return s.grants, nil
 }
-func (s *grantStoreStub) RevokeUserOAuthGrant(_ context.Context, userID, grantID int64) error {
+func (s *grantStoreStub) RevokeUserOAuthGrantAudited(_ context.Context, userID, grantID int64, event audit.Event) error {
 	s.revoked = append(s.revoked, [2]int64{userID, grantID})
+	s.events = append(s.events, event)
+	if s.revokeErr != nil {
+		return s.revokeErr
+	}
 	for _, grant := range s.grants {
 		if grant.ID == grantID {
 			return nil
@@ -239,6 +245,7 @@ func TestGrantsAreListedAndRevokedByInteractiveOwnersOnly(t *testing.T) {
 	store := &grantStoreStub{grants: []authn.OAuthGrantMetadata{{ID: 5, ClientName: "OpenCode", CreatedAt: now, LastUsedAt: now, ExpiresAt: now.Add(time.Hour)}}}
 	s := &Service{Manager: authn.TokenManager{Store: store}}
 	owner := authn.Principal{Subject: "11", Method: "oauth"}
+	ctx := audit.WithRequestID(t.Context(), "request-42")
 	grants, err := s.Grants(t.Context(), owner)
 	if err != nil || len(grants) != 1 || grants[0].ClientName != "OpenCode" || grants[0].ID != 5 {
 		t.Fatalf("grants=%+v err=%v", grants, err)
@@ -246,8 +253,15 @@ func TestGrantsAreListedAndRevokedByInteractiveOwnersOnly(t *testing.T) {
 	if _, err := s.Grants(t.Context(), authn.Principal{Subject: "11", Method: authn.ProviderOAuthToken}); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("access token listing err=%v", err)
 	}
-	if err := s.RevokeGrant(t.Context(), owner, 5); err != nil || len(store.revoked) != 1 || store.revoked[0] != [2]int64{11, 5} {
+	if err := s.RevokeGrant(ctx, owner, 5); err != nil || len(store.revoked) != 1 || store.revoked[0] != [2]int64{11, 5} {
 		t.Fatalf("revoke err=%v revoked=%v", err, store.revoked)
+	}
+	if len(store.events) != 1 || store.events[0] != (audit.Event{
+		ActorType: "user", ActorID: "11", TargetType: "oauth_grant", TargetID: "5",
+		AuthenticationMethod: "oauth", Operation: audit.OperationOAuthGrantRevoked,
+		Outcome: "success", RequestID: "request-42",
+	}) {
+		t.Fatalf("revoke event=%#v", store.events)
 	}
 	if err := s.RevokeGrant(t.Context(), owner, 6); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("unknown grant err=%v", err)
@@ -255,6 +269,12 @@ func TestGrantsAreListedAndRevokedByInteractiveOwnersOnly(t *testing.T) {
 	if err := s.RevokeGrant(t.Context(), authn.Principal{Subject: "11", Method: "api_token"}, 5); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("api token revoke err=%v", err)
 	}
+	auditFailure := errors.New("audit failed")
+	store.revokeErr = auditFailure
+	if err := s.RevokeGrant(t.Context(), owner, 5); !errors.Is(err, auditFailure) {
+		t.Fatalf("audit failure err=%v", err)
+	}
+
 	plain := &Service{Manager: authn.TokenManager{Store: &storeStub{}}}
 	if grants, err := plain.Grants(t.Context(), owner); err != nil || len(grants) != 0 {
 		t.Fatalf("store without grants: %+v err=%v", grants, err)

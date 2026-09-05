@@ -39,8 +39,6 @@ type repositoryAuthorizer interface {
 type Service struct {
 	Manager    authn.TokenManager
 	Authorizer repositoryAuthorizer
-	// Audit records grant revocations; nil disables auditing.
-	Audit audit.Recorder
 }
 
 func (s *Service) CreateToken(ctx context.Context, principal authn.Principal, expires *time.Time, repositoryIDs []int64) (Token, string, error) {
@@ -199,7 +197,7 @@ type Grant struct {
 // oauthGrantStore is the slice of authn.OAuthStore the account surface needs.
 type oauthGrantStore interface {
 	ListOAuthGrants(context.Context, int64) ([]authn.OAuthGrantMetadata, error)
-	RevokeUserOAuthGrant(ctx context.Context, userID, grantID int64) error
+	RevokeUserOAuthGrantAudited(context.Context, int64, int64, audit.Event) error
 }
 
 // Grants lists the caller's live MCP OAuth grants. Like token management this
@@ -235,15 +233,12 @@ func (s *Service) RevokeGrant(ctx context.Context, principal authn.Principal, id
 	if !ok {
 		return ErrForbidden
 	}
-	err = store.RevokeUserOAuthGrant(ctx, userID, id)
+	err = store.RevokeUserOAuthGrantAudited(ctx, userID, id, audit.Event{
+		ActorType: "user", ActorID: principal.Subject, TargetType: "oauth_grant", TargetID: strconv.FormatInt(id, 10),
+		AuthenticationMethod: principal.Method, Operation: audit.OperationOAuthGrantRevoked, Outcome: "success", RequestID: audit.RequestID(ctx),
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrForbidden
-	}
-	if err == nil && s.Audit != nil {
-		_ = s.Audit.Record(ctx, audit.Event{
-			ActorType: "user", ActorID: principal.Subject, TargetType: "oauth_grant", TargetID: strconv.FormatInt(id, 10),
-			AuthenticationMethod: principal.Method, Operation: "oauth_grant_revoked", Outcome: "success", RequestID: audit.RequestID(ctx),
-		})
 	}
 	return err
 }

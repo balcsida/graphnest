@@ -222,7 +222,7 @@ type grantAccountStore struct {
 func (s *grantAccountStore) ListOAuthGrants(context.Context, int64) ([]authn.OAuthGrantMetadata, error) {
 	return s.grants, nil
 }
-func (s *grantAccountStore) RevokeUserOAuthGrant(_ context.Context, _ int64, grantID int64) error {
+func (s *grantAccountStore) RevokeUserOAuthGrantAudited(_ context.Context, _ int64, grantID int64, _ audit.Event) error {
 	s.revoked = append(s.revoked, grantID)
 	return nil
 }
