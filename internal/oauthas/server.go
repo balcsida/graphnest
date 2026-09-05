@@ -661,9 +661,23 @@ func (server *Server) refresh(writer http.ResponseWriter, request *http.Request)
 		writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "refresh token does not belong to this client")
 		return
 	}
+	revokeCurrent := func() error {
+		_, revokeErr := server.Store.RotateOAuthGrant(request.Context(), refreshHash, authn.OAuthRotation{
+			Now: now, Revoke: true,
+			Audit: audit.Event{ActorType: "user", ActorID: strconv.FormatInt(current.UserID, 10), TargetType: "oauth_grant", TargetID: strconv.FormatInt(current.ID, 10), AuthenticationMethod: authn.ProviderOAuthToken, Operation: OperationGrantRevoked, Outcome: "denied", RequestID: audit.RequestID(request.Context())},
+		})
+		return revokeErr
+	}
 	if err == nil && server.GitHub != nil && len(current.GitHubTokenCiphertext) == 0 {
-		writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "GitHub credentials are unavailable; authorize again")
-		return
+		revokeErr := revokeCurrent()
+		if revokeErr == nil {
+			writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "GitHub credentials are unavailable; the grant was revoked")
+			return
+		}
+		if !errors.Is(revokeErr, pgx.ErrNoRows) {
+			writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "could not revoke grant with missing GitHub credentials")
+			return
+		}
 	}
 	githubToken := ""
 	if server.GitHub != nil && len(current.GitHubTokenCiphertext) != 0 {
@@ -686,16 +700,15 @@ func (server *Server) refresh(writer http.ResponseWriter, request *http.Request)
 		if err != nil {
 			var denied interface{ Unauthorized() bool }
 			if errors.As(err, &denied) && denied.Unauthorized() {
-				_, revokeErr := server.Store.RotateOAuthGrant(request.Context(), refreshHash, authn.OAuthRotation{
-					Now: now, Revoke: true,
-					Audit: audit.Event{ActorType: "user", ActorID: strconv.FormatInt(current.UserID, 10), TargetType: "oauth_grant", TargetID: strconv.FormatInt(current.ID, 10), AuthenticationMethod: authn.ProviderOAuthToken, Operation: OperationGrantRevoked, Outcome: "denied", RequestID: audit.RequestID(request.Context())},
-				})
-				if errors.Is(revokeErr, pgx.ErrNoRows) {
-					writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "refresh token is invalid or expired")
-				} else {
-					writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "GitHub rejected the stored credentials; authorize again")
+				revokeErr := revokeCurrent()
+				if revokeErr == nil {
+					writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "GitHub rejected the stored credentials; the grant was revoked")
+					return
 				}
-				return
+				if !errors.Is(revokeErr, pgx.ErrNoRows) {
+					writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "GitHub rejected the stored credentials; authorize again")
+					return
+				}
 			}
 		} else {
 			replaceRepositories = true
