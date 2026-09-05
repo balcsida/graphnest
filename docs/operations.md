@@ -291,6 +291,9 @@ drops it and keeps the last-synced grants; GitHub outages and rate limits leave
 the token and grants unchanged. Refresh waits at most two seconds for this
 GitHub synchronization. Revoking a new grant after encrypted-token storage
 fails has a separate ten-second cleanup budget.
+Unreadable stored GitHub credentials make refresh return HTTP 503 without
+rotating tokens or changing grants. Restore the original encryption key or
+authorize the client again.
 Expired authorization requests, week-old dead grants and clients idle for 90
 days are swept by the periodic cleanup.
 
