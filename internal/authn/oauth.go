@@ -122,7 +122,7 @@ type OAuthStore interface {
 	// it belongs to clientID and reports whether a grant was newly revoked.
 	// Unknown tokens are not an error (RFC 7009).
 	RevokeOAuthGrantByToken(ctx context.Context, hash [32]byte, clientID string) (bool, error)
-	ListOAuthGrants(ctx context.Context, userID int64) ([]OAuthGrantMetadata, error)
+	ListOAuthGrants(ctx context.Context, userID, afterID int64, limit int) ([]OAuthGrantMetadata, bool, error)
 	RevokeUserOAuthGrant(ctx context.Context, userID, grantID int64) error
 	ReplaceGitHubGrants(ctx context.Context, userID int64, repositoryIDs []int64) error
 }

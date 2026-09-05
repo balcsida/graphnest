@@ -620,11 +620,14 @@ paths:
     get:
       description: Connected MCP clients (OAuth grants) of the current interactive user. Access tokens issued to those clients may not call this.
       security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters: [{name: cursor, in: query, required: false, schema: {type: string, minLength: 1}, description: Opaque cursor returned by the preceding page.}]
       responses:
         '200': {description: Live grants, content: {application/json: {schema: {$ref: '#/components/schemas/OAuthGrantList'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/AccountForbidden'}
         '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit. The body is omitted when the error envelope also exceeds the limit., content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/account/oauth-grants/{id}:
     delete:
@@ -794,8 +797,11 @@ components:
     OAuthGrantList:
       type: object
       additionalProperties: false
-      required: [grants]
-      properties: {grants: {type: array, items: {$ref: '#/components/schemas/OAuthGrant'}}}
+      required: [grants, truncated]
+      properties:
+        grants: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/OAuthGrant'}}
+        truncated: {type: boolean}
+        next_cursor: {type: string, minLength: 1}
     ProtectedResourceMetadata:
       type: object
       required: [resource, authorization_servers]
