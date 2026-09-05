@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/balcsida/graphnest/internal/audit"
 )
 
 // ProviderOAuthToken is the principal method for MCP clients authenticated with
@@ -75,7 +77,7 @@ type OAuthGrantMetadata struct {
 	ExpiresAt  time.Time
 }
 
-// OAuthRotation carries the new token hashes and expiries for a refresh.
+// OAuthRotation carries all writes committed by a successful refresh.
 // Grace suppresses grant revocation for consumed-token retries after rotation.
 // Such retries still fail; a lost refresh response requires fresh authorization.
 type OAuthRotation struct {
@@ -84,6 +86,7 @@ type OAuthRotation struct {
 	RefreshHash     [32]byte
 	Now             time.Time
 	Grace           time.Duration
+	Audit           audit.Event
 }
 
 // OAuthRequestLimiter enforces shared registration, token and revocation budgets.

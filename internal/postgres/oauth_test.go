@@ -118,6 +118,7 @@ func TestOAuthGrantAuthenticatesRotatesAndDetectsReplay(t *testing.T) {
 
 	rotated, err := store.RotateOAuthGrant(t.Context(), [32]byte{11}, authn.OAuthRotation{
 		AccessHash: [32]byte{20}, AccessExpiresAt: now.Add(3 * time.Hour), RefreshHash: [32]byte{21}, Now: now.Add(2 * time.Hour),
+		Audit: testOAuthRefreshAudit(userID, grantID),
 	})
 	if err != nil || rotated.ID != grantID || rotated.PreviousRefreshHash == nil || *rotated.PreviousRefreshHash != [32]byte{11} || string(rotated.GitHubTokenCiphertext) != "ct" {
 		t.Fatalf("rotated=%+v err=%v", rotated, err)

@@ -30,6 +30,7 @@ type memoryStore struct {
 	consumedRefresh map[int64]map[[32]byte]time.Time
 	nextID          int64
 	github          map[int64][]int64
+	audit           *recordingAudit
 	fail            error
 }
 
@@ -151,7 +152,7 @@ func (m *memoryStore) OAuthGrantByRefresh(_ context.Context, refreshHash [32]byt
 	return authn.OAuthGrant{}, pgx.ErrNoRows
 }
 
-func (m *memoryStore) RotateOAuthGrant(_ context.Context, refreshHash [32]byte, rotation authn.OAuthRotation) (authn.OAuthGrant, error) {
+func (m *memoryStore) RotateOAuthGrant(ctx context.Context, refreshHash [32]byte, rotation authn.OAuthRotation) (authn.OAuthGrant, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, grant := range m.grants {
@@ -166,6 +167,9 @@ func (m *memoryStore) RotateOAuthGrant(_ context.Context, refreshHash [32]byte, 
 			previous := grant.RefreshHash
 			grant.PreviousRefreshHash = &previous
 			grant.RefreshHash, grant.AccessHash, grant.AccessExpiresAt, grant.LastUsedAt = rotation.RefreshHash, rotation.AccessHash, rotation.AccessExpiresAt, rotation.Now
+			if m.audit != nil {
+				_ = m.audit.Record(ctx, rotation.Audit)
+			}
 			return *grant, nil
 		}
 	}
@@ -298,6 +302,7 @@ func newHarness(t *testing.T) *harness {
 	t.Helper()
 	store := newMemoryStore()
 	recorder := &recordingAudit{}
+	store.audit = recorder
 	github := &githubStub{repositories: []int64{101, 102}}
 	sealer, err := NewSealer(make([]byte, 32))
 	if err != nil {

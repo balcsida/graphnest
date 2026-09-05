@@ -241,6 +241,9 @@ func (s *Store) RotateOAuthGrant(ctx context.Context, refreshHash [32]byte, rota
 	if _, err := tx.Exec(ctx, `insert into oauth_refresh_tokens(refresh_hash, grant_id, consumed_at) values($1,$2,$3)`, refreshHash[:], grant.ID, rotation.Now); err != nil {
 		return authn.OAuthGrant{}, err
 	}
+	if err := appendAudit(ctx, tx, rotation.Audit); err != nil {
+		return authn.OAuthGrant{}, err
+	}
 	return grant, tx.Commit(ctx)
 }
 

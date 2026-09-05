@@ -23,6 +23,7 @@ func TestOAuthRefreshReplayRetainsEntireFamily(t *testing.T) {
 				current, err = store.RotateOAuthGrant(t.Context(), current.RefreshHash, authn.OAuthRotation{
 					AccessHash: [32]byte{byte(20 + i)}, AccessExpiresAt: original.AccessExpiresAt,
 					RefreshHash: [32]byte{byte(30 + i)}, Now: firstRotation.Add(time.Duration(i) * 10 * time.Second), Grace: 30 * time.Second,
+					Audit: testOAuthRefreshAudit(original.UserID, original.ID),
 				})
 				if err != nil {
 					t.Fatal(err)
@@ -65,6 +66,7 @@ func TestRevokeOAuthGrantByConsumedRefresh(t *testing.T) {
 		current, err = store.RotateOAuthGrant(t.Context(), current.RefreshHash, authn.OAuthRotation{
 			AccessHash: [32]byte{byte(20 + i)}, AccessExpiresAt: original.AccessExpiresAt,
 			RefreshHash: [32]byte{byte(30 + i)}, Now: original.CreatedAt.Add(time.Duration(i+1) * time.Minute),
+			Audit: testOAuthRefreshAudit(original.UserID, original.ID),
 		})
 		if err != nil {
 			t.Fatal(err)
