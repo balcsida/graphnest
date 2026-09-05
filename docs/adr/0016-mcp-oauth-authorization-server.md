@@ -48,9 +48,10 @@ missing credentials fail code exchange and require fresh authorization.
 Every access-synced authorization requires a fresh GitHub sign-in. Refresh-time
 GitHub synchronization has a two-second deadline inside the server's ten-second
 write deadline. A successful GitHub snapshot, token rotation and audit event
-commit in one PostgreSQL transaction. Rejected credentials atomically revoke
-only the current OAuth grant and clear its ciphertext; missing credentials fail
-without mutation, while GitHub outages do not block rotation. Code-exchange
+commit in one PostgreSQL transaction. Rejected, expired, or missing credentials
+atomically revoke only the current OAuth grant and clear its ciphertext, then
+return terminal `invalid_grant`; persistence failures return 503 without
+mutation, while GitHub outages do not block rotation. Code-exchange
 revocation cleanup keeps a separate ten-second budget. PostgreSQL
 retains all consumed refresh hashes with their rotation times, shares request
 budgets across replicas (including pending authorization starts), and caps

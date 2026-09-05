@@ -691,7 +691,7 @@ paths:
         '400': {description: Nothing to resume (HTML)}
   /oauth/token:
     post:
-      description: Token endpoint (RFC 6749 §4.1.3 and §6). Public clients only; refresh rotates both tokens. Consumed-token retries return invalid_grant without revoking the grant within 30 seconds of consumption; at or after that deadline they also revoke the grant. A lost refresh response requires fresh authorization. With GitHub access sync, a successful repository snapshot commits with rotation; rejected credentials revoke only the current OAuth grant, while missing credentials fail without mutation.
+      description: Token endpoint (RFC 6749 §4.1.3 and §6). Public clients only; refresh rotates both tokens. Consumed-token retries return invalid_grant without revoking the grant within 30 seconds of consumption; at or after that deadline they also revoke the grant. A lost refresh response requires fresh authorization. With GitHub access sync, a successful repository snapshot commits with rotation; rejected, expired, or missing credentials revoke only the current OAuth grant and return invalid_grant. A failure to persist that revocation returns 503 without mutation.
       requestBody: {required: true, content: {application/x-www-form-urlencoded: {schema: {$ref: '#/components/schemas/TokenRequest'}}}}
       responses:
         '200': {description: Tokens, content: {application/json: {schema: {$ref: '#/components/schemas/TokenResponse'}}}}
