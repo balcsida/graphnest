@@ -93,6 +93,10 @@ graph_queries.each do |name, query|
   require_value(response["$ref"], "#/components/schemas/Graph#{name.capitalize}Response", "graph #{name} response schema")
   raise OpenAPIError, "graph #{name} timeout response is missing" unless query.dig("responses", "504").is_a?(Hash)
 end
+[["register", "503"], ["token", "503"], ["revoke", "429"], ["revoke", "503"]].each do |endpoint, status|
+  reference = document.dig("paths", "/oauth/#{endpoint}", "post", "responses", status, "content", "application/json", "schema", "$ref")
+  require_value(reference, "#/components/schemas/OAuthError", "OAuth #{endpoint} HTTP #{status} response schema")
+end
 schemas = document.fetch("components").fetch("schemas")
 audit_event = schemas.fetch("AuditEvent").fetch("properties")
 %w[oauth oauth_token].each do |method|
