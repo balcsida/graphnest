@@ -299,9 +299,12 @@ func githubOAuthCodeExchange(t *testing.T, store *Store, now func() time.Time) (
 		t.Fatal(err)
 	}
 	tokens := oauthas.NewProviderTokens(now)
-	session := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
-	tokens.StoreProviderToken(t.Context(), session, "test-provider-token")
-	tokens.Transfer(session, sha256.Sum256([]byte(strings.Repeat("c", 32))))
+	requestHash := sha256.Sum256([]byte("pending-request"))
+	codeHash := sha256.Sum256([]byte(strings.Repeat("c", 32)))
+	tokens.Deposit(t.Context(), requestHash, "owner", "test-provider-token")
+	if !tokens.Transfer(requestHash, "owner", codeHash) {
+		t.Fatal("transfer provider token")
+	}
 	server.GitHubTokens, server.GitHub = tokens, unusedOAuthGitHubAccess{}
 	return server, request, userID
 }
@@ -473,10 +476,8 @@ func TestOAuthCodeExchangeCannotRestoreRevokedGitHubToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	tokens := oauthas.NewProviderTokens(server.Now)
-	session := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
-	tokens.StoreProviderToken(t.Context(), session, "test-provider-token")
 	codeHash := sha256.Sum256([]byte(strings.Repeat("c", 32)))
-	tokens.Transfer(session, codeHash)
+	tokens.Deposit(t.Context(), codeHash, "owner", "test-provider-token")
 	server.GitHubTokens, server.GitHub = tokens, unusedOAuthGitHubAccess{}
 	server.Rand = &revokeBeforeTokenGeneration{Reader: rand.Reader, readsBeforeRevoke: 2, revoke: func() {
 		// The third read seals the provider token after the exchange has committed.

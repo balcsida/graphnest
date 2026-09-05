@@ -2,6 +2,8 @@ package oauthas
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"html/template"
@@ -66,7 +68,8 @@ type GitHubAccess interface {
 // token from the browser session to the authorization code, exchange removes
 // it after the authorization code commits.
 type GitHubTokenSource interface {
-	Transfer(sessionToken string, codeHash [32]byte)
+	Available(requestHash [32]byte, subject string) bool
+	Transfer(requestHash [32]byte, subject string, codeHash [32]byte) bool
 	TokenForCode(codeHash [32]byte) (string, bool)
 	DeleteForCode(codeHash [32]byte)
 }
@@ -404,8 +407,9 @@ func (server *Server) startAuthorization(writer http.ResponseWriter, request *ht
 		fail("temporarily_unavailable", "could not start authorization")
 		return
 	}
+	requestID := hex.EncodeToString(handleHash[:])
 	http.SetCookie(writer, &http.Cookie{
-		Name: RequestCookie, Value: handle, Path: "/", Secure: true, HttpOnly: true,
+		Name: requestCookieName(requestID), Value: handle, Path: "/", Secure: true, HttpOnly: true,
 		SameSite: http.SameSiteLaxMode, Expires: now.Add(pendingTTL), MaxAge: int(pendingTTL / time.Second),
 	})
 	loginPath := server.LoginPath
@@ -419,15 +423,21 @@ func (server *Server) startAuthorization(writer http.ResponseWriter, request *ht
 			server.authorizeErrorPage(writer, "No sign-in provider is available for this authorization.")
 			return
 		}
-		http.Redirect(writer, request, loginPath+"?return_to="+url.QueryEscape(ResumePath), http.StatusSeeOther)
+		resume := ResumePath + "?request_id=" + requestID
+		http.Redirect(writer, request, loginPath+"?return_to="+url.QueryEscape(resume), http.StatusSeeOther)
 		return
 	}
-	server.consent(writer, request, handle, pending, client)
+	server.consent(writer, request, requestID, pending, client)
 }
 
 // resume is where the login flow sends the browser back once a session exists.
 func (server *Server) resume(writer http.ResponseWriter, request *http.Request) {
-	handle, pending, client, ok := server.pendingFromCookie(writer, request)
+	requestID, pendingID, ok := parseRequestID(request.URL.Query()["request_id"])
+	if !ok {
+		server.authorizeErrorPage(writer, "This authorization request is invalid. Start again from your MCP client.")
+		return
+	}
+	pending, client, ok := server.pendingFromCookie(writer, request, requestID, pendingID)
 	if !ok {
 		return
 	}
@@ -435,32 +445,49 @@ func (server *Server) resume(writer http.ResponseWriter, request *http.Request) 
 		server.authorizeErrorPage(writer, "Sign-in did not complete. Start the authorization again from your MCP client.")
 		return
 	}
-	server.consent(writer, request, handle, pending, client)
+	server.consent(writer, request, requestID, pending, client)
 }
 
-func (server *Server) pendingFromCookie(writer http.ResponseWriter, request *http.Request) (string, authn.OAuthAuthorizationRequest, authn.OAuthClient, bool) {
-	cookie, count := namedCookie(request, RequestCookie)
+func (server *Server) pendingFromCookie(writer http.ResponseWriter, request *http.Request, requestID string, pendingID [32]byte) (authn.OAuthAuthorizationRequest, authn.OAuthClient, bool) {
+	cookie, count := namedCookie(request, requestCookieName(requestID))
 	if count != 1 {
 		server.authorizeErrorPage(writer, "This authorization request has expired. Start again from your MCP client.")
-		return "", authn.OAuthAuthorizationRequest{}, authn.OAuthClient{}, false
+		return authn.OAuthAuthorizationRequest{}, authn.OAuthClient{}, false
 	}
 	hash, ok := hashSecret(cookie, "")
-	if !ok {
+	if !ok || hash != pendingID {
 		server.authorizeErrorPage(writer, "This authorization request is invalid. Start again from your MCP client.")
-		return "", authn.OAuthAuthorizationRequest{}, authn.OAuthClient{}, false
+		return authn.OAuthAuthorizationRequest{}, authn.OAuthClient{}, false
 	}
 	now := server.now()
-	pending, err := server.Store.OAuthAuthorizationRequest(request.Context(), hash, "pending", now)
+	pending, err := server.Store.OAuthAuthorizationRequest(request.Context(), pendingID, "pending", now)
 	if err != nil {
 		server.authorizeErrorPage(writer, "This authorization request has expired. Start again from your MCP client.")
-		return "", authn.OAuthAuthorizationRequest{}, authn.OAuthClient{}, false
+		return authn.OAuthAuthorizationRequest{}, authn.OAuthClient{}, false
 	}
 	client, err := server.Store.OAuthClient(request.Context(), pending.ClientID, now)
 	if err != nil {
 		server.authorizeErrorPage(writer, "Unknown client.")
-		return "", authn.OAuthAuthorizationRequest{}, authn.OAuthClient{}, false
+		return authn.OAuthAuthorizationRequest{}, authn.OAuthClient{}, false
 	}
-	return cookie, pending, client, true
+	return pending, client, true
+}
+
+func parseRequestID(values []string) (string, [32]byte, bool) {
+	if len(values) != 1 || len(values[0]) != sha256.Size*2 || strings.ToLower(values[0]) != values[0] {
+		return "", [32]byte{}, false
+	}
+	raw, err := hex.DecodeString(values[0])
+	if err != nil {
+		return "", [32]byte{}, false
+	}
+	return values[0], [32]byte(raw), true
+}
+
+func requestCookieName(requestID string) string { return RequestCookie + "_" + requestID }
+
+func clearRequestCookie(writer http.ResponseWriter, requestID string) {
+	http.SetCookie(writer, &http.Cookie{Name: requestCookieName(requestID), Value: "", Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
 }
 
 func (server *Server) sessionPrincipal(request *http.Request) (authn.Principal, bool) {
@@ -489,12 +516,13 @@ func (server *Server) decide(writer http.ResponseWriter, request *http.Request) 
 		server.authorizeErrorPage(writer, "The consent form is invalid.")
 		return
 	}
-	handle, pending, client, ok := server.pendingFromCookie(writer, request)
+	requestID, pendingID, ok := parseRequestID(request.PostForm["request_id"])
 	if !ok {
+		server.authorizeErrorPage(writer, "The consent form does not match this authorization request.")
 		return
 	}
-	if request.PostForm.Get("request_id") != handle {
-		server.authorizeErrorPage(writer, "The consent form does not match this authorization request.")
+	pending, client, ok := server.pendingFromCookie(writer, request, requestID, pendingID)
+	if !ok {
 		return
 	}
 	principal, ok := server.sessionPrincipal(request)
@@ -507,12 +535,16 @@ func (server *Server) decide(writer http.ResponseWriter, request *http.Request) 
 		server.authorizeErrorPage(writer, "Your session cannot authorize clients.")
 		return
 	}
-	http.SetCookie(writer, &http.Cookie{Name: RequestCookie, Value: "", Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
 	now := server.now()
 	if request.PostForm.Get("decision") != "allow" {
 		_ = server.Store.DeleteOAuthAuthorizationRequest(request.Context(), pending.ID)
+		clearRequestCookie(writer, requestID)
 		server.record(request.Context(), audit.Event{ActorType: "user", ActorID: principal.Subject, TargetType: "oauth_client", TargetID: client.ID, AuthenticationMethod: principal.Method, Operation: OperationConsentDenied, Outcome: "denied"})
 		redirectError(writer, request, pending.RedirectURI, pending.State, "access_denied", "the user denied the request")
+		return
+	}
+	if server.GitHubTokens != nil && !server.GitHubTokens.Available(pending.ID, principal.Subject) {
+		redirectError(writer, request, pending.RedirectURI, pending.State, "server_error", "could not issue an authorization code")
 		return
 	}
 	sessionToken, _ := namedCookie(request, authn.SessionCookieName)
@@ -522,9 +554,12 @@ func (server *Server) decide(writer http.ResponseWriter, request *http.Request) 
 		redirectError(writer, request, pending.RedirectURI, pending.State, "server_error", "could not issue an authorization code")
 		return
 	}
-	if server.GitHubTokens != nil {
-		server.GitHubTokens.Transfer(sessionToken, codeHash)
+	if server.GitHubTokens != nil && !server.GitHubTokens.Transfer(pending.ID, principal.Subject, codeHash) {
+		_ = server.Store.DeleteOAuthAuthorizationRequest(request.Context(), codeHash)
+		redirectError(writer, request, pending.RedirectURI, pending.State, "server_error", "could not issue an authorization code")
+		return
 	}
+	clearRequestCookie(writer, requestID)
 	server.record(request.Context(), audit.Event{ActorType: "user", ActorID: principal.Subject, TargetType: "oauth_client", TargetID: client.ID, AuthenticationMethod: principal.Method, Operation: OperationConsentGranted, Outcome: "success"})
 	target, _ := url.Parse(pending.RedirectURI)
 	values := target.Query()
@@ -807,7 +842,7 @@ button.allow{background:var(--accent);border-color:var(--accent);color:#0b0e14;f
 <div class="actions"><button type="submit" name="decision" value="deny">Deny</button><button class="allow" type="submit" name="decision" value="allow">Allow</button></div>
 </form></main></body></html>`))
 
-func (server *Server) consent(writer http.ResponseWriter, request *http.Request, handle string, pending authn.OAuthAuthorizationRequest, client authn.OAuthClient) {
+func (server *Server) consent(writer http.ResponseWriter, request *http.Request, requestID string, pending authn.OAuthAuthorizationRequest, client authn.OAuthClient) {
 	principal, _ := server.sessionPrincipal(request)
 	name := principal.Subject
 	if server.UserName != nil {
@@ -821,7 +856,7 @@ func (server *Server) consent(writer http.ResponseWriter, request *http.Request,
 	writer.Header().Set("X-Frame-Options", "DENY")
 	writer.WriteHeader(http.StatusOK)
 	_ = consentTemplate.Execute(writer, map[string]string{
-		"ClientName": client.Name, "UserName": name, "RequestID": handle,
+		"ClientName": client.Name, "UserName": name, "RequestID": requestID,
 		"RedirectTarget": target.Scheme + "://" + target.Host,
 	})
 }

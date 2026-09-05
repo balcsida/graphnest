@@ -5,16 +5,19 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/balcsida/graphnest/internal/audit"
 	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/oauthas"
 	"github.com/balcsida/graphnest/internal/sso"
 	"github.com/jackc/pgx/v5"
 )
@@ -72,6 +75,7 @@ type providerStore struct {
 	createErr      error
 	consumeErr     error
 	sessionErr     error
+	principalErr   error
 	consumed       bool
 	consumeArgs    [][32]byte
 	session        authn.SessionRecord
@@ -116,8 +120,14 @@ func (store *providerStore) CreateFederatedSessionAudited(ctx context.Context, i
 func (store *providerStore) BindFederatedUser(context.Context, string, string, string) (int64, error) {
 	return 1, nil
 }
-func (*providerStore) SessionPrincipal(context.Context, [32]byte, time.Time, time.Time) (authn.Principal, error) {
-	return authn.Principal{}, errors.New("unused")
+func (store *providerStore) SessionPrincipal(_ context.Context, hash [32]byte, _, _ time.Time) (authn.Principal, error) {
+	if store.principalErr != nil {
+		return authn.Principal{}, store.principalErr
+	}
+	if hash != store.session.TokenHash || store.session.UserID == 0 {
+		return authn.Principal{}, pgx.ErrNoRows
+	}
+	return authn.Principal{Subject: strconv.FormatInt(store.session.UserID, 10), Method: store.session.Provider}, nil
 }
 func (*providerStore) RevokeSession(context.Context, [32]byte) error { return nil }
 func (store *providerStore) RevokeSessionAudited(ctx context.Context, hash [32]byte) error {
@@ -175,7 +185,7 @@ func TestOIDCProviderLoginCreatesBoundFlowAndRedirects(t *testing.T) {
 		t.Fatalf("response = %d %q", recorder.Code, recorder.Header().Get("Location"))
 	}
 	cookies := recorder.Result().Cookies()
-	if len(cookies) != 1 || cookies[0].Name != sso.OIDCLoginCookieName || cookies[0].SameSite != http.SameSiteLaxMode {
+	if len(cookies) != 1 || !strings.HasPrefix(cookies[0].Name, sso.OIDCLoginCookieName+"_") || cookies[0].SameSite != http.SameSiteLaxMode {
 		t.Fatalf("cookies = %#v", cookies)
 	}
 	state := strings.TrimPrefix(recorder.Header().Get("Location"), "https://idp.example.test/authorize?state=")
@@ -210,7 +220,7 @@ func TestProviderUsesSpecifiedLoginCookieForLoginAndCallback(t *testing.T) {
 	provider.Register(mux)
 	login := httptest.NewRecorder()
 	mux.ServeHTTP(login, httptest.NewRequest(http.MethodGet, spec.LoginPath, nil))
-	if cookies := login.Result().Cookies(); len(cookies) != 1 || cookies[0].Name != cookieName {
+	if cookies := login.Result().Cookies(); len(cookies) != 1 || !strings.HasPrefix(cookies[0].Name, cookieName+"_") {
 		t.Fatalf("login cookies=%#v", cookies)
 	}
 
@@ -221,8 +231,48 @@ func TestProviderUsesSpecifiedLoginCookieForLoginAndCallback(t *testing.T) {
 		t.Fatal("callback did not consume the flow using the specified cookie")
 	}
 	cookies := callback.Result().Cookies()
-	if len(cookies) != 2 || cookies[0].Name != cookieName || cookies[0].MaxAge != -1 {
+	if len(cookies) != 2 || !strings.HasPrefix(cookies[0].Name, cookieName+"_") || cookies[0].MaxAge != -1 {
 		t.Fatalf("callback cookies=%#v", cookies)
+	}
+}
+
+func TestProviderLoginCookiesAreBoundToTheirStates(t *testing.T) {
+	random := append(bytes.Repeat([]byte{1}, 96), bytes.Repeat([]byte{2}, 96)...)
+	provider := &Provider{
+		Spec: oidcSpec, Client: &providerClient{}, Store: &providerStore{}, LoginTTL: time.Minute,
+		Now: func() time.Time { return time.Unix(1_000, 0) }, Rand: bytes.NewReader(random),
+	}
+	mux := http.NewServeMux()
+	provider.Register(mux)
+	seen := map[string]bool{}
+	for range 2 {
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, provider.Spec.LoginPath, nil))
+		location, err := url.Parse(recorder.Header().Get("Location"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		state := location.Query().Get("state")
+		stateHash, ok := tokenHash(state)
+		if !ok {
+			t.Fatalf("invalid state %q", state)
+		}
+		want := provider.Spec.CookieName + "_" + hex.EncodeToString(stateHash[:])
+		if cookies := recorder.Result().Cookies(); len(cookies) != 1 || cookies[0].Name != want {
+			t.Fatalf("state cookie=%#v want %q", cookies, want)
+		}
+		if seen[want] {
+			t.Fatalf("concurrent login reused cookie %q", want)
+		}
+		seen[want] = true
+	}
+}
+
+func TestProviderInvalidStateDoesNotClearActiveLoginCookie(t *testing.T) {
+	fixture := newCallbackFixture(t)
+	recorder := fixture.callback(t, "?code=good", fixture.browser)
+	if cookies := recorder.Result().Cookies(); len(cookies) != 0 {
+		t.Fatalf("invalid state cleared cookies: %#v", cookies)
 	}
 }
 
@@ -238,7 +288,7 @@ func TestOIDCProviderCallbackSuccessConsumesCreatesSessionAndRedirects(t *testin
 		t.Fatalf("callback side effects missing: store=%#v client=%#v", fixture.store, fixture.client)
 	}
 	cookies := recorder.Result().Cookies()
-	if len(cookies) != 2 || cookies[0].Name != sso.OIDCLoginCookieName || cookies[0].MaxAge != -1 ||
+	if len(cookies) != 2 || !strings.HasPrefix(cookies[0].Name, sso.OIDCLoginCookieName+"_") || cookies[0].MaxAge != -1 ||
 		cookies[1].Name != authn.SessionCookieName || cookies[1].SameSite != http.SameSiteStrictMode {
 		t.Fatalf("cookies = %#v", cookies)
 	}
@@ -330,8 +380,9 @@ func TestOIDCProviderCallbackRejectsDuplicateBindingCookie(t *testing.T) {
 	mux := http.NewServeMux()
 	fixture.provider.Register(mux)
 	request := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback?state="+fixture.state+"&code=good", nil)
-	request.Header.Add("Cookie", sso.OIDCLoginCookieName+"="+fixture.browser)
-	request.Header.Add("Cookie", sso.OIDCLoginCookieName+"="+fixture.browser)
+	cookieName := loginCookieName(sso.OIDCLoginCookieName, fixture.store.flow.StateHash)
+	request.Header.Add("Cookie", cookieName+"="+fixture.browser)
+	request.Header.Add("Cookie", cookieName+"="+fixture.browser)
 	recorder := httptest.NewRecorder()
 	mux.ServeHTTP(recorder, request)
 	assertGenericFailure(t, recorder)
@@ -448,7 +499,7 @@ func (fixture *callbackFixture) callback(t *testing.T, query, browser string) *h
 	fixture.provider.Register(mux)
 	request := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback"+query, nil)
 	if browser != "" {
-		request.AddCookie(&http.Cookie{Name: fixture.provider.Spec.CookieName, Value: browser})
+		request.AddCookie(&http.Cookie{Name: loginCookieName(fixture.provider.Spec.CookieName, fixture.store.flow.StateHash), Value: browser})
 	}
 	recorder := httptest.NewRecorder()
 	mux.ServeHTTP(recorder, request)
@@ -461,10 +512,10 @@ func token(value byte) string {
 
 func assertGenericFailure(t *testing.T, recorder *httptest.ResponseRecorder) {
 	t.Helper()
+	cookies := recorder.Result().Cookies()
 	if recorder.Header().Get("Location") != "/?auth_error=authentication_failed" ||
-		strings.Contains(recorder.Body.String()+recorder.Header().Get("Location"), "access-token-secret") ||
-		len(recorder.Result().Cookies()) != 1 || recorder.Result().Cookies()[0].Name != sso.OIDCLoginCookieName ||
-		recorder.Result().Cookies()[0].MaxAge != -1 {
+		strings.Contains(recorder.Body.String()+recorder.Header().Get("Location"), "access-token-secret") || len(cookies) > 1 ||
+		len(cookies) == 1 && (!strings.HasPrefix(cookies[0].Name, sso.OIDCLoginCookieName+"_") || cookies[0].MaxAge != -1) {
 		t.Fatalf("non-generic failure: status=%d headers=%v body=%q", recorder.Code, recorder.Header(), recorder.Body.String())
 	}
 	assertPrivateHeaders(t, recorder)
@@ -491,8 +542,14 @@ func TestLoginHonoursAllowListedReturnTo(t *testing.T) {
 	}{
 		"default":         {"", "/"},
 		"oauth resume":    {"?return_to=%2Foauth%2Fauthorize%2Fresume", "/oauth/authorize/resume"},
+		"bound resume":    {"?return_to=%2Foauth%2Fauthorize%2Fresume%3Frequest_id%3D" + strings.Repeat("a", 64), "/oauth/authorize/resume?request_id=" + strings.Repeat("a", 64)},
 		"open redirect":   {"?return_to=https%3A%2F%2Fevil.test", "/"},
 		"relative escape": {"?return_to=%2Fevil", "/"},
+		"uppercase ID":    {"?return_to=%2Foauth%2Fauthorize%2Fresume%3Frequest_id%3D" + strings.Repeat("A", 64), "/"},
+		"extra parameter": {"?return_to=%2Foauth%2Fauthorize%2Fresume%3Frequest_id%3D" + strings.Repeat("a", 64) + "%26next%3D%2F", "/"},
+		"fragment":        {"?return_to=%2Foauth%2Fauthorize%2Fresume%3Frequest_id%3D" + strings.Repeat("a", 64) + "%23x", "/"},
+		"encoded path":    {"?return_to=%2Foauth%2F%2561uthorize%2Fresume%3Frequest_id%3D" + strings.Repeat("a", 64), "/"},
+		"path suffix":     {"?return_to=%2Foauth%2Fauthorize%2Fresume%2Fx%3Frequest_id%3D" + strings.Repeat("a", 64), "/"},
 		"repeated":        {"?return_to=%2Foauth%2Fauthorize%2Fresume&return_to=%2Foauth%2Fauthorize%2Fresume", "/"},
 	}
 	for name, tc := range cases {
@@ -524,19 +581,20 @@ func TestCallbackRedirectsToStoredReturnTo(t *testing.T) {
 }
 
 type capturingTokens struct {
-	sessionToken string
-	token        string
+	requestHash [32]byte
+	subject     string
+	token       string
 }
 
-func (c *capturingTokens) StoreProviderToken(_ context.Context, sessionToken, providerToken string) {
-	c.sessionToken, c.token = sessionToken, providerToken
+func (c *capturingTokens) Deposit(_ context.Context, requestHash [32]byte, subject, providerToken string) {
+	c.requestHash, c.subject, c.token = requestHash, subject, providerToken
 }
 
 func TestCallbackHandsProviderTokenToSinkOnlyForOAuthResume(t *testing.T) {
 	for _, tc := range []struct {
 		returnTo string
 		want     string
-	}{{"/oauth/authorize/resume", "gho_secret"}, {"/", ""}} {
+	}{{"/oauth/authorize/resume?request_id=" + strings.Repeat("a", 64), "gho_secret"}, {"/", ""}} {
 		fixture := newCallbackFixture(t)
 		fixture.store.flow.ReturnTo = tc.returnTo
 		fixture.client.identity.ProviderToken = "gho_secret"
@@ -546,17 +604,78 @@ func TestCallbackHandsProviderTokenToSinkOnlyForOAuthResume(t *testing.T) {
 		if recorder.Code != http.StatusSeeOther {
 			t.Fatalf("status=%d", recorder.Code)
 		}
-		sessionCookie := ""
-		for _, cookie := range recorder.Result().Cookies() {
-			if cookie.Name == authn.SessionCookieName {
-				sessionCookie = cookie.Value
-			}
-		}
-		if sink.token != tc.want || (tc.want != "" && (sink.sessionToken == "" || sink.sessionToken != sessionCookie)) {
-			t.Fatalf("return_to=%s: sink=%+v want token %q bound to the new session", tc.returnTo, sink, tc.want)
+		if sink.token != tc.want || tc.want != "" && (sink.subject != "1" || sink.requestHash != [32]byte{0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa}) {
+			t.Fatalf("return_to=%s: sink=%+v want token %q bound to request owner", tc.returnTo, sink, tc.want)
 		}
 		if strings.Contains(recorder.Header().Get("Set-Cookie")+recorder.Header().Get("Location"), "gho_secret") {
 			t.Fatal("provider token leaked to the browser")
 		}
+	}
+}
+
+func TestCallbackCannotResumeWhenFreshSessionCannotBeResolved(t *testing.T) {
+	fixture := newCallbackFixture(t)
+	fixture.store.flow.ReturnTo = "/oauth/authorize/resume?request_id=" + strings.Repeat("a", 64)
+	fixture.store.principalErr = errors.New("database unavailable")
+	fixture.client.identity.ProviderToken = "gho_secret"
+	sink := &capturingTokens{}
+	fixture.provider.Tokens = sink
+	recorder := fixture.callback(t, "?state="+fixture.state+"&code=good", fixture.browser)
+	if recorder.Header().Get("Location") != "/?auth_error=authentication_failed" || sink.token != "" {
+		t.Fatalf("response=%q sink=%+v", recorder.Header().Get("Location"), sink)
+	}
+	for _, cookie := range recorder.Result().Cookies() {
+		if cookie.Name == authn.SessionCookieName {
+			t.Fatal("unresolved session was reported to the browser")
+		}
+	}
+}
+
+func TestConcurrentCallbacksSelectAndClearOnlyTheirStateCookies(t *testing.T) {
+	first := newCallbackFixture(t)
+	second := newCallbackFixture(t)
+	second.state, second.browser = token(3), token(4)
+	stateRaw, _ := base64.RawURLEncoding.DecodeString(second.state)
+	browserRaw, _ := base64.RawURLEncoding.DecodeString(second.browser)
+	second.store.flow.StateHash = sha256.Sum256(stateRaw)
+	second.store.flow.BrowserHash = sha256.Sum256(browserRaw)
+	second.provider.Sessions.Rand = bytes.NewReader(bytes.Repeat([]byte{5}, 32))
+	first.store.flow.ReturnTo = "/oauth/authorize/resume?request_id=" + strings.Repeat("a", 64)
+	second.store.flow.ReturnTo = "/oauth/authorize/resume?request_id=" + strings.Repeat("b", 64)
+	first.client.identity.ProviderToken = "first-token"
+	second.client.identity.ProviderToken = "second-token"
+	tokens := oauthas.NewProviderTokens(func() time.Time { return time.Unix(2_000, 0) })
+	first.provider.Tokens, second.provider.Tokens = tokens, tokens
+	firstCookie := loginCookieName(first.provider.Spec.CookieName, first.store.flow.StateHash)
+	secondCookie := loginCookieName(second.provider.Spec.CookieName, second.store.flow.StateHash)
+
+	callback := func(fixture *callbackFixture, state string) *httptest.ResponseRecorder {
+		t.Helper()
+		mux := http.NewServeMux()
+		fixture.provider.Register(mux)
+		request := httptest.NewRequest(http.MethodGet, fixture.provider.Spec.CallbackPath+"?state="+state+"&code=good", nil)
+		request.AddCookie(&http.Cookie{Name: firstCookie, Value: first.browser})
+		request.AddCookie(&http.Cookie{Name: secondCookie, Value: second.browser})
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, request)
+		return recorder
+	}
+
+	firstResponse := callback(first, first.state)
+	secondResponse := callback(second, second.state)
+	if firstResponse.Header().Get("Set-Cookie") == "" || !strings.HasPrefix(firstResponse.Result().Cookies()[0].Name, firstCookie) ||
+		secondResponse.Header().Get("Set-Cookie") == "" || !strings.HasPrefix(secondResponse.Result().Cookies()[0].Name, secondCookie) {
+		t.Fatalf("callback cookies first=%#v second=%#v", firstResponse.Result().Cookies(), secondResponse.Result().Cookies())
+	}
+	firstRequest, _ := oauthResumeRequest(first.store.flow.ReturnTo)
+	secondRequest, _ := oauthResumeRequest(second.store.flow.ReturnTo)
+	firstCode, secondCode := sha256.Sum256([]byte("first-code")), sha256.Sum256([]byte("second-code"))
+	if !first.store.consumed || !second.store.consumed || !tokens.Transfer(firstRequest, "1", firstCode) || !tokens.Transfer(secondRequest, "1", secondCode) {
+		t.Fatal("callbacks did not preserve both request-owned handoffs")
+	}
+	firstToken, firstOK := tokens.TokenForCode(firstCode)
+	secondToken, secondOK := tokens.TokenForCode(secondCode)
+	if !firstOK || !secondOK || firstToken != "first-token" || secondToken != "second-token" {
+		t.Fatalf("callback handoffs first=%q/%t second=%q/%t", firstToken, firstOK, secondToken, secondOK)
 	}
 }

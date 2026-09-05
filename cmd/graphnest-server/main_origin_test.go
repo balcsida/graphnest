@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -76,13 +77,14 @@ func TestAuthRuntimeAcceptsCanonicalBrowserOrigins(t *testing.T) {
 			if document["issuer"] != test.origin {
 				t.Errorf("MCP issuer=%q want=%q", document["issuer"], test.origin)
 			}
+			requestID := hex.EncodeToString(store.hash[:])
 			for _, origin := range []string{test.origin, test.wrongPort, "https://other.example", ""} {
 				for _, path := range []string{"/oauth/authorize", "/auth/logout"} {
-					request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(url.Values{"request_id": {token}, "decision": {"deny"}}.Encode()))
+					request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(url.Values{"request_id": {requestID}, "decision": {"deny"}}.Encode()))
 					request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 					request.Header.Set("Origin", origin)
 					request.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: token})
-					request.AddCookie(&http.Cookie{Name: oauthas.RequestCookie, Value: token})
+					request.AddCookie(&http.Cookie{Name: oauthas.RequestCookie + "_" + requestID, Value: token})
 					response := httptest.NewRecorder()
 					handler.ServeHTTP(response, request)
 					want := http.StatusNoContent

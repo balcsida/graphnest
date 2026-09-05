@@ -615,7 +615,7 @@ paths:
       responses: {'303': {description: Redirect to the configured GitHub browser identity provider}}
   /auth/oauth/github/callback:
     get:
-      responses: {'303': {description: Redirect to the console, or to /oauth/authorize/resume when the login continues an MCP authorization}}
+      responses: {'303': {description: Redirect to the console, or to the exact request_id-bound /oauth/authorize/resume continuation supplied by GraphNest}}
   /v1/account/oauth-grants:
     get:
       description: Connected MCP clients (OAuth grants) of the current interactive user. Access tokens issued to those clients may not call this.
@@ -678,14 +678,16 @@ paths:
         '429': {description: Authorization request limit exceeded (10 per source IP and 100 across the deployment per minute), content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
         '503': {description: Request limiter unavailable, content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
     post:
-      description: Consent decision from the page rendered by GET. Requires the same-origin Origin header and the request cookie issued by GET.
+      description: Consent decision from the page rendered by GET. Requires the same-origin Origin header, public request_id, and matching request-specific secret cookie issued by GET.
       requestBody: {required: true, content: {application/x-www-form-urlencoded: {schema: {$ref: '#/components/schemas/ConsentDecision'}}}}
       responses:
         '303': {description: Redirect to redirect_uri with code and state, or with error=access_denied}
         '400': {description: Expired or mismatched request (HTML)}
   /oauth/authorize/resume:
     get:
-      description: Continuation target after sign-in; renders the consent page for the pending request identified by the request cookie.
+      description: Continuation target after sign-in; renders consent for exactly the pending request bound to request_id and its request-specific secret cookie. Concurrent browser authorizations remain independent.
+      parameters:
+        - {name: request_id, in: query, required: true, schema: {type: string, pattern: '^[0-9a-f]{64}$'}, description: Lowercase hexadecimal SHA-256 identifier of the pending request; this is not the secret cookie value.}
       responses:
         '200': {description: Consent page (HTML)}
         '400': {description: Nothing to resume (HTML)}
@@ -851,7 +853,7 @@ components:
       type: object
       required: [request_id, decision]
       properties:
-        request_id: {type: string, description: Value of the __Host-graphnest_oauth_req cookie issued by GET /oauth/authorize.}
+        request_id: {type: string, pattern: '^[0-9a-f]{64}$', description: Public lowercase hexadecimal SHA-256 identifier suffixing the matching __Host-graphnest_oauth_req_<request_id> secret cookie.}
         decision: {type: string, enum: [allow, deny]}
     TokenRequest:
       type: object

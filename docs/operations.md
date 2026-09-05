@@ -270,6 +270,12 @@ returns `invalid_grant`, but does not revoke the grant. The grace window does
 not replay or recover a successful refresh response: if that response is lost,
 the client must authorize again because only token hashes are retained.
 
+Each browser authorization has a public 64-character `request_id` and a
+request-specific `__Host-graphnest_oauth_req_<request_id>` secret cookie, so
+multiple tabs may sign in and decide consent independently. The provider
+callback resumes only the exact `request_id` supplied by GraphNest; malformed
+or altered continuations require restarting that authorization.
+
 Access tokens (`gno_…`) carry the user's repository read access, including
 GitHub-derived grants, without administrative privileges. They authenticate
 only `/mcp` and cannot create or manage credentials. Users see and disconnect

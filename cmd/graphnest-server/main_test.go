@@ -1206,7 +1206,8 @@ func TestMCPOAuthUsesConfiguredBrowserLogin(t *testing.T) {
 			response := httptest.NewRecorder()
 			mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+query.Encode(), nil))
 			location, err := url.Parse(response.Header().Get("Location"))
-			if err != nil || response.Code != http.StatusSeeOther || location.Path != test.want || location.Query().Get("return_to") != "/oauth/authorize/resume" {
+			returnTo := location.Query().Get("return_to")
+			if err != nil || response.Code != http.StatusSeeOther || location.Path != test.want || !strings.HasPrefix(returnTo, "/oauth/authorize/resume?request_id=") || len(returnTo) != len("/oauth/authorize/resume?request_id=")+64 {
 				t.Fatalf("status=%d location=%s err=%v", response.Code, response.Header().Get("Location"), err)
 			}
 		})

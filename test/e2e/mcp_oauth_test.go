@@ -117,9 +117,8 @@ func TestMCPOAuthAuthorizationCodeFlow(t *testing.T) {
 	// Follow the GitHub login through the fake IdP back to the resume page.
 	login := browserRequest(t, browser, base+response.Header.Get("Location"), "A")
 	login.Body.Close()
-	callback := completeGitHubOAuthLogin(t, browser, login.Header.Get("Location"), "A")
-	_ = callback
-	consent := browserRequest(t, browser, base+"/oauth/authorize/resume", "A")
+	resume := completeGitHubOAuthLoginForMCP(t, browser, login.Header.Get("Location"), "A")
+	consent := browserRequest(t, browser, base+resume, "A")
 	page, _ := io.ReadAll(consent.Body)
 	consent.Body.Close()
 	if consent.StatusCode != http.StatusOK || !bytes.Contains(page, []byte("OpenCode")) || !bytes.Contains(page, []byte("http://127.0.0.1:61000")) {
@@ -190,8 +189,8 @@ func TestMCPOAuthAuthorizationCodeFlow(t *testing.T) {
 		if login.StatusCode != http.StatusSeeOther {
 			t.Fatalf("fresh GitHub login status=%d", login.StatusCode)
 		}
-		completeGitHubOAuthLogin(t, browser, login.Header.Get("Location"), "A")
-		consent = browserRequest(t, browser, base+"/oauth/authorize/resume", "A")
+		resume := completeGitHubOAuthLoginForMCP(t, browser, login.Header.Get("Location"), "A")
+		consent = browserRequest(t, browser, base+resume, "A")
 		page, _ = io.ReadAll(consent.Body)
 		consent.Body.Close()
 		requestID = regexp.MustCompile(`name="request_id" value="([^"]+)"`).FindSubmatch(page)
@@ -266,6 +265,24 @@ func TestMCPOAuthAuthorizationCodeFlow(t *testing.T) {
 		t.Fatalf("revoke status=%d", response.StatusCode)
 	}
 	assertBearerStatus(t, public.Client(), base, access, "/mcp", http.StatusUnauthorized)
+}
+
+func completeGitHubOAuthLoginForMCP(t *testing.T, client *http.Client, authorize, replica string) string {
+	t.Helper()
+	response, err := client.Get(authorize)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") == "" {
+		t.Fatalf("GitHub authorize status=%d", response.StatusCode)
+	}
+	response = browserRequest(t, client, response.Header.Get("Location"), replica)
+	response.Body.Close()
+	if response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") == "" {
+		t.Fatalf("GitHub callback status=%d location=%q", response.StatusCode, response.Header.Get("Location"))
+	}
+	return response.Header.Get("Location")
 }
 
 func newMCPOAuthServer(t *testing.T, database milestoneDatabase, github *githubOAuthTestProvider, publicURL string) http.Handler {

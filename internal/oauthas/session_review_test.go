@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/balcsida/graphnest/internal/authn"
@@ -35,11 +36,13 @@ func TestAuthorizationUsesConfiguredLogin(t *testing.T) {
 			request.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: sessionTokenValue})
 		}
 		response := h.do(request)
+		requestCookie := cookieNamed(response, RequestCookie)
+		resume := ResumePath + "?request_id=" + strings.TrimPrefix(requestCookie.Name, RequestCookie+"_")
 		want := h.server.LoginPath
 		if githubSync {
 			want = h.server.GitHubLoginPath
 		}
-		want += "?return_to=" + url.QueryEscape(ResumePath)
+		want += "?return_to=" + url.QueryEscape(resume)
 		if response.Code != http.StatusSeeOther || response.Header().Get("Location") != want {
 			t.Errorf("GitHub sync=%v status=%d location=%q want=%q", githubSync, response.Code, response.Header().Get("Location"), want)
 		}
