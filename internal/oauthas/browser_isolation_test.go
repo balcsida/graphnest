@@ -166,9 +166,9 @@ func TestProviderHandoffOwnerMismatchDoesNotConsumeRequest(t *testing.T) {
 	tokens := h.server.GitHubTokens.(*ProviderTokens)
 	tokens.Deposit(t.Context(), pendingID, "11", "first-token")
 
-	post := func(session string) *httptest.ResponseRecorder {
+	post := func(session, decision string) *httptest.ResponseRecorder {
 		t.Helper()
-		form := url.Values{"request_id": {requestID}, "decision": {"allow"}}
+		form := url.Values{"request_id": {requestID}, "decision": {decision}}
 		request := httptest.NewRequest(http.MethodPost, "/oauth/authorize", strings.NewReader(form.Encode()))
 		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		request.Header.Set("Origin", origin)
@@ -177,14 +177,21 @@ func TestProviderHandoffOwnerMismatchDoesNotConsumeRequest(t *testing.T) {
 		return h.do(request)
 	}
 
-	wrong := post(otherSession)
+	wrong := post(otherSession, "allow")
 	if wrong.Code != http.StatusSeeOther || !strings.Contains(wrong.Header().Get("Location"), "error=server_error") || !tokens.Available(pendingID, "11") {
 		t.Fatalf("wrong owner status=%d location=%q available=%t", wrong.Code, wrong.Header().Get("Location"), tokens.Available(pendingID, "11"))
 	}
 	if _, ok := h.store.requests[pendingID]; !ok {
 		t.Fatal("wrong owner consumed pending request")
 	}
-	right := post(sessionTokenValue)
+	wrongDeny := post(otherSession, "deny")
+	if wrongDeny.Code != http.StatusSeeOther || !strings.Contains(wrongDeny.Header().Get("Location"), "error=server_error") || !tokens.Available(pendingID, "11") {
+		t.Fatalf("wrong owner deny status=%d location=%q available=%t", wrongDeny.Code, wrongDeny.Header().Get("Location"), tokens.Available(pendingID, "11"))
+	}
+	if _, ok := h.store.requests[pendingID]; !ok {
+		t.Fatal("wrong owner denial consumed pending request")
+	}
+	right := post(sessionTokenValue, "allow")
 	if right.Code != http.StatusSeeOther || !strings.Contains(right.Header().Get("Location"), "code=") {
 		t.Fatalf("right owner status=%d location=%q", right.Code, right.Header().Get("Location"))
 	}
