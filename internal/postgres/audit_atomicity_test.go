@@ -85,6 +85,76 @@ func TestAuditFailureRollsBackSecurityMutationFamilies(t *testing.T) {
 	}
 }
 
+func TestOAuthGrantRevocationIsAtomicAndOwnerConstrained(t *testing.T) {
+	store := migratedStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	client := seedOAuthClient(t, store, now)
+	userID := insertIdentityUser(t, store, "oauth-grant-audit", "oauth-grant-audit")
+	grantID, err := store.CreateOAuthGrant(t.Context(), authn.OAuthGrant{
+		ClientID: client.ID, UserID: userID,
+		AccessHash: [32]byte{21}, AccessExpiresAt: now.Add(time.Hour),
+		RefreshHash: [32]byte{22}, GitHubTokenCiphertext: []byte("ciphertext"),
+		CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = store.RevokeUserOAuthGrantAudited(t.Context(), userID, grantID, audit.Event{
+		ActorType: "user", ActorID: strconv.FormatInt(userID, 10), TargetType: "oauth_grant",
+		TargetID: strconv.FormatInt(grantID, 10), AuthenticationMethod: "oidc",
+		Operation: audit.OperationOAuthGrantRevoked, Outcome: "success", RequestID: "request-42",
+		CreatedAt: time.Date(1_000_000, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+	if err == nil {
+		t.Fatal("OAuth grant revocation survived audit insert failure")
+	}
+	var revoked bool
+	var ciphertext []byte
+	if err := store.pool.QueryRow(t.Context(), `select revoked_at is not null,github_token_ct from oauth_grants where id=$1`, grantID).Scan(&revoked, &ciphertext); err != nil {
+		t.Fatal(err)
+	}
+	if revoked || !bytes.Equal(ciphertext, []byte("ciphertext")) {
+		t.Fatalf("revoked=%v ciphertext=%q, want unchanged grant", revoked, ciphertext)
+	}
+
+	event := audit.Event{
+		ActorType: "user", ActorID: strconv.FormatInt(userID, 10), TargetType: "oauth_grant",
+		TargetID: strconv.FormatInt(grantID, 10), AuthenticationMethod: "oidc",
+		Operation: audit.OperationOAuthGrantRevoked, Outcome: "success", RequestID: "request-42",
+	}
+	wrongOwner := event
+	wrongOwner.ActorID = strconv.FormatInt(userID+1, 10)
+	if err := store.RevokeUserOAuthGrantAudited(t.Context(), userID+1, grantID, wrongOwner); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("wrong-owner error=%v, want no rows", err)
+	}
+	var auditCount int
+	if err := store.pool.QueryRow(t.Context(), `select revoked_at is not null,github_token_ct,
+		(select count(*) from audit_events) from oauth_grants where id=$1`, grantID).Scan(&revoked, &ciphertext, &auditCount); err != nil {
+		t.Fatal(err)
+	}
+	if revoked || !bytes.Equal(ciphertext, []byte("ciphertext")) || auditCount != 0 {
+		t.Fatalf("wrong-owner revoked=%v ciphertext=%q audits=%d", revoked, ciphertext, auditCount)
+	}
+
+	if err := store.RevokeUserOAuthGrantAudited(t.Context(), userID, grantID, event); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RevokeUserOAuthGrantAudited(t.Context(), userID, grantID, event); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("duplicate error=%v, want no rows", err)
+	}
+	events, _, err := store.AuditEvents(t.Context(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].ActorType != "user" || events[0].ActorID != strconv.FormatInt(userID, 10) ||
+		events[0].TargetType != "oauth_grant" || events[0].TargetID != strconv.FormatInt(grantID, 10) ||
+		events[0].AuthenticationMethod != "oidc" || events[0].Operation != audit.OperationOAuthGrantRevoked ||
+		events[0].Outcome != "success" || events[0].RequestID != "request-42" {
+		t.Fatalf("events=%#v", events)
+	}
+}
+
 func TestFederatedSessionAuditFailureRollsBackIdentityAndSession(t *testing.T) {
 	store := migratedStore(t)
 	insertIdentityUser(t, store, "github:https://github.com:123", "ada")
