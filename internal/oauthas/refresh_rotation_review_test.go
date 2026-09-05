@@ -32,6 +32,7 @@ func (store *refreshRotationReviewStore) RotateOAuthGrant(ctx context.Context, h
 
 func newRefreshRotationReviewGrant(t *testing.T, harness *harness) (string, *authn.OAuthGrant) {
 	t.Helper()
+	harness.server.GitHub = nil
 	refresh, refreshHash, err := newSecret(nil, RefreshTokenPrefix)
 	if err != nil {
 		t.Fatal(err)
