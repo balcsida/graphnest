@@ -62,8 +62,8 @@ func (p *ProviderTokens) Transfer(sessionToken string, codeHash [32]byte) {
 	p.entries[codeHash] = providerTokenEntry{token: entry.token, expires: p.now().Add(codeTTL)}
 }
 
-// TakeForCode removes and returns the token attached to an authorization code.
-func (p *ProviderTokens) TakeForCode(codeHash [32]byte) (string, bool) {
+// TokenForCode returns the token attached to a live authorization code.
+func (p *ProviderTokens) TokenForCode(codeHash [32]byte) (string, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.sweep()
@@ -71,8 +71,14 @@ func (p *ProviderTokens) TakeForCode(codeHash [32]byte) (string, bool) {
 	if !found {
 		return "", false
 	}
-	delete(p.entries, codeHash)
 	return entry.token, true
+}
+
+// DeleteForCode removes the token after its authorization code is consumed.
+func (p *ProviderTokens) DeleteForCode(codeHash [32]byte) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.entries, codeHash)
 }
 
 func (p *ProviderTokens) put(key [32]byte, token string, ttl time.Duration) {

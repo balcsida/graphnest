@@ -63,10 +63,12 @@ type GitHubAccess interface {
 
 // GitHubTokenSource is the hand-off from the login that completed a pending
 // authorization to the code exchange: consent moves the identity provider's
-// token from the browser session to the authorization code, exchange takes it.
+// token from the browser session to the authorization code, exchange removes
+// it after the authorization code commits.
 type GitHubTokenSource interface {
 	Transfer(sessionToken string, codeHash [32]byte)
-	TakeForCode(codeHash [32]byte) (string, bool)
+	TokenForCode(codeHash [32]byte) (string, bool)
+	DeleteForCode(codeHash [32]byte)
 }
 
 // Server is the authorization server. All URLs derive from Origin.
@@ -589,7 +591,7 @@ func (server *Server) exchangeCode(writer http.ResponseWriter, request *http.Req
 	var githubToken string
 	if server.GitHub != nil {
 		if server.GitHubTokens != nil && server.Sealer != nil {
-			githubToken, _ = server.GitHubTokens.TakeForCode(codeHash)
+			githubToken, _ = server.GitHubTokens.TokenForCode(codeHash)
 		}
 		if githubToken == "" {
 			_ = server.Store.DeleteOAuthAuthorizationRequest(request.Context(), codeHash)
@@ -622,6 +624,7 @@ func (server *Server) exchangeCode(writer http.ResponseWriter, request *http.Req
 		return
 	}
 	if githubToken != "" {
+		server.GitHubTokens.DeleteForCode(codeHash)
 		ciphertext, err := server.Sealer.Seal(server.Rand, grantID, githubToken)
 		if err == nil {
 			err = server.Store.UpdateOAuthGrantGitHubToken(request.Context(), grantID, ciphertext)
