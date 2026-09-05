@@ -691,14 +691,14 @@ paths:
         '400': {description: Nothing to resume (HTML)}
   /oauth/token:
     post:
-      description: Token endpoint (RFC 6749 §4.1.3 and §6). Public clients only; refresh rotates both tokens. Consumed-token retries return invalid_grant without revoking the grant within 30 seconds of consumption; at or after that deadline they also revoke the grant. A lost refresh response requires fresh authorization.
+      description: Token endpoint (RFC 6749 §4.1.3 and §6). Public clients only; refresh rotates both tokens. Consumed-token retries return invalid_grant without revoking the grant within 30 seconds of consumption; at or after that deadline they also revoke the grant. A lost refresh response requires fresh authorization. With GitHub access sync, a successful repository snapshot commits with rotation; rejected credentials revoke only the current OAuth grant, while missing credentials fail without mutation.
       requestBody: {required: true, content: {application/x-www-form-urlencoded: {schema: {$ref: '#/components/schemas/TokenRequest'}}}}
       responses:
         '200': {description: Tokens, content: {application/json: {schema: {$ref: '#/components/schemas/TokenResponse'}}}}
         '400': {description: OAuth error (invalid_request, invalid_grant, unsupported_grant_type), content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
         '401': {description: invalid_client, content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
         '429': {description: Too many requests, content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
-        '503': {description: Request limiter or token service unavailable, content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
+        '503': {description: Request limiter, token service, or configured GitHub credential unavailable, content: {application/json: {schema: {$ref: '#/components/schemas/OAuthError'}}}}
   /oauth/revoke:
     post:
       description: RFC 7009 revocation of an access or refresh token by the client that owns it. Unknown tokens still answer 200.

@@ -157,6 +157,14 @@ func (m *memoryStore) RotateOAuthGrant(ctx context.Context, refreshHash [32]byte
 	defer m.mu.Unlock()
 	for _, grant := range m.grants {
 		if grant.RefreshHash == refreshHash && m.live(grant, rotation.Now) {
+			if rotation.Revoke {
+				revokedAt := rotation.Now
+				grant.RevokedAt, grant.GitHubTokenCiphertext = &revokedAt, nil
+				if m.audit != nil {
+					_ = m.audit.Record(ctx, rotation.Audit)
+				}
+				return *grant, nil
+			}
 			if m.consumedRefresh == nil {
 				m.consumedRefresh = make(map[int64]map[[32]byte]time.Time)
 			}
@@ -175,6 +183,9 @@ func (m *memoryStore) RotateOAuthGrant(ctx context.Context, refreshHash [32]byte
 			}
 			return *grant, nil
 		}
+	}
+	if rotation.Revoke {
+		return authn.OAuthGrant{}, pgx.ErrNoRows
 	}
 	for _, grant := range m.grants {
 		if consumedAt, ok := m.consumedRefresh[grant.ID][refreshHash]; ok && !consumedAt.After(rotation.Now.Add(-rotation.Grace)) {
@@ -741,17 +752,6 @@ func TestRefreshHandlesGitHubOutcomes(t *testing.T) {
 		}
 		return clientID, grant
 	}
-	t.Run("github rejects the token: grants kept, token dropped", func(t *testing.T) {
-		h := newHarness(t)
-		h.github.err = unauthorizedError{}
-		_, grant := newGrant(t, h)
-		if got := h.store.github[grant.UserID]; len(got) != 2 {
-			t.Fatalf("grants changed on 401: %v", got)
-		}
-		if grant.GitHubTokenCiphertext != nil {
-			t.Fatal("unusable GitHub token must be dropped")
-		}
-	})
 	t.Run("github outage: everything kept", func(t *testing.T) {
 		h := newHarness(t)
 		h.github.err = errors.New("503")

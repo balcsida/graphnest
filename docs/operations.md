@@ -284,16 +284,19 @@ With `GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC`, every new authorization requires a
 fresh GitHub sign-in, including users with an existing GraphNest session. Each
 grant stores the user's GitHub
 token encrypted with AES-256-GCM under `GRAPHNEST_MCP_OAUTH_KEY_FILE` (32
-bytes unchanged, with no trailing newline; required in that combination) and every refresh re-runs the GitHub
-installation query, so repository access removed on GitHub disappears from
-agents within the hour without a browser round-trip. GitHub rejecting the token
-drops it and keeps the last-synced grants; GitHub outages and rate limits leave
-the token and grants unchanged. Refresh waits at most two seconds for this
-GitHub synchronization. Revoking a new grant after encrypted-token storage
+bytes unchanged, with no trailing newline; required in that combination) and every refresh queries GitHub before
+rotating. A successful repository snapshot commits atomically with the token
+rotation, so repository access removed on GitHub disappears from agents within
+the hour without a browser round-trip. GitHub rejecting or expiring the stored
+credential returns HTTP 503 and atomically revokes only that MCP OAuth grant and
+clears its ciphertext; the user's shared GitHub-derived grants are unchanged.
+GitHub outages and rate limits leave the credential and grants unchanged and do
+not prevent token rotation. Refresh waits at most two seconds for this GitHub
+synchronization. Revoking a new grant after encrypted-token storage
 fails has a separate ten-second cleanup budget.
-Unreadable stored GitHub credentials make refresh return HTTP 503 without
-rotating tokens or changing grants. Restore the original encryption key or
-authorize the client again.
+Missing or unreadable stored GitHub credentials make refresh return HTTP 503
+without rotating tokens or changing grants. Restore the original encryption key
+or authorize the client again.
 Expired authorization requests, week-old dead grants and clients idle for 90
 days are swept by the periodic cleanup.
 

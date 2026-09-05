@@ -80,6 +80,9 @@ type OAuthGrantMetadata struct {
 // OAuthRotation carries all writes committed by a successful refresh.
 // Grace suppresses grant revocation for consumed-token retries after rotation.
 // Such retries still fail; a lost refresh response requires fresh authorization.
+// ReplaceRepositories applies a verified GitHub snapshot in the same transaction.
+// Revoke instead revokes only the grant currently owning the presented token;
+// consumed tokens return pgx.ErrNoRows without replay handling.
 type OAuthRotation struct {
 	AccessHash          [32]byte
 	AccessExpiresAt     time.Time
@@ -89,6 +92,7 @@ type OAuthRotation struct {
 	Audit               audit.Event
 	RepositoryIDs       []int64
 	ReplaceRepositories bool
+	Revoke              bool
 }
 
 // OAuthRequestLimiter enforces shared registration, token and revocation budgets.

@@ -3,12 +3,14 @@
 package postgres
 
 import (
+	"errors"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/balcsida/graphnest/internal/audit"
 	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/jackc/pgx/v5"
 )
 
 func testOAuthRefreshAudit(userID, grantID int64) audit.Event {
@@ -134,5 +136,59 @@ func assertGitHubGrants(t *testing.T, store *Store, userID int64, want []int64) 
 		if got[i] != want[i] {
 			t.Fatalf("GitHub grants=%v, want %v", got, want)
 		}
+	}
+}
+
+func TestOAuthRefreshRejectionRevokesOnlyCurrentGrant(t *testing.T) {
+	store, grant := seedReplayGrant(t)
+	seedReadyRepository(t, store, 101, testSHA('a'))
+	if err := store.ReplaceGitHubGrants(t.Context(), grant.UserID, []int64{101}); err != nil {
+		t.Fatal(err)
+	}
+	event := testOAuthRefreshAudit(grant.UserID, grant.ID)
+	event.Operation, event.Outcome = audit.OperationOAuthGrantRevoked, "denied"
+	rejection := authn.OAuthRotation{Now: grant.CreatedAt.Add(time.Minute), Revoke: true, Audit: event}
+	failed := rejection
+	failed.Audit.CreatedAt = time.Date(1_000_000, 1, 1, 0, 0, 0, 0, time.UTC)
+	if _, err := store.RotateOAuthGrant(t.Context(), grant.RefreshHash, failed); err == nil {
+		t.Fatal("refresh rejection survived audit insert failure")
+	}
+	current, err := store.OAuthGrantByRefresh(t.Context(), grant.RefreshHash, rejection.Now)
+	if err != nil || current.RevokedAt != nil || string(current.GitHubTokenCiphertext) != "ciphertext" {
+		t.Fatalf("failed rejection changed grant: grant=%+v err=%v", current, err)
+	}
+	assertGitHubGrants(t, store, grant.UserID, []int64{101})
+
+	revoked, err := store.RotateOAuthGrant(t.Context(), grant.RefreshHash, rejection)
+	if err != nil || revoked.RevokedAt == nil || revoked.GitHubTokenCiphertext != nil {
+		t.Fatalf("rejected grant=%+v err=%v", revoked, err)
+	}
+	if _, err := store.OAuthGrantByRefresh(t.Context(), grant.RefreshHash, rejection.Now); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("rejected refresh still current: %v", err)
+	}
+	assertGitHubGrants(t, store, grant.UserID, []int64{101})
+	audits, _, err := store.AuditEvents(t.Context(), 10)
+	if err != nil || len(audits) != 1 || audits[0].Operation != audit.OperationOAuthGrantRevoked || audits[0].Outcome != "denied" {
+		t.Fatalf("rejection audits=%#v err=%v", audits, err)
+	}
+}
+
+func TestOAuthRefreshRejectionIgnoresConsumedToken(t *testing.T) {
+	store, grant := seedReplayGrant(t)
+	rotated, err := store.RotateOAuthGrant(t.Context(), grant.RefreshHash, authn.OAuthRotation{
+		AccessHash: [32]byte{3}, AccessExpiresAt: grant.AccessExpiresAt, RefreshHash: [32]byte{4},
+		Now: grant.CreatedAt.Add(time.Minute), Grace: 30 * time.Second, Audit: testOAuthRefreshAudit(grant.UserID, grant.ID),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := testOAuthRefreshAudit(grant.UserID, grant.ID)
+	event.Operation, event.Outcome = audit.OperationOAuthGrantRevoked, "denied"
+	if _, err := store.RotateOAuthGrant(t.Context(), grant.RefreshHash, authn.OAuthRotation{Now: grant.CreatedAt.Add(2 * time.Minute), Revoke: true, Audit: event}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("consumed-token rejection error=%v, want no rows", err)
+	}
+	current, err := store.OAuthGrantByRefresh(t.Context(), rotated.RefreshHash, grant.CreatedAt.Add(2*time.Minute))
+	if err != nil || current.RevokedAt != nil || string(current.GitHubTokenCiphertext) != "ciphertext" {
+		t.Fatalf("stale rejection changed current grant: grant=%+v err=%v", current, err)
 	}
 }

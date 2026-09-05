@@ -11,6 +11,7 @@ import (
 
 func TestRefreshReportsRemainingGrantLifetime(t *testing.T) {
 	h := newHarness(t)
+	h.server.GitHub = nil
 	client := h.registerClient(t, "http://127.0.0.1:5000/cb")
 	refresh, refreshHash, err := newSecret(nil, RefreshTokenPrefix)
 	if err != nil {

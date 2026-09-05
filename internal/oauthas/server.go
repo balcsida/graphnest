@@ -661,6 +661,10 @@ func (server *Server) refresh(writer http.ResponseWriter, request *http.Request)
 		writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "refresh token does not belong to this client")
 		return
 	}
+	if err == nil && server.GitHub != nil && len(current.GitHubTokenCiphertext) == 0 {
+		writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "GitHub credentials are unavailable; authorize again")
+		return
+	}
 	githubToken := ""
 	if server.GitHub != nil && len(current.GitHubTokenCiphertext) != 0 {
 		if server.Sealer == nil {
@@ -674,14 +678,25 @@ func (server *Server) refresh(writer http.ResponseWriter, request *http.Request)
 		}
 	}
 	var repositories []int64
-	replaceRepositories, dropGitHubToken := false, false
+	replaceRepositories := false
 	if server.GitHub != nil && githubToken != "" {
 		githubCtx, cancel := context.WithTimeout(request.Context(), githubSyncTimeout)
 		repositories, err = server.GitHub.AccessibleRepositories(githubCtx, githubToken)
 		cancel()
 		if err != nil {
 			var denied interface{ Unauthorized() bool }
-			dropGitHubToken = errors.As(err, &denied) && denied.Unauthorized()
+			if errors.As(err, &denied) && denied.Unauthorized() {
+				_, revokeErr := server.Store.RotateOAuthGrant(request.Context(), refreshHash, authn.OAuthRotation{
+					Now: now, Revoke: true,
+					Audit: audit.Event{ActorType: "user", ActorID: strconv.FormatInt(current.UserID, 10), TargetType: "oauth_grant", TargetID: strconv.FormatInt(current.ID, 10), AuthenticationMethod: authn.ProviderOAuthToken, Operation: OperationGrantRevoked, Outcome: "denied", RequestID: audit.RequestID(request.Context())},
+				})
+				if errors.Is(revokeErr, pgx.ErrNoRows) {
+					writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "refresh token is invalid or expired")
+				} else {
+					writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "GitHub rejected the stored credentials; authorize again")
+				}
+				return
+			}
 		} else {
 			replaceRepositories = true
 		}
@@ -718,9 +733,6 @@ func (server *Server) refresh(writer http.ResponseWriter, request *http.Request)
 	if err != nil {
 		writeOAuthError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "could not refresh token")
 		return
-	}
-	if dropGitHubToken {
-		_ = server.Store.UpdateOAuthGrantGitHubToken(request.Context(), grant.ID, nil)
 	}
 	writeTokens(writer, access, refresh, grant.Scope, grant.AccessExpiresAt.Sub(server.now()))
 }

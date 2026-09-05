@@ -210,6 +210,19 @@ func (s *Store) RotateOAuthGrant(ctx context.Context, refreshHash [32]byte, rota
 		return authn.OAuthGrant{}, err
 	}
 	defer tx.Rollback(ctx)
+	if rotation.Revoke {
+		grant, err := scanGrant(tx.QueryRow(ctx, `update oauth_grants
+			set revoked_at=$2, github_token_ct=null
+			from users where oauth_grants.refresh_hash=$1 and `+liveOAuthGrantSQL+`
+			returning `+grantColumns, refreshHash[:], rotation.Now))
+		if err != nil {
+			return authn.OAuthGrant{}, err
+		}
+		if err := appendAudit(ctx, tx, rotation.Audit); err != nil {
+			return authn.OAuthGrant{}, err
+		}
+		return grant, tx.Commit(ctx)
+	}
 	grant, err := scanGrant(tx.QueryRow(ctx, `update oauth_grants
 		set access_hash=$3, access_expires_at=$4, previous_refresh_hash=refresh_hash, refresh_hash=$5, last_used_at=$2
 		from users where oauth_grants.refresh_hash=$1 and `+liveOAuthGrantSQL+`
