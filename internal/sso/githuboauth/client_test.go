@@ -246,7 +246,7 @@ func TestExchangeWithAccessSyncCollectsInstallationRepositories(t *testing.T) {
 			w.Header().Set("Link", `<?per_page=100&page=2>; rel="next"`)
 			fmt.Fprint(w, `{"total_count":3,"repositories":[{"id":101},{"id":102}]}`)
 		case "/api/v3/user/installations/12/repositories":
-			fmt.Fprint(w, `{"total_count":1,"repositories":[{"id":104},{"id":0},{"id":-5}]}`)
+			fmt.Fprint(w, `{"total_count":2,"repositories":[{"id":102},{"id":104},{"id":0},{"id":-5}]}`)
 		default:
 			t.Errorf("unexpected request %s", r.URL.Path)
 		}
