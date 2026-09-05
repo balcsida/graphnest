@@ -576,7 +576,7 @@ func (server *Server) exchangeCode(writer http.ResponseWriter, request *http.Req
 		writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "authorization code is invalid, expired or already used")
 		return
 	}
-	if pending.ClientID != clientID || (redirect != "" && !redirectMatches(pending.RedirectURI, redirect)) || !verifyPKCE(verifier, pending.CodeChallenge) {
+	if pending.ClientID != clientID || redirect != pending.RedirectURI || !verifyPKCE(verifier, pending.CodeChallenge) {
 		_ = server.Store.DeleteOAuthAuthorizationRequest(request.Context(), codeHash)
 		writeOAuthError(writer, http.StatusBadRequest, "invalid_grant", "authorization code does not match this client")
 		return
