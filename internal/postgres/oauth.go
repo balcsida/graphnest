@@ -210,6 +210,13 @@ func (s *Store) RotateOAuthGrant(ctx context.Context, refreshHash [32]byte, rota
 		return authn.OAuthGrant{}, err
 	}
 	defer tx.Rollback(ctx)
+	// Administrative credential revocation locks users before their grants.
+	// Follow the same order before any conditional grant update.
+	var userID int64
+	if err := tx.QueryRow(ctx, `select users.id from oauth_grants join users on `+liveOAuthGrantSQL+`
+		where oauth_grants.refresh_hash=$1 for update of users`, refreshHash[:], rotation.Now).Scan(&userID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return authn.OAuthGrant{}, err
+	}
 	if rotation.Revoke {
 		grant, err := scanGrant(tx.QueryRow(ctx, `update oauth_grants
 			set revoked_at=$2, github_token_ct=null

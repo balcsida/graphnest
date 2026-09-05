@@ -3,6 +3,7 @@
 package postgres
 
 import (
+	"context"
 	"errors"
 	"strconv"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/balcsida/graphnest/internal/audit"
 	"github.com/balcsida/graphnest/internal/authn"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func testOAuthRefreshAudit(userID, grantID int64) audit.Event {
@@ -191,4 +193,71 @@ func TestOAuthRefreshRejectionIgnoresConsumedToken(t *testing.T) {
 	if err != nil || current.RevokedAt != nil || string(current.GitHubTokenCiphertext) != "ciphertext" {
 		t.Fatalf("stale rejection changed current grant: grant=%+v err=%v", current, err)
 	}
+}
+
+func TestOAuthRefreshLocksUserBeforeGrant(t *testing.T) {
+	store, grant := seedReplayGrant(t)
+	seedReadyRepository(t, store, 101, testSHA('a'))
+	seedReadyRepository(t, store, 102, testSHA('a'))
+	if err := store.ReplaceGitHubGrants(t.Context(), grant.UserID, []int64{101}); err != nil {
+		t.Fatal(err)
+	}
+	applicationName := "oauth-refresh-lock-order-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	config := store.pool.Config()
+	config.MaxConns = 1
+	config.ConnConfig.RuntimeParams["application_name"] = applicationName
+	refreshPool, err := pgxpool.NewWithConfig(t.Context(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(refreshPool.Close)
+	adminTx, err := store.pool.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adminTx.Rollback(t.Context())
+	var found int
+	if err := adminTx.QueryRow(t.Context(), `select 1 from users where id=$1 for update`, grant.UserID).Scan(&found); err != nil {
+		t.Fatal(err)
+	}
+	refreshCtx, cancelRefresh := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancelRefresh()
+	refreshResult := make(chan error, 1)
+	go func() {
+		_, err := New(refreshPool).RotateOAuthGrant(refreshCtx, grant.RefreshHash, authn.OAuthRotation{
+			AccessHash: [32]byte{3}, AccessExpiresAt: grant.AccessExpiresAt, RefreshHash: [32]byte{4},
+			Now: grant.CreatedAt.Add(time.Minute), Grace: 30 * time.Second,
+			Audit: testOAuthRefreshAudit(grant.UserID, grant.ID), RepositoryIDs: []int64{102}, ReplaceRepositories: true,
+		})
+		refreshResult <- err
+	}()
+	waitCtx, cancelWait := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancelWait()
+	for {
+		var waiting bool
+		if err := store.pool.QueryRow(waitCtx, `select exists(
+			select 1 from pg_stat_activity
+			where application_name=$1 and wait_event_type='Lock')`, applicationName).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+	}
+	if err := adminTx.QueryRow(t.Context(), `select 1 from oauth_grants where id=$1 for update nowait`, grant.ID).Scan(&found); err != nil {
+		cancelRefresh()
+		_ = adminTx.Rollback(t.Context())
+		refreshErr := <-refreshResult
+		t.Fatalf("refresh locked grant before user: admin=%v refresh=%v", err, refreshErr)
+	}
+	if _, err := adminTx.Exec(t.Context(), `update oauth_grants set revoked_at=now(), github_token_ct=null where id=$1`, grant.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := adminTx.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-refreshResult; !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("refresh after administrative revocation=%v, want no rows", err)
+	}
+	assertGitHubGrants(t, store, grant.UserID, []int64{101})
 }
