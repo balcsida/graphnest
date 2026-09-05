@@ -860,7 +860,7 @@ components:
         grant_type: {type: string, enum: [authorization_code, refresh_token]}
         client_id: {type: string}
         code: {type: string, description: Required for authorization_code.}
-        redirect_uri: {type: string, format: uri, description: Must equal the authorization request's redirect_uri when present.}
+        redirect_uri: {type: string, format: uri, description: Required for authorization_code and must exactly equal the redirect_uri used in the authorization request.}
         code_verifier: {type: string, minLength: 43, maxLength: 128, description: Required for authorization_code.}
         refresh_token: {type: string, description: Required for refresh_token.}
     TokenResponse:
