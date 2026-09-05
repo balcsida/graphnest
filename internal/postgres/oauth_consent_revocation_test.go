@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -34,6 +35,7 @@ func oauthConsent(t *testing.T, store *Store) (*oauthas.Server, *http.Request, i
 	handleBytes := []byte(strings.Repeat("h", 32))
 	handle := base64.RawURLEncoding.EncodeToString(handleBytes)
 	pendingID := sha256.Sum256(handleBytes)
+	requestID := hex.EncodeToString(pendingID[:])
 	if err := store.CreateOAuthAuthorizationRequest(t.Context(), authn.OAuthAuthorizationRequest{
 		ID: pendingID, Phase: "pending", ClientID: client.ID, RedirectURI: client.RedirectURIs[0],
 		CodeChallenge: strings.Repeat("a", 43), CreatedAt: now, ExpiresAt: now.Add(10 * time.Minute),
@@ -42,11 +44,11 @@ func oauthConsent(t *testing.T, store *Store) (*oauthas.Server, *http.Request, i
 	}
 	server := &oauthas.Server{Store: store, Sessions: sessions, Origin: "https://graphnest.example", Now: sessions.Now}
 	request := httptest.NewRequest(http.MethodPost, "/oauth/authorize", strings.NewReader(url.Values{
-		"request_id": {handle}, "decision": {"allow"},
+		"request_id": {requestID}, "decision": {"allow"},
 	}.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Origin", server.Origin)
-	request.AddCookie(&http.Cookie{Name: oauthas.RequestCookie, Value: handle})
+	request.AddCookie(&http.Cookie{Name: oauthas.RequestCookie + "_" + requestID, Value: handle})
 	request.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: token})
 	return server, request, userID, sha256.Sum256(raw), pendingID
 }

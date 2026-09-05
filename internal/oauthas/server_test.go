@@ -324,8 +324,6 @@ func newHarness(t *testing.T) *harness {
 	}
 	h := &harness{store: store, audit: recorder, github: github, clock: time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC), sealer: sealer}
 	tokens := NewProviderTokens(func() time.Time { return h.clock })
-	// The login that preceded consent deposited the GitHub token for this session.
-	tokens.StoreProviderToken(context.Background(), sessionTokenValue, "gho_user")
 	h.server = &Server{
 		Origin: origin, LoginPath: "/auth/oauth/github/login", GitHubLoginPath: "/auth/oauth/github/login", Store: store, Sessions: staticSessions{authn.Principal{Subject: "11", Method: authn.ProviderOAuth, RepositoryIDs: []int64{101}}},
 		Sealer: sealer, GitHub: github, GitHubTokens: tokens, Audit: recorder, Limiter: store,
@@ -372,7 +370,7 @@ func authorizeURL(clientID, redirect, challenge string) string {
 
 func cookieNamed(response *httptest.ResponseRecorder, name string) *http.Cookie {
 	for _, cookie := range response.Result().Cookies() {
-		if cookie.Name == name {
+		if cookie.Name == name || name == RequestCookie && strings.HasPrefix(cookie.Name, RequestCookie+"_") {
 			return cookie
 		}
 	}
@@ -386,10 +384,12 @@ func (h *harness) runConsent(t *testing.T, clientID, redirect, challenge, decisi
 	request.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: sessionTokenValue})
 	response := h.do(request)
 	requestCookie := cookieNamed(response, RequestCookie)
+	requestID := strings.TrimPrefix(requestCookie.Name, RequestCookie+"_")
 	if response.Code == http.StatusSeeOther && strings.HasPrefix(response.Header().Get("Location"), h.server.GitHubLoginPath+"?") {
 		// Complete the forced provider login before resuming consent.
-		h.server.GitHubTokens.(*ProviderTokens).StoreProviderToken(t.Context(), sessionTokenValue, "gho_user")
-		resume := httptest.NewRequest(http.MethodGet, ResumePath, nil)
+		_, pendingID, _ := parseRequestID([]string{requestID})
+		h.server.GitHubTokens.(*ProviderTokens).Deposit(t.Context(), pendingID, "11", "gho_user")
+		resume := httptest.NewRequest(http.MethodGet, ResumePath+"?request_id="+requestID, nil)
 		resume.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: sessionTokenValue})
 		resume.AddCookie(requestCookie)
 		response = h.do(resume)
@@ -406,7 +406,7 @@ func (h *harness) runConsent(t *testing.T, clientID, redirect, challenge, decisi
 	if requestCookie == nil || !requestCookie.HttpOnly || !requestCookie.Secure || requestCookie.Path != "/" || requestCookie.Domain != "" {
 		t.Fatalf("request cookie = %+v", requestCookie)
 	}
-	form := url.Values{"request_id": {requestCookie.Value}, "decision": {decision}}
+	form := url.Values{"request_id": {requestID}, "decision": {decision}}
 	post := httptest.NewRequest(http.MethodPost, "/oauth/authorize", strings.NewReader(form.Encode()))
 	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	post.Header.Set("Origin", origin)
@@ -558,21 +558,23 @@ func TestAuthorizeWithoutSessionStartsLoginAndResumes(t *testing.T) {
 	clientID := h.registerClient(t, "http://127.0.0.1:5000/cb")
 	_, challenge := pkce()
 	response := h.do(httptest.NewRequest(http.MethodGet, authorizeURL(clientID, "http://127.0.0.1:5001/cb", challenge), nil))
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/auth/oauth/github/login?return_to=%2Foauth%2Fauthorize%2Fresume" {
-		t.Fatalf("status=%d location=%q", response.Code, response.Header().Get("Location"))
-	}
 	requestCookie := cookieNamed(response, RequestCookie)
 	if requestCookie == nil {
 		t.Fatal("no request cookie")
 	}
+	requestID := strings.TrimPrefix(requestCookie.Name, RequestCookie+"_")
+	resumeTarget := ResumePath + "?request_id=" + requestID
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/auth/oauth/github/login?return_to="+url.QueryEscape(resumeTarget) {
+		t.Fatalf("status=%d location=%q", response.Code, response.Header().Get("Location"))
+	}
 	// Coming back without a session shows an error page, not consent.
-	resume := httptest.NewRequest(http.MethodGet, ResumePath, nil)
+	resume := httptest.NewRequest(http.MethodGet, resumeTarget, nil)
 	resume.AddCookie(requestCookie)
 	if response := h.do(resume); response.Code != http.StatusBadRequest {
 		t.Fatalf("resume without session status=%d", response.Code)
 	}
 	// With a session the pending request (ephemeral port 5001) reaches consent.
-	resume = httptest.NewRequest(http.MethodGet, ResumePath, nil)
+	resume = httptest.NewRequest(http.MethodGet, resumeTarget, nil)
 	resume.AddCookie(requestCookie)
 	resume.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: sessionTokenValue})
 	response = h.do(resume)
@@ -604,14 +606,17 @@ func TestConsentDenyRedirectsAccessDenied(t *testing.T) {
 
 func TestConsentRequiresSameOriginAndMatchingRequest(t *testing.T) {
 	h := newHarness(t)
+	h.server.GitHub = nil
+	h.server.GitHubTokens = nil
 	clientID := h.registerClient(t, "http://127.0.0.1:5000/cb")
 	_, challenge := pkce()
 	request := httptest.NewRequest(http.MethodGet, authorizeURL(clientID, "http://127.0.0.1:5000/cb", challenge), nil)
 	request.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: sessionTokenValue})
 	requestCookie := cookieNamed(h.do(request), RequestCookie)
+	requestID := strings.TrimPrefix(requestCookie.Name, RequestCookie+"_")
 
 	post := func(edit func(*http.Request, url.Values)) *httptest.ResponseRecorder {
-		form := url.Values{"request_id": {requestCookie.Value}, "decision": {"allow"}}
+		form := url.Values{"request_id": {requestID}, "decision": {"allow"}}
 		r := httptest.NewRequest(http.MethodPost, "/oauth/authorize", nil)
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		r.Header.Set("Origin", origin)
@@ -662,9 +667,7 @@ func TestFullCodeFlowIssuesRefreshesAndRevokes(t *testing.T) {
 		t.Fatalf("burnt code status=%d body=%v", tokenResponse.Code, body)
 	}
 
-	// Fresh consent, correct exchange. The burnt code took the deposited
-	// GitHub token with it; a real user re-authenticates, which re-deposits it.
-	h.server.GitHubTokens.(*ProviderTokens).StoreProviderToken(context.Background(), sessionTokenValue, "gho_user")
+	// Fresh consent, correct exchange. The login deposits a new handoff.
 	response = h.runConsent(t, clientID, "http://127.0.0.1:5000/cb", challenge, "allow")
 	location, _ = url.Parse(response.Header().Get("Location"))
 	code = location.Query().Get("code")
@@ -902,18 +905,23 @@ func TestRedirectMatchingAllowsEphemeralLoopbackPortsOnly(t *testing.T) {
 func TestProviderTokensFollowTheFlowAndExpire(t *testing.T) {
 	clock := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
 	tokens := NewProviderTokens(func() time.Time { return clock })
-	tokens.StoreProviderToken(context.Background(), "not-a-session", "gho_x")
-	tokens.StoreProviderToken(context.Background(), sessionTokenValue, "")
+	request := [32]byte{1}
+	tokens.Deposit(context.Background(), request, "", "gho_x")
+	tokens.Deposit(context.Background(), request, "11", "")
 	if len(tokens.entries) != 0 {
 		t.Fatal("malformed deposits must be ignored")
 	}
-	tokens.StoreProviderToken(context.Background(), sessionTokenValue, "gho_user")
-	code := [32]byte{1}
+	tokens.Deposit(context.Background(), request, "11", "gho_user")
+	code := [32]byte{2}
 	if _, ok := tokens.TokenForCode(code); ok {
 		t.Fatal("nothing attached to the code yet")
 	}
-	tokens.Transfer(sessionTokenValue, code)
-	tokens.Transfer(sessionTokenValue, [32]byte{2}) // second consent without re-login: nothing left to move
+	if !tokens.Available(request, "11") || tokens.Available(request, "12") {
+		t.Fatal("pending handoff owner check failed")
+	}
+	if !tokens.Transfer(request, "11", code) || tokens.Transfer(request, "11", [32]byte{3}) {
+		t.Fatal("handoff transfer was not single use")
+	}
 	if got, ok := tokens.TokenForCode(code); !ok || got != "gho_user" {
 		t.Fatalf("token=%q ok=%v", got, ok)
 	}
@@ -924,11 +932,24 @@ func TestProviderTokensFollowTheFlowAndExpire(t *testing.T) {
 	if _, ok := tokens.TokenForCode(code); ok {
 		t.Fatal("deleted token must not be returned")
 	}
-	tokens.StoreProviderToken(context.Background(), sessionTokenValue, "gho_user")
+	tokens.Deposit(context.Background(), request, "11", "gho_user")
 	clock = clock.Add(pendingTTL + time.Second)
-	tokens.Transfer(sessionTokenValue, code)
+	tokens.Transfer(request, "11", code)
 	if _, ok := tokens.TokenForCode(code); ok {
 		t.Fatal("expired deposits must not transfer")
+	}
+}
+
+func TestProviderTokensDoNotFollowTheLatestBrowserSession(t *testing.T) {
+	tokens := NewProviderTokens(nil)
+	firstRequest := sha256.Sum256([]byte("first-request"))
+	secondRequest := sha256.Sum256([]byte("second-request"))
+	code := sha256.Sum256([]byte("first-code"))
+	tokens.Deposit(t.Context(), firstRequest, "11", "first-token")
+	tokens.Deposit(t.Context(), secondRequest, "11", "second-token")
+	tokens.Transfer(firstRequest, "11", code)
+	if token, ok := tokens.TokenForCode(code); !ok || token != "first-token" {
+		t.Fatalf("first request received token=%q ok=%t", token, ok)
 	}
 }
 

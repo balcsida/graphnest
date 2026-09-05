@@ -5,6 +5,7 @@ package postgres
 import (
 	"errors"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -268,9 +269,15 @@ func TestLoginFlowReturnToAcceptsOAuthResume(t *testing.T) {
 	}
 	if err := store.CreateLoginFlow(t.Context(), authn.LoginFlow{
 		StateHash: [32]byte{72}, BrowserHash: [32]byte{73}, Provider: "github", Nonce: "n", CodeVerifier: "v",
-		ReturnTo: "/evil", CreatedAt: now, ExpiresAt: now.Add(time.Minute),
+		ReturnTo: "/oauth/authorize/resume?request_id=" + strings.Repeat("a", 64), CreatedAt: now, ExpiresAt: now.Add(time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateLoginFlow(t.Context(), authn.LoginFlow{
+		StateHash: [32]byte{74}, BrowserHash: [32]byte{75}, Provider: "github", Nonce: "n", CodeVerifier: "v",
+		ReturnTo: "/oauth/authorize/resume?request_id=" + strings.Repeat("a", 63), CreatedAt: now, ExpiresAt: now.Add(time.Minute),
 	}); err == nil {
-		t.Fatal("arbitrary return_to must be rejected by the schema")
+		t.Fatal("malformed return_to must be rejected by the schema")
 	}
 }
 

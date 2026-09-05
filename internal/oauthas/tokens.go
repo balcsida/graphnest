@@ -2,15 +2,13 @@ package oauthas
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"sync"
 	"time"
 )
 
 // ProviderTokens is the in-memory hand-off between a browser login that
 // continues an MCP authorization and the code exchange that follows it. Login
-// deposits the identity provider's user token under the new session; consent
+// deposits the identity provider's user token under the pending request; consent
 // moves it to the authorization code; exchange takes it and seals it into the
 // grant. Entries expire with the authorization request, so nothing outlives
 // the flow and nothing is ever written to disk in plaintext.
@@ -24,6 +22,7 @@ type ProviderTokens struct {
 }
 
 type providerTokenEntry struct {
+	subject string
 	token   string
 	expires time.Time
 }
@@ -35,31 +34,39 @@ func NewProviderTokens(now func() time.Time) *ProviderTokens {
 	return &ProviderTokens{now: now, entries: map[[32]byte]providerTokenEntry{}}
 }
 
-// StoreProviderToken implements browserflow.ProviderTokenSink: the login
-// keys the token by the browser session it just created.
-func (p *ProviderTokens) StoreProviderToken(_ context.Context, sessionToken, providerToken string) {
-	key, ok := sessionKey(sessionToken)
-	if !ok || providerToken == "" {
-		return
-	}
-	p.put(key, providerToken, pendingTTL)
-}
-
-// Transfer moves a token deposited under a session to an authorization code.
-func (p *ProviderTokens) Transfer(sessionToken string, codeHash [32]byte) {
-	key, ok := sessionKey(sessionToken)
-	if !ok {
+// Deposit implements browserflow.ProviderTokenSink. The validated login binds
+// its provider token and trusted GraphNest subject to one pending request.
+func (p *ProviderTokens) Deposit(_ context.Context, requestHash [32]byte, subject, providerToken string) {
+	if subject == "" || providerToken == "" {
 		return
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.sweep()
-	entry, found := p.entries[key]
-	if !found {
-		return
+	p.entries[requestHash] = providerTokenEntry{subject: subject, token: providerToken, expires: p.now().Add(pendingTTL)}
+}
+
+// Available checks a pending handoff without consuming it.
+func (p *ProviderTokens) Available(requestHash [32]byte, subject string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.sweep()
+	entry, found := p.entries[requestHash]
+	return found && entry.subject == subject
+}
+
+// Transfer moves an owner-checked pending handoff to an authorization code.
+func (p *ProviderTokens) Transfer(requestHash [32]byte, subject string, codeHash [32]byte) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.sweep()
+	entry, found := p.entries[requestHash]
+	if !found || entry.subject != subject {
+		return false
 	}
-	delete(p.entries, key)
-	p.entries[codeHash] = providerTokenEntry{token: entry.token, expires: p.now().Add(codeTTL)}
+	delete(p.entries, requestHash)
+	p.entries[codeHash] = providerTokenEntry{subject: subject, token: entry.token, expires: p.now().Add(codeTTL)}
+	return true
 }
 
 // TokenForCode returns the token attached to a live authorization code.
@@ -81,13 +88,6 @@ func (p *ProviderTokens) DeleteForCode(codeHash [32]byte) {
 	delete(p.entries, codeHash)
 }
 
-func (p *ProviderTokens) put(key [32]byte, token string, ttl time.Duration) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.sweep()
-	p.entries[key] = providerTokenEntry{token: token, expires: p.now().Add(ttl)}
-}
-
 func (p *ProviderTokens) sweep() {
 	now := p.now()
 	for key, entry := range p.entries {
@@ -95,14 +95,4 @@ func (p *ProviderTokens) sweep() {
 			delete(p.entries, key)
 		}
 	}
-}
-
-// sessionKey hashes a session cookie value the same way the session store
-// does, so the plaintext session token is never held here.
-func sessionKey(sessionToken string) ([32]byte, bool) {
-	raw, err := base64.RawURLEncoding.DecodeString(sessionToken)
-	if err != nil || len(raw) != 32 {
-		return [32]byte{}, false
-	}
-	return sha256.Sum256(raw), true
 }

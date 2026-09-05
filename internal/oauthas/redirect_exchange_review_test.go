@@ -30,6 +30,7 @@ func TestCodeExchangeRequiresExactAuthorizationRedirect(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
 			h.server.GitHub = nil
+			h.server.GitHubTokens = nil
 			clientID := h.registerClient(t, test.registered)
 			verifier, challenge := pkce()
 			code := exchangeReviewCode(t, h, clientID, test.authorized, challenge)
@@ -66,7 +67,7 @@ func exchangeReviewCode(t *testing.T, h *harness, clientID, redirect, challenge 
 	if response.Code != http.StatusOK || requestCookie == nil {
 		t.Fatalf("authorize status=%d body=%s cookie=%v", response.Code, response.Body.String(), requestCookie)
 	}
-	form := url.Values{"request_id": {requestCookie.Value}, "decision": {"allow"}}
+	form := url.Values{"request_id": {strings.TrimPrefix(requestCookie.Name, RequestCookie+"_")}, "decision": {"allow"}}
 	request = httptest.NewRequest(http.MethodPost, "/oauth/authorize", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Origin", origin)
