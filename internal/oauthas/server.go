@@ -536,15 +536,15 @@ func (server *Server) decide(writer http.ResponseWriter, request *http.Request) 
 		return
 	}
 	now := server.now()
+	if server.GitHubTokens != nil && !server.GitHubTokens.Available(pending.ID, principal.Subject) {
+		redirectError(writer, request, pending.RedirectURI, pending.State, "server_error", "could not issue an authorization code")
+		return
+	}
 	if request.PostForm.Get("decision") != "allow" {
 		_ = server.Store.DeleteOAuthAuthorizationRequest(request.Context(), pending.ID)
 		clearRequestCookie(writer, requestID)
 		server.record(request.Context(), audit.Event{ActorType: "user", ActorID: principal.Subject, TargetType: "oauth_client", TargetID: client.ID, AuthenticationMethod: principal.Method, Operation: OperationConsentDenied, Outcome: "denied"})
 		redirectError(writer, request, pending.RedirectURI, pending.State, "access_denied", "the user denied the request")
-		return
-	}
-	if server.GitHubTokens != nil && !server.GitHubTokens.Available(pending.ID, principal.Subject) {
-		redirectError(writer, request, pending.RedirectURI, pending.State, "server_error", "could not issue an authorization code")
 		return
 	}
 	sessionToken, _ := namedCookie(request, authn.SessionCookieName)
