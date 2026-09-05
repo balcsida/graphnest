@@ -38,11 +38,11 @@ func (s *Store) CreateOAuthClient(ctx context.Context, client authn.OAuthClient)
 	return tx.Commit(ctx)
 }
 
-// OAuthClient loads a client and records that it is still in use.
-func (s *Store) OAuthClient(ctx context.Context, id string, now time.Time) (authn.OAuthClient, error) {
+// OAuthClient loads a client.
+func (s *Store) OAuthClient(ctx context.Context, id string, _ time.Time) (authn.OAuthClient, error) {
 	client := authn.OAuthClient{ID: id}
-	err := s.pool.QueryRow(ctx, `update oauth_clients set last_used_at=greatest(last_used_at, $2) where id=$1
-		returning client_name, redirect_uris, created_at, last_used_at`, id, now).
+	err := s.pool.QueryRow(ctx, `select client_name, redirect_uris, created_at, last_used_at
+		from oauth_clients where id=$1`, id).
 		Scan(&client.Name, &client.RedirectURIs, &client.CreatedAt, &client.LastUsedAt)
 	return client, err
 }
@@ -52,9 +52,14 @@ func (s *Store) CreateOAuthAuthorizationRequest(ctx context.Context, request aut
 	if request.UserID != 0 {
 		userID = &request.UserID
 	}
-	_, err := s.pool.Exec(ctx, `insert into oauth_authorization_requests
+	_, err := s.pool.Exec(ctx, `with inserted as (
+		insert into oauth_authorization_requests
 		(id, phase, client_id, user_id, redirect_uri, code_challenge, state, scope, resource, created_at, expires_at)
-		values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+		values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+		returning client_id
+	)
+	update oauth_clients set last_used_at=greatest(last_used_at, $10)
+	from inserted where oauth_clients.id=inserted.client_id and $2='pending'`,
 		request.ID[:], request.Phase, request.ClientID, userID, request.RedirectURI, request.CodeChallenge,
 		request.State, request.Scope, request.Resource, request.CreatedAt, request.ExpiresAt)
 	return err
