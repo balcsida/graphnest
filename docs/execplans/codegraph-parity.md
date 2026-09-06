@@ -33,12 +33,12 @@ Implementation, validation, draft publication, and release are separate states.
   separately labeled complete vocabulary fixtures and frozen performance
   baselines/budgets. Remaining conformance variants retain their owning stages
   and planned tests; this does not complete production parity or Stage 1.
-- S1.02 is active on dependent `feat/codegraph/s1-02-artifact`; S1.03–S1.10
-  are pending. Stage 1 has not passed its release gate.
-- S1.02's v2 contract is implemented and independently reviewed. The separate
-  v1 enum guard is signed as `73ee941`; artifact, compatibility, full Go and
-  PostgreSQL integration race checks pass. Final generation and native-stack
-  publication checks remain pending before the layer is complete.
+- S1.02 is complete and published as draft [PR #68](https://github.com/balcsida/graphnest/pull/68),
+  based on PR #67, at native stack #66 position 4. GitHub verifies signed
+  commits `73ee941` (v1 enum guard) and `a460f73` (v2 contract). Independent
+  review, artifact/compatibility checks and clean-tree generation pass.
+  CI is pending; the optional Buf lint convention finding remains tracked.
+- S1.03–S1.10 are pending. Stage 1 has not passed its release gate.
 - Stages 2 and 3 are pending and cannot start until the preceding stage has passed and landed.
 
 ## Baselines
@@ -135,6 +135,7 @@ these tests.
 | S1.02 independent review | Aggregate predecode allocation gap fixed and re-reviewed; the 9,576-byte regression rejects with one allocation rather than 6,400 |
 | S1.02 controller compatibility checks | Full `make test`, `make fmt lint`, final artifact race test, and required PostgreSQL integration race tests for `internal/postgres` and `test/integration` pass; v1 generated code, reference fixtures and dependency files remain unchanged |
 | S1.02 optional Buf lint | `PACKAGE_DIRECTORY_MATCH` fails for the existing v1 layout and matching v2 layout; tracked as a Minor finding for the final Stage 1 review |
+| S1.02 clean generation and publication | `GOTOOLCHAIN=go1.26.6 make tools-check` passes from a clean committed tree; draft PR #68 has exact parent `5c05f83`, initial head `a460f73`, matching 16-file delta, valid GitHub signatures and native stack #66 position 4 |
 
 `tools-check` needs the workspace: its nested `go tool protoc-gen-go` executes
 from the root module and discovers the plugin through `./tools`. Keep `GOWORK=off`
