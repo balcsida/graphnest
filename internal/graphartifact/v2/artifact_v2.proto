@@ -1,0 +1,153 @@
+syntax = "proto3";
+
+package graphnest.graph.v2;
+option go_package = "github.com/balcsida/graphnest/internal/graphartifact/v2;graphv2";
+
+// A contract artifact only: current v1 publication paths must reject this version.
+message Artifact {
+  uint32 schema_version = 1;
+  // Stable public repository identity, never a server database row ID.
+  string repository = 2;
+  string commit = 3;
+  Producer producer = 4;
+  bytes content_hash = 5;
+  repeated Node nodes = 6;
+  repeated Edge edges = 7;
+  repeated File files = 8;
+  repeated UnresolvedReference unresolved = 9;
+  repeated Diagnostic diagnostics = 10;
+  repeated Extension extensions = 11;
+  int64 imported_at = 12;
+  repeated MetadataEntry metadata = 13;
+}
+
+message MetadataEntry {
+  string key = 1;
+  string value = 2;
+  optional int64 updated_at = 3;
+}
+
+message Producer {
+  string name = 1;
+  string version = 2;
+  string configuration = 3;
+}
+
+// Canonical coordinates are zero-based UTF-16 code units, end-exclusive.
+// A point may have only a line, preserving partial producer evidence.
+message Position {
+  optional int32 line = 1;
+  optional int32 character = 2;
+}
+
+message Location {
+  optional string path = 1;
+  Position start = 2;
+  Position end = 3;
+}
+
+// Presence of a list distinguishes absent metadata from an empty producer list.
+message StringList { repeated string values = 1; }
+
+// Namespace identifies the producer-owned shape; JSON is bounded and validated.
+message Extension {
+  string namespace = 1;
+  bytes json = 2;
+}
+
+message Node {
+  string source_id = 1;
+  // Unique declaration occurrence within this artifact, not a qualified name.
+  string occurrence = 2;
+  string kind = 3;
+  string name = 4;
+  string qualified_name = 5;
+  optional string path = 6;
+  string language = 7;
+  Location location = 8;
+  optional string documentation = 9;
+  optional string signature = 10;
+  optional string visibility = 11;
+  optional bool is_exported = 12;
+  optional bool is_async = 13;
+  optional bool is_static = 14;
+  optional bool is_abstract = 15;
+  StringList decorators = 16;
+  StringList type_parameters = 17;
+  optional string return_type = 18;
+  repeated Extension extensions = 19;
+  optional int64 updated_at = 20;
+  optional string scip_symbol = 21;
+}
+
+// Values 1-6 are the established GraphNest v1 values, not CodeGraph enum order.
+enum EdgeKind {
+  EDGE_KIND_UNSPECIFIED = 0;
+  EDGE_KIND_CONTAINS = 1;
+  EDGE_KIND_IMPORTS = 2;
+  EDGE_KIND_REFERENCES = 3;
+  EDGE_KIND_CALLS = 4;
+  EDGE_KIND_EXTENDS = 5;
+  EDGE_KIND_IMPLEMENTS = 6;
+  EDGE_KIND_EXPORTS = 7;
+  EDGE_KIND_TYPE_OF = 8;
+  EDGE_KIND_RETURNS = 9;
+  EDGE_KIND_INSTANTIATES = 10;
+  EDGE_KIND_OVERRIDES = 11;
+  EDGE_KIND_DECORATES = 12;
+  EDGE_KIND_NAVIGATES = 13;
+}
+
+message Edge {
+  // Original producer database row identity, evidence only (excluded from hash).
+  string source_id = 1;
+  string occurrence = 2;
+  // Endpoint declaration occurrences, not ambiguous source IDs/names.
+  string source = 3;
+  string target = 4;
+  EdgeKind kind = 5;
+  Location location = 6;
+  optional double confidence = 7;
+  optional string provenance = 8;
+  optional string resolution_reason = 9;
+  repeated Extension extensions = 10;
+}
+
+message File {
+  string path = 1;
+  string content_hash = 2;
+  string language = 3;
+  int64 size = 4;
+  optional int64 modified_at = 5;
+  optional int64 indexed_at = 6;
+  optional int64 node_count = 7;
+  optional bool generated = 8;
+  // Original optional error list, including any producer-specific fields.
+  Extension errors = 9;
+  repeated Extension extensions = 10;
+}
+
+message UnresolvedReference {
+  string source_id = 1;
+  string occurrence = 2;
+  string source = 3;
+  string name = 4;
+  // Relationship registry name, or CodeGraph's internal function_ref.
+  string kind = 5;
+  Location location = 6;
+  StringList candidates = 7;
+  optional string path = 8;
+  optional string language = 9;
+  optional string status = 10;
+  optional string name_tail = 11;
+  repeated Extension extensions = 12;
+}
+
+message Diagnostic {
+  string occurrence = 1;
+  string message = 2;
+  string severity = 3;
+  optional string code = 4;
+  Location location = 5;
+  repeated Extension extensions = 6;
+}

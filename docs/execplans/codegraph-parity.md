@@ -33,7 +33,12 @@ Implementation, validation, draft publication, and release are separate states.
   separately labeled complete vocabulary fixtures and frozen performance
   baselines/budgets. Remaining conformance variants retain their owning stages
   and planned tests; this does not complete production parity or Stage 1.
-- S1.02–S1.10 are pending. Stage 1 has not passed its release gate.
+- S1.02 is active on dependent `feat/codegraph/s1-02-artifact`; S1.03–S1.10
+  are pending. Stage 1 has not passed its release gate.
+- S1.02's v2 contract is implemented and independently reviewed. The separate
+  v1 enum guard is signed as `73ee941`; artifact, compatibility, full Go and
+  PostgreSQL integration race checks pass. Final generation and native-stack
+  publication checks remain pending before the layer is complete.
 - Stages 2 and 3 are pending and cannot start until the preceding stage has passed and landed.
 
 ## Baselines
@@ -125,6 +130,11 @@ these tests.
 | Timing offline and argument checks | Two offline tests pass, including fingerprints and percentile arithmetic; `--timings` without `--check` rejects before building or writing |
 | Timing independent review | No Critical/Important findings; actual queries, useful-answer assertions, statistics, fingerprints, memory scope and opt-in no-facts-write behavior reviewed |
 | Timing signed submission and native read-back | PR #67 head `e729878`, parent `2371daa`, exact seven-file delta; GitHub verifies the signature; stack #66 has all three layers in order. CI pending at this read-back |
+| PR #67 final record and CI read-back | Signed completion-record head `5c05f83` verified/valid by GitHub; CI workflow `34053845274` completed successfully |
+| S1.02 artifact checks | Real SQLite column-for-column roundtrip, synthetic 23-kind/13-relation coverage, presence/identity/hash/source tests and three bounded fuzz runs pass |
+| S1.02 independent review | Aggregate predecode allocation gap fixed and re-reviewed; the 9,576-byte regression rejects with one allocation rather than 6,400 |
+| S1.02 controller compatibility checks | Full `make test`, `make fmt lint`, final artifact race test, and required PostgreSQL integration race tests for `internal/postgres` and `test/integration` pass; v1 generated code, reference fixtures and dependency files remain unchanged |
+| S1.02 optional Buf lint | `PACKAGE_DIRECTORY_MATCH` fails for the existing v1 layout and matching v2 layout; tracked as a Minor finding for the final Stage 1 review |
 
 `tools-check` needs the workspace: its nested `go tool protoc-gen-go` executes
 from the root module and discovers the plugin through `./tools`. Keep `GOWORK=off`
@@ -209,6 +219,7 @@ CI check remains offline and uses only Python's standard library.
 | S1.01 reference foundation | `feat/codegraph/s1-01-contract` | Implemented; reviewed; signed | Draft [PR #64](https://github.com/balcsida/graphnest/pull/64); native stack #66, position 1 |
 | S1.01 reference workflows and PostgreSQL baseline | `feat/codegraph/s1-01-workflows` | Implemented, measured, reviewed and signed; depends on PR #64 | Draft [PR #65](https://github.com/balcsida/graphnest/pull/65); native stack #66, position 2 |
 | S1.01 repeated upstream workflow timings | `feat/codegraph/s1-01-timings` | Implemented, measured, reviewed and signed; depends on PR #65 | Draft [PR #67](https://github.com/balcsida/graphnest/pull/67); native stack #66, position 3 |
+| S1.02 v2 artifact contract | `feat/codegraph/s1-02-artifact` | In progress; depends on PR #67 | Not submitted |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
