@@ -26,9 +26,13 @@ Implementation, validation, draft publication, and release are separate states.
   workflow timings before beginning production artifact changes.
 - Captured five warm runs each for real callers, exploration and flow queries,
   checking required facts/source on all 1,500 timed answers and 75 warmups.
-- S1.01 reference foundation is implemented and reviewed: inventory, pinned
-  real-producer reference harness, fixtures, and explicitly scoped performance
-  measurements. Full S1.01 acceptance remains pending the gaps below.
+- Published the reviewed, signed timing layer as draft
+  [PR #67](https://github.com/balcsida/graphnest/pull/67), and verified native
+  stack #66 now contains PRs #64, #65 and #67 in dependency order.
+- S1.01 is complete: mapped inventory, reproducible real-producer answers,
+  separately labeled complete vocabulary fixtures and frozen performance
+  baselines/budgets. Remaining conformance variants retain their owning stages
+  and planned tests; this does not complete production parity or Stage 1.
 - S1.02–S1.10 are pending. Stage 1 has not passed its release gate.
 - Stages 2 and 3 are pending and cannot start until the preceding stage has passed and landed.
 
@@ -120,6 +124,7 @@ these tests.
 | Pinned `generate_reference.py --check --timings` and ordinary `--check` | Passed: five-run timings captured only after full two-run oracle verification; ordinary checks leave the timing report unchanged; all existing fixture facts/answers remain byte-identical |
 | Timing offline and argument checks | Two offline tests pass, including fingerprints and percentile arithmetic; `--timings` without `--check` rejects before building or writing |
 | Timing independent review | No Critical/Important findings; actual queries, useful-answer assertions, statistics, fingerprints, memory scope and opt-in no-facts-write behavior reviewed |
+| Timing signed submission and native read-back | PR #67 head `e729878`, parent `2371daa`, exact seven-file delta; GitHub verifies the signature; stack #66 has all three layers in order. CI pending at this read-back |
 
 `tools-check` needs the workspace: its nested `go tool protoc-gen-go` executes
 from the root module and discovers the plugin through `./tools`. Keep `GOWORK=off`
@@ -179,9 +184,8 @@ CI check remains offline and uses only Python's standard library.
 
 ## Remaining gaps
 
-- S1.01 acceptance is pending the final native-stack publication/read-back.
-  Representative
-  reference captures are mapped to inventory task IDs; remaining variants stay
+- Representative reference captures are mapped to inventory task IDs;
+  remaining conformance variants stay
   planned with their owning stages, comparison contracts and upstream tests.
 - New transport/browser/import workflows without a meaningful current
   comparison remain explicitly unmeasured and unratified. Their implementation
@@ -204,12 +208,13 @@ CI check remains offline and uses only Python's standard library.
 | --- | --- | --- | --- |
 | S1.01 reference foundation | `feat/codegraph/s1-01-contract` | Implemented; reviewed; signed | Draft [PR #64](https://github.com/balcsida/graphnest/pull/64); native stack #66, position 1 |
 | S1.01 reference workflows and PostgreSQL baseline | `feat/codegraph/s1-01-workflows` | Implemented, measured, reviewed and signed; depends on PR #64 | Draft [PR #65](https://github.com/balcsida/graphnest/pull/65); native stack #66, position 2 |
-| S1.01 repeated upstream workflow timings | `feat/codegraph/s1-01-timings` | Implemented, measured and reviewed; depends on PR #65 | Not submitted |
+| S1.01 repeated upstream workflow timings | `feat/codegraph/s1-01-timings` | Implemented, measured, reviewed and signed; depends on PR #65 | Draft [PR #67](https://github.com/balcsida/graphnest/pull/67); native stack #66, position 3 |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
-(`PRS_kwDOTcm09c4ADdBt`). GraphQL independently confirmed the stack size, trunk,
-positions and both PR head/base identities; local metadata alone was not used
+(`PRS_kwDOTcm09c4ADdBt`); the timing submission extended it to three PRs.
+GraphQL independently confirmed the stack size, trunk,
+positions and all PR head/base identities; local metadata alone was not used
 as proof of remote membership.
 
 Remote membership, exact head/base, each layer's delta, and actual required checks
