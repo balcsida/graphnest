@@ -1,4 +1,20 @@
 {
+  "cli-affected-transitive": {
+    "affectedTests": [
+      "consumer.test.ts"
+    ],
+    "changedFiles": [
+      "core.ts"
+    ],
+    "totalDependentsTraversed": 5
+  },
+  "cli-affected-unrelated": {
+    "affectedTests": [],
+    "changedFiles": [
+      "orphan.ts"
+    ],
+    "totalDependentsTraversed": 0
+  },
   "lib-findPath": [
     {
       "edge": null,
@@ -428,7 +444,7 @@
       },
       "node": {
         "endColumn": 0,
-        "endLine": 16,
+        "endLine": 17,
         "filePath": "core.ts",
         "id": "file:core.ts",
         "isAbstract": false,
@@ -1104,7 +1120,7 @@
     "ancestors": [
       {
         "endColumn": 0,
-        "endLine": 16,
+        "endLine": 17,
         "filePath": "core.ts",
         "id": "file:core.ts",
         "isAbstract": false,
@@ -1431,6 +1447,32 @@
         "target": "method:a07bfacd1db56624cfb45f337daa8afd"
       },
       {
+        "column": 11,
+        "kind": "calls",
+        "line": 4,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "run",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "function:b86a54b1e1a6502d2746c99aea27dca3",
+        "target": "function:7e9336030a46e65ce2d6c7fffdfc2672"
+      },
+      {
+        "column": 9,
+        "kind": "imports",
+        "line": 1,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "run",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "file:consumer.ts",
+        "target": "function:7e9336030a46e65ce2d6c7fffdfc2672"
+      },
+      {
         "kind": "calls",
         "line": 2,
         "metadata": {
@@ -1581,6 +1623,43 @@
         "signature": "(): string",
         "startColumn": 7,
         "startLine": 2,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 1,
+        "endLine": 7,
+        "filePath": "consumer.ts",
+        "id": "function:b86a54b1e1a6502d2746c99aea27dca3",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "function",
+        "language": "typescript",
+        "name": "processGreeting",
+        "qualifiedName": "processGreeting",
+        "signature": "(enabled: boolean): string",
+        "startColumn": 7,
+        "startLine": 2,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 0,
+        "endLine": 8,
+        "filePath": "consumer.ts",
+        "id": "file:consumer.ts",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "file",
+        "language": "typescript",
+        "name": "consumer.ts",
+        "qualifiedName": "consumer.ts",
+        "startColumn": 0,
+        "startLine": 1,
         "updatedAt": 0,
         "visibility": null
       },
@@ -1772,7 +1851,7 @@
         "updatedAt": 0,
         "visibility": "public"
       },
-      "score": 94.047296127757
+      "score": 94.42246263012316
     },
     {
       "node": {
@@ -1794,7 +1873,7 @@
         "updatedAt": 0,
         "visibility": null
       },
-      "score": 94.02469303391103
+      "score": 94.39814570129255
     },
     {
       "node": {
@@ -1817,7 +1896,7 @@
         "updatedAt": 0,
         "visibility": "public"
       },
-      "score": 93.95837358011921
+      "score": 94.32677335835533
     },
     {
       "node": {
@@ -1839,7 +1918,7 @@
         "updatedAt": 0,
         "visibility": null
       },
-      "score": 5.663957037702964
+      "score": 5.92233004098777
     },
     {
       "node": {
@@ -1861,7 +1940,7 @@
         "updatedAt": 0,
         "visibility": null
       },
-      "score": 3.438596763222623
+      "score": 3.6777534960189473
     },
     {
       "node": {
@@ -1883,7 +1962,7 @@
         "updatedAt": 0,
         "visibility": null
       },
-      "score": 3.438596763222623
+      "score": 3.6777534960189473
     },
     {
       "node": {
@@ -1905,7 +1984,3267 @@
         "updatedAt": 0,
         "visibility": null
       },
-      "score": 3.339634817300038
+      "score": 3.570200490862841
     }
-  ]
+  ],
+  "mcp-explore-source": {
+    "content": [
+      {
+        "text": "**Exploration: processGreeting**\n\nFound 14 symbols across 3 files.\n\n**Blast radius \u2014 what depends on these (update/verify before editing)**\n\n- `processGreeting` (consumer.ts:2) \u2014 2 callers; tests: `consumer.test.ts`\n- `greet` (model.swift:4) \u2014 1 caller in `model.swift`; no tests found within 3 caller hops\n\n**Source Code**\n\n> The code below is the **verbatim, current on-disk source** of these files \u2014 re-read from disk on this call and line-numbered, byte-for-byte identical to what the Read tool returns. It is NOT a summary, outline, or stale cache. Treat each block as a Read you have already performed: do not Read a file shown here.\n\n**`consumer.ts`** \u2014 processGreeting(function)\n\n```typescript\n1\timport { run } from './main';\n2\texport function processGreeting(enabled: boolean): string {\n3\t  if (enabled) {\n4\t    return run();\n5\t  }\n6\t  return 'skipped';\n7\t}\n```\n\n**`core.ts`** \u2014 Greeter(interface), greet(method), Service(class), logged(function), Base(class), +3 more\n\n```typescript\n1\texport interface Greeter { greet(name: string): string; }\n2\texport class Base { greet(name: string): string { return name; } }\n3\texport function normalize(name: string): string { return name.trim(); }\n4\texport function logged(target: unknown): void {}\n5\t@logged\n6\texport class Service extends Base implements Greeter {\n7\t  readonly label: string = \"fixture\";\n8\t  override greet(name: string): string { return normalize(name); }\n9\t}\n10\texport function createService(): Service { return new Service(); }\n11\texport const answer = 42;\n12\texport let current: Service = createService();\n13\texport enum State { Ready, Done }\n14\texport type Label = string;\n15\texport namespace Helpers { export function identity(value: string) { return value; } }\n16\tfunction dormantUtility(): string { return 'unreferenced in a reachable file'; }\n```\n\n**`model.swift`** \u2014 greet(method), Parent(class), Child(class)\n\n```swift\n1\tprotocol Named { var name: String { get } }\n2\tstruct Person: Named { let name: String }\n3\tclass Parent { func greet() -> String { return \"hello\" } }\n4\tclass Child: Parent { override func greet() -> String { return super.greet() } }\n```\n",
+        "type": "text"
+      }
+    ]
+  },
+  "mcp-explore-unmatched-fallback": {
+    "content": [
+      {
+        "text": "**Exploration: MissingFixtureSymbol987**\n\nFound 6 symbols across 2 files.\n\n**Source Code**\n\n> The code below is the **verbatim, current on-disk source** of these files \u2014 re-read from disk on this call and line-numbered, byte-for-byte identical to what the Read tool returns. It is NOT a summary, outline, or stale cache. Treat each block as a Read you have already performed: do not Read a file shown here.\n\n**`model.rb`** \u2014 Fixture(module), normalize(method), Model(class)\n\n```ruby\n1\tmodule Fixture\n2\t  class Model\n3\t    def normalize(name)\n4\t      name.strip\n5\t    end\n6\t  end\n7\tend\n```\n\n**`Model.java`** \u2014 fixture.models(namespace), normalize(method), Model(class)\n\n```java\n1\tpackage fixture.models;\n2\tpublic class Model {\n3\t    public String normalize(String name) { return name.trim(); }\n4\t}\n```\n",
+        "type": "text"
+      }
+    ]
+  },
+  "ui-deadcode": {
+    "bounded": false,
+    "candidates": 20,
+    "corroborated": true,
+    "excluded": [
+      {
+        "count": 11,
+        "label": "in languages this index records no exports for",
+        "reason": "exportsUnknown"
+      },
+      {
+        "count": 5,
+        "label": "exported, or declared in a header",
+        "reason": "exported"
+      },
+      {
+        "count": 1,
+        "label": "sharing a name with a symbol that IS referenced",
+        "reason": "ambiguousName"
+      },
+      {
+        "count": 1,
+        "label": "in test files",
+        "reason": "tests"
+      },
+      {
+        "count": 1,
+        "label": "in files nothing reaches \u2014 islands, drawn on the map",
+        "reason": "unreachableFile"
+      }
+    ],
+    "excludedTotal": 19,
+    "groups": [
+      {
+        "file": "core.ts",
+        "generated": false,
+        "lines": 1,
+        "rows": [
+          {
+            "endLine": 16,
+            "file": "core.ts",
+            "id": "function:34a6c31583c62b073c319681f7a84002",
+            "kind": "function",
+            "language": "typescript",
+            "line": 16,
+            "lines": 1,
+            "members": {
+              "items": [],
+              "shown": 0,
+              "total": 0,
+              "truncated": false
+            },
+            "name": "dormantUtility",
+            "qualifiedName": "dormantUtility",
+            "signature": "(): string",
+            "test": false
+          }
+        ],
+        "test": false
+      }
+    ],
+    "includeExported": false,
+    "includeGenerated": false,
+    "includeTests": false,
+    "kinds": [
+      "function",
+      "method",
+      "class",
+      "component",
+      "interface",
+      "struct",
+      "trait",
+      "protocol",
+      "enum",
+      "union",
+      "type_alias"
+    ],
+    "rows": {
+      "items": [
+        {
+          "endLine": 16,
+          "file": "core.ts",
+          "id": "function:34a6c31583c62b073c319681f7a84002",
+          "kind": "function",
+          "language": "typescript",
+          "line": 16,
+          "lines": 1,
+          "members": {
+            "items": [],
+            "shown": 0,
+            "total": 0,
+            "truncated": false
+          },
+          "name": "dormantUtility",
+          "qualifiedName": "dormantUtility",
+          "signature": "(): string",
+          "test": false
+        }
+      ],
+      "shown": 1,
+      "total": 1,
+      "truncated": false
+    },
+    "timing": {
+      "elapsedMs": 0
+    }
+  },
+  "ui-entrypoints": {
+    "files": {
+      "items": [
+        {
+          "calls": 1,
+          "dependents": 0,
+          "endLine": 4,
+          "file": "Widget.vue",
+          "id": "file:Widget.vue",
+          "kind": "file",
+          "language": "vue",
+          "line": 1,
+          "name": "Widget.vue",
+          "qualifiedName": "Widget.vue",
+          "reaches": 1,
+          "test": false
+        },
+        {
+          "calls": 1,
+          "dependents": 3,
+          "endLine": 17,
+          "file": "core.ts",
+          "id": "file:core.ts",
+          "kind": "file",
+          "language": "typescript",
+          "line": 1,
+          "name": "core.ts",
+          "qualifiedName": "core.ts",
+          "reaches": 0,
+          "test": false
+        }
+      ],
+      "shown": 2,
+      "total": 2,
+      "truncated": false
+    },
+    "frameworks": [
+      "react",
+      "vue",
+      "expo-router"
+    ],
+    "hubs": {
+      "items": [
+        {
+          "dependents": 6,
+          "endLine": 3,
+          "exported": true,
+          "file": "core.ts",
+          "id": "function:2e0f1da852db2702796c16967fca2efb",
+          "kind": "function",
+          "language": "typescript",
+          "line": 3,
+          "name": "normalize",
+          "qualifiedName": "normalize",
+          "signature": "(name: string): string",
+          "test": false
+        },
+        {
+          "dependents": 4,
+          "endLine": 9,
+          "exported": true,
+          "file": "core.ts",
+          "id": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+          "kind": "class",
+          "language": "typescript",
+          "line": 6,
+          "name": "Service",
+          "qualifiedName": "Service",
+          "test": false
+        },
+        {
+          "dependents": 2,
+          "endLine": 2,
+          "exported": true,
+          "file": "main.ts",
+          "id": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+          "kind": "function",
+          "language": "typescript",
+          "line": 2,
+          "name": "run",
+          "qualifiedName": "run",
+          "signature": "(): string",
+          "test": false
+        },
+        {
+          "dependents": 2,
+          "endLine": 7,
+          "exported": true,
+          "file": "consumer.ts",
+          "id": "function:b86a54b1e1a6502d2746c99aea27dca3",
+          "kind": "function",
+          "language": "typescript",
+          "line": 2,
+          "name": "processGreeting",
+          "qualifiedName": "processGreeting",
+          "signature": "(enabled: boolean): string",
+          "test": false
+        },
+        {
+          "dependents": 2,
+          "endLine": 8,
+          "file": "core.ts",
+          "id": "method:a07bfacd1db56624cfb45f337daa8afd",
+          "kind": "method",
+          "language": "typescript",
+          "line": 8,
+          "name": "greet",
+          "qualifiedName": "Service::greet",
+          "signature": "(name: string): string",
+          "test": false
+        },
+        {
+          "dependents": 1,
+          "endLine": 2,
+          "exported": true,
+          "file": "core.ts",
+          "id": "class:22d52fa5b3261b6828f46f747644d941",
+          "kind": "class",
+          "language": "typescript",
+          "line": 2,
+          "name": "Base",
+          "qualifiedName": "Base",
+          "test": false
+        },
+        {
+          "dependents": 1,
+          "endLine": 3,
+          "file": "model.swift",
+          "id": "class:ecfbf264e0f9f87884235414a0854866",
+          "kind": "class",
+          "language": "swift",
+          "line": 3,
+          "name": "Parent",
+          "qualifiedName": "Parent",
+          "test": false
+        },
+        {
+          "dependents": 1,
+          "endLine": 1,
+          "exported": true,
+          "file": "app/details.tsx",
+          "id": "function:13c8d2d287472d07a5ff97566720a9a7",
+          "kind": "function",
+          "language": "tsx",
+          "line": 1,
+          "name": "Details",
+          "qualifiedName": "Details",
+          "signature": "()",
+          "test": false
+        },
+        {
+          "dependents": 1,
+          "endLine": 10,
+          "exported": true,
+          "file": "core.ts",
+          "id": "function:20881e230caa501e0f712d9435fd20cd",
+          "kind": "function",
+          "language": "typescript",
+          "line": 10,
+          "name": "createService",
+          "qualifiedName": "createService",
+          "signature": "(): Service",
+          "test": false
+        },
+        {
+          "dependents": 1,
+          "endLine": 4,
+          "exported": true,
+          "file": "core.ts",
+          "id": "function:33d0684689de083569e74b5164d4296f",
+          "kind": "function",
+          "language": "typescript",
+          "line": 4,
+          "name": "logged",
+          "qualifiedName": "logged",
+          "signature": "(target: unknown): void",
+          "test": false
+        },
+        {
+          "dependents": 1,
+          "endLine": 6,
+          "exported": true,
+          "file": "app/index.tsx",
+          "id": "function:493406571845211c553f179bdfb337d5",
+          "kind": "function",
+          "language": "tsx",
+          "line": 2,
+          "name": "openDetails",
+          "qualifiedName": "openDetails",
+          "signature": "(enabled: boolean)",
+          "test": false
+        },
+        {
+          "dependents": 1,
+          "endLine": 7,
+          "exported": true,
+          "file": "app/index.tsx",
+          "id": "function:6ed067cb1c447a80dad50eeec41b25fa",
+          "kind": "function",
+          "language": "tsx",
+          "line": 7,
+          "name": "Home",
+          "qualifiedName": "Home",
+          "signature": "()",
+          "test": false
+        }
+      ],
+      "shown": 12,
+      "total": 18,
+      "truncated": true
+    },
+    "index": {
+      "files": 13,
+      "lastIndexedAt": 0
+    },
+    "routes": {
+      "items": {
+        "items": [],
+        "shown": 0,
+        "total": 0,
+        "truncated": false
+      },
+      "routeCount": 2,
+      "routed": false
+    },
+    "tests": {
+      "items": [
+        {
+          "endLine": 3,
+          "file": "consumer.test.ts",
+          "id": "file:consumer.test.ts",
+          "kind": "file",
+          "language": "typescript",
+          "line": 1,
+          "name": "consumer.test.ts",
+          "qualifiedName": "consumer.test.ts",
+          "reaches": 1,
+          "refs": 2,
+          "test": true
+        }
+      ],
+      "shown": 1,
+      "total": 1,
+      "truncated": false
+    },
+    "timing": {
+      "cached": false,
+      "elapsedMs": 0
+    }
+  },
+  "ui-file-public-members": {
+    "dependencies": [],
+    "dependents": [
+      "Widget.vue",
+      "main.ts",
+      "unicode.ts"
+    ],
+    "drift": false,
+    "file": {
+      "contentHash": "4a8c5542c1e8937aeb9d99b372c97ea208c20e8727799beaabd21b928b831265",
+      "errors": [],
+      "generated": false,
+      "id": "file:core.ts",
+      "indexedAt": 0,
+      "language": "typescript",
+      "modifiedAt": 0,
+      "nodeCount": 18,
+      "path": "core.ts",
+      "size": 786,
+      "test": false
+    },
+    "importedBy": {
+      "items": [
+        {
+          "file": "main.ts",
+          "symbolCount": 1,
+          "symbols": [
+            {
+              "id": "file:main.ts",
+              "kind": "file",
+              "line": 1,
+              "name": "main.ts"
+            }
+          ],
+          "test": false
+        },
+        {
+          "file": "unicode.ts",
+          "symbolCount": 1,
+          "symbols": [
+            {
+              "id": "file:unicode.ts",
+              "kind": "file",
+              "line": 1,
+              "name": "unicode.ts"
+            }
+          ],
+          "test": false
+        },
+        {
+          "file": "Widget.vue",
+          "symbolCount": 1,
+          "symbols": [
+            {
+              "id": "file:Widget.vue",
+              "kind": "file",
+              "line": 1,
+              "name": "Widget.vue"
+            }
+          ],
+          "test": false
+        }
+      ],
+      "shown": 3,
+      "total": 3,
+      "truncated": false
+    },
+    "imports": {
+      "items": [],
+      "shown": 0,
+      "total": 0,
+      "truncated": false
+    },
+    "outline": {
+      "items": [
+        {
+          "depth": 0,
+          "endLine": 1,
+          "exported": true,
+          "fanIn": 2,
+          "fanOut": 0,
+          "file": "core.ts",
+          "id": "interface:e30cb316976fe998ad14cbaf7315f7c3",
+          "kind": "interface",
+          "language": "typescript",
+          "line": 1,
+          "name": "Greeter",
+          "parentId": null,
+          "qualifiedName": "Greeter",
+          "test": false
+        },
+        {
+          "depth": 0,
+          "endLine": 2,
+          "exported": true,
+          "fanIn": 2,
+          "fanOut": 1,
+          "file": "core.ts",
+          "id": "class:22d52fa5b3261b6828f46f747644d941",
+          "kind": "class",
+          "language": "typescript",
+          "line": 2,
+          "name": "Base",
+          "parentId": null,
+          "qualifiedName": "Base",
+          "test": false
+        },
+        {
+          "depth": 1,
+          "endLine": 2,
+          "fanIn": 1,
+          "fanOut": 1,
+          "file": "core.ts",
+          "id": "method:b778deb8eb78dbc30913a4b58e88d059",
+          "kind": "method",
+          "language": "typescript",
+          "line": 2,
+          "name": "greet",
+          "parentId": "class:22d52fa5b3261b6828f46f747644d941",
+          "qualifiedName": "Base::greet",
+          "signature": "(name: string): string",
+          "test": false
+        },
+        {
+          "depth": 0,
+          "endLine": 3,
+          "exported": true,
+          "fanIn": 8,
+          "fanOut": 0,
+          "file": "core.ts",
+          "id": "function:2e0f1da852db2702796c16967fca2efb",
+          "kind": "function",
+          "language": "typescript",
+          "line": 3,
+          "name": "normalize",
+          "parentId": null,
+          "qualifiedName": "normalize",
+          "signature": "(name: string): string",
+          "test": false
+        },
+        {
+          "depth": 0,
+          "endLine": 4,
+          "exported": true,
+          "fanIn": 2,
+          "fanOut": 0,
+          "file": "core.ts",
+          "id": "function:33d0684689de083569e74b5164d4296f",
+          "kind": "function",
+          "language": "typescript",
+          "line": 4,
+          "name": "logged",
+          "parentId": null,
+          "qualifiedName": "logged",
+          "signature": "(target: unknown): void",
+          "test": false
+        },
+        {
+          "depth": 0,
+          "endLine": 9,
+          "exported": true,
+          "fanIn": 6,
+          "fanOut": 5,
+          "file": "core.ts",
+          "id": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+          "kind": "class",
+          "language": "typescript",
+          "line": 6,
+          "name": "Service",
+          "parentId": null,
+          "qualifiedName": "Service",
+          "test": false
+        },
+        {
+          "depth": 1,
+          "endLine": 7,
+          "fanIn": 1,
+          "fanOut": 0,
+          "file": "core.ts",
+          "id": "property:0703d73c48e77b84818882e615bd88f9",
+          "kind": "property",
+          "language": "typescript",
+          "line": 7,
+          "name": "label",
+          "parentId": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+          "qualifiedName": "Service::label",
+          "signature": "string label",
+          "test": false
+        },
+        {
+          "depth": 1,
+          "endLine": 8,
+          "fanIn": 3,
+          "fanOut": 1,
+          "file": "core.ts",
+          "id": "method:a07bfacd1db56624cfb45f337daa8afd",
+          "kind": "method",
+          "language": "typescript",
+          "line": 8,
+          "name": "greet",
+          "parentId": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+          "qualifiedName": "Service::greet",
+          "signature": "(name: string): string",
+          "test": false
+        },
+        {
+          "depth": 0,
+          "endLine": 10,
+          "exported": true,
+          "fanIn": 2,
+          "fanOut": 2,
+          "file": "core.ts",
+          "id": "function:20881e230caa501e0f712d9435fd20cd",
+          "kind": "function",
+          "language": "typescript",
+          "line": 10,
+          "name": "createService",
+          "parentId": null,
+          "qualifiedName": "createService",
+          "signature": "(): Service",
+          "test": false
+        },
+        {
+          "depth": 0,
+          "endLine": 11,
+          "exported": true,
+          "fanIn": 1,
+          "fanOut": 0,
+          "file": "core.ts",
+          "id": "constant:4d2f7d39372a2081087d43dc438ad8cb",
+          "kind": "constant",
+          "language": "typescript",
+          "line": 11,
+          "name": "answer",
+          "parentId": null,
+          "qualifiedName": "answer",
+          "signature": "= 42",
+          "test": false
+        },
+        {
+          "depth": 0,
+          "endLine": 12,
+          "exported": true,
+          "fanIn": 1,
+          "fanOut": 1,
+          "file": "core.ts",
+          "id": "variable:f695ca32dd7446c0621dcc89ebc1a505",
+          "kind": "variable",
+          "language": "typescript",
+          "line": 12,
+          "name": "current",
+          "parentId": null,
+          "qualifiedName": "current",
+          "signature": "= createService()",
+          "test": false
+        },
+        {
+          "depth": 1,
+          "endLine": 13,
+          "fanIn": 1,
+          "fanOut": 0,
+          "file": "core.ts",
+          "id": "enum_member:e08d7f6cfed88e881fe5f45226e7891d",
+          "kind": "enum_member",
+          "language": "typescript",
+          "line": 13,
+          "name": "Done",
+          "parentId": "enum:fc3b02485378ba86fac427b0a8faecdb",
+          "qualifiedName": "State::Done",
+          "test": false
+        },
+        {
+          "depth": 1,
+          "endLine": 13,
+          "fanIn": 1,
+          "fanOut": 0,
+          "file": "core.ts",
+          "id": "enum_member:ec10e97271b9414b25847b49ec174e99",
+          "kind": "enum_member",
+          "language": "typescript",
+          "line": 13,
+          "name": "Ready",
+          "parentId": "enum:fc3b02485378ba86fac427b0a8faecdb",
+          "qualifiedName": "State::Ready",
+          "test": false
+        },
+        {
+          "depth": 0,
+          "endLine": 13,
+          "exported": true,
+          "fanIn": 1,
+          "fanOut": 2,
+          "file": "core.ts",
+          "id": "enum:fc3b02485378ba86fac427b0a8faecdb",
+          "kind": "enum",
+          "language": "typescript",
+          "line": 13,
+          "name": "State",
+          "parentId": null,
+          "qualifiedName": "State",
+          "test": false
+        },
+        {
+          "depth": 0,
+          "endLine": 14,
+          "exported": true,
+          "fanIn": 1,
+          "fanOut": 0,
+          "file": "core.ts",
+          "id": "type_alias:a13e3ebb79377551ffad01a8821e294c",
+          "kind": "type_alias",
+          "language": "typescript",
+          "line": 14,
+          "name": "Label",
+          "parentId": null,
+          "qualifiedName": "Label",
+          "test": false
+        },
+        {
+          "depth": 0,
+          "endLine": 15,
+          "exported": true,
+          "fanIn": 1,
+          "fanOut": 0,
+          "file": "core.ts",
+          "id": "function:bc23b7caa58f431b58c9432845bf39e1",
+          "kind": "function",
+          "language": "typescript",
+          "line": 15,
+          "name": "identity",
+          "parentId": null,
+          "qualifiedName": "identity",
+          "signature": "(value: string)",
+          "test": false
+        },
+        {
+          "depth": 0,
+          "endLine": 16,
+          "fanIn": 1,
+          "fanOut": 0,
+          "file": "core.ts",
+          "id": "function:34a6c31583c62b073c319681f7a84002",
+          "kind": "function",
+          "language": "typescript",
+          "line": 16,
+          "name": "dormantUtility",
+          "parentId": null,
+          "qualifiedName": "dormantUtility",
+          "signature": "(): string",
+          "test": false
+        }
+      ],
+      "shown": 17,
+      "total": 17,
+      "truncated": false
+    },
+    "topLevel": {
+      "calls": 1
+    },
+    "unresolvedImports": []
+  },
+  "ui-flow-branch": {
+    "ambiguous": [],
+    "flows": [
+      {
+        "boundary": null,
+        "hops": [
+          {
+            "callRef": {
+              "backwards": false,
+              "col": 11,
+              "line": 4,
+              "name": "run",
+              "targetId": "function:7e9336030a46e65ce2d6c7fffdfc2672"
+            },
+            "edge": null,
+            "node": {
+              "endLine": 7,
+              "exported": true,
+              "file": "consumer.ts",
+              "id": "function:b86a54b1e1a6502d2746c99aea27dca3",
+              "kind": "function",
+              "language": "typescript",
+              "line": 2,
+              "name": "processGreeting",
+              "qualifiedName": "processGreeting",
+              "signature": "(enabled: boolean): string",
+              "test": false
+            },
+            "source": {
+              "drift": false,
+              "file": "consumer.ts",
+              "from": 1,
+              "highlight": {
+                "classes": [
+                  "other",
+                  "ident",
+                  "comment",
+                  "string",
+                  "keyword",
+                  "number",
+                  "type",
+                  "def"
+                ],
+                "engine": "tree-sitter",
+                "grammar": "typescript",
+                "lines": [
+                  [
+                    [
+                      4,
+                      "import"
+                    ],
+                    [
+                      0,
+                      " { "
+                    ],
+                    [
+                      1,
+                      "run"
+                    ],
+                    [
+                      0,
+                      " } "
+                    ],
+                    [
+                      4,
+                      "from"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      3,
+                      "'./main'"
+                    ],
+                    [
+                      0,
+                      ";"
+                    ]
+                  ],
+                  [
+                    [
+                      4,
+                      "export"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      4,
+                      "function"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      7,
+                      "processGreeting"
+                    ],
+                    [
+                      0,
+                      "("
+                    ],
+                    [
+                      1,
+                      "enabled"
+                    ],
+                    [
+                      0,
+                      ": "
+                    ],
+                    [
+                      6,
+                      "boolean"
+                    ],
+                    [
+                      0,
+                      "): "
+                    ],
+                    [
+                      6,
+                      "string"
+                    ],
+                    [
+                      0,
+                      " {"
+                    ]
+                  ],
+                  [
+                    [
+                      0,
+                      "  "
+                    ],
+                    [
+                      4,
+                      "if"
+                    ],
+                    [
+                      0,
+                      " ("
+                    ],
+                    [
+                      1,
+                      "enabled"
+                    ],
+                    [
+                      0,
+                      ") {"
+                    ]
+                  ],
+                  [
+                    [
+                      0,
+                      "    "
+                    ],
+                    [
+                      4,
+                      "return"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      1,
+                      "run"
+                    ],
+                    [
+                      0,
+                      "();"
+                    ]
+                  ],
+                  [
+                    [
+                      0,
+                      "  }"
+                    ]
+                  ],
+                  [
+                    [
+                      0,
+                      "  "
+                    ],
+                    [
+                      4,
+                      "return"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      3,
+                      "'skipped'"
+                    ],
+                    [
+                      0,
+                      ";"
+                    ]
+                  ],
+                  [
+                    [
+                      0,
+                      "}"
+                    ]
+                  ]
+                ]
+              },
+              "language": "typescript",
+              "lines": [
+                "import { run } from './main';",
+                "export function processGreeting(enabled: boolean): string {",
+                "  if (enabled) {",
+                "    return run();",
+                "  }",
+                "  return 'skipped';",
+                "}"
+              ],
+              "to": 7
+            }
+          },
+          {
+            "callRef": null,
+            "edge": {
+              "col": 11,
+              "confidence": 0.9,
+              "kind": "calls",
+              "label": "calls \u00b7 when enabled",
+              "line": 4,
+              "resolvedBy": "import",
+              "synthesized": false,
+              "uncertain": false,
+              "upward": false,
+              "when": "enabled"
+            },
+            "node": {
+              "endLine": 2,
+              "exported": true,
+              "file": "main.ts",
+              "id": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+              "kind": "function",
+              "language": "typescript",
+              "line": 2,
+              "name": "run",
+              "qualifiedName": "run",
+              "signature": "(): string",
+              "test": false
+            },
+            "source": {
+              "drift": false,
+              "file": "main.ts",
+              "from": 1,
+              "highlight": {
+                "classes": [
+                  "other",
+                  "ident",
+                  "comment",
+                  "string",
+                  "keyword",
+                  "number",
+                  "type",
+                  "def"
+                ],
+                "engine": "tree-sitter",
+                "grammar": "typescript",
+                "lines": [
+                  [
+                    [
+                      4,
+                      "import"
+                    ],
+                    [
+                      0,
+                      " { "
+                    ],
+                    [
+                      1,
+                      "Service"
+                    ],
+                    [
+                      0,
+                      ", "
+                    ],
+                    [
+                      1,
+                      "normalize"
+                    ],
+                    [
+                      0,
+                      " } "
+                    ],
+                    [
+                      4,
+                      "from"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      3,
+                      "'./core'"
+                    ],
+                    [
+                      0,
+                      ";"
+                    ]
+                  ],
+                  [
+                    [
+                      4,
+                      "export"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      4,
+                      "function"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      7,
+                      "run"
+                    ],
+                    [
+                      0,
+                      "(): "
+                    ],
+                    [
+                      6,
+                      "string"
+                    ],
+                    [
+                      0,
+                      " { "
+                    ],
+                    [
+                      4,
+                      "const"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      1,
+                      "service"
+                    ],
+                    [
+                      0,
+                      " = "
+                    ],
+                    [
+                      4,
+                      "new"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      1,
+                      "Service"
+                    ],
+                    [
+                      0,
+                      "(); "
+                    ],
+                    [
+                      4,
+                      "return"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      1,
+                      "service"
+                    ],
+                    [
+                      0,
+                      "."
+                    ],
+                    [
+                      1,
+                      "greet"
+                    ],
+                    [
+                      0,
+                      "("
+                    ],
+                    [
+                      1,
+                      "normalize"
+                    ],
+                    [
+                      0,
+                      "("
+                    ],
+                    [
+                      3,
+                      "' fixture '"
+                    ],
+                    [
+                      0,
+                      ")); }"
+                    ]
+                  ]
+                ]
+              },
+              "language": "typescript",
+              "lines": [
+                "import { Service, normalize } from './core';",
+                "export function run(): string { const service = new Service(); return service.greet(normalize(' fixture ')); }"
+              ],
+              "to": 2
+            }
+          }
+        ],
+        "id": "function:b86a54b1e1a6502d2746c99aea27dca3>function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "label": "processGreeting \u2192 run",
+        "partial": false
+      }
+    ],
+    "index": {
+      "edges": 93,
+      "files": 13,
+      "lastIndexedAt": 0
+    },
+    "query": {
+      "from": "processGreeting",
+      "kind": "directed",
+      "symbols": [
+        "processGreeting",
+        "run"
+      ],
+      "to": "run"
+    },
+    "reason": null,
+    "timing": {
+      "elapsedMs": 0
+    },
+    "unresolved": []
+  },
+  "ui-flow-invalid": {
+    "code": "bad-request",
+    "message": "\"from\" and \"to\" name the same symbol, so there is no path to draw."
+  },
+  "ui-flow-missing": {
+    "ambiguous": [],
+    "flows": [],
+    "index": {
+      "edges": 93,
+      "files": 13,
+      "lastIndexedAt": 0
+    },
+    "query": {
+      "from": "processGreeting",
+      "kind": "directed",
+      "symbols": [
+        "processGreeting",
+        "MissingFixtureSymbol987"
+      ],
+      "to": "MissingFixtureSymbol987"
+    },
+    "reason": "MissingFixtureSymbol987 names nothing in this index.",
+    "timing": {
+      "elapsedMs": 0
+    },
+    "unresolved": [
+      "MissingFixtureSymbol987"
+    ]
+  },
+  "ui-map-modules": {
+    "cycles": {
+      "items": [],
+      "shown": 0,
+      "total": 0,
+      "truncated": false
+    },
+    "depth": 1,
+    "excluded": {
+      "confidenceBelow": 0.6,
+      "uncertainEdges": 0
+    },
+    "index": {
+      "edges": 93,
+      "files": 13,
+      "lastIndexedAt": 0
+    },
+    "links": [
+      {
+        "byKind": [
+          {
+            "count": 1,
+            "kind": "calls"
+          },
+          {
+            "count": 1,
+            "kind": "imports"
+          }
+        ],
+        "count": 2,
+        "declared": 2,
+        "source": "(root files)",
+        "target": "main.ts",
+        "topPairs": [
+          {
+            "count": 1,
+            "declared": 1,
+            "from": "consumer.ts",
+            "to": "run"
+          },
+          {
+            "count": 1,
+            "declared": 1,
+            "from": "processGreeting",
+            "to": "run"
+          }
+        ]
+      },
+      {
+        "byKind": [
+          {
+            "count": 2,
+            "kind": "calls"
+          },
+          {
+            "count": 2,
+            "kind": "imports"
+          },
+          {
+            "count": 1,
+            "kind": "instantiates"
+          }
+        ],
+        "count": 5,
+        "declared": 5,
+        "source": "main.ts",
+        "target": "(root files)",
+        "topPairs": [
+          {
+            "count": 1,
+            "declared": 1,
+            "from": "main.ts",
+            "to": "normalize"
+          },
+          {
+            "count": 1,
+            "declared": 1,
+            "from": "main.ts",
+            "to": "Service"
+          },
+          {
+            "count": 1,
+            "declared": 1,
+            "from": "run",
+            "to": "greet"
+          },
+          {
+            "count": 1,
+            "declared": 1,
+            "from": "run",
+            "to": "normalize"
+          }
+        ]
+      }
+    ],
+    "modules": [
+      {
+        "facade": false,
+        "fileList": {
+          "items": [
+            "Model.java",
+            "Widget.vue",
+            "consumer.test.ts",
+            "consumer.ts",
+            "core.ts",
+            "model.rb",
+            "model.rs",
+            "model.swift",
+            "orphan.ts",
+            "unicode.ts"
+          ],
+          "shown": 10,
+          "total": 10,
+          "truncated": false
+        },
+        "files": 10,
+        "generated": 0,
+        "generatedFiles": [],
+        "id": "(root files)",
+        "label": "(root files)",
+        "languages": [
+          {
+            "files": 5,
+            "language": "typescript"
+          },
+          {
+            "files": 1,
+            "language": "java"
+          },
+          {
+            "files": 1,
+            "language": "ruby"
+          },
+          {
+            "files": 1,
+            "language": "rust"
+          },
+          {
+            "files": 1,
+            "language": "swift"
+          },
+          {
+            "files": 1,
+            "language": "vue"
+          }
+        ],
+        "symbols": 57,
+        "test": false
+      },
+      {
+        "facade": false,
+        "fileList": {
+          "items": [
+            "app/details.tsx",
+            "app/index.tsx"
+          ],
+          "shown": 2,
+          "total": 2,
+          "truncated": false
+        },
+        "files": 2,
+        "generated": 0,
+        "generatedFiles": [],
+        "id": "app",
+        "label": "app",
+        "languages": [
+          {
+            "files": 2,
+            "language": "tsx"
+          }
+        ],
+        "symbols": 8,
+        "test": false
+      },
+      {
+        "facade": true,
+        "fileList": {
+          "items": [
+            "main.ts"
+          ],
+          "shown": 1,
+          "total": 1,
+          "truncated": false
+        },
+        "files": 1,
+        "generated": 0,
+        "generatedFiles": [],
+        "id": "main.ts",
+        "label": "main.ts",
+        "languages": [
+          {
+            "files": 1,
+            "language": "typescript"
+          }
+        ],
+        "symbols": 3,
+        "test": false
+      }
+    ],
+    "root": "",
+    "roots": [
+      {
+        "files": 13,
+        "label": "whole repository",
+        "root": ""
+      },
+      {
+        "files": 2,
+        "label": "app",
+        "root": "app"
+      }
+    ],
+    "timing": {
+      "cached": false,
+      "elapsedMs": 0
+    }
+  },
+  "ui-node-missing": {
+    "code": "not-found",
+    "message": "No symbol with that id is in this index."
+  },
+  "ui-node-types": {
+    "ancestors": [
+      {
+        "endLine": 17,
+        "file": "core.ts",
+        "id": "file:core.ts",
+        "kind": "file",
+        "language": "typescript",
+        "line": 1,
+        "name": "core.ts",
+        "qualifiedName": "core.ts",
+        "test": false
+      }
+    ],
+    "blast": {
+      "direct": 4,
+      "files": 4,
+      "hops": 3,
+      "routes": 0,
+      "testFiles": 1,
+      "topFiles": [
+        {
+          "file": "core.ts",
+          "symbols": 6,
+          "test": false
+        },
+        {
+          "file": "consumer.test.ts",
+          "symbols": 2,
+          "test": true
+        },
+        {
+          "file": "consumer.ts",
+          "symbols": 2,
+          "test": false
+        },
+        {
+          "file": "main.ts",
+          "symbols": 2,
+          "test": false
+        }
+      ],
+      "withinHops": 12
+    },
+    "counts": {
+      "callees": 3,
+      "callers": 4,
+      "fanIn": 5,
+      "fanOut": 3,
+      "hub": false,
+      "members": 2,
+      "typesUsed": 0
+    },
+    "drift": false,
+    "hierarchy": {
+      "ancestors": {
+        "items": [
+          {
+            "depth": 1,
+            "endLine": 2,
+            "exported": true,
+            "file": "core.ts",
+            "hiddenSubtypes": 0,
+            "id": "class:22d52fa5b3261b6828f46f747644d941",
+            "kind": "class",
+            "language": "typescript",
+            "line": 2,
+            "name": "Base",
+            "parentId": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+            "qualifiedName": "Base",
+            "relation": "extends",
+            "synthesized": false,
+            "test": false
+          },
+          {
+            "depth": 1,
+            "endLine": 1,
+            "exported": true,
+            "file": "core.ts",
+            "hiddenSubtypes": 0,
+            "id": "interface:e30cb316976fe998ad14cbaf7315f7c3",
+            "kind": "interface",
+            "language": "typescript",
+            "line": 1,
+            "name": "Greeter",
+            "parentId": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+            "qualifiedName": "Greeter",
+            "relation": "implements",
+            "synthesized": false,
+            "test": false
+          }
+        ],
+        "shown": 2,
+        "total": 2,
+        "truncated": false
+      },
+      "bounded": false,
+      "descendants": {
+        "items": [],
+        "shown": 0,
+        "total": 0,
+        "truncated": false
+      },
+      "direct": 0,
+      "implementers": 0,
+      "polymorphic": false
+    },
+    "incoming": {
+      "items": [
+        {
+          "confidence": 0.9,
+          "edgeCount": 2,
+          "edgeKinds": [
+            "instantiates",
+            "references"
+          ],
+          "edges": [
+            {
+              "col": 50,
+              "confidence": 0.9,
+              "kind": "instantiates",
+              "line": 10,
+              "resolvedBy": "exact-match"
+            },
+            {
+              "col": 33,
+              "confidence": 0.9,
+              "kind": "references",
+              "line": 10,
+              "resolvedBy": "exact-match"
+            }
+          ],
+          "fanIn": 2,
+          "hub": false,
+          "lines": [
+            10
+          ],
+          "node": {
+            "endLine": 10,
+            "exported": true,
+            "file": "core.ts",
+            "id": "function:20881e230caa501e0f712d9435fd20cd",
+            "kind": "function",
+            "language": "typescript",
+            "line": 10,
+            "name": "createService",
+            "qualifiedName": "createService",
+            "signature": "(): Service",
+            "test": false
+          },
+          "synthesized": false,
+          "uncertain": false
+        },
+        {
+          "confidence": 0.9,
+          "edgeCount": 1,
+          "edgeKinds": [
+            "references"
+          ],
+          "edges": [
+            {
+              "col": 20,
+              "confidence": 0.9,
+              "kind": "references",
+              "line": 12,
+              "resolvedBy": "exact-match"
+            }
+          ],
+          "fanIn": 1,
+          "hub": false,
+          "lines": [
+            12
+          ],
+          "node": {
+            "endLine": 12,
+            "exported": true,
+            "file": "core.ts",
+            "id": "variable:f695ca32dd7446c0621dcc89ebc1a505",
+            "kind": "variable",
+            "language": "typescript",
+            "line": 12,
+            "name": "current",
+            "qualifiedName": "current",
+            "signature": "= createService()",
+            "test": false
+          },
+          "synthesized": false,
+          "uncertain": false
+        },
+        {
+          "confidence": 0.9,
+          "edgeCount": 1,
+          "edgeKinds": [
+            "imports"
+          ],
+          "edges": [
+            {
+              "col": 9,
+              "confidence": 0.9,
+              "kind": "imports",
+              "line": 1,
+              "resolvedBy": "import"
+            }
+          ],
+          "fanIn": 0,
+          "hub": false,
+          "lines": [
+            1
+          ],
+          "node": {
+            "endLine": 3,
+            "file": "main.ts",
+            "id": "file:main.ts",
+            "kind": "file",
+            "language": "typescript",
+            "line": 1,
+            "name": "main.ts",
+            "qualifiedName": "main.ts",
+            "test": false
+          },
+          "synthesized": false,
+          "uncertain": false
+        },
+        {
+          "confidence": 0.9,
+          "edgeCount": 1,
+          "edgeKinds": [
+            "instantiates"
+          ],
+          "edges": [
+            {
+              "col": 48,
+              "confidence": 0.9,
+              "kind": "instantiates",
+              "line": 2,
+              "resolvedBy": "import"
+            }
+          ],
+          "fanIn": 3,
+          "hub": false,
+          "lines": [
+            2
+          ],
+          "node": {
+            "endLine": 2,
+            "exported": true,
+            "file": "main.ts",
+            "id": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+            "kind": "function",
+            "language": "typescript",
+            "line": 2,
+            "name": "run",
+            "qualifiedName": "run",
+            "signature": "(): string",
+            "test": false
+          },
+          "synthesized": false,
+          "uncertain": false
+        }
+      ],
+      "shown": 4,
+      "total": 4,
+      "truncated": false
+    },
+    "members": {
+      "items": [
+        {
+          "depth": 1,
+          "endLine": 7,
+          "fanIn": 1,
+          "fanOut": 0,
+          "file": "core.ts",
+          "id": "property:0703d73c48e77b84818882e615bd88f9",
+          "kind": "property",
+          "language": "typescript",
+          "line": 7,
+          "name": "label",
+          "parentId": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+          "qualifiedName": "Service::label",
+          "signature": "string label",
+          "test": false
+        },
+        {
+          "depth": 1,
+          "endLine": 8,
+          "fanIn": 3,
+          "fanOut": 1,
+          "file": "core.ts",
+          "id": "method:a07bfacd1db56624cfb45f337daa8afd",
+          "kind": "method",
+          "language": "typescript",
+          "line": 8,
+          "name": "greet",
+          "overrides": {
+            "baseId": "method:b778deb8eb78dbc30913a4b58e88d059",
+            "baseTypeId": "class:22d52fa5b3261b6828f46f747644d941",
+            "baseTypeName": "Base",
+            "relation": "extends"
+          },
+          "parentId": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+          "qualifiedName": "Service::greet",
+          "signature": "(name: string): string",
+          "test": false
+        }
+      ],
+      "shown": 2,
+      "total": 2,
+      "truncated": false
+    },
+    "node": {
+      "endColumn": 1,
+      "endLine": 9,
+      "exported": true,
+      "file": "core.ts",
+      "id": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+      "kind": "class",
+      "language": "typescript",
+      "line": 6,
+      "lines": 4,
+      "name": "Service",
+      "qualifiedName": "Service",
+      "startColumn": 7,
+      "test": false
+    },
+    "outgoing": {
+      "items": [
+        {
+          "confidence": 0.9,
+          "edgeCount": 1,
+          "edgeKinds": [
+            "decorates"
+          ],
+          "edges": [
+            {
+              "col": 0,
+              "confidence": 0.9,
+              "kind": "decorates",
+              "line": 5,
+              "resolvedBy": "exact-match"
+            }
+          ],
+          "fanIn": 2,
+          "hub": false,
+          "lines": [
+            5
+          ],
+          "node": {
+            "endLine": 4,
+            "exported": true,
+            "file": "core.ts",
+            "id": "function:33d0684689de083569e74b5164d4296f",
+            "kind": "function",
+            "language": "typescript",
+            "line": 4,
+            "name": "logged",
+            "qualifiedName": "logged",
+            "signature": "(target: unknown): void",
+            "test": false
+          },
+          "synthesized": false,
+          "uncertain": false
+        },
+        {
+          "confidence": 0.9,
+          "edgeCount": 1,
+          "edgeKinds": [
+            "extends"
+          ],
+          "edges": [
+            {
+              "col": 29,
+              "confidence": 0.9,
+              "kind": "extends",
+              "line": 6,
+              "resolvedBy": "exact-match"
+            }
+          ],
+          "fanIn": 2,
+          "hub": false,
+          "lines": [
+            6
+          ],
+          "node": {
+            "endLine": 2,
+            "exported": true,
+            "file": "core.ts",
+            "id": "class:22d52fa5b3261b6828f46f747644d941",
+            "kind": "class",
+            "language": "typescript",
+            "line": 2,
+            "name": "Base",
+            "qualifiedName": "Base",
+            "test": false
+          },
+          "synthesized": false,
+          "uncertain": false
+        },
+        {
+          "confidence": 0.9,
+          "edgeCount": 1,
+          "edgeKinds": [
+            "implements"
+          ],
+          "edges": [
+            {
+              "col": 45,
+              "confidence": 0.9,
+              "kind": "implements",
+              "line": 6,
+              "resolvedBy": "exact-match"
+            }
+          ],
+          "fanIn": 2,
+          "hub": false,
+          "lines": [
+            6
+          ],
+          "node": {
+            "endLine": 1,
+            "exported": true,
+            "file": "core.ts",
+            "id": "interface:e30cb316976fe998ad14cbaf7315f7c3",
+            "kind": "interface",
+            "language": "typescript",
+            "line": 1,
+            "name": "Greeter",
+            "qualifiedName": "Greeter",
+            "test": false
+          },
+          "synthesized": false,
+          "uncertain": false
+        }
+      ],
+      "shown": 3,
+      "total": 3,
+      "truncated": false
+    },
+    "outsideIndex": {
+      "byKind": {},
+      "samples": [],
+      "total": 0
+    },
+    "tests": {
+      "exhaustive": true,
+      "fileCount": 1,
+      "files": [
+        "consumer.test.ts"
+      ],
+      "hops": 3,
+      "hopsSearched": 3,
+      "reached": true
+    },
+    "typesUsed": []
+  },
+  "ui-screens-navigation": {
+    "dropped": 0,
+    "entry": "route:app/index.tsx:/",
+    "index": {
+      "edges": 93,
+      "files": 13,
+      "lastIndexedAt": 0
+    },
+    "links": [
+      {
+        "from": "route:app/index.tsx:/",
+        "fromOrigin": false,
+        "id": "route:app/index.tsx:/\u0000route:app/details.tsx:/details\u0000function:493406571845211c553f179bdfb337d5",
+        "sites": [
+          {
+            "file": "app/index.tsx",
+            "href": "/details",
+            "line": 4,
+            "method": "push",
+            "when": "enabled"
+          }
+        ],
+        "synthesized": false,
+        "to": "route:app/details.tsx:/details",
+        "via": [
+          {
+            "endLine": 6,
+            "exported": true,
+            "file": "app/index.tsx",
+            "id": "function:493406571845211c553f179bdfb337d5",
+            "kind": "function",
+            "language": "tsx",
+            "line": 2,
+            "name": "openDetails",
+            "qualifiedName": "openDetails",
+            "signature": "(enabled: boolean)",
+            "test": false
+          }
+        ],
+        "when": "enabled"
+      }
+    ],
+    "origins": [],
+    "routed": true,
+    "screens": [
+      {
+        "component": {
+          "endLine": 7,
+          "exported": true,
+          "file": "app/index.tsx",
+          "id": "function:6ed067cb1c447a80dad50eeec41b25fa",
+          "kind": "function",
+          "language": "tsx",
+          "line": 7,
+          "name": "Home",
+          "qualifiedName": "Home",
+          "signature": "()",
+          "test": false
+        },
+        "file": "app/index.tsx",
+        "id": "route:app/index.tsx:/",
+        "incoming": 0,
+        "line": 1,
+        "outgoing": 1,
+        "path": "/"
+      },
+      {
+        "component": {
+          "endLine": 1,
+          "exported": true,
+          "file": "app/details.tsx",
+          "id": "function:13c8d2d287472d07a5ff97566720a9a7",
+          "kind": "function",
+          "language": "tsx",
+          "line": 1,
+          "name": "Details",
+          "qualifiedName": "Details",
+          "signature": "()",
+          "test": false
+        },
+        "file": "app/details.tsx",
+        "id": "route:app/details.tsx:/details",
+        "incoming": 1,
+        "line": 1,
+        "outgoing": 0,
+        "path": "/details"
+      }
+    ],
+    "timing": {
+      "elapsedMs": 0
+    }
+  },
+  "ui-source-drift": {
+    "contentHash": "ec49a530d75c291fd2cc2fa58c44f467cb9ad6a5e7498949852e39196ff90006",
+    "drift": true,
+    "file": "consumer.ts",
+    "generated": false,
+    "indexedAt": 0,
+    "language": "typescript",
+    "reason": "This file changed on disk after the last index sync, so the indexed line ranges no longer reliably match. Source is omitted rather than risk showing a different symbol's code; it returns after the next sync.",
+    "showing": "none",
+    "totalLines": null
+  },
+  "ui-source-invalid-range": {
+    "code": "bad-request",
+    "message": "Parameter \"to\" (2) must not be before \"from\" (7)."
+  },
+  "ui-source-verbatim": {
+    "contentHash": "ec49a530d75c291fd2cc2fa58c44f467cb9ad6a5e7498949852e39196ff90006",
+    "drift": false,
+    "file": "consumer.ts",
+    "from": 2,
+    "generated": false,
+    "highlight": {
+      "classes": [
+        "other",
+        "ident",
+        "comment",
+        "string",
+        "keyword",
+        "number",
+        "type",
+        "def"
+      ],
+      "engine": "tree-sitter",
+      "grammar": "typescript",
+      "lines": [
+        [
+          [
+            4,
+            "export"
+          ],
+          [
+            0,
+            " "
+          ],
+          [
+            4,
+            "function"
+          ],
+          [
+            0,
+            " "
+          ],
+          [
+            7,
+            "processGreeting"
+          ],
+          [
+            0,
+            "("
+          ],
+          [
+            1,
+            "enabled"
+          ],
+          [
+            0,
+            ": "
+          ],
+          [
+            6,
+            "boolean"
+          ],
+          [
+            0,
+            "): "
+          ],
+          [
+            6,
+            "string"
+          ],
+          [
+            0,
+            " {"
+          ]
+        ],
+        [
+          [
+            0,
+            "  "
+          ],
+          [
+            4,
+            "if"
+          ],
+          [
+            0,
+            " ("
+          ],
+          [
+            1,
+            "enabled"
+          ],
+          [
+            0,
+            ") {"
+          ]
+        ],
+        [
+          [
+            0,
+            "    "
+          ],
+          [
+            4,
+            "return"
+          ],
+          [
+            0,
+            " "
+          ],
+          [
+            1,
+            "run"
+          ],
+          [
+            0,
+            "();"
+          ]
+        ],
+        [
+          [
+            0,
+            "  }"
+          ]
+        ],
+        [
+          [
+            0,
+            "  "
+          ],
+          [
+            4,
+            "return"
+          ],
+          [
+            0,
+            " "
+          ],
+          [
+            3,
+            "'skipped'"
+          ],
+          [
+            0,
+            ";"
+          ]
+        ],
+        [
+          [
+            0,
+            "}"
+          ]
+        ]
+      ]
+    },
+    "indexedAt": 0,
+    "language": "typescript",
+    "lines": [
+      "export function processGreeting(enabled: boolean): string {",
+      "  if (enabled) {",
+      "    return run();",
+      "  }",
+      "  return 'skipped';",
+      "}"
+    ],
+    "showing": "indexed",
+    "to": 7,
+    "totalLines": 7,
+    "truncated": false
+  },
+  "ui-steps-branch": {
+    "ambiguous": [],
+    "anchor": {
+      "endLine": 7,
+      "exported": true,
+      "file": "consumer.ts",
+      "id": "function:b86a54b1e1a6502d2746c99aea27dca3",
+      "kind": "function",
+      "language": "typescript",
+      "line": 2,
+      "name": "processGreeting",
+      "qualifiedName": "processGreeting",
+      "signature": "(enabled: boolean): string",
+      "test": false
+    },
+    "defaultView": "order",
+    "depth": 8,
+    "index": {
+      "edges": 93,
+      "files": 13,
+      "lastIndexedAt": 0
+    },
+    "limit": 120,
+    "links": [],
+    "program": {
+      "root": [
+        {
+          "arms": [
+            {
+              "body": [],
+              "ends": "return",
+              "when": "enabled"
+            }
+          ],
+          "form": "if",
+          "kind": "fork",
+          "on": "enabled"
+        }
+      ],
+      "truncated": 0
+    },
+    "project": "app",
+    "steps": [
+      {
+        "anchor": true,
+        "cut": null,
+        "depth": 0,
+        "id": "function:b86a54b1e1a6502d2746c99aea27dca3",
+        "kind": "anchor",
+        "label": "processGreeting",
+        "node": {
+          "endLine": 7,
+          "exported": true,
+          "file": "consumer.ts",
+          "id": "function:b86a54b1e1a6502d2746c99aea27dca3",
+          "kind": "function",
+          "language": "typescript",
+          "line": 2,
+          "name": "processGreeting",
+          "qualifiedName": "processGreeting",
+          "signature": "(enabled: boolean): string",
+          "test": false
+        },
+        "order": 0,
+        "sub": "consumer.ts"
+      }
+    ],
+    "through": false,
+    "timing": {
+      "elapsedMs": 0
+    },
+    "truncated": {
+      "chrome": 0,
+      "hubs": 0,
+      "steps": 0
+    }
+  },
+  "ui-steps-screen": {
+    "ambiguous": [],
+    "anchor": {
+      "endLine": 7,
+      "exported": true,
+      "file": "app/index.tsx",
+      "id": "function:6ed067cb1c447a80dad50eeec41b25fa",
+      "kind": "function",
+      "language": "tsx",
+      "line": 7,
+      "name": "Home",
+      "qualifiedName": "Home",
+      "signature": "()",
+      "test": false
+    },
+    "defaultView": "order",
+    "depth": 8,
+    "index": {
+      "edges": 93,
+      "files": 13,
+      "lastIndexedAt": 0
+    },
+    "limit": 120,
+    "links": [
+      {
+        "from": "function:493406571845211c553f179bdfb337d5",
+        "id": "function:493406571845211c553f179bdfb337d5 route:app/details.tsx:/details ",
+        "kind": "navigates",
+        "label": "",
+        "sites": [
+          {
+            "decision": {
+              "arm": "enabled",
+              "branch": "3:2",
+              "form": "if",
+              "on": "enabled"
+            },
+            "file": "app/index.tsx",
+            "line": 4,
+            "text": "push /details",
+            "when": "enabled"
+          }
+        ],
+        "synthesized": false,
+        "to": "route:app/details.tsx:/details",
+        "uncertain": false,
+        "via": [],
+        "when": "enabled"
+      },
+      {
+        "from": "function:6ed067cb1c447a80dad50eeec41b25fa",
+        "id": "function:6ed067cb1c447a80dad50eeec41b25fa function:493406571845211c553f179bdfb337d5 ",
+        "kind": "handler",
+        "label": "",
+        "sites": [
+          {
+            "args": "true",
+            "file": "app/index.tsx",
+            "line": 7,
+            "text": "calls openDetails",
+            "trigger": {
+              "in": "Home",
+              "kind": "prop",
+              "name": "onClick",
+              "of": "button"
+            },
+            "when": ""
+          }
+        ],
+        "synthesized": false,
+        "to": "function:493406571845211c553f179bdfb337d5",
+        "trigger": {
+          "in": "Home",
+          "kind": "prop",
+          "name": "onClick",
+          "of": "button"
+        },
+        "uncertain": false,
+        "via": [],
+        "when": ""
+      }
+    ],
+    "program": {
+      "root": [
+        {
+          "body": [
+            {
+              "arms": [
+                {
+                  "body": [
+                    {
+                      "kind": "step",
+                      "link": "function:493406571845211c553f179bdfb337d5 route:app/details.tsx:/details ",
+                      "step": "route:app/details.tsx:/details"
+                    }
+                  ],
+                  "ends": null,
+                  "when": "enabled"
+                }
+              ],
+              "form": "if",
+              "kind": "fork",
+              "on": "enabled"
+            }
+          ],
+          "kind": "step",
+          "link": "function:6ed067cb1c447a80dad50eeec41b25fa function:493406571845211c553f179bdfb337d5 ",
+          "step": "function:493406571845211c553f179bdfb337d5"
+        }
+      ],
+      "truncated": 0
+    },
+    "project": "app",
+    "steps": [
+      {
+        "anchor": true,
+        "cut": null,
+        "depth": 0,
+        "id": "function:6ed067cb1c447a80dad50eeec41b25fa",
+        "kind": "anchor",
+        "label": "Home",
+        "node": {
+          "endLine": 7,
+          "exported": true,
+          "file": "app/index.tsx",
+          "id": "function:6ed067cb1c447a80dad50eeec41b25fa",
+          "kind": "function",
+          "language": "tsx",
+          "line": 7,
+          "name": "Home",
+          "qualifiedName": "Home",
+          "signature": "()",
+          "test": false
+        },
+        "order": 0,
+        "sub": "app/index.tsx"
+      },
+      {
+        "anchor": false,
+        "cut": null,
+        "depth": 1,
+        "id": "function:493406571845211c553f179bdfb337d5",
+        "kind": "trigger",
+        "label": "openDetails",
+        "node": {
+          "endLine": 6,
+          "exported": true,
+          "file": "app/index.tsx",
+          "id": "function:493406571845211c553f179bdfb337d5",
+          "kind": "function",
+          "language": "tsx",
+          "line": 2,
+          "name": "openDetails",
+          "qualifiedName": "openDetails",
+          "signature": "(enabled: boolean)",
+          "test": false
+        },
+        "order": 0,
+        "sub": "app/index.tsx",
+        "trigger": {
+          "in": "Home",
+          "kind": "prop",
+          "name": "onClick",
+          "of": "button"
+        }
+      },
+      {
+        "anchor": false,
+        "cut": "screen",
+        "depth": 2,
+        "id": "route:app/details.tsx:/details",
+        "kind": "screen",
+        "label": "/details",
+        "node": {
+          "endLine": 1,
+          "exported": true,
+          "file": "app/details.tsx",
+          "id": "route:app/details.tsx:/details",
+          "kind": "route",
+          "language": "tsx",
+          "line": 1,
+          "name": "/details",
+          "qualifiedName": "app/details.tsx::route:/details",
+          "test": false
+        },
+        "order": 0,
+        "screen": {
+          "component": {
+            "endLine": 1,
+            "exported": true,
+            "file": "app/details.tsx",
+            "id": "function:13c8d2d287472d07a5ff97566720a9a7",
+            "kind": "function",
+            "language": "tsx",
+            "line": 1,
+            "name": "Details",
+            "qualifiedName": "Details",
+            "signature": "()",
+            "test": false
+          },
+          "endpoint": false,
+          "inline": false,
+          "path": "/details"
+        },
+        "sub": "Details"
+      }
+    ],
+    "through": false,
+    "timing": {
+      "elapsedMs": 0
+    },
+    "truncated": {
+      "chrome": 0,
+      "hubs": 0,
+      "steps": 0
+    }
+  },
+  "ui-trails-delete": {
+    "bounded": false,
+    "deleted": "greeting-to-normalization",
+    "directory": ".codegraph/ui/trails",
+    "readOnly": false,
+    "readOnlyReason": null,
+    "skipped": 0,
+    "trails": []
+  },
+  "ui-trails-empty": {
+    "bounded": false,
+    "directory": ".codegraph/ui/trails",
+    "readOnly": false,
+    "readOnlyReason": null,
+    "skipped": 0,
+    "trails": []
+  },
+  "ui-trails-missing-hop": {
+    "code": "bad-request",
+    "message": "Hop 1 is not in the index: missing-fixture-id"
+  },
+  "ui-trails-open-flow": {
+    "ambiguous": [],
+    "flows": [
+      {
+        "boundary": null,
+        "hops": [
+          {
+            "callRef": {
+              "backwards": false,
+              "col": 84,
+              "line": 2,
+              "name": "normalize",
+              "targetId": "function:2e0f1da852db2702796c16967fca2efb"
+            },
+            "edge": null,
+            "node": {
+              "endLine": 2,
+              "exported": true,
+              "file": "main.ts",
+              "id": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+              "kind": "function",
+              "language": "typescript",
+              "line": 2,
+              "name": "run",
+              "qualifiedName": "run",
+              "signature": "(): string",
+              "test": false
+            },
+            "source": {
+              "drift": false,
+              "file": "main.ts",
+              "from": 1,
+              "highlight": {
+                "classes": [
+                  "other",
+                  "ident",
+                  "comment",
+                  "string",
+                  "keyword",
+                  "number",
+                  "type",
+                  "def"
+                ],
+                "engine": "tree-sitter",
+                "grammar": "typescript",
+                "lines": [
+                  [
+                    [
+                      4,
+                      "import"
+                    ],
+                    [
+                      0,
+                      " { "
+                    ],
+                    [
+                      1,
+                      "Service"
+                    ],
+                    [
+                      0,
+                      ", "
+                    ],
+                    [
+                      1,
+                      "normalize"
+                    ],
+                    [
+                      0,
+                      " } "
+                    ],
+                    [
+                      4,
+                      "from"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      3,
+                      "'./core'"
+                    ],
+                    [
+                      0,
+                      ";"
+                    ]
+                  ],
+                  [
+                    [
+                      4,
+                      "export"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      4,
+                      "function"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      7,
+                      "run"
+                    ],
+                    [
+                      0,
+                      "(): "
+                    ],
+                    [
+                      6,
+                      "string"
+                    ],
+                    [
+                      0,
+                      " { "
+                    ],
+                    [
+                      4,
+                      "const"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      1,
+                      "service"
+                    ],
+                    [
+                      0,
+                      " = "
+                    ],
+                    [
+                      4,
+                      "new"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      1,
+                      "Service"
+                    ],
+                    [
+                      0,
+                      "(); "
+                    ],
+                    [
+                      4,
+                      "return"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      1,
+                      "service"
+                    ],
+                    [
+                      0,
+                      "."
+                    ],
+                    [
+                      1,
+                      "greet"
+                    ],
+                    [
+                      0,
+                      "("
+                    ],
+                    [
+                      1,
+                      "normalize"
+                    ],
+                    [
+                      0,
+                      "("
+                    ],
+                    [
+                      3,
+                      "' fixture '"
+                    ],
+                    [
+                      0,
+                      ")); }"
+                    ]
+                  ]
+                ]
+              },
+              "language": "typescript",
+              "lines": [
+                "import { Service, normalize } from './core';",
+                "export function run(): string { const service = new Service(); return service.greet(normalize(' fixture ')); }"
+              ],
+              "to": 2
+            }
+          },
+          {
+            "callRef": null,
+            "edge": {
+              "col": 84,
+              "confidence": 0.9,
+              "kind": "calls",
+              "label": "calls",
+              "line": 2,
+              "resolvedBy": "import",
+              "synthesized": false,
+              "uncertain": false,
+              "upward": false
+            },
+            "node": {
+              "endLine": 3,
+              "exported": true,
+              "file": "core.ts",
+              "id": "function:2e0f1da852db2702796c16967fca2efb",
+              "kind": "function",
+              "language": "typescript",
+              "line": 3,
+              "name": "normalize",
+              "qualifiedName": "normalize",
+              "signature": "(name: string): string",
+              "test": false
+            },
+            "source": {
+              "drift": false,
+              "file": "core.ts",
+              "from": 1,
+              "highlight": {
+                "classes": [
+                  "other",
+                  "ident",
+                  "comment",
+                  "string",
+                  "keyword",
+                  "number",
+                  "type",
+                  "def"
+                ],
+                "engine": "tree-sitter",
+                "grammar": "typescript",
+                "lines": [
+                  [
+                    [
+                      4,
+                      "export"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      4,
+                      "interface"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      7,
+                      "Greeter"
+                    ],
+                    [
+                      0,
+                      " { "
+                    ],
+                    [
+                      1,
+                      "greet"
+                    ],
+                    [
+                      0,
+                      "("
+                    ],
+                    [
+                      1,
+                      "name"
+                    ],
+                    [
+                      0,
+                      ": "
+                    ],
+                    [
+                      6,
+                      "string"
+                    ],
+                    [
+                      0,
+                      "): "
+                    ],
+                    [
+                      6,
+                      "string"
+                    ],
+                    [
+                      0,
+                      "; }"
+                    ]
+                  ],
+                  [
+                    [
+                      4,
+                      "export"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      4,
+                      "class"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      7,
+                      "Base"
+                    ],
+                    [
+                      0,
+                      " { "
+                    ],
+                    [
+                      7,
+                      "greet"
+                    ],
+                    [
+                      0,
+                      "("
+                    ],
+                    [
+                      1,
+                      "name"
+                    ],
+                    [
+                      0,
+                      ": "
+                    ],
+                    [
+                      6,
+                      "string"
+                    ],
+                    [
+                      0,
+                      "): "
+                    ],
+                    [
+                      6,
+                      "string"
+                    ],
+                    [
+                      0,
+                      " { "
+                    ],
+                    [
+                      4,
+                      "return"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      1,
+                      "name"
+                    ],
+                    [
+                      0,
+                      "; } }"
+                    ]
+                  ],
+                  [
+                    [
+                      4,
+                      "export"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      4,
+                      "function"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      7,
+                      "normalize"
+                    ],
+                    [
+                      0,
+                      "("
+                    ],
+                    [
+                      1,
+                      "name"
+                    ],
+                    [
+                      0,
+                      ": "
+                    ],
+                    [
+                      6,
+                      "string"
+                    ],
+                    [
+                      0,
+                      "): "
+                    ],
+                    [
+                      6,
+                      "string"
+                    ],
+                    [
+                      0,
+                      " { "
+                    ],
+                    [
+                      4,
+                      "return"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      1,
+                      "name"
+                    ],
+                    [
+                      0,
+                      "."
+                    ],
+                    [
+                      1,
+                      "trim"
+                    ],
+                    [
+                      0,
+                      "(); }"
+                    ]
+                  ],
+                  [
+                    [
+                      4,
+                      "export"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      4,
+                      "function"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      7,
+                      "logged"
+                    ],
+                    [
+                      0,
+                      "("
+                    ],
+                    [
+                      1,
+                      "target"
+                    ],
+                    [
+                      0,
+                      ": "
+                    ],
+                    [
+                      6,
+                      "unknown"
+                    ],
+                    [
+                      0,
+                      "): "
+                    ],
+                    [
+                      6,
+                      "void"
+                    ],
+                    [
+                      0,
+                      " {}"
+                    ]
+                  ],
+                  [
+                    [
+                      0,
+                      "@"
+                    ],
+                    [
+                      1,
+                      "logged"
+                    ]
+                  ],
+                  [
+                    [
+                      4,
+                      "export"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      4,
+                      "class"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      7,
+                      "Service"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      4,
+                      "extends"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      1,
+                      "Base"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      4,
+                      "implements"
+                    ],
+                    [
+                      0,
+                      " "
+                    ],
+                    [
+                      6,
+                      "Greeter"
+                    ],
+                    [
+                      0,
+                      " {"
+                    ]
+                  ]
+                ]
+              },
+              "language": "typescript",
+              "lines": [
+                "export interface Greeter { greet(name: string): string; }",
+                "export class Base { greet(name: string): string { return name; } }",
+                "export function normalize(name: string): string { return name.trim(); }",
+                "export function logged(target: unknown): void {}",
+                "@logged",
+                "export class Service extends Base implements Greeter {"
+              ],
+              "to": 6
+            }
+          }
+        ],
+        "id": "function:7e9336030a46e65ce2d6c7fffdfc2672>function:2e0f1da852db2702796c16967fca2efb",
+        "label": "run \u2192 normalize",
+        "partial": false
+      }
+    ],
+    "index": {
+      "edges": 93,
+      "files": 13,
+      "lastIndexedAt": 0
+    },
+    "query": {
+      "from": null,
+      "kind": "trail",
+      "symbols": [],
+      "to": null
+    },
+    "reason": null,
+    "timing": {
+      "elapsedMs": 0
+    },
+    "unresolved": []
+  },
+  "ui-trails-readonly": {
+    "code": "refused",
+    "message": "Fixture reader"
+  },
+  "ui-trails-reload": {
+    "bounded": false,
+    "directory": ".codegraph/ui/trails",
+    "readOnly": false,
+    "readOnlyReason": null,
+    "skipped": 0,
+    "trails": [
+      {
+        "author": "GraphNest fixture",
+        "createdAt": "1970-01-01T00:00:00.000Z",
+        "encoded": "sfunction%3A7e9336030a46e65ce2d6c7fffdfc2672,dfunction%3A2e0f1da852db2702796c16967fca2efb",
+        "hops": [
+          {
+            "dir": "start",
+            "file": "main.ts",
+            "id": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+            "kind": "function",
+            "line": 2,
+            "name": "run",
+            "note": null,
+            "qualifiedName": "run",
+            "savedFile": "main.ts",
+            "savedLine": 2,
+            "status": "ok"
+          },
+          {
+            "dir": "down",
+            "file": "core.ts",
+            "id": "function:2e0f1da852db2702796c16967fca2efb",
+            "kind": "function",
+            "line": 3,
+            "name": "normalize",
+            "note": null,
+            "qualifiedName": "normalize",
+            "savedFile": "core.ts",
+            "savedLine": 3,
+            "status": "ok"
+          }
+        ],
+        "id": "greeting-to-normalization",
+        "intact": true,
+        "name": "Greeting to normalization",
+        "note": "Updated fixture note",
+        "openCount": 2,
+        "openFrom": 1,
+        "openId": "function:2e0f1da852db2702796c16967fca2efb",
+        "resolved": 2,
+        "updatedAt": "1970-01-01T00:00:00.000Z"
+      }
+    ]
+  },
+  "ui-trails-replace": {
+    "bounded": false,
+    "directory": ".codegraph/ui/trails",
+    "readOnly": false,
+    "readOnlyReason": null,
+    "replaced": true,
+    "saved": "greeting-to-normalization",
+    "skipped": 0,
+    "trails": [
+      {
+        "author": "GraphNest fixture",
+        "createdAt": "1970-01-01T00:00:00.000Z",
+        "encoded": "sfunction%3A7e9336030a46e65ce2d6c7fffdfc2672,dfunction%3A2e0f1da852db2702796c16967fca2efb",
+        "hops": [
+          {
+            "dir": "start",
+            "file": "main.ts",
+            "id": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+            "kind": "function",
+            "line": 2,
+            "name": "run",
+            "note": null,
+            "qualifiedName": "run",
+            "savedFile": "main.ts",
+            "savedLine": 2,
+            "status": "ok"
+          },
+          {
+            "dir": "down",
+            "file": "core.ts",
+            "id": "function:2e0f1da852db2702796c16967fca2efb",
+            "kind": "function",
+            "line": 3,
+            "name": "normalize",
+            "note": null,
+            "qualifiedName": "normalize",
+            "savedFile": "core.ts",
+            "savedLine": 3,
+            "status": "ok"
+          }
+        ],
+        "id": "greeting-to-normalization",
+        "intact": true,
+        "name": "Greeting to normalization",
+        "note": "Updated fixture note",
+        "openCount": 2,
+        "openFrom": 1,
+        "openId": "function:2e0f1da852db2702796c16967fca2efb",
+        "resolved": 2,
+        "updatedAt": "1970-01-01T00:00:00.000Z"
+      }
+    ]
+  },
+  "ui-trails-resolve-missing": {
+    "dir": "start",
+    "file": null,
+    "id": null,
+    "kind": "function",
+    "line": null,
+    "name": "gone",
+    "note": "no longer in the index \u2014 moved or renamed since this trail was saved",
+    "qualifiedName": "gone",
+    "savedFile": "removed.ts",
+    "savedLine": 1,
+    "status": "missing"
+  },
+  "ui-trails-save": {
+    "bounded": false,
+    "directory": ".codegraph/ui/trails",
+    "readOnly": false,
+    "readOnlyReason": null,
+    "replaced": false,
+    "saved": "greeting-to-normalization",
+    "skipped": 0,
+    "trails": [
+      {
+        "author": "GraphNest fixture",
+        "createdAt": "1970-01-01T00:00:00.000Z",
+        "encoded": "sfunction%3A7e9336030a46e65ce2d6c7fffdfc2672,dfunction%3A2e0f1da852db2702796c16967fca2efb",
+        "hops": [
+          {
+            "dir": "start",
+            "file": "main.ts",
+            "id": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+            "kind": "function",
+            "line": 2,
+            "name": "run",
+            "note": null,
+            "qualifiedName": "run",
+            "savedFile": "main.ts",
+            "savedLine": 2,
+            "status": "ok"
+          },
+          {
+            "dir": "down",
+            "file": "core.ts",
+            "id": "function:2e0f1da852db2702796c16967fca2efb",
+            "kind": "function",
+            "line": 3,
+            "name": "normalize",
+            "note": null,
+            "qualifiedName": "normalize",
+            "savedFile": "core.ts",
+            "savedLine": 3,
+            "status": "ok"
+          }
+        ],
+        "id": "greeting-to-normalization",
+        "intact": true,
+        "name": "Greeting to normalization",
+        "note": "Source-evidenced call",
+        "openCount": 2,
+        "openFrom": 1,
+        "openId": "function:2e0f1da852db2702796c16967fca2efb",
+        "resolved": 2,
+        "updatedAt": "1970-01-01T00:00:00.000Z"
+      }
+    ]
+  }
 }

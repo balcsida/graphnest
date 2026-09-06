@@ -28,15 +28,15 @@
       ],
       [
         "file",
-        10
+        13
       ],
       [
         "function",
-        9
+        14
       ],
       [
         "import",
-        4
+        6
       ],
       [
         "interface",
@@ -90,11 +90,11 @@
     "rows": [
       [
         "calls",
-        12
+        15
       ],
       [
         "contains",
-        49
+        56
       ],
       [
         "decorates",
@@ -110,7 +110,7 @@
       ],
       [
         "imports",
-        7
+        11
       ],
       [
         "instantiates",
@@ -141,6 +141,12 @@
         "Details",
         "app/details.tsx",
         "app/details.tsx"
+      ],
+      [
+        "Home",
+        "openDetails",
+        "app/index.tsx",
+        "app/index.tsx"
       ],
       [
         "Widget.vue",
@@ -179,6 +185,12 @@
         "core.ts"
       ],
       [
+        "processGreeting",
+        "run",
+        "consumer.ts",
+        "main.ts"
+      ],
+      [
         "render",
         "render",
         "model.rs",
@@ -195,6 +207,12 @@
         "normalize",
         "main.ts",
         "core.ts"
+      ],
+      [
+        "testGreeting",
+        "processGreeting",
+        "consumer.test.ts",
+        "consumer.ts"
       ],
       [
         "unicodeCaller",
@@ -263,15 +281,29 @@
       [
         "app/index.tsx",
         "tsx",
-        "ceec52f2c9192d0ed65e1bf748546dc6ebe120bfbf7e60ac69fa56eb807b6e84",
-        4,
+        "338bf907e923cd371f0291f0779837a28fa1ce447d4776a3008014ffd9f83290",
+        5,
+        0
+      ],
+      [
+        "consumer.test.ts",
+        "typescript",
+        "c7d411fa09d3c99f3fa3186b249e425f258a9d4ce774c5371ce22d20b0a057e0",
+        3,
+        0
+      ],
+      [
+        "consumer.ts",
+        "typescript",
+        "ec49a530d75c291fd2cc2fa58c44f467cb9ad6a5e7498949852e39196ff90006",
+        3,
         0
       ],
       [
         "core.ts",
         "typescript",
-        "557385dc23fa7df163f1021b226a385d62d611ba46d25b5c048d43f170677623",
-        17,
+        "4a8c5542c1e8937aeb9d99b372c97ea208c20e8727799beaabd21b928b831265",
+        18,
         0
       ],
       [
@@ -300,6 +332,13 @@
         "swift",
         "5dd51a945575706f24630feb9f910b2be28c4f6d76bc40245bf015ebd2f245d2",
         9,
+        0
+      ],
+      [
+        "orphan.ts",
+        "typescript",
+        "664144a746a677831562ad72b34986455c19b6c18ad991d3e26cb9bc2d385222",
+        2,
         0
       ],
       [
