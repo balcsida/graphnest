@@ -37,8 +37,16 @@ Implementation, validation, draft publication, and release are separate states.
   based on PR #67, at native stack #66 position 4. GitHub verifies signed
   commits `73ee941` (v1 enum guard) and `a460f73` (v2 contract). Independent
   review, artifact/compatibility checks and clean-tree generation pass.
-  CI is pending; the optional Buf lint convention finding remains tracked.
-- S1.03–S1.10 are pending. Stage 1 has not passed its release gate.
+  CI passes at final record head `03d9b6c`; the optional Buf lint convention
+  finding remains tracked.
+- S1.03 storage is implemented on dependent `feat/codegraph/s1-03-storage`.
+  Independent fix review approves lossless long/NUL strings, bounded SQL keys,
+  immutable generations and publication preconditions. Full Go tests, format,
+  vet and build pass; all six PostgreSQL integration/race packages pass
+  (storage: 38.295s). Opt-in index evidence is retained in
+  `docs/graph-storage-index-evidence.txt`. Draft publication follows.
+- S1.04–S1.10
+  are pending. Stage 1 has not passed its release gate.
 - Stages 2 and 3 are pending and cannot start until the preceding stage has passed and landed.
 
 ## Baselines
@@ -136,6 +144,7 @@ these tests.
 | S1.02 controller compatibility checks | Full `make test`, `make fmt lint`, final artifact race test, and required PostgreSQL integration race tests for `internal/postgres` and `test/integration` pass; v1 generated code, reference fixtures and dependency files remain unchanged |
 | S1.02 optional Buf lint | `PACKAGE_DIRECTORY_MATCH` fails for the existing v1 layout and matching v2 layout; tracked as a Minor finding for the final Stage 1 review |
 | S1.02 clean generation and publication | `GOTOOLCHAIN=go1.26.6 make tools-check` passes from a clean committed tree; draft PR #68 has exact parent `5c05f83`, initial head `a460f73`, matching 16-file delta, valid GitHub signatures and native stack #66 position 4 |
+| PR #68 final record and CI read-back | GitHub verifies signed final head `03d9b6c`; CI workflow `34056236132` completed successfully |
 
 `tools-check` needs the workspace: its nested `go tool protoc-gen-go` executes
 from the root module and discovers the plugin through `./tools`. Keep `GOWORK=off`

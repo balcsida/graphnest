@@ -57,6 +57,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if err != nil {
 		return err
 	}
+	backfillSCIP := false
 	for _, migration := range migrations {
 		version := migration.version
 		var applied bool
@@ -74,12 +75,16 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			return fmt.Errorf("migration %q: %w", migration.name, err)
 		}
 		if version == 19 {
-			if err := backfillLegacySCIPGraphs(ctx, tx); err != nil {
-				return fmt.Errorf("migration %q: %w", migration.name, err)
-			}
+			backfillSCIP = true
 		}
 		if _, err := tx.Exec(ctx, "insert into schema_migrations (version) values ($1)", version); err != nil {
 			return err
+		}
+	}
+	// The Go backfill uses the current storage schema, so apply all DDL first.
+	if backfillSCIP {
+		if err := backfillLegacySCIPGraphs(ctx, tx); err != nil {
+			return fmt.Errorf("legacy SCIP backfill: %w", err)
 		}
 	}
 	return tx.Commit(ctx)
@@ -89,7 +94,7 @@ func backfillLegacySCIPGraphs(ctx context.Context, tx pgx.Tx) error {
 	rows, err := tx.Query(ctx, `select scip.repository_id, scip.id, scip.commit
 		from scip_uploads scip
 		join repositories on repositories.id=scip.repository_id and repositories.indexed_sha=scip.commit
-		left join graph_uploads graph on graph.repository_id=scip.repository_id
+		left join graph_uploads graph on graph.repository_id=scip.repository_id and graph.active
 		where graph.id is null or graph.source='scip'
 		order by scip.repository_id`)
 	if err != nil {
