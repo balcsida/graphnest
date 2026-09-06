@@ -1,3 +1,4 @@
 version: v2
 modules:
   - path: internal/graphartifact/v1
+  - path: internal/graphartifact/v2

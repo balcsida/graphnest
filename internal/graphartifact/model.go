@@ -46,6 +46,13 @@ const (
 	EdgeCalls
 	EdgeExtends
 	EdgeImplements
+	EdgeExports
+	EdgeTypeOf
+	EdgeReturns
+	EdgeInstantiates
+	EdgeOverrides
+	EdgeDecorates
+	EdgeNavigates
 )
 
 const (
@@ -57,4 +64,9 @@ const (
 	DefaultMaxIdentifierBytes = 16_384
 )
 
-type Limits struct{ MaxNodes, MaxEdges, MaxPathBytes, MaxIdentifierBytes int }
+type Limits struct {
+	MaxNodes, MaxEdges, MaxPathBytes, MaxIdentifierBytes int
+	// Additional v2 bounds, applied before protobuf or extension JSON decoding.
+	MaxArtifactBytes, MaxFiles, MaxUnresolved, MaxDiagnostics int
+	MaxMetadataBytes, MaxExtensionBytes, MaxCollectionItems   int
+}
