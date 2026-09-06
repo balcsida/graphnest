@@ -17,6 +17,15 @@ Implementation, validation, draft publication, and release are separate states.
   views, source refusal, dead-code candidates, and saved-trail operations.
 - Recorded the existing PostgreSQL service over 50,000 synthetic symbols and
   200,500 edges, including actual SQL counts and prepared-statement query plans.
+- Published reviewed, signed workflow and database-baseline commits as draft
+  [PR #65](https://github.com/balcsida/graphnest/pull/65), head
+  `2371daa132ebb69936afdd7ec0f611d2582ad440`, based on PR #64.
+- Verified native remote stack **#66**, ID `PRS_kwDOTcm09c4ADdBt`, rooted at
+  `main`, with PR #64 in position 1 and PR #65 in position 2.
+- Started dependent `feat/codegraph/s1-01-timings` for repeated pinned-upstream
+  workflow timings before beginning production artifact changes.
+- Captured five warm runs each for real callers, exploration and flow queries,
+  checking required facts/source on all 1,500 timed answers and 75 warmups.
 - S1.01 reference foundation is implemented and reviewed: inventory, pinned
   real-producer reference harness, fixtures, and explicitly scoped performance
   measurements. Full S1.01 acceptance remains pending the gaps below.
@@ -106,6 +115,11 @@ these tests.
 | Opt-in `TestGraphQueryPostgresBaseline`, Go 1.26.6, `GOWORK=off`, `GOMAXPROCS=1`, required task-owned PostgreSQL | Passed: exact answers, five runs of 200 samples per operation, actual SQL counts and graph-index plan checks; isolated schema cleanup confirmed |
 | Workflow and PostgreSQL independent reviews | No remaining Critical/Important findings; exact task-list validation added after a stale-ID negative test and scoped re-review |
 | Second-layer formatting, vet and PostgreSQL graph-query race tests | Passed with Go 1.26.6 and PostgreSQL required; manifest/harness hashes and exact 10% budgets read back |
+| Second-layer signed submission and native remote read-back | PR #65 head `2371daa`, parent `c9fbf77`, exact 18-file delta; both new signatures verified/valid locally and by GitHub; stack #66 has the two PRs in dependency order |
+| PR #65 CI read-back | CI workflow `34052568693` completed successfully on signed head `2371daa`; integration, e2e, helm, ui-smoke and CodeQL checks also passed |
+| Pinned `generate_reference.py --check --timings` and ordinary `--check` | Passed: five-run timings captured only after full two-run oracle verification; ordinary checks leave the timing report unchanged; all existing fixture facts/answers remain byte-identical |
+| Timing offline and argument checks | Two offline tests pass, including fingerprints and percentile arithmetic; `--timings` without `--check` rejects before building or writing |
+| Timing independent review | No Critical/Important findings; actual queries, useful-answer assertions, statistics, fingerprints, memory scope and opt-in no-facts-write behavior reviewed |
 
 `tools-check` needs the workspace: its nested `go tool protoc-gen-go` executes
 from the root module and discovers the plugin through `./tools`. Keep `GOWORK=off`
@@ -138,6 +152,24 @@ and `GOTOOLCHAIN=go1.26.6 GOWORK=off GOMAXPROCS=1 go test -tags=integration
 Without the report variable, this measurement explicitly skips; that skip is
 never counted as baseline or conformance evidence.
 
+The [upstream workflow baseline](../../test/fixtures/codegraph/workflow-baseline.json)
+records five consecutive in-process runs of 100 measured samples after five
+warmups per run. Median run p50/p95 in milliseconds: callers 0.0274/0.0334,
+exploration 2.708/4.166, flow 0.453/0.495. Each sample includes the actual query
+and full JSON serialization, then independently checks required source/facts.
+The report freezes arguments, numeric result budgets, retained-handler semantics,
+raw samples, response bytes, corpus/source/harness fingerprints and environment.
+This is a warm portable CodeGraph reference boundary; it is not CLI startup,
+HTTP/MCP transport or browser latency, and cannot establish a local parity pass
+without an equivalent GraphNest measurement boundary.
+
+Cumulative main-process peak RSS was 3,700,948,992 bytes and includes earlier
+indexing/oracle work. Current RSS during the later exploration/flow runs was
+about 515–519 MB. Both are recorded with their scope; the peak is not attributed
+to an individual query. To refresh only this report, add `--timings` to the
+documented pinned generator `--check` command. Failed or missing-answer samples
+abort capture rather than disappearing from the reported percentiles.
+
 Regeneration now builds a fresh archive of the verified pinned commit with
 locked dependencies rather than trusting checkout `dist/` or `node_modules/`.
 The producer runs with a recorded environment and empty temporary HOME so local
@@ -147,8 +179,8 @@ CI check remains offline and uses only Python's standard library.
 
 ## Remaining gaps
 
-- S1.01 acceptance is pending final layer reviews, repeated callable upstream
-  workflow timings, and native-stack publication/read-back. Representative
+- S1.01 acceptance is pending the final native-stack publication/read-back.
+  Representative
   reference captures are mapped to inventory task IDs; remaining variants stay
   planned with their owning stages, comparison contracts and upstream tests.
 - New transport/browser/import workflows without a meaningful current
@@ -170,13 +202,15 @@ CI check remains offline and uses only Python's standard library.
 
 | Stage/layer | Branch | Local state | Remote stack / PR |
 | --- | --- | --- | --- |
-| S1.01 reference foundation | `feat/codegraph/s1-01-contract` | Implemented; reviewed; signed | Draft [PR #64](https://github.com/balcsida/graphnest/pull/64); native remote membership not yet established |
-| S1.01 reference workflows and PostgreSQL baseline | `feat/codegraph/s1-01-workflows` | Implemented, measured and reviewed; depends on PR #64 | Not submitted |
+| S1.01 reference foundation | `feat/codegraph/s1-01-contract` | Implemented; reviewed; signed | Draft [PR #64](https://github.com/balcsida/graphnest/pull/64); native stack #66, position 1 |
+| S1.01 reference workflows and PostgreSQL baseline | `feat/codegraph/s1-01-workflows` | Implemented, measured, reviewed and signed; depends on PR #64 | Draft [PR #65](https://github.com/balcsida/graphnest/pull/65); native stack #66, position 2 |
+| S1.01 repeated upstream workflow timings | `feat/codegraph/s1-01-timings` | Implemented, measured and reviewed; depends on PR #65 | Not submitted |
 
-The one-branch submission created a draft PR but reported no native remote stack
-identifier. The native linking command requires at least two PRs; verify remote
-membership after submitting the next real dependent layer rather than claiming
-the first PR and local metadata alone are a native remote stack.
+The first one-branch submission created a draft PR without a remote stack.
+Submitting the second real dependent layer created native stack #66
+(`PRS_kwDOTcm09c4ADdBt`). GraphQL independently confirmed the stack size, trunk,
+positions and both PR head/base identities; local metadata alone was not used
+as proof of remote membership.
 
 Remote membership, exact head/base, each layer's delta, and actual required checks
 must be read back after submission. Draft publication alone is not approval or

@@ -39,7 +39,7 @@ def logical_snapshot(db):
     return {table: sorted([list(row) for row in db.execute(f'SELECT * FROM "{table}"')], key=lambda row: json.dumps(row, sort_keys=True)) for table in tables}
 
 
-def produce(upstream, node, destination):
+def produce(upstream, node, destination, timings=False):
     with tempfile.TemporaryDirectory(prefix="graphnest-codegraph-reference-") as temporary:
         root = Path(temporary) / "source"
         shutil.copytree(FIXTURE / "source", root)
@@ -49,7 +49,8 @@ def produce(upstream, node, destination):
         home = Path(temporary) / "home"
         home.mkdir()
         env = {**PRODUCER_ENV, "HOME": str(home), "TMPDIR": temporary, "PATH": str(Path(node).parent) + ":/usr/bin:/bin:/usr/sbin:/sbin"}
-        subprocess.run([node, "--no-warnings", str(Path(__file__).with_name("reference.mjs")), str(upstream), str(root), str(Path(temporary) / "metrics.json")], env=env, check=True)
+        command = [node, "--no-warnings", str(Path(__file__).with_name("reference.mjs")), str(upstream), str(root), str(Path(temporary) / "metrics.json")]
+        subprocess.run(command + (["--timings"] if timings else []), env=env, check=True, timeout=120)
         databases = list(root.rglob("*.db"))
         if len(databases) != 1:
             raise RuntimeError(f"expected one producer database, found {databases}")
@@ -88,7 +89,10 @@ def main():
     parser.add_argument("--upstream", type=Path, required=True)
     parser.add_argument("--node", default="node")
     parser.add_argument("--check", action="store_true", help="regenerate twice and compare to committed answers without writes")
+    parser.add_argument("--timings", action="store_true", help="with --check, refresh only workflow-baseline.json after oracle verification")
     args = parser.parse_args()
+    if args.timings and not args.check:
+        parser.error("--timings requires --check so reference facts and answers remain unchanged")
     upstream = args.upstream.resolve()
     actual = subprocess.check_output(["git", "-C", str(upstream), "rev-parse", "HEAD"], text=True).strip()
     if actual != COMMIT:
@@ -112,7 +116,7 @@ def main():
         subprocess.run([args.node, "node_modules/typescript/bin/tsc"], cwd=upstream, env=build_env, check=True)
         subprocess.run(["npm", "run", "copy-assets"], cwd=upstream, env=build_env, check=True)
         first = Path(temporary) / "first.db"
-        expected, snapshot, schema, metrics, library = produce(upstream, args.node, first)
+        expected, snapshot, schema, metrics, library = produce(upstream, args.node, first, timings=args.timings)
         repeated, repeated_snapshot, repeated_schema, _, repeated_library = produce(upstream, args.node, Path(temporary) / "second.db")
         if (expected, snapshot, schema, library) != (repeated, repeated_snapshot, repeated_schema, repeated_library):
             raise RuntimeError("producer logical output is nondeterministic after sanitation")
@@ -141,6 +145,24 @@ def main():
                 raise RuntimeError("reference answers changed")
             if schema != (FIXTURE / "schema.sql").read_text():
                 raise RuntimeError("reference schema changed")
+            if args.timings:
+                harness = [Path(__file__), Path(__file__).with_name("reference.mjs")]
+                write_json(FIXTURE / "workflow-baseline.json", {
+                    "scope": "five in-process runs on one warm portable CodeGraph; query plus JSON serialization; not GraphNest or transport/browser latency",
+                    "producer": manifest["producer"],
+                    "machine": metrics["machine"],
+                    "source_sha256": {name: digest for name, digest in manifest["sha256"].items() if name.startswith("source/")},
+                    "configuration": json.loads((FIXTURE / "source/codegraph.json").read_text()),
+                    "harness_sha256": {str(path.resolve().relative_to(FIXTURE.parents[2])): hashlib.sha256(path.read_bytes()).hexdigest() for path in harness},
+                    "reference_db_sha256": manifest["sha256"]["reference.db"],
+                    "reference_answers_sha256": manifest["sha256"]["library-expected.json"],
+                    "database_bytes": (FIXTURE / "reference.db").stat().st_size,
+                    "schema_version": max(row[0] for row in snapshot["schema_versions"]),
+                    "graph_counts": {table: len(snapshot[table]) for table in ("nodes", "edges", "files")},
+                    "method": {"runs": 5, "warmups_per_run": 5, "samples_per_run": 100, "quantiles": "nearest rank: sorted[ceil(p*n)-1]; medians across five runs", "clock": "performance.now(); query await plus JSON serialization, assertions outside timed interval", "required_answers": "validated after every warmup and measured sample; errors or missing source/facts abort capture", "completed_sample_ceiling_ms": 5000, "adapter_process_timeout_seconds": 120, "timeout_scope": "completed samples over 5000ms fail; a hung adapter is terminated by the 120s subprocess deadline", "rss_scope": "Node main-process cumulative maxRSS through each run, includes indexing/prior oracles/assertions; excludes child processes; not per-query allocations"},
+                    "workflow_timings": metrics["workflow_timings"],
+                    "unmeasured": ["GraphNest local runtime", "HTTP/MCP transport", "browser/client exports", "import/publication", "cold query/startup", "incremental indexing", "large-corpus performance"],
+                })
             print("Pinned producer regenerated twice; logical facts, schema and committed answers match.")
             return
         shutil.copyfile(first, FIXTURE / "reference.db")
