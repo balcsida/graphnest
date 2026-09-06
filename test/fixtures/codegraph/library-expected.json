@@ -1,0 +1,1911 @@
+{
+  "lib-findPath": [
+    {
+      "edge": null,
+      "node": {
+        "endColumn": 110,
+        "endLine": 2,
+        "filePath": "main.ts",
+        "id": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "function",
+        "language": "typescript",
+        "name": "run",
+        "qualifiedName": "run",
+        "signature": "(): string",
+        "startColumn": 7,
+        "startLine": 2,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    },
+    {
+      "edge": {
+        "column": 84,
+        "kind": "calls",
+        "line": 2,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      "node": {
+        "endColumn": 71,
+        "endLine": 3,
+        "filePath": "core.ts",
+        "id": "function:2e0f1da852db2702796c16967fca2efb",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "function",
+        "language": "typescript",
+        "name": "normalize",
+        "qualifiedName": "normalize",
+        "signature": "(name: string): string",
+        "startColumn": 7,
+        "startLine": 3,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    }
+  ],
+  "lib-findRelevantContext": {
+    "confidence": "high",
+    "edges": [
+      {
+        "kind": "contains",
+        "provenance": null,
+        "source": "class:58714088a1e38fc2650878cdcd800f1a",
+        "target": "method:cb20d69ed5ac61610cc500dc9cdc4d54"
+      },
+      {
+        "column": 48,
+        "kind": "calls",
+        "line": 8,
+        "metadata": {
+          "confidence": 0.4,
+          "refName": "normalize",
+          "resolvedBy": "exact-match"
+        },
+        "provenance": null,
+        "source": "method:a07bfacd1db56624cfb45f337daa8afd",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "column": 84,
+        "kind": "calls",
+        "line": 2,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "column": 66,
+        "kind": "calls",
+        "line": 2,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "function:fa100d11c49c252d1e21edea9382ed7b",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "kind": "contains",
+        "provenance": null,
+        "source": "class:7130530591b02c5bd2133c49635700dd",
+        "target": "method:c6ebef81a3e080bc1b3fc001f4fcda0a"
+      },
+      {
+        "column": 70,
+        "kind": "calls",
+        "line": 2,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "service.greet",
+          "resolvedBy": "instance-method"
+        },
+        "provenance": null,
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "method:a07bfacd1db56624cfb45f337daa8afd"
+      }
+    ],
+    "nodes": [
+      {
+        "endColumn": 7,
+        "endLine": 5,
+        "filePath": "model.rb",
+        "id": "method:cb20d69ed5ac61610cc500dc9cdc4d54",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "method",
+        "language": "ruby",
+        "name": "normalize",
+        "qualifiedName": "Fixture::Model::normalize",
+        "startColumn": 4,
+        "startLine": 3,
+        "updatedAt": 0,
+        "visibility": "public"
+      },
+      {
+        "endColumn": 71,
+        "endLine": 3,
+        "filePath": "core.ts",
+        "id": "function:2e0f1da852db2702796c16967fca2efb",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "function",
+        "language": "typescript",
+        "name": "normalize",
+        "qualifiedName": "normalize",
+        "signature": "(name: string): string",
+        "startColumn": 7,
+        "startLine": 3,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 64,
+        "endLine": 3,
+        "filePath": "Model.java",
+        "id": "method:c6ebef81a3e080bc1b3fc001f4fcda0a",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "method",
+        "language": "java",
+        "name": "normalize",
+        "qualifiedName": "fixture.models::Model::normalize",
+        "returnType": "String",
+        "signature": "String (String name)",
+        "startColumn": 4,
+        "startLine": 3,
+        "updatedAt": 0,
+        "visibility": "public"
+      },
+      {
+        "endColumn": 5,
+        "endLine": 6,
+        "filePath": "model.rb",
+        "id": "class:58714088a1e38fc2650878cdcd800f1a",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "class",
+        "language": "ruby",
+        "name": "Model",
+        "qualifiedName": "Fixture::Model",
+        "startColumn": 2,
+        "startLine": 2,
+        "updatedAt": 0,
+        "visibility": "public"
+      },
+      {
+        "endColumn": 66,
+        "endLine": 8,
+        "filePath": "core.ts",
+        "id": "method:a07bfacd1db56624cfb45f337daa8afd",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "method",
+        "language": "typescript",
+        "name": "greet",
+        "qualifiedName": "Service::greet",
+        "signature": "(name: string): string",
+        "startColumn": 2,
+        "startLine": 8,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 110,
+        "endLine": 2,
+        "filePath": "main.ts",
+        "id": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "function",
+        "language": "typescript",
+        "name": "run",
+        "qualifiedName": "run",
+        "signature": "(): string",
+        "startColumn": 7,
+        "startLine": 2,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 85,
+        "endLine": 2,
+        "filePath": "unicode.ts",
+        "id": "function:fa100d11c49c252d1e21edea9382ed7b",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "function",
+        "language": "typescript",
+        "name": "unicodeCaller",
+        "qualifiedName": "unicodeCaller",
+        "signature": "()",
+        "startColumn": 7,
+        "startLine": 2,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 1,
+        "endLine": 4,
+        "filePath": "Model.java",
+        "id": "class:7130530591b02c5bd2133c49635700dd",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "class",
+        "language": "java",
+        "name": "Model",
+        "qualifiedName": "fixture.models::Model",
+        "startColumn": 0,
+        "startLine": 2,
+        "updatedAt": 0,
+        "visibility": "public"
+      }
+    ],
+    "roots": [
+      "method:cb20d69ed5ac61610cc500dc9cdc4d54",
+      "function:2e0f1da852db2702796c16967fca2efb",
+      "method:c6ebef81a3e080bc1b3fc001f4fcda0a"
+    ]
+  },
+  "lib-findUsages": [
+    {
+      "edge": {
+        "column": 14,
+        "kind": "calls",
+        "line": 3,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "file:Widget.vue",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      "node": {
+        "endColumn": 0,
+        "endLine": 4,
+        "filePath": "Widget.vue",
+        "id": "file:Widget.vue",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "file",
+        "language": "vue",
+        "name": "Widget.vue",
+        "qualifiedName": "Widget.vue",
+        "startColumn": 0,
+        "startLine": 1,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    },
+    {
+      "edge": {
+        "column": 48,
+        "kind": "calls",
+        "line": 8,
+        "metadata": {
+          "confidence": 0.4,
+          "refName": "normalize",
+          "resolvedBy": "exact-match"
+        },
+        "provenance": null,
+        "source": "method:a07bfacd1db56624cfb45f337daa8afd",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      "node": {
+        "endColumn": 66,
+        "endLine": 8,
+        "filePath": "core.ts",
+        "id": "method:a07bfacd1db56624cfb45f337daa8afd",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "method",
+        "language": "typescript",
+        "name": "greet",
+        "qualifiedName": "Service::greet",
+        "signature": "(name: string): string",
+        "startColumn": 2,
+        "startLine": 8,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    },
+    {
+      "edge": {
+        "column": 84,
+        "kind": "calls",
+        "line": 2,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      "node": {
+        "endColumn": 110,
+        "endLine": 2,
+        "filePath": "main.ts",
+        "id": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "function",
+        "language": "typescript",
+        "name": "run",
+        "qualifiedName": "run",
+        "signature": "(): string",
+        "startColumn": 7,
+        "startLine": 2,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    },
+    {
+      "edge": {
+        "column": 66,
+        "kind": "calls",
+        "line": 2,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "function:fa100d11c49c252d1e21edea9382ed7b",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      "node": {
+        "endColumn": 85,
+        "endLine": 2,
+        "filePath": "unicode.ts",
+        "id": "function:fa100d11c49c252d1e21edea9382ed7b",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "function",
+        "language": "typescript",
+        "name": "unicodeCaller",
+        "qualifiedName": "unicodeCaller",
+        "signature": "()",
+        "startColumn": 7,
+        "startLine": 2,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    },
+    {
+      "edge": {
+        "kind": "contains",
+        "provenance": null,
+        "source": "file:core.ts",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      "node": {
+        "endColumn": 0,
+        "endLine": 16,
+        "filePath": "core.ts",
+        "id": "file:core.ts",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "file",
+        "language": "typescript",
+        "name": "core.ts",
+        "qualifiedName": "core.ts",
+        "startColumn": 0,
+        "startLine": 1,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    },
+    {
+      "edge": {
+        "column": 9,
+        "kind": "imports",
+        "line": 2,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "file:Widget.vue",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      "node": {
+        "endColumn": 0,
+        "endLine": 4,
+        "filePath": "Widget.vue",
+        "id": "file:Widget.vue",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "file",
+        "language": "vue",
+        "name": "Widget.vue",
+        "qualifiedName": "Widget.vue",
+        "startColumn": 0,
+        "startLine": 1,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    },
+    {
+      "edge": {
+        "column": 18,
+        "kind": "imports",
+        "line": 1,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "file:main.ts",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      "node": {
+        "endColumn": 0,
+        "endLine": 3,
+        "filePath": "main.ts",
+        "id": "file:main.ts",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "file",
+        "language": "typescript",
+        "name": "main.ts",
+        "qualifiedName": "main.ts",
+        "startColumn": 0,
+        "startLine": 1,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    },
+    {
+      "edge": {
+        "column": 9,
+        "kind": "imports",
+        "line": 1,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "file:unicode.ts",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      "node": {
+        "endColumn": 0,
+        "endLine": 3,
+        "filePath": "unicode.ts",
+        "id": "file:unicode.ts",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "file",
+        "language": "typescript",
+        "name": "unicode.ts",
+        "qualifiedName": "unicode.ts",
+        "startColumn": 0,
+        "startLine": 1,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    }
+  ],
+  "lib-getCallGraph": {
+    "edges": [
+      {
+        "column": 14,
+        "kind": "calls",
+        "line": 3,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "file:Widget.vue",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "column": 48,
+        "kind": "calls",
+        "line": 8,
+        "metadata": {
+          "confidence": 0.4,
+          "refName": "normalize",
+          "resolvedBy": "exact-match"
+        },
+        "provenance": null,
+        "source": "method:a07bfacd1db56624cfb45f337daa8afd",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "column": 70,
+        "kind": "calls",
+        "line": 2,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "service.greet",
+          "resolvedBy": "instance-method"
+        },
+        "provenance": null,
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "method:a07bfacd1db56624cfb45f337daa8afd"
+      },
+      {
+        "kind": "calls",
+        "line": 2,
+        "metadata": {
+          "registeredAt": "core.ts:8",
+          "synthesizedBy": "interface-impl",
+          "via": "greet"
+        },
+        "provenance": "heuristic",
+        "source": "method:b778deb8eb78dbc30913a4b58e88d059",
+        "target": "method:a07bfacd1db56624cfb45f337daa8afd"
+      },
+      {
+        "column": 66,
+        "kind": "calls",
+        "line": 2,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "function:fa100d11c49c252d1e21edea9382ed7b",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "column": 18,
+        "kind": "imports",
+        "line": 1,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "file:main.ts",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "column": 9,
+        "kind": "imports",
+        "line": 1,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "file:unicode.ts",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      }
+    ],
+    "nodes": [
+      {
+        "endColumn": 71,
+        "endLine": 3,
+        "filePath": "core.ts",
+        "id": "function:2e0f1da852db2702796c16967fca2efb",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "function",
+        "language": "typescript",
+        "name": "normalize",
+        "qualifiedName": "normalize",
+        "signature": "(name: string): string",
+        "startColumn": 7,
+        "startLine": 3,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 0,
+        "endLine": 4,
+        "filePath": "Widget.vue",
+        "id": "file:Widget.vue",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "file",
+        "language": "vue",
+        "name": "Widget.vue",
+        "qualifiedName": "Widget.vue",
+        "startColumn": 0,
+        "startLine": 1,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 66,
+        "endLine": 8,
+        "filePath": "core.ts",
+        "id": "method:a07bfacd1db56624cfb45f337daa8afd",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "method",
+        "language": "typescript",
+        "name": "greet",
+        "qualifiedName": "Service::greet",
+        "signature": "(name: string): string",
+        "startColumn": 2,
+        "startLine": 8,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 110,
+        "endLine": 2,
+        "filePath": "main.ts",
+        "id": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "function",
+        "language": "typescript",
+        "name": "run",
+        "qualifiedName": "run",
+        "signature": "(): string",
+        "startColumn": 7,
+        "startLine": 2,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 64,
+        "endLine": 2,
+        "filePath": "core.ts",
+        "id": "method:b778deb8eb78dbc30913a4b58e88d059",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "method",
+        "language": "typescript",
+        "name": "greet",
+        "qualifiedName": "Base::greet",
+        "signature": "(name: string): string",
+        "startColumn": 20,
+        "startLine": 2,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 85,
+        "endLine": 2,
+        "filePath": "unicode.ts",
+        "id": "function:fa100d11c49c252d1e21edea9382ed7b",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "function",
+        "language": "typescript",
+        "name": "unicodeCaller",
+        "qualifiedName": "unicodeCaller",
+        "signature": "()",
+        "startColumn": 7,
+        "startLine": 2,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 0,
+        "endLine": 3,
+        "filePath": "main.ts",
+        "id": "file:main.ts",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "file",
+        "language": "typescript",
+        "name": "main.ts",
+        "qualifiedName": "main.ts",
+        "startColumn": 0,
+        "startLine": 1,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 0,
+        "endLine": 3,
+        "filePath": "unicode.ts",
+        "id": "file:unicode.ts",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "file",
+        "language": "typescript",
+        "name": "unicode.ts",
+        "qualifiedName": "unicode.ts",
+        "startColumn": 0,
+        "startLine": 1,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    ],
+    "roots": [
+      "function:2e0f1da852db2702796c16967fca2efb"
+    ]
+  },
+  "lib-getCallees": [
+    {
+      "edge": {
+        "column": 70,
+        "kind": "calls",
+        "line": 2,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "service.greet",
+          "resolvedBy": "instance-method"
+        },
+        "provenance": null,
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "method:a07bfacd1db56624cfb45f337daa8afd"
+      },
+      "node": {
+        "endColumn": 66,
+        "endLine": 8,
+        "filePath": "core.ts",
+        "id": "method:a07bfacd1db56624cfb45f337daa8afd",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "method",
+        "language": "typescript",
+        "name": "greet",
+        "qualifiedName": "Service::greet",
+        "signature": "(name: string): string",
+        "startColumn": 2,
+        "startLine": 8,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    },
+    {
+      "edge": {
+        "column": 84,
+        "kind": "calls",
+        "line": 2,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      "node": {
+        "endColumn": 71,
+        "endLine": 3,
+        "filePath": "core.ts",
+        "id": "function:2e0f1da852db2702796c16967fca2efb",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "function",
+        "language": "typescript",
+        "name": "normalize",
+        "qualifiedName": "normalize",
+        "signature": "(name: string): string",
+        "startColumn": 7,
+        "startLine": 3,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    },
+    {
+      "edge": {
+        "column": 48,
+        "kind": "instantiates",
+        "line": 2,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "Service",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "class:be32feaed3e6dfaf83e7636dac9eab2b"
+      },
+      "node": {
+        "endColumn": 1,
+        "endLine": 9,
+        "filePath": "core.ts",
+        "id": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "class",
+        "language": "typescript",
+        "name": "Service",
+        "qualifiedName": "Service",
+        "startColumn": 7,
+        "startLine": 6,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    }
+  ],
+  "lib-getCallers": [
+    {
+      "edge": {
+        "column": 14,
+        "kind": "calls",
+        "line": 3,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "file:Widget.vue",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      "node": {
+        "endColumn": 0,
+        "endLine": 4,
+        "filePath": "Widget.vue",
+        "id": "file:Widget.vue",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "file",
+        "language": "vue",
+        "name": "Widget.vue",
+        "qualifiedName": "Widget.vue",
+        "startColumn": 0,
+        "startLine": 1,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    },
+    {
+      "edge": {
+        "column": 48,
+        "kind": "calls",
+        "line": 8,
+        "metadata": {
+          "confidence": 0.4,
+          "refName": "normalize",
+          "resolvedBy": "exact-match"
+        },
+        "provenance": null,
+        "source": "method:a07bfacd1db56624cfb45f337daa8afd",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      "node": {
+        "endColumn": 66,
+        "endLine": 8,
+        "filePath": "core.ts",
+        "id": "method:a07bfacd1db56624cfb45f337daa8afd",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "method",
+        "language": "typescript",
+        "name": "greet",
+        "qualifiedName": "Service::greet",
+        "signature": "(name: string): string",
+        "startColumn": 2,
+        "startLine": 8,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    },
+    {
+      "edge": {
+        "column": 84,
+        "kind": "calls",
+        "line": 2,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      "node": {
+        "endColumn": 110,
+        "endLine": 2,
+        "filePath": "main.ts",
+        "id": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "function",
+        "language": "typescript",
+        "name": "run",
+        "qualifiedName": "run",
+        "signature": "(): string",
+        "startColumn": 7,
+        "startLine": 2,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    },
+    {
+      "edge": {
+        "column": 66,
+        "kind": "calls",
+        "line": 2,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "function:fa100d11c49c252d1e21edea9382ed7b",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      "node": {
+        "endColumn": 85,
+        "endLine": 2,
+        "filePath": "unicode.ts",
+        "id": "function:fa100d11c49c252d1e21edea9382ed7b",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "function",
+        "language": "typescript",
+        "name": "unicodeCaller",
+        "qualifiedName": "unicodeCaller",
+        "signature": "()",
+        "startColumn": 7,
+        "startLine": 2,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    },
+    {
+      "edge": {
+        "column": 18,
+        "kind": "imports",
+        "line": 1,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "file:main.ts",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      "node": {
+        "endColumn": 0,
+        "endLine": 3,
+        "filePath": "main.ts",
+        "id": "file:main.ts",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "file",
+        "language": "typescript",
+        "name": "main.ts",
+        "qualifiedName": "main.ts",
+        "startColumn": 0,
+        "startLine": 1,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    },
+    {
+      "edge": {
+        "column": 9,
+        "kind": "imports",
+        "line": 1,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "file:unicode.ts",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      "node": {
+        "endColumn": 0,
+        "endLine": 3,
+        "filePath": "unicode.ts",
+        "id": "file:unicode.ts",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "file",
+        "language": "typescript",
+        "name": "unicode.ts",
+        "qualifiedName": "unicode.ts",
+        "startColumn": 0,
+        "startLine": 1,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    }
+  ],
+  "lib-getCode": "export function normalize(name: string): string { return name.trim(); }",
+  "lib-getContext": {
+    "ancestors": [
+      {
+        "endColumn": 0,
+        "endLine": 16,
+        "filePath": "core.ts",
+        "id": "file:core.ts",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "file",
+        "language": "typescript",
+        "name": "core.ts",
+        "qualifiedName": "core.ts",
+        "startColumn": 0,
+        "startLine": 1,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    ],
+    "children": [],
+    "focal": {
+      "endColumn": 71,
+      "endLine": 3,
+      "filePath": "core.ts",
+      "id": "function:2e0f1da852db2702796c16967fca2efb",
+      "isAbstract": false,
+      "isAsync": false,
+      "isExported": true,
+      "isStatic": false,
+      "kind": "function",
+      "language": "typescript",
+      "name": "normalize",
+      "qualifiedName": "normalize",
+      "signature": "(name: string): string",
+      "startColumn": 7,
+      "startLine": 3,
+      "updatedAt": 0,
+      "visibility": null
+    },
+    "imports": [],
+    "incomingRefs": [
+      {
+        "edge": {
+          "column": 14,
+          "kind": "calls",
+          "line": 3,
+          "metadata": {
+            "confidence": 0.9,
+            "refName": "normalize",
+            "resolvedBy": "import"
+          },
+          "provenance": null,
+          "source": "file:Widget.vue",
+          "target": "function:2e0f1da852db2702796c16967fca2efb"
+        },
+        "node": {
+          "endColumn": 0,
+          "endLine": 4,
+          "filePath": "Widget.vue",
+          "id": "file:Widget.vue",
+          "isAbstract": false,
+          "isAsync": false,
+          "isExported": false,
+          "isStatic": false,
+          "kind": "file",
+          "language": "vue",
+          "name": "Widget.vue",
+          "qualifiedName": "Widget.vue",
+          "startColumn": 0,
+          "startLine": 1,
+          "updatedAt": 0,
+          "visibility": null
+        }
+      },
+      {
+        "edge": {
+          "column": 48,
+          "kind": "calls",
+          "line": 8,
+          "metadata": {
+            "confidence": 0.4,
+            "refName": "normalize",
+            "resolvedBy": "exact-match"
+          },
+          "provenance": null,
+          "source": "method:a07bfacd1db56624cfb45f337daa8afd",
+          "target": "function:2e0f1da852db2702796c16967fca2efb"
+        },
+        "node": {
+          "endColumn": 66,
+          "endLine": 8,
+          "filePath": "core.ts",
+          "id": "method:a07bfacd1db56624cfb45f337daa8afd",
+          "isAbstract": false,
+          "isAsync": false,
+          "isExported": false,
+          "isStatic": false,
+          "kind": "method",
+          "language": "typescript",
+          "name": "greet",
+          "qualifiedName": "Service::greet",
+          "signature": "(name: string): string",
+          "startColumn": 2,
+          "startLine": 8,
+          "updatedAt": 0,
+          "visibility": null
+        }
+      },
+      {
+        "edge": {
+          "column": 84,
+          "kind": "calls",
+          "line": 2,
+          "metadata": {
+            "confidence": 0.9,
+            "refName": "normalize",
+            "resolvedBy": "import"
+          },
+          "provenance": null,
+          "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+          "target": "function:2e0f1da852db2702796c16967fca2efb"
+        },
+        "node": {
+          "endColumn": 110,
+          "endLine": 2,
+          "filePath": "main.ts",
+          "id": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+          "isAbstract": false,
+          "isAsync": false,
+          "isExported": true,
+          "isStatic": false,
+          "kind": "function",
+          "language": "typescript",
+          "name": "run",
+          "qualifiedName": "run",
+          "signature": "(): string",
+          "startColumn": 7,
+          "startLine": 2,
+          "updatedAt": 0,
+          "visibility": null
+        }
+      },
+      {
+        "edge": {
+          "column": 66,
+          "kind": "calls",
+          "line": 2,
+          "metadata": {
+            "confidence": 0.9,
+            "refName": "normalize",
+            "resolvedBy": "import"
+          },
+          "provenance": null,
+          "source": "function:fa100d11c49c252d1e21edea9382ed7b",
+          "target": "function:2e0f1da852db2702796c16967fca2efb"
+        },
+        "node": {
+          "endColumn": 85,
+          "endLine": 2,
+          "filePath": "unicode.ts",
+          "id": "function:fa100d11c49c252d1e21edea9382ed7b",
+          "isAbstract": false,
+          "isAsync": false,
+          "isExported": true,
+          "isStatic": false,
+          "kind": "function",
+          "language": "typescript",
+          "name": "unicodeCaller",
+          "qualifiedName": "unicodeCaller",
+          "signature": "()",
+          "startColumn": 7,
+          "startLine": 2,
+          "updatedAt": 0,
+          "visibility": null
+        }
+      },
+      {
+        "edge": {
+          "column": 9,
+          "kind": "imports",
+          "line": 2,
+          "metadata": {
+            "confidence": 0.9,
+            "refName": "normalize",
+            "resolvedBy": "import"
+          },
+          "provenance": null,
+          "source": "file:Widget.vue",
+          "target": "function:2e0f1da852db2702796c16967fca2efb"
+        },
+        "node": {
+          "endColumn": 0,
+          "endLine": 4,
+          "filePath": "Widget.vue",
+          "id": "file:Widget.vue",
+          "isAbstract": false,
+          "isAsync": false,
+          "isExported": false,
+          "isStatic": false,
+          "kind": "file",
+          "language": "vue",
+          "name": "Widget.vue",
+          "qualifiedName": "Widget.vue",
+          "startColumn": 0,
+          "startLine": 1,
+          "updatedAt": 0,
+          "visibility": null
+        }
+      },
+      {
+        "edge": {
+          "column": 18,
+          "kind": "imports",
+          "line": 1,
+          "metadata": {
+            "confidence": 0.9,
+            "refName": "normalize",
+            "resolvedBy": "import"
+          },
+          "provenance": null,
+          "source": "file:main.ts",
+          "target": "function:2e0f1da852db2702796c16967fca2efb"
+        },
+        "node": {
+          "endColumn": 0,
+          "endLine": 3,
+          "filePath": "main.ts",
+          "id": "file:main.ts",
+          "isAbstract": false,
+          "isAsync": false,
+          "isExported": false,
+          "isStatic": false,
+          "kind": "file",
+          "language": "typescript",
+          "name": "main.ts",
+          "qualifiedName": "main.ts",
+          "startColumn": 0,
+          "startLine": 1,
+          "updatedAt": 0,
+          "visibility": null
+        }
+      },
+      {
+        "edge": {
+          "column": 9,
+          "kind": "imports",
+          "line": 1,
+          "metadata": {
+            "confidence": 0.9,
+            "refName": "normalize",
+            "resolvedBy": "import"
+          },
+          "provenance": null,
+          "source": "file:unicode.ts",
+          "target": "function:2e0f1da852db2702796c16967fca2efb"
+        },
+        "node": {
+          "endColumn": 0,
+          "endLine": 3,
+          "filePath": "unicode.ts",
+          "id": "file:unicode.ts",
+          "isAbstract": false,
+          "isAsync": false,
+          "isExported": false,
+          "isStatic": false,
+          "kind": "file",
+          "language": "typescript",
+          "name": "unicode.ts",
+          "qualifiedName": "unicode.ts",
+          "startColumn": 0,
+          "startLine": 1,
+          "updatedAt": 0,
+          "visibility": null
+        }
+      }
+    ],
+    "outgoingRefs": [],
+    "types": []
+  },
+  "lib-getFileDependencies": [
+    "core.ts"
+  ],
+  "lib-getFileDependents": [
+    "Widget.vue",
+    "main.ts",
+    "unicode.ts"
+  ],
+  "lib-getImpactRadius": {
+    "edges": [
+      {
+        "column": 14,
+        "kind": "calls",
+        "line": 3,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "file:Widget.vue",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "column": 48,
+        "kind": "calls",
+        "line": 8,
+        "metadata": {
+          "confidence": 0.4,
+          "refName": "normalize",
+          "resolvedBy": "exact-match"
+        },
+        "provenance": null,
+        "source": "method:a07bfacd1db56624cfb45f337daa8afd",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "column": 70,
+        "kind": "calls",
+        "line": 2,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "service.greet",
+          "resolvedBy": "instance-method"
+        },
+        "provenance": null,
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "method:a07bfacd1db56624cfb45f337daa8afd"
+      },
+      {
+        "kind": "calls",
+        "line": 2,
+        "metadata": {
+          "registeredAt": "core.ts:8",
+          "synthesizedBy": "interface-impl",
+          "via": "greet"
+        },
+        "provenance": "heuristic",
+        "source": "method:b778deb8eb78dbc30913a4b58e88d059",
+        "target": "method:a07bfacd1db56624cfb45f337daa8afd"
+      },
+      {
+        "column": 84,
+        "kind": "calls",
+        "line": 2,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "column": 66,
+        "kind": "calls",
+        "line": 2,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "function:fa100d11c49c252d1e21edea9382ed7b",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "column": 9,
+        "kind": "imports",
+        "line": 2,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "file:Widget.vue",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "column": 18,
+        "kind": "imports",
+        "line": 1,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "file:main.ts",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "column": 9,
+        "kind": "imports",
+        "line": 1,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "normalize",
+          "resolvedBy": "import"
+        },
+        "provenance": null,
+        "source": "file:unicode.ts",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      }
+    ],
+    "nodes": [
+      {
+        "endColumn": 71,
+        "endLine": 3,
+        "filePath": "core.ts",
+        "id": "function:2e0f1da852db2702796c16967fca2efb",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "function",
+        "language": "typescript",
+        "name": "normalize",
+        "qualifiedName": "normalize",
+        "signature": "(name: string): string",
+        "startColumn": 7,
+        "startLine": 3,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 0,
+        "endLine": 4,
+        "filePath": "Widget.vue",
+        "id": "file:Widget.vue",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "file",
+        "language": "vue",
+        "name": "Widget.vue",
+        "qualifiedName": "Widget.vue",
+        "startColumn": 0,
+        "startLine": 1,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 66,
+        "endLine": 8,
+        "filePath": "core.ts",
+        "id": "method:a07bfacd1db56624cfb45f337daa8afd",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "method",
+        "language": "typescript",
+        "name": "greet",
+        "qualifiedName": "Service::greet",
+        "signature": "(name: string): string",
+        "startColumn": 2,
+        "startLine": 8,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 110,
+        "endLine": 2,
+        "filePath": "main.ts",
+        "id": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "function",
+        "language": "typescript",
+        "name": "run",
+        "qualifiedName": "run",
+        "signature": "(): string",
+        "startColumn": 7,
+        "startLine": 2,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 64,
+        "endLine": 2,
+        "filePath": "core.ts",
+        "id": "method:b778deb8eb78dbc30913a4b58e88d059",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "method",
+        "language": "typescript",
+        "name": "greet",
+        "qualifiedName": "Base::greet",
+        "signature": "(name: string): string",
+        "startColumn": 20,
+        "startLine": 2,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 85,
+        "endLine": 2,
+        "filePath": "unicode.ts",
+        "id": "function:fa100d11c49c252d1e21edea9382ed7b",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "function",
+        "language": "typescript",
+        "name": "unicodeCaller",
+        "qualifiedName": "unicodeCaller",
+        "signature": "()",
+        "startColumn": 7,
+        "startLine": 2,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 0,
+        "endLine": 3,
+        "filePath": "main.ts",
+        "id": "file:main.ts",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "file",
+        "language": "typescript",
+        "name": "main.ts",
+        "qualifiedName": "main.ts",
+        "startColumn": 0,
+        "startLine": 1,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 0,
+        "endLine": 3,
+        "filePath": "unicode.ts",
+        "id": "file:unicode.ts",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "file",
+        "language": "typescript",
+        "name": "unicode.ts",
+        "qualifiedName": "unicode.ts",
+        "startColumn": 0,
+        "startLine": 1,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    ],
+    "roots": [
+      "function:2e0f1da852db2702796c16967fca2efb"
+    ]
+  },
+  "lib-getTypeHierarchy": {
+    "edges": [
+      {
+        "column": 29,
+        "kind": "extends",
+        "line": 6,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "Base",
+          "resolvedBy": "exact-match"
+        },
+        "provenance": null,
+        "source": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+        "target": "class:22d52fa5b3261b6828f46f747644d941"
+      },
+      {
+        "column": 45,
+        "kind": "implements",
+        "line": 6,
+        "metadata": {
+          "confidence": 0.9,
+          "refName": "Greeter",
+          "resolvedBy": "exact-match"
+        },
+        "provenance": null,
+        "source": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+        "target": "interface:e30cb316976fe998ad14cbaf7315f7c3"
+      }
+    ],
+    "nodes": [
+      {
+        "endColumn": 1,
+        "endLine": 9,
+        "filePath": "core.ts",
+        "id": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "class",
+        "language": "typescript",
+        "name": "Service",
+        "qualifiedName": "Service",
+        "startColumn": 7,
+        "startLine": 6,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 66,
+        "endLine": 2,
+        "filePath": "core.ts",
+        "id": "class:22d52fa5b3261b6828f46f747644d941",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "class",
+        "language": "typescript",
+        "name": "Base",
+        "qualifiedName": "Base",
+        "startColumn": 7,
+        "startLine": 2,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      {
+        "endColumn": 57,
+        "endLine": 1,
+        "filePath": "core.ts",
+        "id": "interface:e30cb316976fe998ad14cbaf7315f7c3",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "interface",
+        "language": "typescript",
+        "name": "Greeter",
+        "qualifiedName": "Greeter",
+        "startColumn": 7,
+        "startLine": 1,
+        "updatedAt": 0,
+        "visibility": null
+      }
+    ],
+    "roots": [
+      "class:be32feaed3e6dfaf83e7636dac9eab2b"
+    ]
+  },
+  "lib-searchNodes": [
+    {
+      "node": {
+        "endColumn": 7,
+        "endLine": 5,
+        "filePath": "model.rb",
+        "id": "method:cb20d69ed5ac61610cc500dc9cdc4d54",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "method",
+        "language": "ruby",
+        "name": "normalize",
+        "qualifiedName": "Fixture::Model::normalize",
+        "startColumn": 4,
+        "startLine": 3,
+        "updatedAt": 0,
+        "visibility": "public"
+      },
+      "score": 94.047296127757
+    },
+    {
+      "node": {
+        "endColumn": 71,
+        "endLine": 3,
+        "filePath": "core.ts",
+        "id": "function:2e0f1da852db2702796c16967fca2efb",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": true,
+        "isStatic": false,
+        "kind": "function",
+        "language": "typescript",
+        "name": "normalize",
+        "qualifiedName": "normalize",
+        "signature": "(name: string): string",
+        "startColumn": 7,
+        "startLine": 3,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      "score": 94.02469303391103
+    },
+    {
+      "node": {
+        "endColumn": 64,
+        "endLine": 3,
+        "filePath": "Model.java",
+        "id": "method:c6ebef81a3e080bc1b3fc001f4fcda0a",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "method",
+        "language": "java",
+        "name": "normalize",
+        "qualifiedName": "fixture.models::Model::normalize",
+        "returnType": "String",
+        "signature": "String (String name)",
+        "startColumn": 4,
+        "startLine": 3,
+        "updatedAt": 0,
+        "visibility": "public"
+      },
+      "score": 93.95837358011921
+    },
+    {
+      "node": {
+        "endColumn": 33,
+        "endLine": 3,
+        "filePath": "Widget.vue",
+        "id": "constant:4ae0eb5a27555908105988087b73ff0e",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "constant",
+        "language": "vue",
+        "name": "title",
+        "qualifiedName": "title",
+        "signature": "= normalize('widget')",
+        "startColumn": 6,
+        "startLine": 3,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      "score": 5.663957037702964
+    },
+    {
+      "node": {
+        "endColumn": 35,
+        "endLine": 2,
+        "filePath": "Widget.vue",
+        "id": "import:2956f6b72607fd8f7182e53fbc210727",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "import",
+        "language": "vue",
+        "name": "./core",
+        "qualifiedName": "./core",
+        "signature": "import { normalize } from './core';",
+        "startColumn": 0,
+        "startLine": 2,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      "score": 3.438596763222623
+    },
+    {
+      "node": {
+        "endColumn": 35,
+        "endLine": 1,
+        "filePath": "unicode.ts",
+        "id": "import:de5f5492c5006fa7f6cbd73806fd0d9c",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "import",
+        "language": "typescript",
+        "name": "./core",
+        "qualifiedName": "./core",
+        "signature": "import { normalize } from \"./core\";",
+        "startColumn": 0,
+        "startLine": 1,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      "score": 3.438596763222623
+    },
+    {
+      "node": {
+        "endColumn": 44,
+        "endLine": 1,
+        "filePath": "main.ts",
+        "id": "import:db5937c6109a79520c36ff00f6b4be0c",
+        "isAbstract": false,
+        "isAsync": false,
+        "isExported": false,
+        "isStatic": false,
+        "kind": "import",
+        "language": "typescript",
+        "name": "./core",
+        "qualifiedName": "./core",
+        "signature": "import { Service, normalize } from './core';",
+        "startColumn": 0,
+        "startLine": 1,
+        "updatedAt": 0,
+        "visibility": null
+      },
+      "score": 3.339634817300038
+    }
+  ]
+}
