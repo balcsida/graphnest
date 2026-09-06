@@ -118,6 +118,8 @@ def main():
             raise RuntimeError("producer logical output is nondeterministic after sanitation")
         if args.check:
             manifest = json.loads((FIXTURE / "manifest.json").read_text())
+            if manifest["reference_tasks"] != sorted(library):
+                raise RuntimeError("manifest reference tasks differ from library answers")
             if manifest["producer"]["build"] != BUILD or manifest["producer"]["environment"] != PRODUCER_ENV or manifest["producer"]["home"] != "fresh empty temporary directory":
                 raise RuntimeError("manifest producer build/environment mismatch")
             if manifest["producer"]["commit"] != actual or manifest["producer"]["node"] != runtime:
@@ -156,11 +158,12 @@ def main():
         write_json(FIXTURE / "manifest.json", {
             "fixture": "polyglot-core",
             "producer": {"repository": "https://github.com/colbymchenry/codegraph", "commit": COMMIT, "version": "1.6.0", "node": NODE, "mode": "portable", "kernel": False, "build": BUILD, "environment": PRODUCER_ENV, "home": "fresh empty temporary directory", "lockfile_sha256": hashlib.sha256((upstream / "package-lock.json").read_bytes()).hexdigest()},
-            "sanitation": "source mtimes zero; SQLite timestamp columns zero; temporary source root replaced by /fixture; backup checkpoint and VACUUM; no facts added",
+            "sanitation": "source mtimes and SQLite timestamp columns zero; temporary source root replaced by /fixture; backup checkpoint and VACUUM; oracle timestamps/timings zero or Unix epoch; trail author fixed to GraphNest fixture; no graph facts added",
             "determinism": "two independent real producer runs; all logical non-FTS tables and schema compared",
             "sha256": {name: hashlib.sha256((FIXTURE / name).read_bytes()).hexdigest() for name in names},
             "extracted_node_kinds": [row[0] for row in expected[0]["rows"]],
             "extracted_edge_kinds": [row[0] for row in expected[1]["rows"]],
+            "reference_tasks": sorted(library),
         })
         print("Generated real reference twice, verified deterministic logical output, wrote sanitized fixture.")
 

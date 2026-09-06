@@ -56,10 +56,40 @@ is exercised by real `searchNodes`/`findRelevantContext` answers. Hashes cover t
 database, source configuration, sources, schema and expected answers. SQLite
 physical layout is not the determinism contract; complete logical rows are.
 
-`expected.json` records ordered SQL facts. `library-expected.json` records 13
-actual CodeGraph library methods, including search, callers/callees, call graph,
-hierarchy, usage, impact, path, dependencies, context and source reads. The adapter
-independently asserts source-evidenced calls, imports, source text and exclusion.
+`expected.json` records ordered SQL facts. `library-expected.json` records 41
+actual producer query/workflow answers. The manifest lists their exact task IDs.
+The first 13 cover library search, callers/callees, call graph, hierarchy, usage,
+impact, path, dependencies, context and source reads. The additional answers run
+the upstream MCP tool handler, viewer API builders, affected-test CLI and saved
+trail services directly; they do not simulate those implementations.
+
+| Workflow | Oracle task IDs and independently checked evidence |
+| --- | --- |
+| Explore | `mcp-explore-source` includes verbatim `processGreeting` source. `mcp-explore-unmatched-fallback` records the pinned engine's unrelated fallback sources for an absent symbol; it is not a correct-match or no-results claim. |
+| Conditional flow and steps | `ui-flow-branch` records the `enabled` guard at consumer.ts:4; `ui-flow-missing` and `ui-flow-invalid` preserve absence/refusal. `ui-steps-branch` records the program fork; `ui-steps-screen` records conditional screen traversal. |
+| Navigation and maps | `ui-screens-navigation` records `/` to `/details` with the `enabled` guard. `ui-map-modules` records concrete cross-module imports. |
+| Types and public members | `ui-node-types` finds Base/Greeter ancestors and the inferred greet override. `ui-file-public-members` distinguishes exported Service from private dormantUtility. `ui-node-missing` preserves the missing-id refusal. These views do not create dormant type_of/returns/overrides edges. |
+| Source | `ui-source-verbatim` matches the exact source lines. `ui-source-invalid-range` refuses reversed bounds; `ui-source-drift` omits lines after a temporary source change. The original bytes and mtime are restored. |
+| Entry points and dead code | `ui-entrypoints` identifies consumer.test.ts. `ui-deadcode` reports dormantUtility in a reachable file and excludes the wholly unreachable orphan.ts with its explicit reason. |
+| Affected tests | `cli-affected-transitive` finds consumer.test.ts across core.ts → main.ts → consumer.ts imports; `cli-affected-unrelated` finds none for orphan.ts. Source fixtures are analyzed, never executed. |
+| Saved trails | `ui-trails-*` covers empty/list/create/replace/reload/delete, read-only and missing-hop refusals, missing-symbol resolution, and reopening the encoded saved trail as an actual run → normalize flow. All writes stay inside the temporary fixture's `.codegraph/ui/trails/`. |
+
+The adapter and offline test independently assert source-evidenced positive and
+negative results. The larger golden answers retain every returned field, except
+wall-clock timings/index timestamps and saved-trail dates/author are canonicalized
+for reproducibility. These are reference-service checks, not browser interaction
+or GraphNest implementation checks.
+
+Remaining S1.01 oracle work includes native browser interactions and SVG/PNG
+exports (client-side code, not a trail-service endpoint), HTTP/MCP transport
+contracts, more query limits/filter/error variants, routed-API and language/
+framework matrices, and richer steps such as stores/native bridges/events.
+Only exported flags/member outlines and actual type hierarchy are covered here;
+this does not claim a separate public-surface/type-users/returners query where
+the pinned producer exposes none. Actual GraphNest serialization, PostgreSQL,
+REST, MCP, UI and authorization comparisons remain the later implementation
+layers and S1.10 gate. No planned case is counted as a passing test.
+
 `unicode.ts` uses CRLF, accented text and an astral character before a call for
 future coordinate-conversion checks. Synthetic records in
 `synthetic-contract.json` cover the exact 23-kind/13-relation vocabulary; **they

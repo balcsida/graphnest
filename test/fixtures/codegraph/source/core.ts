@@ -13,3 +13,4 @@ export let current: Service = createService();
 export enum State { Ready, Done }
 export type Label = string;
 export namespace Helpers { export function identity(value: string) { return value; } }
+function dormantUtility(): string { return 'unreferenced in a reachable file'; }

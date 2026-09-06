@@ -1,2 +1,7 @@
 import { router } from 'expo-router';
-export default function Home() { return <button onClick={() => router.push('/details')}>Details</button>; }
+export function openDetails(enabled: boolean) {
+  if (enabled) {
+    router.push('/details');
+  }
+}
+export default function Home() { return <button onClick={() => openDetails(true)}>Details</button>; }
