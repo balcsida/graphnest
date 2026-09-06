@@ -80,7 +80,7 @@ wall-clock timings/index timestamps and saved-trail dates/author are canonicaliz
 for reproducibility. These are reference-service checks, not browser interaction
 or GraphNest implementation checks.
 
-Remaining S1.01 oracle work includes native browser interactions and SVG/PNG
+Remaining reference coverage for later conformance layers includes native browser interactions and SVG/PNG
 exports (client-side code, not a trail-service endpoint), HTTP/MCP transport
 contracts, more query limits/filter/error variants, routed-API and language/
 framework matrices, and richer steps such as stores/native bridges/events.
