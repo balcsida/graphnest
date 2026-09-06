@@ -25,6 +25,17 @@ func Parse(data []byte, limits Limits) (Artifact, error) {
 	if err := proto.Unmarshal(data, &wire); err != nil {
 		return Artifact{}, ErrInvalidArtifact
 	}
+	// Check int32 wire enums before converting them to the uint8 v1 model.
+	for _, node := range wire.Nodes {
+		if node == nil || node.Kind < graphv1.NodeKind_NODE_KIND_REPOSITORY || node.Kind > graphv1.NodeKind_NODE_KIND_SYMBOL {
+			return Artifact{}, ErrInvalidArtifact
+		}
+	}
+	for _, edge := range wire.Edges {
+		if edge == nil || edge.Kind < graphv1.EdgeKind_EDGE_KIND_CONTAINS || edge.Kind > graphv1.EdgeKind_EDGE_KIND_IMPLEMENTS {
+			return Artifact{}, ErrInvalidArtifact
+		}
+	}
 	artifact := fromWire(&wire)
 	return artifact, Validate(artifact, limits)
 }
