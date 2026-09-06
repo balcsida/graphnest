@@ -15,6 +15,16 @@ This inventory is the S1.01 acceptance backlog, based on command declarations, M
 
 Captured `oracle:` IDs below are exact keys in `test/fixtures/codegraph/library-expected.json` and `manifest.json.reference_tasks`. The workflow layer records 41 real producer answers, including 28 representative MCP/CLI/viewer-service cases, with runnable source-evidenced assertions in `test/parity/reference.mjs` and `test/parity/test_reference.py`. These captures do not complete the broader acceptance task, browser interaction, transport contract or GraphNest comparison. Native client exports and remaining variants retain their planned rows.
 
+S1.02's [artifact v2 contract](../graph-artifact-v2.md) has passing serialization
+checks in `internal/graphartifact/v2_fixture_test.go`: every original column in
+68 nodes, 93 edges, 13 files, six unresolved references and five project-metadata
+records survives the real SQLite fixture roundtrip. A separate synthetic check
+covers all 23 kinds and 13 relationships. Identity, missing evidence, hostile
+input bounds and exact Unicode/CRLF source coordinates have unit/property/fuzz
+coverage. Independent contract review passed after fixing aggregate predecode
+allocation accounting. These are artifact checks;
+PostgreSQL, query, REST/MCP and browser conformance rows remain planned.
+
 ## CLI command surface
 
 All declarations live in `src/bin/codegraph.ts`. The shared query operations must support both Stage 1 remote snapshots and Stage 3 local content manifests; local lifecycle commands belong to Stage 3. Hidden commands are included because installed integrations invoke them.
