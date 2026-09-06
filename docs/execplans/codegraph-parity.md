@@ -8,6 +8,15 @@ Implementation, validation, draft publication, and release are separate states.
 - 2026-09-06: Read the accepted roadmap and repository instructions; inspected the current default branch and existing pull requests.
 - Created an isolated checkout at `../graphnest-codegraph`; preserved the original checkout's modified `go.work.sum`.
 - Initialized the local native-stack metadata with `github/gh-stack` v0.1.1: `main ← feat/codegraph/s1-01-contract`.
+- Published the signed foundation as draft [PR #64](https://github.com/balcsida/graphnest/pull/64),
+  commit `c9fbf77c63e478863e7879a8388a6661ee6afab4`; GitHub verifies its signature.
+- Started dependent `feat/codegraph/s1-01-workflows` for expanded reference
+  analysis workflows and a representative PostgreSQL baseline.
+- Captured 41 reproducible upstream answers, including source-evidenced flow,
+  exploration, steps/screens/maps, transitive affected tests, hierarchy/member
+  views, source refusal, dead-code candidates, and saved-trail operations.
+- Recorded the existing PostgreSQL service over 50,000 synthetic symbols and
+  200,500 edges, including actual SQL counts and prepared-statement query plans.
 - S1.01 reference foundation is implemented and reviewed: inventory, pinned
   real-producer reference harness, fixtures, and explicitly scoped performance
   measurements. Full S1.01 acceptance remains pending the gaps below.
@@ -88,6 +97,15 @@ these tests.
 | `git diff --check` | Passed; the intentional CRLF source fixture has scoped `cr-at-eol` attributes |
 | `sh test/parity/check_stale_dist.sh <pinned-clone> <node-24.13.0>` | Failed with the stale-build sentinel before the fix; passed after rebuilding from pinned tracked source with isolated analyzer settings |
 | Foundation code/spec review and scoped re-review | No Critical findings; both Important reproducibility findings fixed and re-reviewed |
+| Signed commit and `gh stack submit --auto --remote origin` | Initial signer connection failed; retry signed `c9fbf77`, and submission created draft PR #64 |
+| PR #64 and commit read-back | Same-repository head `feat/codegraph/s1-01-contract`, base `main`, exact `c9fbf77`; GitHub signature verified/valid |
+| PR #64 CI read-back | All checks passed: verify, integration, e2e, helm, ui-smoke, and CodeQL |
+| Default-branch rules read-back | Ruleset requires signed commits, PRs, resolved review threads, and strict verify/integration/e2e/helm checks; disallows deletion and non-fast-forward updates |
+| PR #64 native-stack GraphQL read-back | `stack` and `stackEntry` are null; remote membership must be established with the dependent PR |
+| Expanded workflow `make parity-reference` and fresh pinned `generate_reference.py --check` | Passed: two independent producer runs match full database/schema/SQL facts and all 41 answers; offline assertions pass |
+| Opt-in `TestGraphQueryPostgresBaseline`, Go 1.26.6, `GOWORK=off`, `GOMAXPROCS=1`, required task-owned PostgreSQL | Passed: exact answers, five runs of 200 samples per operation, actual SQL counts and graph-index plan checks; isolated schema cleanup confirmed |
+| Workflow and PostgreSQL independent reviews | No remaining Critical/Important findings; exact task-list validation added after a stale-ID negative test and scoped re-review |
+| Second-layer formatting, vet and PostgreSQL graph-query race tests | Passed with Go 1.26.6 and PostgreSQL required; manifest/harness hashes and exact 10% budgets read back |
 
 `tools-check` needs the workspace: its nested `go tool protoc-gen-go` executes
 from the root module and discovers the plugin through `./tools`. Keep `GOWORK=off`
@@ -103,6 +121,23 @@ in-memory fixture. It is not a PostgreSQL, REST/MCP, authorization, browser,
 CodeGraph, or representative-large-repository baseline; those remain explicit
 measurement gaps.
 
+The [PostgreSQL baseline](../parity/codegraph-postgres-baseline.json) adds a
+deterministic synthetic v1 corpus with 50,501 nodes, 500 files and 200,500 edges.
+Five runs of 200 warmed requests give median run p50/p95 of 7.31/8.14 ms for
+context, 1.53/1.70 ms for impact and 1.32/1.51 ms for trace. These issue 4/5/5
+SQL reads respectively, plus two transaction statements. The report includes
+exact requests, corpus/harness hashes, environment, artifact/database sizes and
+actual prepared-statement `EXPLAIN ANALYZE BUFFERS` output. This is existing
+GraphNest service/storage evidence, not CodeGraph-produced data or a transport,
+browser, authorization, cold-cache, concurrent-load or peak-RSS measurement.
+
+Reproduce with `GRAPHNEST_REQUIRE_POSTGRES=1`, `GRAPHNEST_TEST_POSTGRES_DSN` set
+to an isolated test database, `GRAPHNEST_POSTGRES_BASELINE` set to a report path,
+and `GOTOOLCHAIN=go1.26.6 GOWORK=off GOMAXPROCS=1 go test -tags=integration
+./internal/postgres -run '^TestGraphQueryPostgresBaseline$' -count=1 -v`.
+Without the report variable, this measurement explicitly skips; that skip is
+never counted as baseline or conformance evidence.
+
 Regeneration now builds a fresh archive of the verified pinned commit with
 locked dependencies rather than trusting checkout `dist/` or `node_modules/`.
 The producer runs with a recorded environment and empty temporary HOME so local
@@ -112,10 +147,14 @@ CI check remains offline and uses only Python's standard library.
 
 ## Remaining gaps
 
-- S1.01 acceptance is pending: inventory rows without real workflow fixtures,
-  and representative PostgreSQL/transport/browser latency baselines remain
-  outstanding. Current reference
-  checks cover the committed fixture; they do not turn planned rows into passes.
+- S1.01 acceptance is pending final layer reviews, repeated callable upstream
+  workflow timings, and native-stack publication/read-back. Representative
+  reference captures are mapped to inventory task IDs; remaining variants stay
+  planned with their owning stages, comparison contracts and upstream tests.
+- New transport/browser/import workflows without a meaningful current
+  comparison remain explicitly unmeasured and unratified. Their implementation
+  and final measurements belong to later layers; existing reference checks do
+  not turn those planned rows into passes.
 - Native/portable coordinate conversion assertions belong to S1.02; GraphNest
   query implementations and their parity comparisons belong to subsequent
   layers, and are not circular prerequisites for S1.01.
@@ -131,7 +170,13 @@ CI check remains offline and uses only Python's standard library.
 
 | Stage/layer | Branch | Local state | Remote stack / PR |
 | --- | --- | --- | --- |
-| S1.01 reference foundation | `feat/codegraph/s1-01-contract` | Implemented; reviewed | Not submitted |
+| S1.01 reference foundation | `feat/codegraph/s1-01-contract` | Implemented; reviewed; signed | Draft [PR #64](https://github.com/balcsida/graphnest/pull/64); native remote membership not yet established |
+| S1.01 reference workflows and PostgreSQL baseline | `feat/codegraph/s1-01-workflows` | Implemented, measured and reviewed; depends on PR #64 | Not submitted |
+
+The one-branch submission created a draft PR but reported no native remote stack
+identifier. The native linking command requires at least two PRs; verify remote
+membership after submitting the next real dependent layer rather than claiming
+the first PR and local metadata alone are a native remote stack.
 
 Remote membership, exact head/base, each layer's delta, and actual required checks
 must be read back after submission. Draft publication alone is not approval or

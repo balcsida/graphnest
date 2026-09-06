@@ -1,27 +1,27 @@
 {
-  "index_ms": 169.35808400000002,
+  "index_ms": 799.504667,
   "library_getCallers_ms": {
-    "p50": 0.02400000000000091,
-    "p95": 0.031125000000002956,
+    "p50": 0.024959000000080778,
+    "p95": 0.031874999999899956,
     "samples": 100
   },
   "platform": "Darwin arm64",
   "result": {
-    "durationMs": 124,
-    "edgesCreated": 79,
+    "durationMs": 743,
+    "edgesCreated": 93,
     "errors": [],
-    "filesDiscovered": 10,
+    "filesDiscovered": 13,
     "filesErrored": 0,
-    "filesIndexed": 10,
+    "filesIndexed": 13,
     "filesSkipped": 0,
-    "nodesCreated": 58,
+    "nodesCreated": 68,
     "success": true
   },
   "runtime": "v24.13.0",
   "scope": "pinned portable CodeGraph indexing, library getCallers, and separate direct SQLite call query; not GraphNest or browser latency",
   "sqlite_warm_call_query_ms": {
-    "p50": 0.016292,
-    "p95": 0.018375,
+    "p50": 0.019625,
+    "p95": 0.022917,
     "samples": 100
   }
 }
