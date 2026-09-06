@@ -1,0 +1,27 @@
+{
+  "index_ms": 169.35808400000002,
+  "library_getCallers_ms": {
+    "p50": 0.02400000000000091,
+    "p95": 0.031125000000002956,
+    "samples": 100
+  },
+  "platform": "Darwin arm64",
+  "result": {
+    "durationMs": 124,
+    "edgesCreated": 79,
+    "errors": [],
+    "filesDiscovered": 10,
+    "filesErrored": 0,
+    "filesIndexed": 10,
+    "filesSkipped": 0,
+    "nodesCreated": 58,
+    "success": true
+  },
+  "runtime": "v24.13.0",
+  "scope": "pinned portable CodeGraph indexing, library getCallers, and separate direct SQLite call query; not GraphNest or browser latency",
+  "sqlite_warm_call_query_ms": {
+    "p50": 0.016292,
+    "p95": 0.018375,
+    "samples": 100
+  }
+}
