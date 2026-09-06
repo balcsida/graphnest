@@ -3,11 +3,12 @@ import { createRequire } from 'node:module';
 import { performance } from 'node:perf_hooks';
 import { readFileSync, writeFileSync, utimesSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import os from 'node:os';
 import assert from 'node:assert/strict';
-const [upstream, root, metrics] = process.argv.slice(2);
+const [upstream, root, metrics, timingMode] = process.argv.slice(2);
 const require = createRequire(`${upstream}/package.json`);
 const { CodeGraph } = require(`${upstream}/dist/index.js`);
-const { ToolHandler } = require(`${upstream}/dist/mcp/tools.js`);
+const { ToolHandler, getExploreOutputBudget } = require(`${upstream}/dist/mcp/tools.js`);
 const { buildFlow } = require(`${upstream}/dist/ui-server/api/flow.js`);
 const { buildSteps } = require(`${upstream}/dist/ui-server/api/steps.js`);
 const { buildScreens } = require(`${upstream}/dist/ui-server/api/screens.js`);
@@ -148,7 +149,62 @@ try {
     if (value instanceof Set) return [...value];
     return typeof value === 'string' ? value.replaceAll(root, '/fixture') : value;
   }));
-  writeFileSync(metrics, JSON.stringify({ index_ms, result, library_getCallers_ms: { samples: 100, p50: timings[49], p95: timings[94] } }));
+  const workflow_timings = {};
+  if (timingMode === '--timings') {
+    // Retain graph/handler caches, but pass no ExploreSessionState: every answer must contain source.
+    const timingTool = new ToolHandler(graph);
+    const queries = [
+      {
+        id: 'lib-getCallers',
+        args: { nodeId: normalize.id, maxDepth: 1 },
+        budget: { maxDepth: 1, resultLimit: null, note: 'all direct callers; this library method has no result-limit argument' },
+        handler: 'same open CodeGraph; no session state',
+        call: () => graph.getCallers(normalize.id, 1),
+        verify: value => assert.ok(value.some(({node}) => node.name === 'greet' && node.filePath === 'core.ts')),
+      },
+      {
+        id: 'mcp-explore-source',
+        args: { query: 'processGreeting', maxFiles: 12, projectPath: '/fixture' },
+        budget: { maxFiles: 12, outputBudget: getExploreOutputBudget(graph.getStats().fileCount) },
+        handler: 'one retained ToolHandler across all warmups and runs; execute called without ExploreSessionState, query pool or watcher',
+        call: () => timingTool.execute('codegraph_explore', { query: 'processGreeting', maxFiles: 12, projectPath: root }),
+        verify: value => {
+          assert.ok(!value.isError);
+          assert.ok(value.content.some(item => item.text?.includes('**`consumer.ts`**') && item.text.includes("return 'skipped';")));
+        },
+      },
+      {
+        id: 'ui-flow-branch',
+        args: { from: 'processGreeting', to: 'run', limit: 4 },
+        budget: { maxFlows: 4 },
+        handler: 'same open CodeGraph and upstream source/parser caches; no session state',
+        call: () => buildFlow(graph, root, params({ from: 'processGreeting', to: 'run', limit: '4' })),
+        verify: value => assert.ok(value.flows.some(flow => flow.hops[0]?.node.name === 'processGreeting' && flow.hops[0].source?.lines.includes('    return run();') && flow.hops[1]?.node.name === 'run' && flow.hops[1].edge?.when === 'enabled')),
+      },
+    ];
+    for (const query of queries) {
+      const runs = [];
+      for (let run = 0; run < 5; run++) {
+        const samples_ms = [], bytes = [];
+        for (let sample = 0; sample < 105; sample++) {
+          const started = performance.now();
+          const value = await query.call();
+          const serialized = JSON.stringify(value);
+          const elapsed = performance.now() - started;
+          assert.ok(elapsed <= 5000, `${query.id} exceeded the 5000ms completed-sample ceiling`);
+          query.verify(value);
+          if (sample >= 5) {
+            samples_ms.push(Number(elapsed.toFixed(6)));
+            bytes.push(Buffer.byteLength(serialized));
+          }
+        }
+        const sorted = [...samples_ms].sort((a, b) => a - b);
+        runs.push({ samples_ms, p50_ms: sorted[49], p95_ms: sorted[94], response_bytes: { min: Math.min(...bytes), max: Math.max(...bytes) }, process_rss_bytes: process.memoryUsage().rss, process_max_rss_bytes: process.resourceUsage().maxRSS * 1024 });
+      }
+      workflow_timings[query.id] = { args: query.args, result_budget: query.budget, handler: query.handler, runs, median_p50_ms: runs.map(run => run.p50_ms).sort((a, b) => a - b)[2], median_p95_ms: runs.map(run => run.p95_ms).sort((a, b) => a - b)[2] };
+    }
+  }
+  writeFileSync(metrics, JSON.stringify({ index_ms, result, library_getCallers_ms: { samples: 100, p50: timings[49], p95: timings[94] }, workflow_timings, machine: { platform: process.platform, architecture: process.arch, os_release: os.release(), os_version: os.version(), cpu_model: os.cpus()[0]?.model ?? 'unknown', logical_cpus: os.cpus().length, node: process.version, sqlite: process.versions.sqlite, v8: process.versions.v8 } }));
 } finally {
   graph.close();
 }

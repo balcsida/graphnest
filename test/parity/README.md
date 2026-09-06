@@ -80,7 +80,7 @@ wall-clock timings/index timestamps and saved-trail dates/author are canonicaliz
 for reproducibility. These are reference-service checks, not browser interaction
 or GraphNest implementation checks.
 
-Remaining S1.01 oracle work includes native browser interactions and SVG/PNG
+Remaining reference coverage for later conformance layers includes native browser interactions and SVG/PNG
 exports (client-side code, not a trail-service endpoint), HTTP/MCP transport
 contracts, more query limits/filter/error variants, routed-API and language/
 framework matrices, and richer steps such as stores/native bridges/events.
@@ -104,5 +104,43 @@ caller queries (five warmups discarded), plus a separate direct SQLite query.
 It is informational and machine-specific, excluded from reproducibility hashes.
 It does not measure GraphNest, browser latency, native-kernel performance,
 incremental indexing or installation/watch workflows. Those remain later gates.
+
+`workflow-baseline.json` separately records five consecutive in-process runs of
+100 useful warmed responses for `getCallers`, MCP `explore` and the conditional
+source flow. Refresh only this machine-specific artifact after full oracle
+verification with:
+
+```sh
+python3 test/parity/generate_reference.py --upstream /tmp/codegraph-reference \
+  --node /path/to/node --check --timings
+make parity-reference
+```
+
+Each run discards five warmups, then measures the complete query plus JSON
+serialization with `performance.now()`. Every warmup and measured response must
+contain its required caller, verbatim source or guarded flow. Assertions occur
+outside the timed interval. Explore uses one retained handler without any
+`ExploreSessionState`, query pool or watcher, so session dedup cannot substitute
+an empty response. All queries share the same open index and warm upstream
+caches. Exact arguments, result limits and the numeric adaptive explore budget
+are recorded. Raw samples, nearest-rank p50/p95 and medians across five runs are
+retained, with response-byte ranges and RSS for each run.
+
+RSS is the main Node process: current RSS after the run and the cumulative
+high-water mark through that point, including indexing, earlier oracle work and
+assertions; it excludes child processes and is not per-query allocation. The
+artifact fingerprints producer/configuration, source bytes, both executed harness
+scripts, reference database and answers, and records CPU/OS/Node/SQLite identity.
+The offline check verifies fingerprints, sample counts and summary arithmetic.
+
+A completed query over 5 seconds fails capture; a hung adapter is terminated by
+the 120-second subprocess deadline. Those are measurement safeguards, not new
+release latency gates. Errors, missing required answers and timeouts cannot be
+omitted from a successful capture. `--timings` requires `--check`; graph facts and
+deterministic answers are never rewritten by timing refresh. Machine-specific
+times remain outside oracle equality. Existing GraphNest 10% and future local
+1.25x budgets are unchanged; this is not a local parity pass. Browser/client
+exports, imports/publication, transports, cold startup and large-corpus results
+remain explicitly unmeasured.
 
 The upstream schema is distributed under `../fixtures/codegraph/UPSTREAM-LICENSE`.
