@@ -3,6 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import sqlite3
+import statistics
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "codegraph"
@@ -11,6 +12,40 @@ EDGE_KINDS = set("contains calls imports exports extends implements references t
 
 
 class ReferenceTest(unittest.TestCase):
+    def test_workflow_timings(self):
+        path = ROOT / "workflow-baseline.json"
+        self.assertTrue(path.is_file(), "capture the five-run workflow baseline")
+        baseline = json.loads(path.read_text())
+        manifest = json.loads((ROOT / "manifest.json").read_text())
+        self.assertEqual(baseline["producer"], manifest["producer"])
+        self.assertEqual(baseline["source_sha256"], {name: digest for name, digest in manifest["sha256"].items() if name.startswith("source/")})
+        for name, digest in baseline["harness_sha256"].items():
+            self.assertEqual(hashlib.sha256((ROOT.parents[2] / name).read_bytes()).hexdigest(), digest, name)
+        self.assertEqual(baseline["reference_db_sha256"], manifest["sha256"]["reference.db"])
+        self.assertEqual(baseline["reference_answers_sha256"], manifest["sha256"]["library-expected.json"])
+        self.assertEqual(baseline["configuration"], json.loads((ROOT / "source/codegraph.json").read_text()))
+        self.assertEqual(baseline["database_bytes"], (ROOT / "reference.db").stat().st_size)
+        self.assertEqual(baseline["schema_version"], 9)
+        self.assertEqual(baseline["method"]["runs"], 5)
+        self.assertEqual(baseline["method"]["warmups_per_run"], 5)
+        self.assertEqual(baseline["method"]["samples_per_run"], 100)
+        workflows = baseline["workflow_timings"]
+        self.assertEqual(set(workflows), {"lib-getCallers", "mcp-explore-source", "ui-flow-branch"})
+        for task, workflow in workflows.items():
+            self.assertEqual(len(workflow["runs"]), 5, task)
+            for run in workflow["runs"]:
+                samples = sorted(run["samples_ms"])
+                self.assertEqual(len(samples), 100, task)
+                self.assertTrue(all(0 < value <= 5000 for value in samples), task)
+                self.assertEqual(run["p50_ms"], samples[49], task)
+                self.assertEqual(run["p95_ms"], samples[94], task)
+                self.assertGreater(run["response_bytes"]["min"], 2, task)
+                self.assertGreaterEqual(run["response_bytes"]["max"], run["response_bytes"]["min"], task)
+                self.assertGreater(run["process_max_rss_bytes"], 0, task)
+                self.assertGreater(run["process_rss_bytes"], 0, task)
+            self.assertEqual(workflow["median_p50_ms"], statistics.median(run["p50_ms"] for run in workflow["runs"]), task)
+            self.assertEqual(workflow["median_p95_ms"], statistics.median(run["p95_ms"] for run in workflow["runs"]), task)
+
     def test_reference_contract(self):
         self.assertTrue((ROOT / "manifest.json").is_file(), "generate the pinned reference first")
         manifest = json.loads((ROOT / "manifest.json").read_text())
