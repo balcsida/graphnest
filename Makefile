@@ -134,3 +134,7 @@ compose-test:
 
 ui-smoke: tools
 	sh test/smoke/public_ui.sh
+
+.PHONY: parity-reference
+parity-reference:
+	python3 -m unittest discover -s test/parity -p 'test_*.py'
