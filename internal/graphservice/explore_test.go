@@ -22,10 +22,22 @@ import (
 
 type exploreBackend struct {
 	*inspectionBackend
-	matches  []graphprotocol.DiscoveryMatch
-	noEntry  bool
-	requests []graphprotocol.DiscoverRequest
-	graph    *graphprotocol.TraverseResponse
+	matches     []graphprotocol.DiscoveryMatch
+	noEntry     bool
+	requests    []graphprotocol.DiscoverRequest
+	graph       *graphprotocol.TraverseResponse
+	occurrences map[string]graphprotocol.Entity
+}
+
+func (b *exploreBackend) Entities(ctx context.Context, r graphprotocol.EntitiesRequest) (graphprotocol.EntitiesResponse, error) {
+	if b.occurrences != nil && r.Selector.Occurrence != nil {
+		result := graphprotocol.EntitiesResponse{Generations: []graphprotocol.Generation{b.generation}}
+		if e, ok := b.occurrences[*r.Selector.Occurrence]; ok {
+			result.Entities = []graphprotocol.Entity{e}
+		}
+		return result, nil
+	}
+	return b.inspectionBackend.Entities(ctx, r)
 }
 
 func (b *exploreBackend) Traverse(ctx context.Context, r graphprotocol.TraverseRequest) (graphprotocol.TraverseResponse, error) {
@@ -679,5 +691,140 @@ func TestExploreAdaptivePinnedSourceOracle(t *testing.T) {
 				t.Logf("allowance=%d units=%d segments=%d required=%s", c.Allowance, units, len(segments), c.Marker)
 			})
 		}
+	}
+}
+
+func TestExploreFileAdmission(t *testing.T) {
+	for _, tc := range []struct {
+		name                                                  string
+		query                                                 string
+		files, symbols, occurrences, served                   []string
+		count, maxFiles                                       int
+		unpinnedMatches, sameFileOccurrence, invalid, missing bool
+	}{
+		{name: "query_pin", query: "file0.ts normalize", count: 2, maxFiles: 1, served: []string{"file0.ts"}},
+		{name: "explicit_pin_symbols", files: []string{"file0.ts"}, symbols: []string{"normalize"}, count: 2, maxFiles: 1, unpinnedMatches: true, served: []string{"file0.ts"}},
+		{name: "implicit_cap", query: "normalize", count: 2, maxFiles: 1, served: []string{"file1.ts"}},
+		{name: "required_priority", query: "normalize", occurrences: []string{"occ0"}, count: 2, maxFiles: 1, served: []string{"file0.ts"}},
+		{name: "pin_and_required_priority", query: "normalize", files: []string{"file2.ts"}, occurrences: []string{"occ0"}, count: 3, maxFiles: 2, served: []string{"file0.ts", "file2.ts"}},
+		{name: "pin_exact_conflict", files: []string{"file1.ts"}, occurrences: []string{"occ0"}, count: 2, maxFiles: 1, invalid: true},
+		{name: "two_exact_conflict", occurrences: []string{"occ0", "occ1"}, count: 2, maxFiles: 1, invalid: true},
+		{name: "same_file_obligations", files: []string{"file0.ts"}, occurrences: []string{"occ0", "occ0", "same-file"}, count: 2, maxFiles: 1, sameFileOccurrence: true, served: []string{"file0.ts"}},
+		{name: "missing_occurrence", query: "file0.ts normalize", occurrences: []string{"missing"}, count: 2, maxFiles: 1, missing: true, served: []string{"file0.ts"}},
+		{name: "default_implicit_ceiling", query: "normalize", count: 21},
+		{name: "hard_ceiling", occurrences: []string{"occ20"}, count: 21, invalid: true},
+		{name: "sufficient_budget", query: "normalize", count: 2, maxFiles: 2, served: []string{"file0.ts", "file1.ts"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, b, _ := exploreFixture()
+			b.matches = nil
+			b.occurrences = map[string]graphprotocol.Entity{}
+			b.filesByPath = map[string]*graphv2.File{}
+			b.graph = &graphprotocol.TraverseResponse{Status: "ok", Generations: []graphprotocol.Generation{b.generation}}
+			content := "function normalize() { return 42; }"
+			// The explicit occurrence has the lowest score and arrives last.
+			for n := tc.count - 1; n >= 0; n-- {
+				path := fmt.Sprintf("file%d.ts", n)
+				e := b.entity
+				e.ID = fmt.Sprintf("entity%d", n)
+				e.Fact = proto.Clone(e.Fact).(*graphv2.Node)
+				e.Fact.Occurrence = fmt.Sprintf("occ%d", n)
+				e.Fact.Name = "normalize"
+				e.Fact.Path = proto.String(path)
+				e.Fact.Location = &graphv2.Location{Start: &graphv2.Position{Line: proto.Int32(0), Character: proto.Int32(0)}, End: &graphv2.Position{Line: proto.Int32(0), Character: proto.Int32(int32(len(content)))}}
+				file := &graphv2.File{Path: path, Size: int64(len(content))}
+				b.filesByPath[path] = file
+				b.occurrences[e.Fact.Occurrence] = e
+				b.matches = append(b.matches, graphprotocol.DiscoveryMatch{Entity: e, File: file, Pinned: !tc.unpinnedMatches, Score: float64(n + 1)})
+			}
+			if tc.sameFileOccurrence {
+				e := b.occurrences["occ0"]
+				e.ID = "same-file"
+				e.Fact = proto.Clone(e.Fact).(*graphv2.Node)
+				e.Fact.Occurrence = "same-file"
+				b.occurrences[e.Fact.Occurrence] = e
+			}
+			if tc.name == "hard_ceiling" {
+				for n := 0; n < 20; n++ {
+					tc.files = append(tc.files, fmt.Sprintf("file%d.ts", n))
+				}
+			}
+			if tc.name == "default_implicit_ceiling" {
+				for n := 1; n < 21; n++ {
+					tc.served = append(tc.served, fmt.Sprintf("file%d.ts", n))
+				}
+			}
+			b.file = b.filesByPath["file0.ts"]
+			s.Files = inspectionReader(func(_ context.Context, _ authn.Principal, r api.ReadFileRequest, sha string) (api.ReadFileResponse, error) {
+				return api.ReadFileResponse{RepositoryID: r.RepositoryID, Path: r.Path, IndexedSHA: sha, BlobSHA: "blob", StartLine: 1, EndLine: 1, Content: content}, nil
+			})
+			r := ExploreRequest{Repo: api.GraphRepositorySelector{ID: 101}, Query: tc.query, Files: tc.files, Symbols: tc.symbols, RequiredOccurrences: tc.occurrences, MaxFiles: tc.maxFiles, SourceUnits: 13000}
+			got, err := s.Explore(t.Context(), principalFor(101), r)
+			if tc.invalid {
+				if !errors.Is(err, ErrInvalidRequest) || !reflect.DeepEqual(got, ExploreResponse{}) {
+					t.Fatalf("hard obligations were not refused: err=%v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("bounded named candidates rejected: %v", err)
+			}
+			wantLimit := tc.maxFiles
+			if wantLimit == 0 {
+				wantLimit = 20
+			}
+			if got.FileLimit != wantLimit {
+				t.Fatalf("file limit=%d want=%d", got.FileLimit, wantLimit)
+			}
+			served := []string{}
+			omitted := 0
+			for _, f := range got.Files {
+				if !f.Required {
+					t.Errorf("named body priority lost: %s", f.Path)
+				}
+				for _, e := range f.Entities {
+					if !proto.Equal(e.Fact, b.occurrences[e.Fact.Occurrence].Fact) {
+						t.Fatal("original occurrence changed")
+					}
+				}
+				if len(f.Segments) == 0 {
+					omitted++
+					if f.Mode != "pointer" || f.Status != "allocation_cliff" || f.Fact == nil || len(f.Entities) == 0 {
+						t.Fatalf("omission lost evidence: %s %s %s", f.Path, f.Mode, f.Status)
+					}
+					continue
+				}
+				served = append(served, f.Path)
+				if len(f.Segments) != 1 || f.Segments[0].Content != content {
+					t.Fatal("named body not retained")
+				}
+				for _, selection := range f.Selections {
+					if selection.Status != "ok" {
+						t.Fatalf("named occurrence windowed: %s", selection.EntityID)
+					}
+				}
+			}
+			slices.Sort(served)
+			slices.Sort(tc.served)
+			if !slices.Equal(served, tc.served) {
+				t.Fatalf("source files=%v want=%v", served, tc.served)
+			}
+			if len(got.Discovery.Matches) != len(b.matches) || got.Discovery.ResultTruncated {
+				t.Fatal("admission changed discovery evidence")
+			}
+			if omitted > 0 && (got.Complete || !slices.Contains(got.Boundaries, "source_boundary") || len(got.Handoffs) == 0) {
+				t.Fatal("omitted named source silently became complete")
+			}
+			if tc.missing && !slices.Contains(got.Boundaries, "required_entity_unavailable") {
+				t.Fatal("missing occurrence boundary lost")
+			}
+			if tc.name == "sufficient_budget" && !got.Complete {
+				t.Fatal("sufficient source budget became partial")
+			}
+			if got.Usage.SourceReads > got.FileLimit || got.Usage.SourceReads > 20 || got.Usage.SourceUnits > 13000 || got.Usage.SourceBytes > 256<<10 {
+				t.Fatal("work/source bound exceeded")
+			}
+			t.Logf("limit=%d served=%d omitted=%d units=%d complete=%v", got.FileLimit, len(served), omitted, got.Usage.SourceUnits, got.Complete)
+		})
 	}
 }

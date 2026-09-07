@@ -259,6 +259,7 @@ func (s *Service) Explore(ctx context.Context, p authn.Principal, r ExploreReque
 	byPath := map[string]int{}
 	seen := map[string]bool{}
 	required := map[string]bool{}
+	exactRequiredFiles := map[string]bool{}
 	roots := []graphprotocol.Entity{}
 	candidates := map[string]allocationCandidate{}
 	ensureFile := func(path string) *ExploreFile {
@@ -391,6 +392,9 @@ func (s *Service) Explore(ctx context.Context, p authn.Principal, r ExploreReque
 		if e != nil {
 			return ExploreResponse{}, e
 		}
+		if path := page.Entities[0].Fact.GetPath(); path != "" {
+			exactRequiredFiles[path] = true
+		}
 		if !slices.ContainsFunc(roots, func(v graphprotocol.Entity) bool { return v.ID == page.Entities[0].ID }) {
 			roots = append([]graphprotocol.Entity{page.Entities[0]}, roots...)
 		}
@@ -485,6 +489,13 @@ func (s *Service) Explore(ctx context.Context, p authn.Principal, r ExploreReque
 		}
 	}
 	slices.SortStableFunc(result.Files, func(a, b ExploreFile) int {
+		hardA, hardB := a.Pinned || exactRequiredFiles[a.Path], b.Pinned || exactRequiredFiles[b.Path]
+		if hardA != hardB {
+			if hardA {
+				return -1
+			}
+			return 1
+		}
 		if a.Pinned != b.Pinned {
 			if a.Pinned {
 				return -1
@@ -505,16 +516,23 @@ func (s *Service) Explore(ctx context.Context, p authn.Principal, r ExploreReque
 		}
 		return 0
 	})
-	protected := 0
+	// Names can match many definitions: they retain body priority, but only
+	// file pins and exact occurrences impose hard file-admission obligations.
+	hard, preferred := 0, 0
 	for _, f := range result.Files {
+		if f.Pinned || exactRequiredFiles[f.Path] {
+			hard++
+		}
 		if f.Pinned || f.Required {
-			protected++
+			preferred++
 		}
 	}
-	if protected > 20 || r.MaxFiles > 0 && protected > r.MaxFiles {
+	if hard > 20 || r.MaxFiles > 0 && hard > r.MaxFiles {
 		return ExploreResponse{}, ErrInvalidRequest
 	}
-	budget.Files = max(budget.Files, protected)
+	if r.MaxFiles == 0 {
+		budget.Files = min(20, max(budget.Files, preferred))
+	}
 	result.FileLimit = budget.Files
 	ordered := make([]allocationCandidate, 0, len(result.Files))
 	for _, f := range result.Files {
