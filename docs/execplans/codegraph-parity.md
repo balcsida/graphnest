@@ -129,6 +129,29 @@ Implementation, validation, draft publication, and release are separate states.
   Vet, formatting and diff checks pass; independent review has no findings.
   SQL scan costs and the 2,000-node tree ceiling are documented. C2/C3 remain
   pending, and production-size performance remains part of the Stage 1 gate.
+- C1 is published as draft [PR #73](https://github.com/balcsida/graphnest/pull/73),
+  native stack #66 position 9, with verified signed head `341372d` and parent
+  `5214a27`. The exact PR body and ten-file delta were read back. CI run `34156123866`
+  passes on this head, including all required checks; the separate AI scan
+  still fails before analysis because its requested model is unsupported.
+  C2 stateless exploration and allocation is active on dependent
+  `feat/codegraph/s1-05-allocation`. C3 state and the Stage 1 gate remain pending.
+- C2 independent review identified four source-selection gaps: required
+  family/god-file adaptive variants, unequal required-window allocations,
+  overlapping required ranges, and affordable whole-file prefixes. All three
+  window regressions reproduce before correction. Fix round 1 also covers
+  required adaptive variants and an affordable BMP file; 54 service race tests
+  and both PostgreSQL Explore tests pass without skips. Independent re-review
+  accepts all four fixes without new findings.
+- C2 shared stateless exploration is implemented and independently approved.
+  It combines discovery, indexed-file facts, bounded relationships and exact-SHA
+  source with corpus-scaled UTF-16 allocations and separate byte/work limits.
+  Required ranges are funded before optional context; adaptive family/god-file
+  selection retains selected bodies and original signatures. Actual pinned
+  adaptive-on/off probes and native matching-grant checks retain required source.
+  Final domain generation/SHA/grant checks remain mandatory. C3 history,
+  source-derived analysis, public adapters, final rendered envelopes and the
+  full Stage 1 gate remain pending. Signing and draft submission are next.
 
 ## Baselines
 
@@ -338,11 +361,12 @@ CI check remains offline and uses only Python's standard library.
 | S1.04 entity traversal | `feat/codegraph/s1-04-query` | Implemented, reviewed and signed; depends on PR #69 | Draft [PR #70](https://github.com/balcsida/graphnest/pull/70); native stack #66, position 6 |
 | S1.05a semantic discovery | `feat/codegraph/s1-05-discovery` | Implemented, reviewed and signed; depends on PR #70 | Draft [PR #71](https://github.com/balcsida/graphnest/pull/71); native stack #66, position 7 |
 | S1.05b exact-source inspection | `feat/codegraph/s1-05-explore` | Implemented, reviewed and signed; depends on PR #71 | Draft [PR #72](https://github.com/balcsida/graphnest/pull/72); native stack #66, position 8 |
-| S1.05c1 file projections | `feat/codegraph/s1-05-compose` | Implemented and reviewed; depends on PR #72 | Not submitted |
+| S1.05c1 file projections | `feat/codegraph/s1-05-compose` | Implemented, reviewed and signed; depends on PR #72 | Draft [PR #73](https://github.com/balcsida/graphnest/pull/73); native stack #66, position 9 |
+| S1.05c2 stateless exploration and allocation | `feat/codegraph/s1-05-allocation` | Implemented and reviewed; depends on PR #73 | Not submitted |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
-(`PRS_kwDOTcm09c4ADdBt`); subsequent submissions extended it to eight PRs.
+(`PRS_kwDOTcm09c4ADdBt`); subsequent submissions extended it to nine PRs.
 GraphQL independently confirmed the stack size, trunk,
 positions and all PR head/base identities; local metadata alone was not used
 as proof of remote membership.

@@ -125,7 +125,7 @@ func (s *Store) QueryDiscovery(ctx context.Context, q graphquery.DiscoverySearch
 			distance = 1
 		}
 	}
-	args := []any{ids, uploads, commits, discoveryTSQuery(q.Terms), groups, q.Symbols, q.Files, q.Query.Kinds, q.Query.Languages, q.Query.Paths, q.Query.Names, raw, grams, q.Limit, graphquery.MaxEntityQueryBytes, patterns, distance, negated, q.ExplicitSymbols, q.ExplicitFiles}
+	args := []any{ids, uploads, commits, discoveryTSQuery(q.Terms), groups, q.Symbols, q.Files, q.Query.Kinds, q.Query.Languages, q.Query.Paths, q.Query.Names, raw, grams, q.Limit, graphquery.MaxEntityQueryBytes, patterns, distance, negated, q.ExplicitSymbols, q.ExplicitFiles, q.NoMultiterm}
 	// Each predicate remains inside the trusted generation scope. Materializing
 	// candidate IDs before payload joins bounds facts decoded and transferred.
 	sql := `with scope as (select * from unnest($1::bigint[],$2::bigint[],$3::text[]) as v(repository_id,upload_id,commit)),
@@ -135,7 +135,7 @@ func (s *Store) QueryDiscovery(ctx context.Context, q graphquery.DiscoverySearch
  d.usage_count,d.generated,d.ambient,d.test_file,
  case when $17>0 then graph_discovery_distance(d.name,$12,$17) else 0 end edit_distance,
  graph_discovery_deprioritized(d.path,$16::text[],$18::boolean[]) deprioritized,
- (not d.generated and not d.ambient and not d.test_file and (d.usage_count>0 or d.kind in ('function','method','class','struct','interface','trait','protocol','component','route','enum','type_alias','union')) and not graph_discovery_deprioritized(d.path,$16::text[],$18::boolean[]) and (select count(*) from unnest($5::text[]) g where d.terms @@ to_tsquery('simple',g))>=2) corroborated,
+ (not $21::boolean and not d.generated and not d.ambient and not d.test_file and (d.usage_count>0 or d.kind in ('function','method','class','struct','interface','trait','protocol','component','route','enum','type_alias','union')) and not graph_discovery_deprioritized(d.path,$16::text[],$18::boolean[]) and (select count(*) from unnest($5::text[]) g where d.terms @@ to_tsquery('simple',g))>=2) corroborated,
  coalesce(((d.name=any($19::text[]) or d.path=any($20::text[])) or ((d.name=any($6::text[]) or d.path=any($7::text[])) and not graph_discovery_deprioritized(d.path,$16::text[],$18::boolean[]))),false) pinned,
  (select count(*) from unnest($5::text[]) g where d.terms @@ to_tsquery('simple',g)) matched,
  array_remove(array[
