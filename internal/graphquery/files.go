@@ -6,7 +6,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"path"
+	"regexp"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/balcsida/graphnest/internal/graphprotocol"
@@ -16,11 +18,17 @@ type FileStore interface {
 	QueryFiles(context.Context, FileQuery) ([]graphprotocol.IndexedFile, error)
 }
 
+type FileCountStore interface {
+	CountFiles(context.Context, FileQuery) (int64, error)
+}
+
 type FileQuery struct {
 	Snapshots          []QuerySnapshot
 	Path               *string
+	Prefix             *string
 	Directory, Pattern string
 	Offset, Limit      int
+	UTF16Pattern       bool
 }
 
 // NormalizeFilePath accepts repository-relative paths, including ./ and redundant
@@ -40,6 +48,17 @@ func NormalizeFilePath(value string) (string, error) {
 func (service *Service) IndexedFiles(ctx context.Context, req graphprotocol.FilesRequest) (graphprotocol.FilesResponse, error) {
 	if service == nil || req.Limit < 0 || req.Limit > 100 || len(req.Cursor) > 512 || len(req.Glob) > 1024 || !utf8.ValidString(req.Glob) || strings.ContainsAny(req.Glob, "\x00\\") {
 		return graphprotocol.FilesResponse{}, ErrInvalidRequest
+	}
+	if len(req.Pattern) > 1024 || !utf8.ValidString(req.Pattern) || strings.ContainsRune(req.Pattern, '\x00') || req.Pattern != "" && req.Glob != "" {
+		return graphprotocol.FilesResponse{}, ErrInvalidRequest
+	}
+	if req.Prefix != nil {
+		if req.Directory != "" || req.Path != nil {
+			return graphprotocol.FilesResponse{}, ErrInvalidRequest
+		}
+		if _, err := NormalizeFilePath(*req.Prefix); err != nil {
+			return graphprotocol.FilesResponse{}, err
+		}
 	}
 	directory, err := NormalizeFilePath(req.Directory)
 	if err != nil {
@@ -67,6 +86,40 @@ func (service *Service) IndexedFiles(ctx context.Context, req graphprotocol.File
 		}
 		pattern = patterns[0]
 	}
+	utf16Pattern := strings.Contains(req.Pattern, "?")
+	if req.Pattern != "" {
+		units := []rune(req.Pattern)
+		if utf16Pattern {
+			units = nil
+			for _, unit := range utf16.Encode([]rune(req.Pattern)) {
+				units = append(units, rune(unit))
+			}
+		}
+		literal := func(unit rune) string {
+			if utf16Pattern {
+				unit += 0x10000
+			}
+			return regexp.QuoteMeta(string(unit))
+		}
+		var expression strings.Builder
+		for index := 0; index < len(units); index++ {
+			switch units[index] {
+			case '*':
+				if index+1 < len(units) && units[index+1] == '*' {
+					// JavaScript's dot excludes these four line terminators.
+					expression.WriteString("[^" + literal('\n') + literal('\r') + literal('\u2028') + literal('\u2029') + "]*")
+					index++
+				} else {
+					expression.WriteString("[^" + literal('/') + "]*")
+				}
+			case '?':
+				expression.WriteString("[^" + literal('/') + "]")
+			default:
+				expression.WriteString(literal(units[index]))
+			}
+		}
+		pattern = expression.String()
+	}
 	ctx, cancel := service.entityContext(ctx)
 	defer cancel()
 	ready, err := service.readyEntities(ctx, req.Scope)
@@ -86,9 +139,11 @@ func (service *Service) IndexedFiles(ctx context.Context, req graphprotocol.File
 		Snapshots          []QuerySnapshot
 		Selected           int64
 		Path               *string
+		Prefix             *string
 		Directory, Pattern string
 		Limit              int
-	}{ready.snapshots, req.Scope.SelectedRepositoryID, req.Path, directory, pattern, limit})
+		UTF16Pattern       bool
+	}{ready.snapshots, req.Scope.SelectedRepositoryID, req.Path, req.Prefix, directory, pattern, limit, utf16Pattern})
 	fingerprint := sha256.Sum256(encoded)
 	offset := 0
 	if req.Cursor != "" {
@@ -102,7 +157,8 @@ func (service *Service) IndexedFiles(ctx context.Context, req graphprotocol.File
 		}
 		offset = cursor.Offset
 	}
-	files, err := store.QueryFiles(ctx, FileQuery{Snapshots: ready.selected, Path: req.Path, Directory: directory, Pattern: pattern, Offset: offset, Limit: limit + 1})
+	query := FileQuery{Snapshots: ready.selected, Path: req.Path, Prefix: req.Prefix, Directory: directory, Pattern: pattern, Offset: offset, Limit: limit + 1, UTF16Pattern: utf16Pattern}
+	files, err := store.QueryFiles(ctx, query)
 	if err != nil {
 		return graphprotocol.FilesResponse{}, err
 	}
@@ -117,6 +173,20 @@ func (service *Service) IndexedFiles(ctx context.Context, req graphprotocol.File
 		files[i].RepositoryID = ready.publicIDs[files[i].RepositoryID]
 	}
 	result := graphprotocol.FilesResponse{Files: files, Generations: ready.publicGenerations()}
+	if req.IncludeCount {
+		counter, ok := ready.store.(FileCountStore)
+		if !ok {
+			return graphprotocol.FilesResponse{}, ErrInvalidRequest
+		}
+		total, err := counter.CountFiles(ctx, query)
+		if err != nil {
+			return graphprotocol.FilesResponse{}, err
+		}
+		if total < 0 || len(files) > 0 && total < int64(offset+len(files)) {
+			return graphprotocol.FilesResponse{}, ErrGenerationChanged
+		}
+		result.TotalFiles = &total
+	}
 	if len(files) > limit {
 		result.Files = files[:limit]
 		data, _ := json.Marshal(entityCursor{fingerprint, offset + limit})

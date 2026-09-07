@@ -37,6 +37,61 @@ Every outline continuation remains incomplete with an `outline_page` boundary,
 including the final page whose `NextCursor` is empty. Valid facts and source are
 still returned on that page.
 
+## File inventory presentations
+
+`FileInventory(FileInventoryRequest)` adds bounded `tree` (default), `flat`, and
+language `grouped` views. It reads one indexed-file page and an exact filtered
+`COUNT` from the same selected immutable upload. `TotalFiles` describes all
+matching indexed files; `PageFiles`, `VisibleFiles`, tree nodes and group sizes
+describe this page. Both incoming and outgoing cursors add `file_page`, including
+the final continuation. `Complete` means the entire matched inventory is shown,
+not that extraction or source analysis is complete. Original extraction errors
+and generation diagnostics remain available as evidence.
+
+The high-level `Path` normalizes root spellings such as `/`, `.`, `./` and `\`,
+leading separators, and Windows separators to a repository-relative prefix. It
+matches an exact file or descendants across a `/` boundary. Interior repeated
+separators stay literal; parent traversal and NUL are rejected. No server path is
+opened. Its `Pattern` deliberately differs from `ListFiles.Glob`: it uses the
+pinned tool's unanchored, case-sensitive `*`, `**`, and `?` matching. Thus `*.ts`
+also finds nested `.tsx` files. Other regex punctuation is literal, including
+brackets; filters intersect. Existing strict `Directory`/`Glob` behavior stays
+available through `ListFiles`.
+
+Pattern matching preserves JavaScript UTF-16 units: `a?b.ts` does not match
+`a😀b.ts`, whereas `a??b.ts` does. For patterns containing `?`, a query-local SQL
+expression maps UTF-16 units to a disjoint Unicode alphabet before matching;
+facts are never rewritten. Other patterns use the original path directly.
+`**` excludes LF, CR, U+2028 and U+2029, matching the reference's JavaScript dot.
+Pages and counts share the same filter expression. Broad filters/counts may
+scan selected paths within the deadline; `?` adds per-path character conversion.
+This is not a constant-time search or throughput claim.
+
+`IncludeMetadata` defaults to true and retains the complete original protobuf
+file in each visible entry's `Metadata`, including optional values, generated
+flags, extraction errors and extensions. False omits that metadata, retaining
+paths and language group labels. Flat/grouped file display order and tree sibling
+order use Unicode collation, with directories before files; group order is by
+page file count, with ties retaining encounter order from the byte-ordered query
+page. These are page-local presentations, not a globally reordered cursor.
+
+Tree depth is measured from the repository root even when `Path` selects a
+subdirectory. Explicit `MaxDepth` values clamp to 1–20; omission uses the native
+ceiling of 20. A hidden subtree sets `Truncated` on its last visible directory,
+adds `max_depth`, and prevents completeness. The implementation splits at most
+21 components per file and creates at most 2,000 nodes for a 100-file page;
+path prefixes share the original string rather than copying every prefix.
+There is no cross-call state.
+
+Paths are limited to 16 KiB, patterns to 1 KiB, pages to 100 files (lower engine
+limits apply), and cursors to 512 bytes. View configuration may change between
+pages; repository/generation, normalized filters and page limit must remain the
+same. Query intermediates retain the four-MiB bound and final JSON the configured
+256-KiB maximum. The five-second deadline and final generation/authorization
+checks cover counting and projection as well as file retrieval. Overflow,
+replacement, revoked eligibility or cancellation returns no buffered paths,
+counts or metadata. REST/MCP exposure and browser rendering remain later layers.
+
 ## Exact source and uncertainty
 
 `InspectionSource.Content` is verbatim whole-line source at `IndexedSHA`, without
@@ -118,7 +173,7 @@ within the deadline; only bounded page payloads cross the store boundary.
 Entity inspection reads at most 20 source slices, root first, with related entity
 IDs deduplicated within the call. Source defaults to 64 KiB total and is capped
 at 256 KiB. A whole-line slice that does not fit is explicitly refused; adaptive
-allocation belongs to S1.05c. The repository reader separately enforces its
+allocation belongs to S1.05c2. The repository reader separately enforces its
 one-MiB file ceiling and default 1,000 returned lines per read. Query batches and
 intermediate graph responses retain the four-MiB entity-query bound; final JSON
 is capped by `graphservice.Limits.MaxResponseBytes` (default/max 256 KiB).
@@ -138,6 +193,14 @@ revocation exercise the final boundary. Focused hostile tests cover file-only
 and generated retention, overload paging, virtual/ambient/partial locations,
 Unicode, oversized/unreadable/truncated source, budgets, cancellation, hidden
 lookahead and the legacy same-SHA source-return race.
+
+`TestGraphFileInventoryRealOracle` additionally compares nine pinned
+flat/tree/grouped/depth/metadata/filter answers and all original visible facts,
+then joins bounded pages in all three modes. Separate tests cover UTF-16 wildcard
+matching, count consistency, hidden lookahead, deep paths and final real
+PostgreSQL generation/SHA/grant changes. C1 does not implement composed Explore:
+adaptive source allocation/configuration remains C2, and authenticated bounded
+repeat-call history/deduplication remains C3.
 
 Run the normal PostgreSQL gate with only the test database DSN:
 
