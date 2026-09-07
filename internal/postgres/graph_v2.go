@@ -136,6 +136,9 @@ func (s *Store) ReplaceGraphV2(ctx context.Context, repositoryID int64, publicat
 	})); err != nil {
 		return GraphReplacement{}, err
 	}
+	if err = writeGraphDiscovery(ctx, tx, upload.ID, artifact); err != nil {
+		return GraphReplacement{}, err
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return GraphReplacement{}, err
 	}
