@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"time"
 
 	"github.com/balcsida/graphnest/internal/graphprotocol"
 )
@@ -24,6 +25,7 @@ const (
 )
 
 type Limits struct {
+	MaxDuration                               time.Duration
 	PerCategory, DefaultImpactDepth, MaxDepth int
 	DefaultTraceDepth, MaxTraceDepth, MaxRows int
 	MaxNodes, MaxEdges, MaxFanout             int

@@ -23,7 +23,14 @@ covers all 23 kinds and 13 relationships. Identity, missing evidence, hostile
 input bounds and exact Unicode/CRLF source coordinates have unit/property/fuzz
 coverage. Independent contract review passed after fixing aggregate predecode
 allocation accounting. These are artifact checks;
-PostgreSQL, query, REST/MCP and browser conformance rows remain planned.
+they do not establish PostgreSQL, query, REST/MCP or browser conformance.
+
+S1.04's [internal entity query contract](../graph-query-v2.md) adds PostgreSQL
+fact and reachability comparisons: the real fixture's 68 nodes/93 edges,
+20 kinds/nine relations pass 138 incoming/outgoing traversals. A separate
+synthetic vocabulary test covers 23 kinds/13 relations in 26 traversals.
+These checks preserve full occurrence evidence and optional fields; they do not
+complete the composed-answer, public transport or browser rows below.
 
 ## CLI command surface
 
