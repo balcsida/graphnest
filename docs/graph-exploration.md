@@ -202,8 +202,10 @@ losing coverage. A pending or failed call never supplies another call's history.
 Eviction, restart, expiry or unadmitted lines affect efficiency only; current
 source is still returned under the same mandatory authorization checks.
 
-The frozen reference's exact `core.ts Service normalize` query with MaxFiles=1
-remains refused by C2 when other named required files exceed that explicit cap.
-The native session restoration test uses `path:core.ts Service normalize` plus
-an explicit core.ts file pin at the same budget. This proves restoration for a
-selected file; exact-query admission remains a separate composition follow-up.
+The native session restoration test uses the frozen reference's exact
+`core.ts Service normalize` query with MaxFiles=1 and SourceUnits=13000, without
+added file/symbol pins or filters. Both calls return only original core.ts source
+and its Service/normalize occurrences. The second restores that source with zero
+references or savings. Other named files can remain incomplete pointers under
+the explicit one-file cap. Native source retains its final LF/empty EOF line;
+this comparison does not claim identical public rendered envelopes.
