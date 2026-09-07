@@ -70,6 +70,75 @@ func TestGraphExploreRealOracle(t *testing.T) {
 	for _, n := range a.Nodes {
 		facts[n.Occurrence] = n
 	}
+
+	t.Run("pinned_file_admission", func(t *testing.T) {
+		got, err := service.Explore(t.Context(), principal, graphservice.ExploreRequest{Repo: api.GraphRepositorySelector{ID: 101}, Query: "core.ts Service normalize", MaxFiles: 1, SourceUnits: 13000})
+		if err != nil {
+			t.Fatalf("exact pinned one-file query rejected: %v", err)
+		}
+		if got.FileLimit != 1 || got.Usage.SourceReads > 1 || got.Usage.SourceUnits > 13000 || got.Usage.SourceBytes > 256<<10 || len(got.Generations) != 1 {
+			t.Fatal("one-file query exceeded original bounds")
+		}
+		encoded, err := json.Marshal(got)
+		if err != nil || len(encoded) > 256<<10 {
+			t.Fatal("serialized response bound")
+		}
+		original, err := os.ReadFile("../../test/fixtures/codegraph/source/core.ts")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := strings.Join(strings.Split(string(original), "\n")[:16], "\n")
+		served, omitted := 0, 0
+		symbols := map[string]bool{}
+		for _, f := range got.Files {
+			for _, e := range f.Entities {
+				if !proto.Equal(e.Fact, facts[e.Fact.Occurrence]) {
+					t.Fatal("original occurrence changed")
+				}
+			}
+			if len(f.Segments) == 0 {
+				if f.Required {
+					omitted++
+					if f.Mode != "pointer" || f.Status != "allocation_cliff" || f.Fact == nil || len(f.Entities) == 0 {
+						t.Fatal("omitted named candidate lost pointer evidence")
+					}
+				}
+				continue
+			}
+			served++
+			if f.Path != "core.ts" || !f.Pinned || len(f.Segments) != 1 {
+				t.Fatalf("unexpected source admission: %s", f.Path)
+			}
+			seg := f.Segments[0]
+			// Preserve the native reader's final LF/empty EOF line as well as the
+			// pinned answer's required original L1-16 span.
+			if seg.StartLine != 1 || seg.EndLine != 17 || seg.Content != string(original) || seg.IndexedSHA != a.Commit {
+				t.Fatal("core.ts original whole source/provenance lost")
+			}
+			if strings.Join(strings.Split(seg.Content, "\n")[:16], "\n") != want {
+				t.Fatal("required original L1-16 span lost")
+			}
+
+			for _, e := range f.Entities {
+				symbols[e.Fact.Name] = true
+			}
+		}
+		if served != 1 || omitted == 0 || !symbols["Service"] || !symbols["normalize"] {
+			t.Fatalf("source answer missing: served=%d omitted=%d names=%v", served, omitted, symbols)
+		}
+		if got.Complete || len(got.Handoffs) == 0 {
+			t.Fatal("omitted implicit named source became complete")
+		}
+		boundary := false
+		for _, b := range got.Boundaries {
+			boundary = boundary || b == "source_boundary"
+		}
+		if !boundary {
+			t.Fatal("source omission boundary missing")
+		}
+		t.Logf("exact query: core.ts required L1-16 / native EOF L17 units=%d bytes=%d response=%d reads=%d omitted-named=%d", got.Usage.SourceUnits, got.Usage.SourceBytes, len(encoded), got.Usage.SourceReads, omitted)
+	})
+
 	for _, query := range []string{"processGreeting", "normalize", "consumer.ts", "the way it works", "processGreeting orphanUtility orphan.ts"} {
 		t.Run(query, func(t *testing.T) {
 			got, err := service.Explore(t.Context(), principal, graphservice.ExploreRequest{Repo: api.GraphRepositorySelector{ID: 101}, Query: query, MaxFiles: 4, SourceUnits: 13000})

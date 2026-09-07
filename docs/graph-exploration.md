@@ -50,10 +50,15 @@ Unused reservations are distributed proportionally to remaining source demand.
 
 RequiredOccurrences and explicitly named callable discovery matches supply the
 required-file weight. This is bounded source allocation over the accepted graph,
-not a claim of S1.06 dynamic flow-spine extraction. Pinned/required files sort
-first. Defaults may admit up to twenty protected files; an explicit MaxFiles
-which cannot hold all protected files is refused rather than silently exceeded.
-Unavoidable source-budget truncation remains visible even for required entities.
+not a claim of S1.06 dynamic flow-spine extraction. File pins and files resolved
+from exact RequiredOccurrences are admitted first. An explicit MaxFiles which
+cannot hold those distinct hard obligations is refused. Named matches retain
+body priority and weighting, but do not force every matching file into the source
+budget. With MaxFiles omitted, the default may expand for preferred named files
+up to twenty. Omitted named candidates retain original fact/occurrence pointers,
+source boundaries and a focus handoff; Complete is false. Explicit MaxFiles is
+never exceeded. Unavoidable source-budget truncation remains visible even for
+required entities.
 
 A bounded prefix read preserves affordable small files, including BMP-heavy
 UTF-8 files; reader EOF evidence decides whether the whole file was captured.

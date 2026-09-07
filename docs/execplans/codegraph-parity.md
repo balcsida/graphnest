@@ -329,6 +329,16 @@ feature flags or global configuration cannot change the reference. Explicit
 regeneration needs dependency access and Python 3.12+; the committed-reference
 CI check remains offline and uses only Python's standard library.
 
+The independently reviewed S1.05c2 admission repair distinguishes hard file pins
+and exact occurrence paths from preferred named bodies. The original
+`core.ts Service normalize` query at `maxFiles=1` now returns the committed
+786-byte core.ts source in one read, with original occurrences and two explicitly
+incomplete omitted-source pointers. Conflicting hard obligations still reject;
+default preferred-file expansion stops at twenty. The original four-file source
+tasks remain intact. All 55 service race tests and both required PostgreSQL
+Explore tests pass, as do focused vet, staticcheck and formatting checks.
+The exact two-call restoration comparison follows on the rebased sessions layer.
+
 ## Remaining gaps
 
 - Representative reference captures are mapped to inventory task IDs;
