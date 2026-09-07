@@ -14,10 +14,16 @@ type FilesRequest struct {
 	Glob      string  `json:"glob,omitempty"`
 	Limit     int     `json:"limit,omitempty"`
 	Cursor    string  `json:"cursor,omitempty"`
+	// Prefix/Pattern implement the high-level inventory's literal prefix and
+	// unanchored wildcard matching. Directory/Glob retain strict path semantics.
+	Prefix       *string `json:"prefix,omitempty"`
+	Pattern      string  `json:"pattern,omitempty"`
+	IncludeCount bool    `json:"include_count,omitempty"`
 }
 
 type FilesResponse struct {
 	Files       []IndexedFile `json:"files"`
 	Generations []Generation  `json:"generations"`
 	NextCursor  string        `json:"next_cursor,omitempty"`
+	TotalFiles  *int64        `json:"total_files,omitempty"`
 }

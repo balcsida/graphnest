@@ -2,6 +2,7 @@ package graphquery
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -9,10 +10,58 @@ import (
 	"github.com/balcsida/graphnest/internal/graphprotocol"
 )
 
+func TestFilesInventoryPattern(t *testing.T) {
+	s := &fileTestStore{}
+	r := graphprotocol.FilesRequest{Scope: entityTestScope()}
+	if err := json.Unmarshal([]byte(`{"prefix":"src","pattern":"*.ts"}`), &r); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (&Service{Store: s}).IndexedFiles(t.Context(), r); err != nil {
+		t.Fatal(err)
+	}
+	if s.query.Pattern != `[^/]*\.ts` {
+		t.Fatalf("inventory pattern ignored or anchored: %q", s.query.Pattern)
+	}
+}
+
 type fileTestStore struct {
 	entityTestStore
-	query FileQuery
-	rows  []graphprotocol.IndexedFile
+	query      FileQuery
+	rows       []graphprotocol.IndexedFile
+	total      int64
+	afterCount func()
+	countCalls int
+}
+
+func (s *fileTestStore) CountFiles(_ context.Context, q FileQuery) (int64, error) {
+	s.countCalls++
+	if s.afterCount != nil {
+		s.afterCount()
+	}
+	return s.total, nil
+}
+
+func TestFilesCountGenerationAndHiddenRows(t *testing.T) {
+	for _, mode := range []string{"generation", "hidden", "negative_count", "short_count"} {
+		s := &fileTestStore{total: 2, rows: []graphprotocol.IndexedFile{{RepositoryID: 1, Fact: &graphv2.File{Path: "a"}}, {RepositoryID: 1, Fact: &graphv2.File{Path: "b"}}}}
+		switch mode {
+		case "generation":
+			s.afterCount = func() { s.changed = true }
+		case "hidden":
+			s.rows[1].RepositoryID = 999
+		case "negative_count":
+			s.total = -1
+		case "short_count":
+			s.total = 1
+		}
+		got, err := (&Service{Store: s}).IndexedFiles(t.Context(), graphprotocol.FilesRequest{Scope: entityTestScope(), Limit: 1, IncludeCount: true})
+		if !errors.Is(err, ErrGenerationChanged) || got.TotalFiles != nil || len(got.Files) > 0 || got.NextCursor != "" {
+			t.Fatalf("%s exposed counts/page=%+v err=%v", mode, got, err)
+		}
+		if mode == "hidden" && s.countCalls != 0 {
+			t.Fatal("count queried before validating hidden lookahead")
+		}
+	}
 }
 
 func (s *fileTestStore) QueryFiles(_ context.Context, q FileQuery) ([]graphprotocol.IndexedFile, error) {

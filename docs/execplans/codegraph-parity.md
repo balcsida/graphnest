@@ -101,6 +101,34 @@ Implementation, validation, draft publication, and release are separate states.
   red then green; final graphservice/query race checks and all six required
   PostgreSQL inspection tests passed (2.623s, no skips), as did vet and format
   checks. Original file-error evidence remains visible on contributing source.
+- S1.05b is published as draft [PR #72](https://github.com/balcsida/graphnest/pull/72),
+  native stack #66 position 8, with verified signed head `078789c` and parent
+  `51172e9`. The exact PR body and 17-file delta match the reviewed commit.
+  S1.05c is active on dependent `feat/codegraph/s1-05-compose`; inspection
+  publication does not complete S1.05 or the Stage 1 gate.
+- PR #72's normal integration run exposed missing fixture preparation for the
+  mandatory inspection oracle. The existing exporter now prepares a private
+  fixture before the six-package PostgreSQL suite and cleans it up afterward.
+  Full `make postgres-test` passed; allocation/export failure probes confirm
+  preparation failures stop the suite. Independent review approved the fix,
+  published as verified signed head `5214a27`; all eight native positions,
+  the PR body and the 18-file delta were read back. CI run `34153429805`
+  passes on this head, including all required checks. The separate AI scan
+  still fails before analysis because its requested model is unsupported.
+- The remaining S1.05c work is split into bounded file projections (c1),
+  stateless exploration and source allocation (c2), and scoped repeated-call
+  deduplication and restoration (c3). C1 is implemented and independently
+  approved on the existing compose branch. Every original S1.05 obligation
+  remains required.
+- C1 provides bounded flat, tree and grouped file inventories with original
+  metadata, exact filtered totals and explicit page/depth boundaries. All nine
+  pinned views retain the 13 original file facts. Eight hostile wildcard cases
+  verify JavaScript UTF-16 matching, including emoji and line terminators.
+  Final service/query race checks pass (1.930s/2.360s); ten required PostgreSQL
+  tests pass (4.126s, no skips), including final grant/SHA/generation changes.
+  Vet, formatting and diff checks pass; independent review has no findings.
+  SQL scan costs and the 2,000-node tree ceiling are documented. C2/C3 remain
+  pending, and production-size performance remains part of the Stage 1 gate.
 
 ## Baselines
 
@@ -309,11 +337,12 @@ CI check remains offline and uses only Python's standard library.
 | S1.03 generation storage | `feat/codegraph/s1-03-storage` | Implemented, reviewed and signed; depends on PR #68 | Draft [PR #69](https://github.com/balcsida/graphnest/pull/69); native stack #66, position 5 |
 | S1.04 entity traversal | `feat/codegraph/s1-04-query` | Implemented, reviewed and signed; depends on PR #69 | Draft [PR #70](https://github.com/balcsida/graphnest/pull/70); native stack #66, position 6 |
 | S1.05a semantic discovery | `feat/codegraph/s1-05-discovery` | Implemented, reviewed and signed; depends on PR #70 | Draft [PR #71](https://github.com/balcsida/graphnest/pull/71); native stack #66, position 7 |
-| S1.05b exact-source inspection | `feat/codegraph/s1-05-explore` | Implemented and independently reviewed; depends on PR #71 | Draft publication pending |
+| S1.05b exact-source inspection | `feat/codegraph/s1-05-explore` | Implemented, reviewed and signed; depends on PR #71 | Draft [PR #72](https://github.com/balcsida/graphnest/pull/72); native stack #66, position 8 |
+| S1.05c1 file projections | `feat/codegraph/s1-05-compose` | Implemented and reviewed; depends on PR #72 | Not submitted |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
-(`PRS_kwDOTcm09c4ADdBt`); subsequent submissions extended it to seven PRs.
+(`PRS_kwDOTcm09c4ADdBt`); subsequent submissions extended it to eight PRs.
 GraphQL independently confirmed the stack size, trunk,
 positions and all PR head/base identities; local metadata alone was not used
 as proof of remote membership.

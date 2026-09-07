@@ -17,32 +17,9 @@ func (s *Store) QueryFiles(ctx context.Context, q graphquery.FileQuery) ([]graph
 	if q.Limit <= 0 || q.Limit > 101 || q.Offset < 0 || q.Offset > 10_000_000 {
 		return nil, graphquery.ErrInvalidRequest
 	}
-	ids, uploads, commits := graphScope(q.Snapshots)
-	args := []any{ids, uploads, commits, graphquery.MaxEntityQueryBytes}
-	filters := []string{}
-	if q.Path != nil {
-		args = append(args, []byte(*q.Path))
-		p := fmt.Sprintf("$%d::bytea", len(args))
-		filters = append(filters, "f.path_key=sha256("+p+") and f.path="+p)
-	}
-	if q.Directory != "" {
-		args = append(args, []byte(q.Directory+"/"))
-		p := fmt.Sprintf("$%d::bytea", len(args))
-		filters = append(filters, "substring(f.path from 1 for octet_length("+p+"))="+p)
-	}
-	if q.Pattern != "" {
-		args = append(args, q.Pattern)
-		filters = append(filters, fmt.Sprintf("convert_from(f.path,'UTF8') ~ $%d", len(args)))
-	}
-	where := ""
-	if len(filters) > 0 {
-		where = " where " + strings.Join(filters, " and ")
-	}
-	args = append(args, q.Offset, q.Limit)
-	rows, err := s.pool.Query(ctx, `with scope as (select * from unnest($1::bigint[],$2::bigint[],$3::text[]) as v(repository_id,upload_id,commit))
- select u.repository_id,case when octet_length(f.payload)<=$4 then f.payload end
- from scope join graph_uploads u on u.id=scope.upload_id and u.repository_id=scope.repository_id and u.commit=scope.commit and u.schema_version=2
- join graph_v2_files f on f.upload_id=u.id`+where+fmt.Sprintf(" order by u.repository_id,f.path offset $%d limit $%d", len(args)-1, len(args)), args...)
+	from, args := fileQuerySQL(q)
+	args = append(args, graphquery.MaxEntityQueryBytes, q.Offset, q.Limit)
+	rows, err := s.pool.Query(ctx, fmt.Sprintf("select u.repository_id,case when octet_length(f.payload)<=$%d then f.payload end", len(args)-2)+from+fmt.Sprintf(" order by u.repository_id,f.path offset $%d limit $%d", len(args)-1, len(args)), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -68,4 +45,55 @@ func (s *Store) QueryFiles(ctx context.Context, q graphquery.FileQuery) ([]graph
 		result = append(result, f)
 	}
 	return result, rows.Err()
+}
+
+// CountFiles aggregates only the same selected immutable uploads and filters as
+// the bounded page. It never loads file payloads or whole artifacts.
+func (s *Store) CountFiles(ctx context.Context, q graphquery.FileQuery) (int64, error) {
+	ctx, cancel := s.graphQueryContext(ctx)
+	defer cancel()
+	from, args := fileQuerySQL(q)
+	var total int64
+	err := s.pool.QueryRow(ctx, "select count(*)"+from, args...).Scan(&total)
+	return total, err
+}
+
+func fileQuerySQL(q graphquery.FileQuery) (string, []any) {
+	ids, uploads, commits := graphScope(q.Snapshots)
+	args := []any{ids, uploads, commits}
+	filters := []string{}
+	if q.Path != nil {
+		args = append(args, []byte(*q.Path))
+		p := fmt.Sprintf("$%d::bytea", len(args))
+		filters = append(filters, "f.path_key=sha256("+p+") and f.path="+p)
+	}
+	if q.Directory != "" {
+		args = append(args, []byte(q.Directory+"/"))
+		p := fmt.Sprintf("$%d::bytea", len(args))
+		filters = append(filters, "substring(f.path from 1 for octet_length("+p+"))="+p)
+	}
+	if q.Prefix != nil && *q.Prefix != "" {
+		args = append(args, []byte(*q.Prefix), []byte(*q.Prefix+"/"))
+		filters = append(filters, fmt.Sprintf("(f.path=$%d::bytea or substring(f.path from 1 for octet_length($%d::bytea))=$%d::bytea)", len(args)-1, len(args), len(args)))
+	}
+	if q.Pattern != "" {
+		args = append(args, q.Pattern)
+		// Only ? needs UTF-16 unit matching. Every unit maps to U+10000+unit,
+		// including BMP literals, so surrogate pairs cannot alias original text.
+		value := "convert_from(f.path,'UTF8')"
+		if q.UTF16Pattern {
+			value = `(select coalesce(string_agg(case when ascii(unit)>65535
+ then chr(120832+((ascii(unit)-65536)>>10))||chr(121856+((ascii(unit)-65536)&1023))
+ else chr(65536+ascii(unit)) end,'' order by ordinal),'')
+ from unnest(string_to_array(convert_from(f.path,'UTF8'),null)) with ordinality as parts(unit,ordinal))`
+		}
+		filters = append(filters, fmt.Sprintf("%s ~ $%d", value, len(args)))
+	}
+	from := ` from unnest($1::bigint[],$2::bigint[],$3::text[]) as scope(repository_id,upload_id,commit)
+ join graph_uploads u on u.id=scope.upload_id and u.repository_id=scope.repository_id and u.commit=scope.commit and u.schema_version=2
+ join graph_v2_files f on f.upload_id=u.id`
+	if len(filters) > 0 {
+		from += " where " + strings.Join(filters, " and ")
+	}
+	return from, args
 }
