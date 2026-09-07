@@ -52,10 +52,19 @@ Implementation, validation, draft publication, and release are separate states.
   required PostgreSQL integration/race checks pass. Real fixture traversal
   compares 68 nodes/93 edges in 138 queries; separate synthetic vocabulary
   exercises 23 kinds/13 relations in 26 queries. Public v1 compatibility remains
-  covered. Draft publication is pending: the September 7 GitHub API retry
-  timed out. The last verified remote state remains September 6.
-- S1.05 will use consecutive semantic-discovery and source/exploration layers;
-  both must pass before S1.05 completes. S1.06–S1.10 are pending. Stage 1 has
+  covered. Draft publication is pending the reviewed upper layer. A process-scoped
+  proxy invocation restored native GitHub CLI access on September 7; PR #69
+  head/base and green CI were reverified without changing system settings.
+- Signed S1.04 commit `7df07c7349b4f248571d81d651e0b150e835d990` verifies
+  locally. Native `gh stack add` created dependent `feat/codegraph/s1-05-discovery`.
+- S1.05a semantic discovery is implemented and independently approved after
+  fixing pre-limit corroboration for used variables, constants and properties.
+  Required PostgreSQL lifecycle/discovery race checks pass (48.374s); the final
+  focused discovery race run passes (39.731s) with real CodeGraph answers and
+  permanent actual-edge ranking regressions. Native projection plans retain
+  payload joins after candidate selection; production-size costs remain unmeasured.
+  Source/exploration follows as a consecutive layer. Both must pass before
+  S1.05 completes. S1.06–S1.10 are pending. Stage 1 has
   not passed its release gate.
 - Stages 2 and 3 are pending and cannot start until the preceding stage has passed and landed.
 
@@ -239,11 +248,14 @@ CI check remains offline and uses only Python's standard library.
 | S1.01 reference foundation | `feat/codegraph/s1-01-contract` | Implemented; reviewed; signed | Draft [PR #64](https://github.com/balcsida/graphnest/pull/64); native stack #66, position 1 |
 | S1.01 reference workflows and PostgreSQL baseline | `feat/codegraph/s1-01-workflows` | Implemented, measured, reviewed and signed; depends on PR #64 | Draft [PR #65](https://github.com/balcsida/graphnest/pull/65); native stack #66, position 2 |
 | S1.01 repeated upstream workflow timings | `feat/codegraph/s1-01-timings` | Implemented, measured, reviewed and signed; depends on PR #65 | Draft [PR #67](https://github.com/balcsida/graphnest/pull/67); native stack #66, position 3 |
-| S1.02 v2 artifact contract | `feat/codegraph/s1-02-artifact` | In progress; depends on PR #67 | Not submitted |
+| S1.02 v2 artifact contract | `feat/codegraph/s1-02-artifact` | Implemented, reviewed and signed; depends on PR #67 | Draft [PR #68](https://github.com/balcsida/graphnest/pull/68); native stack #66, position 4 |
+| S1.03 generation storage | `feat/codegraph/s1-03-storage` | Implemented, reviewed and signed; depends on PR #68 | Draft [PR #69](https://github.com/balcsida/graphnest/pull/69); native stack #66, position 5 |
+| S1.04 entity traversal | `feat/codegraph/s1-04-query` | Implemented, reviewed and signed; depends on PR #69 | Joint draft submission with S1.05a pending |
+| S1.05a semantic discovery | `feat/codegraph/s1-05-discovery` | Implemented and independently approved; depends on S1.04 | Signing and draft submission pending |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
-(`PRS_kwDOTcm09c4ADdBt`); the timing submission extended it to three PRs.
+(`PRS_kwDOTcm09c4ADdBt`); subsequent submissions extended it to five PRs.
 GraphQL independently confirmed the stack size, trunk,
 positions and all PR head/base identities; local metadata alone was not used
 as proof of remote membership.
