@@ -19,6 +19,26 @@ import (
 type fixtureRow map[string]json.RawMessage
 type fixtureTables map[string][]fixtureRow
 
+// TestV2ExportQueryFixture reuses the lossless oracle converter for the separate
+// PostgreSQL conformance gate. It writes only an explicitly requested temp file.
+func TestV2ExportQueryFixture(t *testing.T) {
+	path := os.Getenv("GRAPHNEST_TEST_CODEGRAPH_V2_FIXTURE")
+	if path == "" {
+		t.Skip("set GRAPHNEST_TEST_CODEGRAPH_V2_FIXTURE for the server parity gate")
+	}
+	a := fixtureV2(t, fixtureRows(t))
+	a.Repository = "101"
+	a.Commit = strings.Repeat("a", 40)
+	a.ContentHash = nil
+	data, err := MarshalV2(a, Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func fixtureRows(t *testing.T) fixtureTables {
 	t.Helper()
 	data, err := exec.Command("python3", "-c", `import sqlite3,json

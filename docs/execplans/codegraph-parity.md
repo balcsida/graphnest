@@ -44,9 +44,19 @@ Implementation, validation, draft publication, and release are separate states.
   immutable generations and publication preconditions. Full Go tests, format,
   vet and build pass; all six PostgreSQL integration/race packages pass
   (storage: 38.295s). Opt-in index evidence is retained in
-  `docs/graph-storage-index-evidence.txt`. Draft publication follows.
-- S1.04–S1.10
-  are pending. Stage 1 has not passed its release gate.
+  `docs/graph-storage-index-evidence.txt`. Published as draft
+  [PR #69](https://github.com/balcsida/graphnest/pull/69), based on PR #68,
+  at stack #66 position 5. GitHub verifies signed head `c9a3a16`; CI run `34059069312` passes.
+- S1.04 is implemented and independently approved on dependent
+  `feat/codegraph/s1-04-query`, with no review findings. Full Go checks and
+  required PostgreSQL integration/race checks pass. Real fixture traversal
+  compares 68 nodes/93 edges in 138 queries; separate synthetic vocabulary
+  exercises 23 kinds/13 relations in 26 queries. Public v1 compatibility remains
+  covered. Draft publication is pending: the September 7 GitHub API retry
+  timed out. The last verified remote state remains September 6.
+- S1.05 will use consecutive semantic-discovery and source/exploration layers;
+  both must pass before S1.05 completes. S1.06–S1.10 are pending. Stage 1 has
+  not passed its release gate.
 - Stages 2 and 3 are pending and cannot start until the preceding stage has passed and landed.
 
 ## Baselines
@@ -214,7 +224,7 @@ CI check remains offline and uses only Python's standard library.
 - Native/portable coordinate conversion assertions belong to S1.02; GraphNest
   query implementations and their parity comparisons belong to subsequent
   layers, and are not circular prerequisites for S1.01.
-- All production parity, v2 artifact/storage, publication policy, browser parity,
+- V2 artifact/storage foundations are complete. Production query parity, publication policy, browser parity,
   CLI import, and local-engine work remains pending.
 - Full Stage 1 validation (including authorization, database, browser, deployment,
   and real-producer conformance) has not run and is not claimed as passing.
