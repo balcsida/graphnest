@@ -351,7 +351,7 @@ func TestExploreSessionInvalidID(t *testing.T) {
 	for _, id := range []string{strings.Repeat("x", 129), "bad\x00id", "bad\nid", string([]byte{0xff})} {
 		r := sessionRequest(id)
 		if _, e := s.Explore(t.Context(), sessionPrincipal(), r); !errors.Is(e, ErrInvalidRequest) {
-			t.Fatal(fmt.Sprintf("invalid session admitted: %q %v", id, e))
+			t.Fatalf("invalid session admitted: %q %v", id, e)
 		}
 	}
 }
