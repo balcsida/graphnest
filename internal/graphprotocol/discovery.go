@@ -5,6 +5,7 @@ import graphv2 "github.com/balcsida/graphnest/internal/graphartifact/v2"
 // DiscoveryConfig is request-local policy; project terms come from indexed
 // repository manifests, not files from the caller's machine.
 type DiscoveryConfig struct {
+	NoMultiterm  bool     `json:"no_multiterm,omitempty"`
 	ProjectTerms []string `json:"project_terms,omitempty"`
 	Deprioritize []string `json:"deprioritize,omitempty"`
 }

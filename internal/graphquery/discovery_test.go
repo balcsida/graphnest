@@ -109,3 +109,21 @@ func TestDiscoveryLookaheadCannotLeakScope(t *testing.T) {
 		t.Fatalf("lookahead leaked: %+v %v", got, err)
 	}
 }
+
+func TestDiscoveryMultitermConfiguration(t *testing.T) {
+	store := &discoveryTestStore{discover: func(context.Context, DiscoverySearch) ([]graphprotocol.DiscoveryMatch, error) {
+		a, b := testEntity("broad"), testEntity("corroborated")
+		a.Fact.Kind, b.Fact.Kind = "function", "function"
+		return []graphprotocol.DiscoveryMatch{{Entity: a, Score: 100, MatchedTerms: 1}, {Entity: b, Score: 10, MatchedTerms: 2}}, nil
+	}}
+	for _, disabled := range []bool{false, true} {
+		got, err := (&Service{Store: store}).Discover(t.Context(), graphprotocol.DiscoverRequest{Scope: entityTestScope(), Query: "cache service", Limit: 1, Config: graphprotocol.DiscoveryConfig{NoMultiterm: disabled}})
+		want := "corroborated"
+		if disabled {
+			want = "broad"
+		}
+		if err != nil || len(got.Matches) != 1 || got.Matches[0].Entity.Fact.Occurrence != want {
+			t.Fatalf("disabled=%v matches=%+v err=%v", disabled, got.Matches, err)
+		}
+	}
+}

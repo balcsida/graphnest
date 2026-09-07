@@ -1,0 +1,176 @@
+[
+  {
+    "query": "launchQuery prepareQuery finalizeQuery entryQuery Base One Two Three",
+    "path": "family.ts",
+    "source": "export class Base {\n  entryQuery() {\n    return \"FAMILY_REQUIRED\";\n  }\n  other() {\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n    // optional implementation detail\n  }\n}\nexport class One extends Base {}\nexport class Two extends Base {}\nexport class Three extends Base {}\n",
+    "nodes": [
+      {
+        "id": "class:abc10ca31670b7bc1e4aa11bbbbb1817",
+        "name": "Base",
+        "kind": "class",
+        "startLine": 1,
+        "endLine": 107,
+        "startColumn": 7,
+        "endColumn": 1
+      },
+      {
+        "id": "method:8ad7d4bfdc2139b10f6f0591b1876656",
+        "name": "entryQuery",
+        "kind": "method",
+        "startLine": 2,
+        "endLine": 4,
+        "startColumn": 2,
+        "endColumn": 3
+      },
+      {
+        "id": "method:58ff1da6b24cdb2afd76f7c0009d8ac6",
+        "name": "other",
+        "kind": "method",
+        "startLine": 5,
+        "endLine": 106,
+        "startColumn": 2,
+        "endColumn": 3
+      },
+      {
+        "id": "class:740d46d525d1acfd73bcbe50c943ec04",
+        "name": "One",
+        "kind": "class",
+        "startLine": 108,
+        "endLine": 108,
+        "startColumn": 7,
+        "endColumn": 32
+      },
+      {
+        "id": "class:c10691f640370694cde8b5bd361f42d6",
+        "name": "Two",
+        "kind": "class",
+        "startLine": 109,
+        "endLine": 109,
+        "startColumn": 7,
+        "endColumn": 32
+      },
+      {
+        "id": "class:391b4fbce6dd1584921a06c3b26cefa6",
+        "name": "Three",
+        "kind": "class",
+        "startLine": 110,
+        "endLine": 110,
+        "startColumn": 7,
+        "endColumn": 34
+      }
+    ],
+    "edges": [
+      {
+        "source": "class:740d46d525d1acfd73bcbe50c943ec04",
+        "target": "class:abc10ca31670b7bc1e4aa11bbbbb1817",
+        "kind": "extends",
+        "metadata": {
+          "confidence": 0.9,
+          "resolvedBy": "exact-match",
+          "refName": "Base"
+        },
+        "line": 108,
+        "column": 25,
+        "provenance": null
+      },
+      {
+        "source": "class:c10691f640370694cde8b5bd361f42d6",
+        "target": "class:abc10ca31670b7bc1e4aa11bbbbb1817",
+        "kind": "extends",
+        "metadata": {
+          "confidence": 0.9,
+          "resolvedBy": "exact-match",
+          "refName": "Base"
+        },
+        "line": 109,
+        "column": 25,
+        "provenance": null
+      },
+      {
+        "source": "class:391b4fbce6dd1584921a06c3b26cefa6",
+        "target": "class:abc10ca31670b7bc1e4aa11bbbbb1817",
+        "kind": "extends",
+        "metadata": {
+          "confidence": 0.9,
+          "resolvedBy": "exact-match",
+          "refName": "Base"
+        },
+        "line": 110,
+        "column": 27,
+        "provenance": null
+      }
+    ],
+    "required": [
+      "function:d8c0beb4f47809f4505c97af084a1d2e",
+      "function:7a9cb15c0c1bf6e669f37328ecec1a44",
+      "function:d6ec2ea4f2d699ff80bbc2342b3839e5",
+      "method:8ad7d4bfdc2139b10f6f0591b1876656"
+    ],
+    "exact": [
+      "function:d8c0beb4f47809f4505c97af084a1d2e",
+      "function:7a9cb15c0c1bf6e669f37328ecec1a44",
+      "function:d6ec2ea4f2d699ff80bbc2342b3839e5"
+    ],
+    "allowance": 3350,
+    "marker": "FAMILY_REQUIRED",
+    "optionalMarker": "optional implementation detail"
+  },
+  {
+    "query": "beginRequest processRequest finishRequest unrelatedRequest",
+    "path": "god.ts",
+    "source": "export function beginRequest() {\n  const marker = \"GOD_REQUIRED\";\n  return processRequest(marker);\n}\nexport function finishRequest(value: string) { return value; }\nexport function unrelatedRequest() {\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  // OPTIONAL_GOD_IMPLEMENTATION xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  return 1;\n}\n\nexport function processRequest(value: string) { return finishRequest(value); }\n",
+    "nodes": [
+      {
+        "id": "function:0609c3910116772a1386f894f274aeea",
+        "name": "beginRequest",
+        "kind": "function",
+        "startLine": 1,
+        "endLine": 4,
+        "startColumn": 7,
+        "endColumn": 1
+      },
+      {
+        "id": "function:8a1cdbfd4293488c91caadafe86c6dd3",
+        "name": "finishRequest",
+        "kind": "function",
+        "startLine": 5,
+        "endLine": 5,
+        "startColumn": 7,
+        "endColumn": 62
+      },
+      {
+        "id": "function:4ae07d74fa9cccdc879033ceebf4df56",
+        "name": "unrelatedRequest",
+        "kind": "function",
+        "startLine": 6,
+        "endLine": 158,
+        "startColumn": 7,
+        "endColumn": 1
+      },
+      {
+        "id": "function:74aba4b1af0fd668fed0d48d9e688c9e",
+        "name": "processRequest",
+        "kind": "function",
+        "startLine": 160,
+        "endLine": 160,
+        "startColumn": 7,
+        "endColumn": 78
+      }
+    ],
+    "edges": [],
+    "required": [
+      "function:0609c3910116772a1386f894f274aeea",
+      "function:74aba4b1af0fd668fed0d48d9e688c9e",
+      "function:8a1cdbfd4293488c91caadafe86c6dd3",
+      "function:4ae07d74fa9cccdc879033ceebf4df56"
+    ],
+    "exact": [
+      "function:0609c3910116772a1386f894f274aeea",
+      "function:74aba4b1af0fd668fed0d48d9e688c9e",
+      "function:8a1cdbfd4293488c91caadafe86c6dd3"
+    ],
+    "allowance": 9100,
+    "marker": "GOD_REQUIRED",
+    "optionalMarker": "OPTIONAL_GOD_IMPLEMENTATION"
+  }
+]

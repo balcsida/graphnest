@@ -29,6 +29,7 @@ type DiscoverySearch struct {
 	ExplicitSymbols, ExplicitFiles []string
 	Limit                          int
 	Fuzzy                          bool
+	NoMultiterm                    bool
 }
 
 func (service *Service) Discover(ctx context.Context, req graphprotocol.DiscoverRequest) (graphprotocol.DiscoverResponse, error) {
@@ -120,7 +121,7 @@ func (service *Service) Discover(ctx context.Context, req graphprotocol.Discover
 			}
 		}
 	}
-	matches, err := store.QueryDiscovery(ctx, DiscoverySearch{Snapshots: ready.selected, Query: query, Terms: terms, Groups: groups, Symbols: symbols, Files: files, Deprioritize: req.Config.Deprioritize, ExplicitSymbols: explicitSymbols, ExplicitFiles: explicitFiles, Limit: candidates + 1})
+	matches, err := store.QueryDiscovery(ctx, DiscoverySearch{Snapshots: ready.selected, Query: query, Terms: terms, Groups: groups, Symbols: symbols, Files: files, Deprioritize: req.Config.Deprioritize, ExplicitSymbols: explicitSymbols, ExplicitFiles: explicitFiles, Limit: candidates + 1, NoMultiterm: req.Config.NoMultiterm})
 	if err != nil {
 		return graphprotocol.DiscoverResponse{}, err
 	}
@@ -157,7 +158,7 @@ func (service *Service) Discover(ctx context.Context, req graphprotocol.Discover
 		// variables that happen to repeat two query words.
 		ca := a.MatchedTerms >= 2 && (a.UsageCount > 0 || discoveryStrongKind(a.Entity.Fact.Kind)) && !a.Generated && !a.Ambient && !a.Test && !a.Deprioritized
 		cb := b.MatchedTerms >= 2 && (b.UsageCount > 0 || discoveryStrongKind(b.Entity.Fact.Kind)) && !b.Generated && !b.Ambient && !b.Test && !b.Deprioritized
-		if ca != cb {
+		if !req.Config.NoMultiterm && ca != cb {
 			return ca
 		}
 		if a.Score != b.Score {
