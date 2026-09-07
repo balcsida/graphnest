@@ -52,7 +52,8 @@ Implementation, validation, draft publication, and release are separate states.
   required PostgreSQL integration/race checks pass. Real fixture traversal
   compares 68 nodes/93 edges in 138 queries; separate synthetic vocabulary
   exercises 23 kinds/13 relations in 26 queries. Public v1 compatibility remains
-  covered. Draft publication is pending the reviewed upper layer. A process-scoped
+  covered. Published as draft [PR #70](https://github.com/balcsida/graphnest/pull/70),
+  native stack #66 position 6; GitHub verifies signed head `7df07c7`. A process-scoped
   proxy invocation restored native GitHub CLI access on September 7; PR #69
   head/base and green CI were reverified without changing system settings.
 - Signed S1.04 commit `7df07c7349b4f248571d81d651e0b150e835d990` verifies
@@ -63,10 +64,43 @@ Implementation, validation, draft publication, and release are separate states.
   focused discovery race run passes (39.731s) with real CodeGraph answers and
   permanent actual-edge ranking regressions. Native projection plans retain
   payload joins after candidate selection; production-size costs remain unmeasured.
-  Source/exploration follows as a consecutive layer. Both must pass before
+  Published as draft [PR #71](https://github.com/balcsida/graphnest/pull/71),
+  native stack #66 position 7; GitHub verifies signed head `0d2cd96` and parent
+  `7df07c7`. Exact PR bodies and 11-file/12-file deltas were read back.
+  Exact-head CI runs `34139856642` (PR #70) and `34139863095` (PR #71)
+  pass; required verify, integration, e2e and Helm checks all pass.
+  Separate GitHub AI scanning jobs failed before review with
+  `CAPIError: 400 The requested model is not supported`; those external
+  executions are not counted as passing security analysis.
+  S1.05b indexed-file/exact-source inspection is independently approved on
+  `feat/codegraph/s1-05-explore`; S1.05c will compose exploration, source
+  allocation and session behavior. All three increments must pass before
   S1.05 completes. S1.06–S1.10 are pending. Stage 1 has
   not passed its release gate.
 - Stages 2 and 3 are pending and cannot start until the preceding stage has passed and landed.
+- Inspection testing found that entity-page lookahead needed the same scope
+  validation as returned rows. The direct regression failed before the shared
+  S1.04 fix and passed afterward; independent review approved the two-file fix.
+  Signed query head is now `7d14135`; native upstack rebase produced signed
+  discovery head `51172e9`. Native publication and exact remote signatures,
+  heads, bases and file deltas were verified. Required verify, integration,
+  e2e and Helm checks pass on both new heads (runs `34147508025` and
+  `34147508131`). Separate AI scans still fail before review because their
+  requested model is unsupported.
+- S1.05b inspection is implemented and independently approved. It adds
+  bounded indexed-file pages, exact-source entity/file inspection, outlines and
+  original caller/callee occurrences. Legacy Context now checks authorization
+  and the actual queried generation after source reads. Conditional pre-rebase
+  affected race checks passed, including HTTP/MCP and 19 PostgreSQL tests in
+  46.687s; after restoring the exact candidate on the repaired parent, focused
+  query/service and real PostgreSQL inspection race checks plus format/build
+  passed. Composed exploration, allocation and session behavior remain S1.05c.
+- Independent inspection review reproduced two false-completeness cases:
+  a final outline continuation and a file with stored extraction errors. Both
+  were corrected and passed scoped re-review. Permanent regressions observed
+  red then green; final graphservice/query race checks and all six required
+  PostgreSQL inspection tests passed (2.623s, no skips), as did vet and format
+  checks. Original file-error evidence remains visible on contributing source.
 
 ## Baselines
 
@@ -98,6 +132,29 @@ these tests.
   manage the isolated checkout and stack.
 - Preserve signed commits and normal branch protections. The owner has not
   authorized merging any stack prefix.
+- Split S1.05 into discovery, exact-source inspection and composed exploration.
+  Inspection needs bounded indexed-file queries and validation after source
+  reads before stateful allocation can reuse them. This keeps all original
+  requirements mandatory and costs possible interface rework between layers.
+- Include legacy Context in the final source-read consistency check. Its
+  commit-only result cannot identify same-SHA graph replacement; capture the
+  actual queried upload internally and revalidate after source reads while
+  preserving v1 wire compatibility. This adds a manifest read to that path.
+- Recheck live repository, grant and installation authority in inspection;
+  keep credential authentication at the current request boundary. Principal
+  has no credential identity or expiry. S1.07/S1.08 must explicitly validate
+  credential expiry/revocation and define mid-call behavior before the stage
+  gate; inspection does not claim those tests passed. If a stronger final
+  credential check is needed, the transport work must supply it.
+- Keep indexed-file tree, grouped and maximum-depth variants assigned to
+  S1.05c domain projections, S1.07 transports and S1.09 rendering. Flat original
+  file-fact equality alone does not complete their inventory rows; this may
+  require another focused layer if the composition change becomes too large.
+- Use CodeGraph's shared/viewer hierarchy as the descendant contract. A fresh
+  paired oracle confirms that the legacy library returns only Base while the
+  shared/viewer result includes its Service subtype. Preserve that legacy
+  omission as a known comparison difference rather than removing descendants
+  from GraphNest. Other hierarchy cases remain unimplemented and unverified.
 
 ## Discoveries
 
@@ -250,12 +307,13 @@ CI check remains offline and uses only Python's standard library.
 | S1.01 repeated upstream workflow timings | `feat/codegraph/s1-01-timings` | Implemented, measured, reviewed and signed; depends on PR #65 | Draft [PR #67](https://github.com/balcsida/graphnest/pull/67); native stack #66, position 3 |
 | S1.02 v2 artifact contract | `feat/codegraph/s1-02-artifact` | Implemented, reviewed and signed; depends on PR #67 | Draft [PR #68](https://github.com/balcsida/graphnest/pull/68); native stack #66, position 4 |
 | S1.03 generation storage | `feat/codegraph/s1-03-storage` | Implemented, reviewed and signed; depends on PR #68 | Draft [PR #69](https://github.com/balcsida/graphnest/pull/69); native stack #66, position 5 |
-| S1.04 entity traversal | `feat/codegraph/s1-04-query` | Implemented, reviewed and signed; depends on PR #69 | Joint draft submission with S1.05a pending |
-| S1.05a semantic discovery | `feat/codegraph/s1-05-discovery` | Implemented and independently approved; depends on S1.04 | Signing and draft submission pending |
+| S1.04 entity traversal | `feat/codegraph/s1-04-query` | Implemented, reviewed and signed; depends on PR #69 | Draft [PR #70](https://github.com/balcsida/graphnest/pull/70); native stack #66, position 6 |
+| S1.05a semantic discovery | `feat/codegraph/s1-05-discovery` | Implemented, reviewed and signed; depends on PR #70 | Draft [PR #71](https://github.com/balcsida/graphnest/pull/71); native stack #66, position 7 |
+| S1.05b exact-source inspection | `feat/codegraph/s1-05-explore` | Implemented and independently reviewed; depends on PR #71 | Draft publication pending |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
-(`PRS_kwDOTcm09c4ADdBt`); subsequent submissions extended it to five PRs.
+(`PRS_kwDOTcm09c4ADdBt`); subsequent submissions extended it to seven PRs.
 GraphQL independently confirmed the stack size, trunk,
 positions and all PR head/base identities; local metadata alone was not used
 as proof of remote membership.
