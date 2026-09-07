@@ -168,14 +168,14 @@ func (service *Service) Entities(ctx context.Context, request graphprotocol.Enti
 	if err != nil {
 		return graphprotocol.EntitiesResponse{}, err
 	}
+	if err = ready.publicEntities(entities); err != nil {
+		return graphprotocol.EntitiesResponse{}, err
+	}
 	result := graphprotocol.EntitiesResponse{Entities: entities, Generations: ready.generations}
 	if len(entities) > limit {
 		result.Entities = entities[:limit]
 		data, _ := json.Marshal(entityCursor{fingerprint, offset + limit})
 		result.NextCursor = base64.RawURLEncoding.EncodeToString(data)
-	}
-	if err = ready.publicEntities(result.Entities); err != nil {
-		return graphprotocol.EntitiesResponse{}, err
 	}
 	result.Generations = ready.publicGenerations()
 	if err = entityResponseSize(result); err != nil {

@@ -259,3 +259,15 @@ func TestEntityDepthLookaheadRejectsHiddenNeighbors(t *testing.T) {
 		t.Fatalf("hidden lookahead leaked: %+v err=%v", got, err)
 	}
 }
+
+func TestEntityPageRejectsHiddenLookahead(t *testing.T) {
+	s := &entityTestStore{lookup: func(context.Context, EntityQuery) ([]graphprotocol.Entity, error) {
+		hidden := testEntity("hidden")
+		hidden.RepositoryID = 99
+		return []graphprotocol.Entity{testEntity("visible"), hidden}, nil
+	}}
+	got, err := (&Service{Store: s}).Entities(t.Context(), graphprotocol.EntitiesRequest{Scope: entityTestScope(), Limit: 1})
+	if !errors.Is(err, ErrGenerationChanged) || got.NextCursor != "" || len(got.Entities) > 0 {
+		t.Fatalf("hidden lookahead influenced page: %+v err=%v", got, err)
+	}
+}
