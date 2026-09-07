@@ -77,5 +77,15 @@ func (s *Service) Context(ctx context.Context, principal authn.Principal, reques
 			result.Outgoing[relation] = append(result.Outgoing[relation], converted)
 		}
 	}
+	if validator, ok := s.Backend.(interface {
+		ValidateContextSnapshots(context.Context, []graphprotocol.ContextSnapshot) error
+	}); ok {
+		if err := validator.ValidateContextSnapshots(ctx, response.Snapshots); err != nil {
+			return api.GraphContextResponse{}, err
+		}
+	}
+	if err := s.reauthorize(ctx, principal, selected, response.Commits); err != nil {
+		return api.GraphContextResponse{}, err
+	}
 	return result, nil
 }

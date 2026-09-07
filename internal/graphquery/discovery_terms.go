@@ -210,10 +210,19 @@ func DiscoveryGrams(value string) []string {
 // DiscoveryPatterns compiles gitignore-style rules to PostgreSQL/Go compatible
 // regular expressions. Matching order and ignored ancestors are handled by SQL.
 func DiscoveryPatterns(patterns []string) ([]string, []bool) {
+	normalized := make([]string, len(patterns))
+	for i, pattern := range patterns {
+		normalized[i] = NormalizeDiscovery(pattern)
+	}
+	return PathPatterns(normalized)
+}
+
+// PathPatterns preserves path case and Unicode for indexed-file filtering.
+func PathPatterns(patterns []string) ([]string, []bool) {
 	expressions := []string{}
 	negated := []bool{}
 	for _, raw := range patterns {
-		pattern := strings.TrimSpace(NormalizeDiscovery(raw))
+		pattern := strings.TrimSpace(raw)
 		if pattern == "" || strings.HasPrefix(pattern, "#") {
 			continue
 		}
