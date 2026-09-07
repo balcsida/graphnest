@@ -138,3 +138,15 @@ revocation exercise the final boundary. Focused hostile tests cover file-only
 and generated retention, overload paging, virtual/ambient/partial locations,
 Unicode, oversized/unreadable/truncated source, budgets, cancellation, hidden
 lookahead and the legacy same-SHA source-return race.
+
+Run the normal PostgreSQL gate with only the test database DSN:
+
+```sh
+GOTOOLCHAIN=go1.26.6 GOWORK=off GRAPHNEST_REQUIRE_POSTGRES=1 \
+  GRAPHNEST_TEST_POSTGRES_DSN="$GRAPHNEST_TEST_POSTGRES_DSN" make postgres-test
+```
+
+The target exports a fresh private fixture from the committed SQLite oracle
+before running the PostgreSQL packages, then removes it on success, failure or
+signals. It ignores and never modifies a caller's
+`GRAPHNEST_TEST_CODEGRAPH_V2_FIXTURE`.

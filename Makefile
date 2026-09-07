@@ -67,7 +67,11 @@ openapi-check:
 integration: postgres-integration
 
 postgres-test:
-	GRAPHNEST_TEST_POSTGRES_DSN='$(GRAPHNEST_TEST_POSTGRES_DSN)' go test -count=1 -tags=integration ./internal/postgres ./internal/authz ./internal/webhook ./test/integration ./cmd/graphnest-indexer ./cmd/graphnest-server
+	@fixture="$$(mktemp "$$(pwd)/.graphnest-codegraph-v2.XXXXXX")" || exit; \
+	trap 'status=$$?; rm -f "$$fixture"; exit $$status' EXIT; \
+	trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
+	GRAPHNEST_TEST_CODEGRAPH_V2_FIXTURE="$$fixture" go test -count=1 ./internal/graphartifact -run '^TestV2ExportQueryFixture$$' && \
+	GRAPHNEST_TEST_CODEGRAPH_V2_FIXTURE="$$fixture" GRAPHNEST_TEST_POSTGRES_DSN='$(GRAPHNEST_TEST_POSTGRES_DSN)' go test -count=1 -tags=integration ./internal/postgres ./internal/authz ./internal/webhook ./test/integration ./cmd/graphnest-indexer ./cmd/graphnest-server
 
 postgres-integration:
 	$(POSTGRES_COMPOSE) -f deploy/compose/compose.yml up -d --wait postgres
