@@ -1,10 +1,10 @@
-# Stateless graph exploration
+# Graph exploration
 
 `graphservice.Service.Explore(ctx, currentPrincipal, ExploreRequest)` composes
 semantic discovery, indexed file facts, occurrence-preserving one-hop graph
 queries and exact indexed-commit source in a single domain operation. HTTP/MCP
-adapters remain S1.07. Repeated-call history and deduplication remain S1.05c3;
-this operation retains no principal, session or source between calls.
+adapters remain S1.07. Optional repeated-call history retains only exact coverage
+fingerprints; no principal, source text, graph result or file metadata is cached.
 
 The request selects one repository and optional branch. Query, Symbols, Files,
 Limit and CandidateLimit use accepted discovery semantics. RequiredOccurrences
@@ -117,3 +117,93 @@ has been supplied.
 Principal has no credential identity or expiration. The domain rechecks current
 repository eligibility; current-request credential authentication and mid-call
 credential revocation remain adapter-owned. No old Principal is reused as authority.
+
+## Repeated calls
+
+`SessionID` is an optional opaque conversation identifier, at most 128 UTF-8
+bytes, without NUL/CR/LF. The adapter supplies a distinct identifier for each
+conversation using the **current authenticated request**. A session request
+requires a nonempty current principal Subject and refuses ForceRotation. The
+identifier is not a credential. An empty SessionID keeps Explore stateless.
+`Config.Dedup` defaults true; false re-serves all source while recording
+successful delivered coverage, so a later enabled call can use that coverage.
+
+History is local to the Service instance. Its hashed key includes the session
+identifier, current principal value (subject, method, installation, roles and
+current grants), explicit selected repository/branch/commit scope, and immutable
+generation identity. No Principal object or grant list survives the call. A new
+principal, repository, generation, indexed SHA, or source blob identity starts
+without matching coverage. Every call still performs discovery, original graph
+queries and exact-SHA source reads. Before returning, it validates current
+repository authorization, generation and SHA after all source work. The existing
+adapter-owned credential-expiry/mid-call revocation boundary remains unchanged.
+
+Each recorded line has only a hashed file/commit/blob identity, its line number
+and a SHA-256 digest of the exact returned line bytes, including LF only when
+that separator was delivered within the segment. CR stays part of the line, so
+both partial and full CRLF expansions remain unseen until emitted. A partial
+line cannot cover an expanded line on a later call. Separately delivered adjacent
+ranges do not prove the separator between them. At a new-source/covered-source
+split, the first known line is conservatively re-served to keep the separator
+inside an original whole-line segment; the remaining reference must still cover
+at least eight source lines. A terminal LF's empty split element does not turn
+seven source lines into eight, and an empty remainder cannot defeat restoration.
+
+A run of at least eight proven matching source lines can become a file's
+`References` entry with `status: already_seen`, original indexed/blob SHA and
+line bounds, and no Content. This explicitly points to source returned earlier
+in the same conversation. Current original file/entity facts remain alongside
+it. `Selections` retain original UTF-16 ranges: an exact referenced selection
+has `status: already_seen`, `Segment: -1`, a zero-based `Reference` index and
+byte offsets relative to that referenced line span. A selection spanning emitted
+and referenced segments remains windowed; it is never invented as one exact
+selection. Existing source/analysis/completeness boundaries remain intact.
+
+Shorter covered runs are re-served. Every unseen source byte selected by C2 is
+preserved, including a tiny remainder; the reference renderer's optional
+sub-160-character remainder omission is deliberately not applied to domain
+source. Dedup does not alter C2 ranking, protected-file admission or allocation.
+It reduces output, not source I/O, and does not promise to refill freed file
+slots with candidates below the allocation cliff. If dedup would emit no source
+bytes, the first fully suppressed file is restored with all its original
+segments/selections and without its pointer. `SessionRestored` records this
+case. `Usage.DedupSavedUnits` measures actual returned source UTF-16 savings;
+SourceUnits/SourceBytes count emitted source, excluding references.
+
+The **final structured JSON size check runs after references/restoration**.
+Only after successful size, generation, grant and cancellation checks are the
+actually emitted segments admitted to history. Failed, canceled, unauthorized
+or oversized domain responses admit nothing, including an expanded range in an
+otherwise known file. Unreadable/oversized/binary/invalid/unavailable source
+results also admit nothing. Admission checks both final file status and every
+retained file boundary: a later successful read cannot erase an earlier refusal.
+Successful bounded windows without refusal can contribute their precise returned
+bytes even when other bounds or incomplete entity selections keep Complete false. No transport acknowledgement is implied; adapters
+own delivery after the domain call returns.
+
+State uses fixed ceilings, without a background goroutine or persistent store:
+
+- 64 retained scope/session entries per Service; at most four per authenticated
+  subject/method/installation identity, across conversations and repositories.
+- 256 KiB charged per entry, at most 2,046 line fingerprints. Admission retains
+  existing records and only admits new lines while room remains; omitted history
+  merely causes source to be re-served. Each entry charges 256 bytes plus a
+  conservative 128 bytes per line, including map/key/value overhead.
+- Four MiB aggregate charged state. Successful admission evicts least-recently
+  successfully used entries until both global and per-principal limits hold.
+- A fixed 15-minute lifetime from entry creation, unaffected by repeated calls.
+  Expired entries are removed on the next history operation; no expired entry
+  can be used or revived. Unused instances retain at most the same byte ceiling.
+
+A short mutex protects only bounded snapshot/admission scans. Source/graph I/O
+runs outside it. Each call uses a cloned snapshot of prior **completed** results;
+concurrent calls may both re-serve source, and successful results merge without
+losing coverage. A pending or failed call never supplies another call's history.
+Eviction, restart, expiry or unadmitted lines affect efficiency only; current
+source is still returned under the same mandatory authorization checks.
+
+The frozen reference's exact `core.ts Service normalize` query with MaxFiles=1
+remains refused by C2 when other named required files exceed that explicit cap.
+The native session restoration test uses `path:core.ts Service normalize` plus
+an explicit core.ts file pin at the same budget. This proves restoration for a
+selected file; exact-query admission remains a separate composition follow-up.

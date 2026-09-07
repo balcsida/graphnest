@@ -18,10 +18,11 @@ type ExploreConfig struct {
 	graphprotocol.DiscoveryConfig
 	LineNumbers *bool `json:"line_numbers,omitempty"`
 	Adaptive    *bool `json:"adaptive,omitempty"`
+	Dedup       *bool `json:"dedup,omitempty"`
 }
 type ExploreRequest struct {
 	Repo                                                      api.GraphRepositorySelector
-	Branch, Query                                             string
+	Branch, Query, SessionID                                  string
 	Symbols, Files, RequiredOccurrences                       []string
 	Limit, CandidateLimit, MaxFiles, SourceUnits, SourceBytes int
 	Config                                                    ExploreConfig
@@ -30,6 +31,7 @@ type ExploreSelection struct {
 	EntityID  string            `json:"entity_id"`
 	Range     *graphv2.Location `json:"range,omitempty"`
 	Segment   int               `json:"segment"`
+	Reference *int              `json:"reference,omitempty"`
 	Selection *SourceSelection  `json:"selection,omitempty"`
 	Status    string            `json:"status"`
 }
@@ -44,14 +46,16 @@ type ExploreFile struct {
 	Status      string                 `json:"status"`
 	Mode        string                 `json:"mode"`
 	Segments    []InspectionSource     `json:"segments"`
+	References  []InspectionSource     `json:"references,omitempty"`
 	Selections  []ExploreSelection     `json:"selections"`
 	Boundaries  []string               `json:"boundaries,omitempty"`
 }
 type ExploreUsage struct {
-	SourceReads  int `json:"source_reads"`
-	SourceBytes  int `json:"source_bytes"`
-	SourceUnits  int `json:"source_utf16_units"`
-	GraphQueries int `json:"graph_queries"`
+	SourceReads     int `json:"source_reads"`
+	SourceBytes     int `json:"source_bytes"`
+	SourceUnits     int `json:"source_utf16_units"`
+	GraphQueries    int `json:"graph_queries"`
+	DedupSavedUnits int `json:"dedup_saved_utf16_units,omitempty"`
 }
 type ExploreResponse struct {
 	Discovery        graphprotocol.DiscoverResponse   `json:"discovery"`
@@ -67,6 +71,7 @@ type ExploreResponse struct {
 	SourceUnitsLimit int                              `json:"source_utf16_units_limit"`
 	SourceBytesLimit int                              `json:"source_bytes_limit"`
 	FileLimit        int                              `json:"file_limit"`
+	SessionRestored  bool                             `json:"session_restored,omitempty"`
 }
 type allocationCandidate struct {
 	Path          string
@@ -182,8 +187,14 @@ type discoveryBackend interface {
 }
 
 // Explore composes the existing query and exact-source boundaries in one
-// selected immutable scope. No authority or source is retained across calls.
+// selected immutable scope. Optional history retains coverage, never authority.
 func (s *Service) Explore(ctx context.Context, p authn.Principal, r ExploreRequest) (ExploreResponse, error) {
+	if len(r.SessionID) > 128 || !utf8.ValidString(r.SessionID) || strings.ContainsAny(r.SessionID, "\x00\r\n") {
+		return ExploreResponse{}, ErrInvalidRequest
+	}
+	if r.SessionID != "" && (p.Subject == "" || p.ForceRotation) {
+		return ExploreResponse{}, authn.ErrUnauthenticated
+	}
 	if r.MaxFiles < 0 || r.MaxFiles > 20 || r.SourceUnits < 0 || r.SourceUnits > 100000 || r.SourceBytes < 0 || r.SourceBytes > 256<<10 || r.Limit < 0 || r.Limit > 100 || r.CandidateLimit < 0 || r.CandidateLimit > 1000 || len(r.RequiredOccurrences) > 20 || len(r.Files) > 20 || len(r.Symbols) > 20 || len(r.Query) > 16384 || !utf8.ValidString(r.Query) {
 		return ExploreResponse{}, ErrInvalidRequest
 	}
@@ -221,6 +232,14 @@ func (s *Service) Explore(ctx context.Context, p authn.Principal, r ExploreReque
 	for _, f := range corpus.Files {
 		if f.RepositoryID != i.selected.GitHubID || f.Fact == nil {
 			return ExploreResponse{}, ErrGraphNotReady
+		}
+	}
+	var key, owner [32]byte
+	var prior map[exploreLine][32]byte
+	if r.SessionID != "" {
+		key, owner = exploreSessionIdentity(p, r.SessionID, i.scope, corpus.Generations[0].UploadID)
+		if r.Config.Dedup == nil || *r.Config.Dedup {
+			prior = s.exploreHistory.snapshot(key, time.Now())
 		}
 	}
 	config := r.Config.DiscoveryConfig
@@ -569,8 +588,18 @@ func (s *Service) Explore(ctx context.Context, p authn.Principal, r ExploreReque
 	if !result.Complete {
 		result.Handoffs = append(result.Handoffs, "Pin an omitted file or require a specific occurrence to focus the next source allocation.")
 	}
+	var delivered map[exploreLine][32]byte
+	if r.SessionID != "" {
+		applyExploreHistory(&result, prior)
+		delivered = exploreDelivered(result)
+	}
 	if err = s.finishInspection(ctx, p, i, result.Generations, result); err != nil {
 		return ExploreResponse{}, err
+	}
+	if len(delivered) > 0 {
+		if err = s.exploreHistory.record(ctx, key, owner, delivered, time.Now()); err != nil {
+			return ExploreResponse{}, err
+		}
 	}
 	return result, nil
 }

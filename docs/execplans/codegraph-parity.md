@@ -151,7 +151,34 @@ Implementation, validation, draft publication, and release are separate states.
   adaptive-on/off probes and native matching-grant checks retain required source.
   Final domain generation/SHA/grant checks remain mandatory. C3 history,
   source-derived analysis, public adapters, final rendered envelopes and the
-  full Stage 1 gate remain pending. Signing and draft submission are next.
+  full Stage 1 gate remain pending.
+- C2 is published as draft [PR #74](https://github.com/balcsida/graphnest/pull/74),
+  native stack #66 position 10, with verified signed head `ed08344` and parent
+  `341372d`. The twelve-file delta, prior nine native entries and PR description
+  were read back exactly. CI run `34162210818` passes on this signed head,
+  including all required checks. The separate AI scan again fails before
+  analysis because its requested model is unsupported. C3 is active on dependent
+  `feat/codegraph/s1-05-sessions`.
+- The S1.05 row audit retains additional work after C3: exact discovery
+  selectors and segment/project evidence, generated/ambient file predicates
+  and counts, and task-level relevant/build context options. Existing generic
+  discovery/source tests do not close every library variant. Separate focused
+  layers will reuse the accepted services; ranking comparisons follow required
+  answers at equivalent budgets rather than identical SQLite scores. Shared
+  language/configuration answer rows remain open through S1.06/S1.10.
+- S1.05c3 adds optional, authenticated exploration sessions with bounded
+  coverage-only history, repeated-source references and source restoration.
+  Independent review accepted the corrected layer: terminator-aware coverage
+  preserves unseen LF/CRLF bytes, and any retained source refusal prevents
+  history admission even after a successful read of the same file. All 69
+  service race tests and both required PostgreSQL Explore tests pass; focused
+  vet and formatting checks pass. History remains bounded to 64 entries, four
+  per identity, 256 KiB charged per entry, 4 MiB total and a fixed 15-minute
+  lifetime. Every call rechecks current authority and the exact generation/SHA.
+  The exact upstream
+  `core.ts Service normalize` request with `maxFiles=1` also needs a separately
+  reviewed admission repair on its owning S1.05c2 branch. The current adapted
+  restoration test proves the session mechanism only.
 
 ## Baselines
 
@@ -372,11 +399,12 @@ The exact two-call restoration comparison follows on the rebased sessions layer.
 | S1.05a semantic discovery | `feat/codegraph/s1-05-discovery` | Implemented, reviewed and signed; depends on PR #70 | Draft [PR #71](https://github.com/balcsida/graphnest/pull/71); native stack #66, position 7 |
 | S1.05b exact-source inspection | `feat/codegraph/s1-05-explore` | Implemented, reviewed and signed; depends on PR #71 | Draft [PR #72](https://github.com/balcsida/graphnest/pull/72); native stack #66, position 8 |
 | S1.05c1 file projections | `feat/codegraph/s1-05-compose` | Implemented, reviewed and signed; depends on PR #72 | Draft [PR #73](https://github.com/balcsida/graphnest/pull/73); native stack #66, position 9 |
-| S1.05c2 stateless exploration and allocation | `feat/codegraph/s1-05-allocation` | Implemented and reviewed; depends on PR #73 | Not submitted |
+| S1.05c2 stateless exploration and allocation | `feat/codegraph/s1-05-allocation` | Implemented, reviewed and signed; depends on PR #73 | Draft [PR #74](https://github.com/balcsida/graphnest/pull/74); native stack #66, position 10 |
+| S1.05c3 scoped exploration history | `feat/codegraph/s1-05-sessions` | Implemented and independently reviewed; depends on PR #74 | Signing and draft submission pending |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
-(`PRS_kwDOTcm09c4ADdBt`); subsequent submissions extended it to nine PRs.
+(`PRS_kwDOTcm09c4ADdBt`); subsequent submissions extended it to ten PRs.
 GraphQL independently confirmed the stack size, trunk,
 positions and all PR head/base identities; local metadata alone was not used
 as proof of remote membership.
