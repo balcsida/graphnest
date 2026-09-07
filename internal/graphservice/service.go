@@ -27,11 +27,12 @@ type ContentReader interface {
 }
 
 type Service struct {
-	Store   RepositoryStore
-	Backend graphprotocol.QueryEngine
-	Files   ContentReader
-	Limits  Limits
-	Observe func(string, string, time.Duration)
+	Store          RepositoryStore
+	Backend        graphprotocol.QueryEngine
+	Files          ContentReader
+	Limits         Limits
+	Observe        func(string, string, time.Duration)
+	exploreHistory exploreHistory
 }
 
 func (s *Service) observe(started time.Time, operation string, err *error) {

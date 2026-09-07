@@ -4,6 +4,7 @@ package postgres
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -211,8 +212,97 @@ func TestGraphExploreRealOracle(t *testing.T) {
 			t.Logf("query=%q files=%v units=%d bytes=%d response=%d reads=%d", query, served, got.Usage.SourceUnits, got.Usage.SourceBytes, len(encoded), got.Usage.SourceReads)
 		})
 	}
+
+	// Frozen C3 reference: six enabled/disabled overlapping calls plus a two-call
+	// core-only restore. Reuse the committed source and imported real facts.
+	for _, dedup := range []bool{true, false} {
+		t.Run(fmt.Sprintf("session_dedup_%v", dedup), func(t *testing.T) {
+			sessionService := &graphservice.Service{Store: store, Backend: &graphquery.Service{Store: store}, Files: &repository.Service{Store: store, GitHub: gateway}}
+			current := principal
+			current.Subject = "oracle-session"
+			current.Method = "local"
+			for call, query := range []string{"processGreeting", "processGreeting", "processGreeting orphanUtility orphan.ts", "processGreeting", "processGreeting", "processGreeting"} {
+				got, e := sessionService.Explore(t.Context(), current, graphservice.ExploreRequest{Repo: api.GraphRepositorySelector{ID: 101}, Query: query, MaxFiles: 4, SourceUnits: 13000, SessionID: "frozen-six", Config: graphservice.ExploreConfig{Dedup: proto.Bool(dedup)}})
+				if e != nil {
+					t.Fatal(e)
+				}
+				emitted, referenced := map[string]bool{}, map[string]bool{}
+				for _, f := range got.Files {
+					for _, segment := range f.Segments {
+						raw, e := os.ReadFile(filepath.Join("../../test/fixtures/codegraph/source", f.Path))
+						if e != nil {
+							t.Fatal(e)
+						}
+						want := strings.Join(strings.Split(string(raw), "\n")[segment.StartLine-1:segment.EndLine], "\n")
+						if segment.Content != want || segment.IndexedSHA != a.Commit {
+							t.Fatal("changed emitted source")
+						}
+						emitted[f.Path] = true
+					}
+					for _, ref := range f.References {
+						if ref.Content != "" || ref.Status != "already_seen" || ref.IndexedSHA != a.Commit || ref.BlobSHA == "" {
+							t.Fatalf("invalid source pointer: %+v", ref)
+						}
+						referenced[f.Path] = true
+					}
+				}
+				if call > 0 && dedup {
+					if !referenced["core.ts"] || emitted["core.ts"] || got.Usage.DedupSavedUnits <= 0 {
+						t.Fatalf("lost frozen dedup shape: %+v", got)
+					}
+				} else if !emitted["core.ts"] || len(referenced) > 0 || got.Usage.DedupSavedUnits != 0 {
+					t.Fatalf("first/disabled source differs: %+v", got)
+				}
+				if !emitted["consumer.ts"] || call != 2 && !emitted["model.swift"] {
+					t.Fatalf("lost subthreshold required sources: %+v", emitted)
+				}
+				if call == 2 && !emitted["orphan.ts"] {
+					t.Fatal("seen history displaced unseen pinned source")
+				}
+				data, _ := json.Marshal(got)
+				if got.Usage.SourceUnits > 13000 || len(data) > 256<<10 {
+					t.Fatal("session result exceeds equivalent domain budget")
+				}
+				t.Logf("call=%d dedup=%v emitted=%v referenced=%v units=%d saved=%d response=%d", call+1, dedup, emitted, referenced, got.Usage.SourceUnits, got.Usage.DedupSavedUnits, len(data))
+			}
+		})
+	}
+	t.Run("session_core_restore", func(t *testing.T) {
+		sessionService := &graphservice.Service{Store: store, Backend: &graphquery.Service{Store: store}, Files: &repository.Service{Store: store, GitHub: gateway}}
+		current := principal
+		current.Subject = "restore-session"
+		var first string
+		for call := 0; call < 2; call++ {
+			got, e := sessionService.Explore(t.Context(), current, graphservice.ExploreRequest{Repo: api.GraphRepositorySelector{ID: 101}, Query: "path:core.ts Service normalize", Files: []string{"core.ts"}, MaxFiles: 1, SourceUnits: 13000, SessionID: "frozen-two"})
+			if e != nil {
+				t.Fatal(e)
+			}
+			content := ""
+			for _, f := range got.Files {
+				if f.Path == "core.ts" {
+					for _, segment := range f.Segments {
+						content += segment.Content
+					}
+					if len(f.References) != 0 {
+						t.Fatal("restore left its pointer")
+					}
+				}
+			}
+			if content == "" || call == 1 && (content != first || !got.SessionRestored || got.Usage.DedupSavedUnits != 0) {
+				t.Fatalf("lost pinned restore shape: %+v", got)
+			}
+			first = content
+			t.Logf("call=%d restored=%v units=%d saved=%d", call+1, got.SessionRestored, got.Usage.SourceUnits, got.Usage.DedupSavedUnits)
+		}
+	})
 	for _, mode := range []string{"replacement", "sha", "grant"} {
 		t.Run(mode, func(t *testing.T) {
+			current := principal
+			current.Subject = "current-authorized-session"
+			request := graphservice.ExploreRequest{Repo: api.GraphRepositorySelector{ID: 101}, Query: "processGreeting", SessionID: mode}
+			if _, e := service.Explore(t.Context(), current, request); e != nil {
+				t.Fatal(e)
+			}
 			gateway.after = func() {
 				gateway.after = nil
 				switch mode {
@@ -235,7 +325,7 @@ func TestGraphExploreRealOracle(t *testing.T) {
 					}
 				}
 			}
-			got, e := service.Explore(t.Context(), principal, graphservice.ExploreRequest{Repo: api.GraphRepositorySelector{ID: 101}, Query: "processGreeting"})
+			got, e := service.Explore(t.Context(), current, request)
 			if e == nil || !reflect.DeepEqual(got, graphservice.ExploreResponse{}) {
 				t.Fatalf("%s leaked %+v err=%v", mode, got, e)
 			}
