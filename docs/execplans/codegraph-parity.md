@@ -175,10 +175,15 @@ Implementation, validation, draft publication, and release are separate states.
   vet and formatting checks pass. History remains bounded to 64 entries, four
   per identity, 256 KiB charged per entry, 4 MiB total and a fixed 15-minute
   lifetime. Every call rechecks current authority and the exact generation/SHA.
-  The exact upstream
-  `core.ts Service normalize` request with `maxFiles=1` also needs a separately
-  reviewed admission repair on its owning S1.05c2 branch. The current adapted
-  restoration test proves the session mechanism only.
+  The separately reviewed S1.05c2 admission repair now supports the exact
+  upstream `core.ts Service normalize` request with `maxFiles=1`. After the
+  native upstack rebase, both original-query calls return the full 786-byte
+  core.ts source with original occurrences and one read; the repeat restores
+  source with zero references or claimed savings. Independent integration
+  review passes, with 70 service race tests and both required PostgreSQL Explore
+  tests passing. Focused staticcheck and vet pass, including the correction of
+  CI's test-only S1038 finding. C3 is draft PR #75 at native position 11;
+  full S1.05 and Stage 1 remain open.
 
 ## Baselines
 
@@ -364,7 +369,7 @@ incomplete omitted-source pointers. Conflicting hard obligations still reject;
 default preferred-file expansion stops at twenty. The original four-file source
 tasks remain intact. All 55 service race tests and both required PostgreSQL
 Explore tests pass, as do focused vet, staticcheck and formatting checks.
-The exact two-call restoration comparison follows on the rebased sessions layer.
+The rebased sessions layer also passes the exact two-call restoration comparison.
 
 ## Remaining gaps
 
@@ -400,14 +405,17 @@ The exact two-call restoration comparison follows on the rebased sessions layer.
 | S1.05b exact-source inspection | `feat/codegraph/s1-05-explore` | Implemented, reviewed and signed; depends on PR #71 | Draft [PR #72](https://github.com/balcsida/graphnest/pull/72); native stack #66, position 8 |
 | S1.05c1 file projections | `feat/codegraph/s1-05-compose` | Implemented, reviewed and signed; depends on PR #72 | Draft [PR #73](https://github.com/balcsida/graphnest/pull/73); native stack #66, position 9 |
 | S1.05c2 stateless exploration and allocation | `feat/codegraph/s1-05-allocation` | Implemented, reviewed and signed; depends on PR #73 | Draft [PR #74](https://github.com/balcsida/graphnest/pull/74); native stack #66, position 10 |
-| S1.05c3 scoped exploration history | `feat/codegraph/s1-05-sessions` | Implemented and independently reviewed; depends on PR #74 | Signing and draft submission pending |
+| S1.05c3 scoped exploration history | `feat/codegraph/s1-05-sessions` | Implemented, independently reviewed and signed; depends on repaired PR #74 | Draft [PR #75](https://github.com/balcsida/graphnest/pull/75); native stack #66, position 11 |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
 (`PRS_kwDOTcm09c4ADdBt`); subsequent submissions extended it to ten PRs.
 GraphQL independently confirmed the stack size, trunk,
 positions and all PR head/base identities; local metadata alone was not used
-as proof of remote membership.
+as proof of remote membership. The signed C3 submission extended the verified
+native stack to eleven draft PRs. Its later parent repair and signed upstack
+rebase retain the same membership; exact remote heads and CI are read back
+after each publication.
 
 Remote membership, exact head/base, each layer's delta, and actual required checks
 must be read back after submission. Draft publication alone is not approval or

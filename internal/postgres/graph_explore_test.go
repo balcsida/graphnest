@@ -271,28 +271,56 @@ func TestGraphExploreRealOracle(t *testing.T) {
 		sessionService := &graphservice.Service{Store: store, Backend: &graphquery.Service{Store: store}, Files: &repository.Service{Store: store, GitHub: gateway}}
 		current := principal
 		current.Subject = "restore-session"
-		var first string
+		original, err := os.ReadFile("../../test/fixtures/codegraph/source/core.ts")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var firstBlob string
 		for call := 0; call < 2; call++ {
-			got, e := sessionService.Explore(t.Context(), current, graphservice.ExploreRequest{Repo: api.GraphRepositorySelector{ID: 101}, Query: "path:core.ts Service normalize", Files: []string{"core.ts"}, MaxFiles: 1, SourceUnits: 13000, SessionID: "frozen-two"})
+			// Match both frozen calls exactly: no added file/symbol pins or filters.
+			got, e := sessionService.Explore(t.Context(), current, graphservice.ExploreRequest{Repo: api.GraphRepositorySelector{ID: 101}, Query: "core.ts Service normalize", MaxFiles: 1, SourceUnits: 13000, SessionID: "frozen-two"})
 			if e != nil {
 				t.Fatal(e)
 			}
-			content := ""
+			if got.FileLimit != 1 || got.SourceUnitsLimit != 13000 || got.Usage.SourceReads != 1 || len(got.Generations) != 1 || got.Generations[0].UploadID != publication.Upload.ID || got.Generations[0].Commit != a.Commit {
+				t.Fatal("exact restore query changed bounds or generation")
+			}
+			served := 0
+			symbols := map[string]bool{}
 			for _, f := range got.Files {
-				if f.Path == "core.ts" {
-					for _, segment := range f.Segments {
-						content += segment.Content
-					}
-					if len(f.References) != 0 {
-						t.Fatal("restore left its pointer")
+				for _, entity := range f.Entities {
+					if !proto.Equal(entity.Fact, facts[entity.Fact.Occurrence]) {
+						t.Fatal("restore changed original occurrence")
 					}
 				}
+				if len(f.Segments) == 0 {
+					continue
+				}
+				served++
+				if f.Path != "core.ts" || len(f.Segments) != 1 || len(f.References) != 0 {
+					t.Fatalf("restore source admission/pointer: %+v", f)
+				}
+				segment := f.Segments[0]
+				if segment.Content != string(original) || segment.StartLine != 1 || segment.EndLine != 17 || segment.IndexedSHA != a.Commit || segment.BlobSHA == "" {
+					t.Fatal("restore lost original core.ts source/provenance")
+				}
+				if call == 0 {
+					firstBlob = segment.BlobSHA
+				} else if segment.BlobSHA != firstBlob {
+					t.Fatal("restore changed blob")
+				}
+				for _, entity := range f.Entities {
+					symbols[entity.Fact.Name] = true
+				}
 			}
-			if content == "" || call == 1 && (content != first || !got.SessionRestored || got.Usage.DedupSavedUnits != 0) {
-				t.Fatalf("lost pinned restore shape: %+v", got)
+			if served != 1 || !symbols["Service"] || !symbols["normalize"] || got.Usage.SourceUnits != 786 || got.Usage.SourceBytes != len(original) || got.SessionRestored != (call == 1) || got.Usage.DedupSavedUnits != 0 {
+				t.Fatalf("lost exact pinned restore shape: %+v", got)
 			}
-			first = content
-			t.Logf("call=%d restored=%v units=%d saved=%d", call+1, got.SessionRestored, got.Usage.SourceUnits, got.Usage.DedupSavedUnits)
+			encoded, err := json.Marshal(got)
+			if err != nil || len(encoded) > 256<<10 {
+				t.Fatal("restore exceeded response ceiling")
+			}
+			t.Logf("query=core.ts Service normalize call=%d sourced=%d restored=%v units=%d bytes=%d saved=%d response=%d generation=%d sha=%s blob=%s", call+1, served, got.SessionRestored, got.Usage.SourceUnits, got.Usage.SourceBytes, got.Usage.DedupSavedUnits, len(encoded), got.Generations[0].UploadID, a.Commit, firstBlob)
 		}
 	})
 	for _, mode := range []string{"replacement", "sha", "grant"} {
