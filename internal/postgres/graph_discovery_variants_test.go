@@ -145,8 +145,47 @@ func TestGraphDiscoveryVariantsRebuildRollback(t *testing.T) {
 	if err = s.RebuildGraphDiscovery(t.Context(), id, pub.Upload.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.pool.QueryRow(t.Context(), "select discovery_version from graph_uploads where id=$1", pub.Upload.ID).Scan(&version); err != nil || version != 2 {
+	if err = s.pool.QueryRow(t.Context(), "select discovery_version from graph_uploads where id=$1", pub.Upload.ID).Scan(&version); err != nil || version != 3 {
 		t.Fatalf("rebuilt version=%d err=%v", version, err)
+	}
+}
+
+func TestGraphDiscoveryVersionThreePreservesVariants(t *testing.T) {
+	s, id := readyGraphStore(t, testSHA('a'))
+	a := storageV2Artifact()
+	a.ContentHash = nil
+	a.Nodes = []*graphv2.Node{
+		{SourceId: "one", Occurrence: "one", Kind: "function", Name: "processGreeting"},
+		{SourceId: "two", Occurrence: "two", Kind: "function", Name: "testGreeting"},
+	}
+	a.Edges = nil
+	a.Files = nil
+	a.Unresolved = nil
+	pub, err := s.ReplaceGraphV2(t.Context(), id, GraphPublication{Publisher: "classification-version"}, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.pool.Exec(t.Context(), "update graph_uploads set discovery_version=2 where id=$1", pub.Upload.ID); err != nil {
+		t.Fatal(err)
+	}
+	service := &graphquery.Service{Store: s}
+	scope := graphprotocol.Scope{Repositories: []graphprotocol.RepositorySnapshot{{ID: id, GitHubID: 101, Commit: a.Commit}}}
+	if _, err = service.Discover(t.Context(), graphprotocol.DiscoverRequest{Scope: scope, Query: "greeting"}); !errors.Is(err, graphquery.ErrDiscoveryUnavailable) {
+		t.Fatalf("version-two discovery=%v", err)
+	}
+	page, err := service.Entities(t.Context(), graphprotocol.EntitiesRequest{Scope: scope, Selector: graphprotocol.EntitySelector{NameMatch: &graphprotocol.NameSelector{Mode: "prefix", Value: "process"}}})
+	if err != nil || len(page.Entities) != 1 || page.Entities[0].Fact.Name != "processGreeting" {
+		t.Fatalf("version-two exact variant=%+v err=%v", page, err)
+	}
+	segments, err := service.SegmentMatches(t.Context(), graphprotocol.SegmentRequest{Scope: scope, Words: []string{"greeting"}})
+	if err != nil || len(segments.Matches) != 2 {
+		t.Fatalf("version-two segments=%+v err=%v", segments, err)
+	}
+	if err = s.RebuildGraphDiscovery(t.Context(), id, pub.Upload.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.Discover(t.Context(), graphprotocol.DiscoverRequest{Scope: scope, Query: "greeting"}); err != nil {
+		t.Fatalf("version-three discovery=%v", err)
 	}
 }
 

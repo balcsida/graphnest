@@ -27,3 +27,31 @@ type FilesResponse struct {
 	NextCursor  string        `json:"next_cursor,omitempty"`
 	TotalFiles  *int64        `json:"total_files,omitempty"`
 }
+
+type FileClassificationRequest struct {
+	Scope Scope    `json:"scope"`
+	Paths []string `json:"paths"`
+}
+
+type FileClassification struct {
+	Path               string `json:"path"`
+	Present            bool   `json:"present"`
+	PersistedGenerated *bool  `json:"persisted_generated,omitempty"`
+	Generated          bool   `json:"generated"`
+	Ambient            bool   `json:"ambient"`
+}
+
+type FileClassificationResponse struct {
+	Files       []FileClassification `json:"files"`
+	Generations []Generation         `json:"generations"`
+}
+
+type GeneratedFileCountRequest struct {
+	Scope Scope `json:"scope"`
+}
+
+type GeneratedFileCountResponse struct {
+	GeneratedFiles int64        `json:"generated_files"`
+	TotalFiles     int64        `json:"total_files"`
+	Generations    []Generation `json:"generations"`
+}

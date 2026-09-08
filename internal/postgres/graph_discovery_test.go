@@ -248,6 +248,7 @@ func TestGraphDiscoveryRankingRetention(t *testing.T) {
 	add("generated", "CacheService", "generated/cache.ts", "cache service", true)
 	add("test", "CacheService", "tests/cache.test.ts", "cache service", false)
 	add("ambient", "CacheService", "types/cache.d.ts", "cache service", false)
+	a.Nodes[len(a.Nodes)-1].Kind = "interface"
 	add("deprioritized", "CacheService", "legacy/cache.ts", "cache service", false)
 	for i := 0; i < 130; i++ {
 		add(fmt.Sprint(i), "ItemView", fmt.Sprintf("app/item/%d.ts", i), "item item item item", false)
@@ -298,6 +299,67 @@ func TestGraphDiscoveryRankingRetention(t *testing.T) {
 		t.Fatalf("deprioritized exact helper won: %+v %v", got, err)
 	}
 
+}
+
+func TestGraphDiscoveryClassifiesFilesBeforeCandidateLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name, preferredPath, preferredKind, demotedPath, demotedKind string
+		preferredErrors                                              bool
+	}{
+		{
+			name:          "generated filename",
+			preferredPath: "src/cache.go",
+			preferredKind: "function",
+			demotedPath:   "internal/cache_mock.go",
+			demotedKind:   "function",
+		},
+		{
+			name:          "structural ambient",
+			preferredPath: "types/runtime.d.ts",
+			preferredKind: "class",
+			demotedPath:   "types/cache.ts",
+			demotedKind:   "interface",
+		},
+		{
+			name:            "partial interface with errors",
+			preferredPath:   "types/cache-partial.d.ts",
+			preferredKind:   "interface",
+			preferredErrors: true,
+			demotedPath:     "src/fallback.ts",
+			demotedKind:     "function",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, id := readyGraphStore(t, testSHA('a'))
+			a := storageV2Artifact()
+			a.ContentHash = nil
+			a.Nodes = []*graphv2.Node{
+				{SourceId: "preferred", Occurrence: "a", Kind: tc.preferredKind, Name: "CacheService", Path: proto.String(tc.preferredPath), Language: "typescript", Documentation: proto.String("cache implementation")},
+				{SourceId: "demoted", Occurrence: "z", Kind: tc.demotedKind, Name: "CacheService", Path: proto.String(tc.demotedPath), Language: "typescript", Documentation: proto.String("cache implementation")},
+			}
+			a.Edges = nil
+			a.Files = []*graphv2.File{
+				{Path: tc.preferredPath, ContentHash: strings.Repeat("a", 64), Language: "typescript"},
+				{Path: tc.demotedPath, ContentHash: strings.Repeat("b", 64), Language: "typescript"},
+			}
+			if tc.preferredErrors {
+				a.Files[0].Errors = &graphv2.Extension{Namespace: "codegraph.extraction-errors", Json: []byte(`[{"message":"partial parse"}]`)}
+			}
+			a.Unresolved = nil
+			if _, err := s.ReplaceGraphV2(t.Context(), id, GraphPublication{Publisher: "classification-ranking"}, a); err != nil {
+				t.Fatal(err)
+			}
+			got, err := (&graphquery.Service{Store: s}).Discover(t.Context(), graphprotocol.DiscoverRequest{
+				Scope:          graphprotocol.Scope{Repositories: []graphprotocol.RepositorySnapshot{{ID: id, GitHubID: 101, Commit: a.Commit}}},
+				Query:          "cache implementation",
+				Limit:          1,
+				CandidateLimit: 1,
+			})
+			if err != nil || len(got.Matches) != 1 || got.Matches[0].Entity.Fact.GetPath() != tc.preferredPath {
+				t.Fatalf("required answer after classification=%+v err=%v", got.Matches, err)
+			}
+		})
+	}
 }
 
 func TestGraphDiscoveryUsageCorroborationBeforeLimit(t *testing.T) {

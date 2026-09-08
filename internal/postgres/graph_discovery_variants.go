@@ -13,7 +13,7 @@ import (
 func (s *Store) discoveryVariantsReady(ctx context.Context, snapshots []graphquery.QuerySnapshot) error {
 	ids, uploads, commits := graphScope(snapshots)
 	var ready int
-	if err := s.pool.QueryRow(ctx, `with scope as (select * from unnest($1::bigint[],$2::bigint[],$3::text[]) as v(repository_id,upload_id,commit)) select count(*) from scope join graph_uploads u on u.id=scope.upload_id and u.repository_id=scope.repository_id and u.commit=scope.commit and u.discovery_version=2`, ids, uploads, commits).Scan(&ready); err != nil {
+	if err := s.pool.QueryRow(ctx, `with scope as (select * from unnest($1::bigint[],$2::bigint[],$3::text[]) as v(repository_id,upload_id,commit)) select count(*) from scope join graph_uploads u on u.id=scope.upload_id and u.repository_id=scope.repository_id and u.commit=scope.commit and u.discovery_version>=2`, ids, uploads, commits).Scan(&ready); err != nil {
 		return err
 	}
 	if ready != len(snapshots) {
@@ -41,7 +41,7 @@ func (s *Store) QuerySegments(ctx context.Context, q graphquery.SegmentSearch) (
  live as materialized (
  select distinct on (d.original_name) u.repository_id,u.id upload_id,d.occurrence_key,d.original_name,d.name_size,d.segments,
  array(select distinct word from words where segment=any(d.segments) order by word) matched
- from scope join graph_uploads u on u.id=scope.upload_id and u.repository_id=scope.repository_id and u.commit=scope.commit and u.discovery_version=2
+ from scope join graph_uploads u on u.id=scope.upload_id and u.repository_id=scope.repository_id and u.commit=scope.commit and u.discovery_version>=2
  join graph_v2_discovery d on d.upload_id=u.id
  join graph_v2_nodes n on n.upload_id=d.upload_id and n.occurrence_key=d.occurrence_key and n.name=d.original_name
  where d.segments && $4::text[] and n.kind not in ('file','import')
