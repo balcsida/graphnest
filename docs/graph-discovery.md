@@ -223,8 +223,8 @@ the graph generation and repository authorization after the reads. Lost grants,
 SHA drift, generation replacement, cancellation and invalid scope discard the
 entire result. The result exposes `Tokens` and `Generations`; a composition caller
 passes `Tokens` as `DiscoveryConfig.ProjectTerms` for that same scope/generation
-and keeps the existing final authority checks. Automatic Explore/context/public
-adapter wiring remains later composition work. Artifact metadata has no invented
+and keeps the existing final authority checks. Explore passes project terms
+explicitly; task-context seed derivation is described below. Artifact metadata has no invented
 project-token key: the pinned package manifest is source evidence, absent from
 the converted fixture's original file facts.
 
@@ -234,6 +234,36 @@ limit-two captures are complete returned arrays, not exhaustive membership;
 native pagination recovers their third overload. Exact SQLite ties/FTS scores,
 uncapped arrays, public transports, file predicates, context workflows and
 broader language/configuration parity are not claimed here.
+
+## Task-level relevant and build context
+
+`graphquery.Service.RelevantContext` composes the existing `Discover`, `Entities`,
+`Traverse`, and generation-validation operations. Defaults match the pinned
+CodeGraph task operation: search limit 3, traversal depth 1, maximum 20 nodes,
+minimum score 0.3, all relationship kinds, and the high-value declaration kinds.
+Pointer-valued options preserve omitted versus explicit zero or empty lists.
+Expansion is bounded in both directions; explicit edge filters apply to BFS while
+bounded hierarchy expansion and evidence recovery may retain other relationships
+between retained nodes. Original node and edge protobuf occurrences are returned
+unchanged, including parallel evidence with identical triples. The result exposes
+effective options, generation, discovery scores, roots, boundaries, and partialness.
+
+`graphservice.Service.FindRelevantContext` derives at most eight exact-name seeds
+from segment evidence only when `seed_names` is omitted. An explicit empty list
+suppresses derivation. `BuildTaskContext` deliberately calls the builder operation
+directly, accepts a query or title/description, and defaults to five 1,500-UTF-16-unit
+code blocks. Selection prefers roots, then functions/methods, then classes. Source
+is read at the selected indexed SHA and retains original locations and blob evidence;
+shortened content remains a verbatim prefix with separate size and truncation fields.
+Graph, query, source-read, response-byte, and five-second limits are enforced, and
+the final generation, SHA, and repository grant are revalidated after source reads.
+
+This is a structured domain result. Root-connected call-site/registration analysis
+and source-site evidence remain S1.06 work. Markdown/JSON presentation and REST/MCP
+adapters remain S1.07/S1.09 work and must consume these partialness and provenance
+fields without weakening them. The 12 pinned option/build captures and their original
+counts are frozen in `test/fixtures/codegraph/task-context.json`; the PostgreSQL oracle
+asserts required original facts and source rather than exact SQLite ranking order.
 
 ## Composition boundary
 
