@@ -254,15 +254,34 @@ Implementation, validation, draft publication, and release are separate states.
   generation/authority checks and limits have focused coverage. Affected package
   unit/race tests, PostgreSQL race, vet, staticcheck, formatting and hygiene pass.
   A pre-existing 50 ms deadline test flaked once; unchanged reruns passed and
-  the original failure remains retained. Signed draft publication is next.
+  the original failure remains retained. Signed commit `d7a56e8` is published as draft PR #78, stack #66 position 14;
+  exact head/base, signature, nine-file delta and prior membership were verified.
+  CI run 34239137303 and all required checks pass on that exact head. Separate AI scan 34239139703 failed before
+  analysis because its requested gpt-5.3-codex model was unsupported.
   S1.06 path/site linkage and S1.07/S1.09 presentation remain separate obligations.
 
 - S1.06a1 oracle preparation is complete for the existing fixture and a separate
   positive cycle/inheritance-only fixture. Complete semantic answers agree
   across two captures. Independent read-back checked source/fact identities
   and normalized logical equality; original failed attempts and raw operational
-  differences remain preserved. This is reference evidence only; native file
-  dependency and affected-test implementation remains pending.
+  differences remain preserved. Native implementation and its permanent
+  fixture comparisons are recorded below.
+
+- S1.06a1 implements seven generation-scoped file-dependency and affected-test
+  operations. Independent review required generation-bearing empty count answers
+  without pair queries, pinned DFS back-edge paths instead of SCCs, and the
+  complete positive fixture. All three findings are addressed: PostgreSQL now
+  publishes all 11 nodes, 16 edge occurrences and four files, and tests verify
+  every permanent source hash. Focused query/service tests and race tests pass;
+  required PostgreSQL oracle tests pass in 0.903s. The retained bounded plan uses
+  212 shared buffers and 0.289ms on the tiny fixture; this is not production
+  performance evidence. Affected formatting, vet and staticcheck are clean.
+  Static boundary follow-through confirms reuse of managed exact-generation
+  selection and independent SCIP storage/query paths; those unchanged broad
+  suites were not rerun for this layer. Signed draft publication is next.
+  Aggregate main/uncertainty reference
+  captures are frozen and independently verified; native aggregate parity
+  remains pending.
 
 ## Baselines
 
@@ -508,7 +527,7 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 | S1.05c3 scoped exploration history | `feat/codegraph/s1-05-sessions` | Implemented, independently reviewed and signed; depends on repaired PR #74 | Draft [PR #75](https://github.com/balcsida/graphnest/pull/75); native stack #66, position 11 |
 | S1.05d1 discovery variants | `feat/codegraph/s1-05d1-discovery-variants` | Implemented, independently reviewed and signed; depends on PR #75 | Draft [PR #76](https://github.com/balcsida/graphnest/pull/76); native stack #66, position 12 |
 | S1.05d2 file classification | `feat/codegraph/s1-05d2-file-classification` | Implemented, independently reviewed and signed; depends on PR #76 | Draft [PR #77](https://github.com/balcsida/graphnest/pull/77); native stack #66, position 13 |
-| S1.05d3 task context | `feat/codegraph/s1-05d3-task-context` | Implemented and independently approved; depends on PR #77 | Not submitted |
+| S1.05d3 task context | `feat/codegraph/s1-05d3-task-context` | Implemented, independently approved and signed; depends on PR #77 | Draft [PR #78](https://github.com/balcsida/graphnest/pull/78); native stack #66, position 14 |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
