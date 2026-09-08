@@ -78,6 +78,30 @@ func (s *Store) QueryEntities(ctx context.Context, q graphquery.EntityQuery) ([]
 	ids, uploads, commits := graphScope(q.Snapshots)
 	args := []any{ids, uploads, commits, graphquery.MaxEntityQueryBytes}
 	filters := []string{}
+	join := ""
+	order := "u.repository_id,n.occurrence"
+	if m := q.Selector.NameMatch; m != nil {
+		if err := s.discoveryVariantsReady(ctx, q.Snapshots); err != nil {
+			return nil, err
+		}
+		join = " join graph_v2_discovery d on d.upload_id=n.upload_id and d.occurrence_key=n.occurrence_key"
+		args = append(args, m.Kinds)
+		filters = append(filters, "(coalesce(cardinality($5::text[]),0)=0 or n.kind=any($5::text[]))")
+		if m.Mode == "prefix" {
+			prefix := []byte(m.Value)[:min(len(m.Value), 128)]
+			upper := append([]byte{}, prefix...)
+			if len(upper) > 0 {
+				upper[len(upper)-1]++
+			}
+			args = append(args, []byte(m.Value), prefix, upper)
+			filters = append(filters, "substring(d.original_name from 1 for octet_length($6::bytea))=$6::bytea and (octet_length($7::bytea)=0 or (substring(d.original_name from 1 for 128)>=$7::bytea and substring(d.original_name from 1 for 128)<$8::bytea))")
+			order = "d.original_name," + order
+		} else {
+			args = append(args, []byte(graphquery.FoldName(m.Value)), graphquery.NameGrams(m.Value), m.ExcludePrefix)
+			filters = append(filters, "d.selector_grams @> $7::text[] and position($6::bytea in d.folded_name)>0 and (not $8::boolean or substring(d.folded_name from 1 for octet_length($6::bytea))<>$6::bytea)")
+			order = "d.name_size," + order
+		}
+	}
 	add := func(column string, value *string) {
 		if value != nil {
 			args = append(args, []byte(*value))
@@ -101,7 +125,17 @@ func (s *Store) QueryEntities(ctx context.Context, q graphquery.EntityQuery) ([]
 	sql := `with scope as (select * from unnest($1::bigint[],$2::bigint[],$3::text[]) as v(repository_id,upload_id,commit))
  select u.repository_id,u.public_repository,u.producer_name,u.producer_version,u.producer_configuration,case when octet_length(n.payload)<=$4 then n.payload end
  from scope join graph_uploads u on u.id=scope.upload_id and u.repository_id=scope.repository_id and u.commit=scope.commit and u.schema_version=2
- join graph_v2_nodes n on n.upload_id=u.id` + where + fmt.Sprintf(" order by u.repository_id,n.occurrence offset $%d limit $%d", len(args)-1, len(args))
+ join graph_v2_nodes n on n.upload_id=u.id` + join + where + fmt.Sprintf(" order by %s offset $%d limit $%d", order, len(args)-1, len(args))
+	if q.Selector.NameMatch != nil {
+		// Select bounded identities before touching original protobuf payloads.
+		sql = `with scope as (select * from unnest($1::bigint[],$2::bigint[],$3::text[]) as v(repository_id,upload_id,commit)),
+ name_candidates as materialized (
+ select u.id upload_id,u.repository_id,n.occurrence_key,n.occurrence,d.original_name,d.name_size
+ from scope join graph_uploads u on u.id=scope.upload_id and u.repository_id=scope.repository_id and u.commit=scope.commit and u.discovery_version=2
+ join graph_v2_nodes n on n.upload_id=u.id` + join + where + fmt.Sprintf(" order by %s offset $%d limit $%d", order, len(args)-1, len(args)) + `)
+ select u.repository_id,u.public_repository,u.producer_name,u.producer_version,u.producer_configuration,case when octet_length(n.payload)<=$4 then n.payload end
+ from name_candidates d join graph_uploads u on u.id=d.upload_id join graph_v2_nodes n on n.upload_id=d.upload_id and n.occurrence_key=d.occurrence_key order by ` + order
+	}
 	rows, err := s.pool.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err

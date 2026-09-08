@@ -5,11 +5,20 @@ import graphv2 "github.com/balcsida/graphnest/internal/graphartifact/v2"
 // Entity queries are an internal v2 contract. HTTP/MCP symbol wrappers remain v1.
 // Selectors use producer occurrence identity; optional strings retain presence.
 type EntitySelector struct {
-	Occurrence    *string `json:"occurrence,omitempty"`
-	Name          *string `json:"name,omitempty"`
-	QualifiedName *string `json:"qualified_name,omitempty"`
-	Path          *string `json:"path,omitempty"`
-	Kind          string  `json:"kind,omitempty"`
+	NameMatch     *NameSelector `json:"name_match,omitempty"`
+	Occurrence    *string       `json:"occurrence,omitempty"`
+	Name          *string       `json:"name,omitempty"`
+	QualifiedName *string       `json:"qualified_name,omitempty"`
+	Path          *string       `json:"path,omitempty"`
+	Kind          string        `json:"kind,omitempty"`
+}
+
+// NameSelector is literal name membership, independent of Discover ranking.
+type NameSelector struct {
+	Mode          string   `json:"mode"` // prefix (case-sensitive) or substring (ASCII folding)
+	Value         string   `json:"value"`
+	Kinds         []string `json:"kinds,omitempty"`
+	ExcludePrefix bool     `json:"exclude_prefix,omitempty"`
 }
 
 type Entity struct {

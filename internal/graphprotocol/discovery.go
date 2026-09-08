@@ -48,3 +48,20 @@ type DiscoverResponse struct {
 	// Discovery coverage never claims complete source or flow analysis.
 	Coverage string `json:"coverage"`
 }
+
+type SegmentRequest struct {
+	Scope Scope    `json:"scope"`
+	Words []string `json:"words"`
+	Limit int      `json:"limit,omitempty"`
+}
+
+type SegmentMatch struct {
+	Entity       Entity   `json:"entity"`
+	MatchedWords []string `json:"matched_words"`
+}
+
+type SegmentResponse struct {
+	Matches     []SegmentMatch `json:"matches"`
+	Generations []Generation   `json:"generations"`
+	Truncated   bool           `json:"truncated"`
+}
