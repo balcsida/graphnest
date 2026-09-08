@@ -16,7 +16,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var discoveryGenerated = regexp.MustCompile(`(?i)(^|/)(generated|__generated__|vendor)(/|$)|[.]pb[.]|[.]generated[.]|[.]gen[.]`)
+const graphDiscoveryVersion = 3
+
 var discoveryTestFile = regexp.MustCompile(`(?i)(^|/)(__tests__|tests?|specs?|fixtures?|examples?|icons?|i18n)(/|$)|[._](test|spec)[.]|_test[.]`)
 
 func writeGraphDiscovery(ctx context.Context, tx pgx.Tx, id int64, a *graphv2.Artifact) error {
@@ -37,6 +38,37 @@ func writeGraphDiscovery(ctx context.Context, tx pgx.Tx, id int64, a *graphv2.Ar
 			}
 		}
 	}
+	type declarationCounts struct {
+		declared, typeDeclared int
+		behavior, incoming     bool
+	}
+	declarations := map[string]*declarationCounts{}
+	paths := map[string]string{}
+	for _, n := range a.Nodes {
+		path := n.GetPath()
+		paths[n.Occurrence] = path
+		if path == "" || slices.Contains([]string{"file", "import", "export", "parameter"}, n.Kind) {
+			continue
+		}
+		counts := declarations[path]
+		if counts == nil {
+			counts = new(declarationCounts)
+			declarations[path] = counts
+		}
+		counts.declared++
+		if slices.Contains([]string{"interface", "type_alias", "enum", "enum_member", "namespace"}, n.Kind) {
+			counts.typeDeclared++
+		}
+	}
+	for _, e := range a.Edges {
+		source, target := paths[e.Source], paths[e.Target]
+		if counts := declarations[source]; counts != nil && (e.Kind == graphv2.EdgeKind_EDGE_KIND_CALLS || e.Kind == graphv2.EdgeKind_EDGE_KIND_INSTANTIATES) {
+			counts.behavior = true
+		}
+		if source != "" && target != "" && source != target && declarations[target] != nil {
+			declarations[target].incoming = true
+		}
+	}
 	_, err := tx.CopyFrom(ctx, pgx.Identifier{"graph_v2_discovery"}, []string{"upload_id", "occurrence_key", "name", "qualified_name", "signature", "documentation", "path", "language", "kind", "name_document", "qualified_document", "signature_document", "documentation_document", "path_document", "grams", "usage_count", "generated", "ambient", "test_file", "original_name", "folded_name", "name_size", "selector_grams", "segments"}, pgx.CopyFromSlice(len(a.Nodes), func(i int) ([]any, error) {
 		n := a.Nodes[i]
 		values := []string{n.Name, n.QualifiedName, n.GetSignature(), n.GetDocumentation(), n.GetPath()}
@@ -45,8 +77,9 @@ func writeGraphDiscovery(ctx context.Context, tx pgx.Tx, id int64, a *graphv2.Ar
 			docs[j] = graphquery.DiscoveryDocument(v)
 			values[j] = graphquery.NormalizeDiscovery(v)
 		}
-		generated := files[n.GetPath()].GetGenerated() || discoveryGenerated.MatchString(n.GetPath())
-		ambient := strings.HasSuffix(n.GetPath(), ".d.ts") && usage[n.Occurrence] == 0
+		generated := files[n.GetPath()].GetGenerated() || graphquery.GeneratedFilename(n.GetPath())
+		counts := declarations[n.GetPath()]
+		ambient := files[n.GetPath()] != nil && files[n.GetPath()].Errors == nil && counts != nil && counts.declared > 0 && counts.declared == counts.typeDeclared && !counts.behavior && !counts.incoming
 		grams := graphquery.DiscoveryGrams(strings.Join(append(slices.Clone(values), n.Kind, n.Language), " "))
 		key := sha256.Sum256([]byte(n.Occurrence))
 		return []any{id, key[:], values[0], values[1], values[2], values[3], values[4], graphquery.NormalizeDiscovery(n.Language), n.Kind, docs[0], docs[1], docs[2], docs[3], docs[4], grams, usage[n.Occurrence], generated, ambient, discoveryTestFile.MatchString(n.GetPath()), []byte(n.Name), []byte(graphquery.FoldName(n.Name)), utf8.RuneCountInString(n.Name), graphquery.NameGrams(n.Name), graphquery.IdentifierSegments(n.Name)}, nil
@@ -54,7 +87,7 @@ func writeGraphDiscovery(ctx context.Context, tx pgx.Tx, id int64, a *graphv2.Ar
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, "update graph_uploads set discovery_version=2 where id=$1", id)
+	_, err = tx.Exec(ctx, "update graph_uploads set discovery_version=$2 where id=$1", id, graphDiscoveryVersion)
 	return err
 }
 
@@ -106,7 +139,7 @@ func (s *Store) QueryDiscovery(ctx context.Context, q graphquery.DiscoverySearch
 	}
 	ids, uploads, commits := graphScope(q.Snapshots)
 	var ready int
-	if err := s.pool.QueryRow(ctx, `with scope as (select * from unnest($1::bigint[],$2::bigint[],$3::text[]) as v(repository_id,upload_id,commit)) select count(*) from scope join graph_uploads u on u.id=scope.upload_id and u.repository_id=scope.repository_id and u.commit=scope.commit and u.discovery_version>=1`, ids, uploads, commits).Scan(&ready); err != nil {
+	if err := s.pool.QueryRow(ctx, `with scope as (select * from unnest($1::bigint[],$2::bigint[],$3::text[]) as v(repository_id,upload_id,commit)) select count(*) from scope join graph_uploads u on u.id=scope.upload_id and u.repository_id=scope.repository_id and u.commit=scope.commit and u.discovery_version>=3`, ids, uploads, commits).Scan(&ready); err != nil {
 		return nil, err
 	}
 	if ready != len(q.Snapshots) {

@@ -208,6 +208,32 @@ Implementation, validation, draft publication, and release are separate states.
   verified against its immediate journal, with original facts/source and
   explicit budget/completeness boundaries. These captures prepare the next
   layers; they do not establish native implementation or Stage 1 acceptance.
+- S1.05d1 is signed as `13027d5` and published in draft PR #76, native stack
+  #66 position 12. GitHub confirms the valid signature, exact PR #75 parent,
+  15-file delta and unchanged preceding eleven layers. The final oracle test
+  cleanup also passes independent review and all fifteen substantive PostgreSQL
+  cases. CI `34209793322` passes all required verify, integration, end-to-end and
+  Helm checks plus UI smoke on this exact head. The separate AI
+  security job fails before analysis with an unsupported-model error, so it is
+  not a passing security analysis. Work continues on S1.05d2 generated/ambient
+  file classification and persisted generated-file counts.
+
+- S1.05d2 implements bounded generated/ambient file classification and stored-flag
+  counts. Its frozen oracle covers thirteen original files plus all twenty-six
+  case-sensitive filename rules; synthetic tests cover flag presence, structural
+  ambient evidence, replacement and authority boundaries. Classification now
+  precedes the discovery candidate limit. Projection version 3 requires an
+  explicit rebuild for ordinary discovery while accepted name/segment operations
+  remain eligible on version 2 or newer; no schema migration is added. The seven
+  focused PostgreSQL checks and six query/service race tests pass, as does the
+  affected PostgreSQL race selection after correcting an older ambient fixture
+  to contain an interface. Focused vet/staticcheck and formatting checks pass.
+  Independent review identified that surviving declarations in files with analyzer
+  errors could incorrectly receive the ambient penalty. The correction reuses
+  retained file protobufs and loaded artifact metadata; direct and one-candidate
+  ranking regressions pass, along with seven scoped PostgreSQL race checks in
+  4.201s. Independent scoped re-review approves the correction with no remaining
+  findings. D2 is accepted for signed native draft publication.
 
 ## Baselines
 
@@ -264,6 +290,27 @@ these tests.
   from GraphNest. Other hierarchy cases remain unimplemented and unverified.
 
 ## Discoveries
+
+- Source-site preparation now selects the existing scanner executable with a
+  bounded source-byte subcommand, installed Go statement-list handling, and
+  modern Kotlin walker adaptation as the first implementation direction.
+  Missing grammars still need exact source/notices and ABI/semantic validation.
+  The oversized source-site umbrella will be split into consecutive protocol,
+  language and adapter/packaging layers before dispatch; no language is removed.
+- Later full-file acquisition will reuse a separately configured
+  `repository.Service` through `ContentReader`, with matching exact-SHA identity,
+  explicit EOF/truncation checks and a line ceiling that cannot truncate a
+  byte-admitted file. Display slices and their current 1,000-line default are
+  not accepted parser inputs or parity limits. If this reuse proves inadequate,
+  the fallback is a small whole-file method over the same existing primitives.
+- The supported server installation must package the versioned helper beside
+  the application, with deployment/native-library/notice checks. Missing-helper
+  diagnostics remain truthful unavailable states, not a deployment-parity pass.
+  Initial malformed-tree policy returns unavailable semantic facets for parser
+  recovery. Proposed work/byte/time/process ceilings require adversarial tests
+  and real measurements; no preparation result establishes their performance.
+  These choices can require walker, protocol, reader or packaging rework if
+  later evidence contradicts them. Source-site implementation is not started.
 
 - No existing CodeGraph implementation or parity record was found on the baseline.
 - Existing PostgreSQL parity tests already compare normalized context, impact,
@@ -430,7 +477,8 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 | S1.05c1 file projections | `feat/codegraph/s1-05-compose` | Implemented, reviewed and signed; depends on PR #72 | Draft [PR #73](https://github.com/balcsida/graphnest/pull/73); native stack #66, position 9 |
 | S1.05c2 stateless exploration and allocation | `feat/codegraph/s1-05-allocation` | Implemented, reviewed and signed; depends on PR #73 | Draft [PR #74](https://github.com/balcsida/graphnest/pull/74); native stack #66, position 10 |
 | S1.05c3 scoped exploration history | `feat/codegraph/s1-05-sessions` | Implemented, independently reviewed and signed; depends on repaired PR #74 | Draft [PR #75](https://github.com/balcsida/graphnest/pull/75); native stack #66, position 11 |
-| S1.05d1 discovery variants | `feat/codegraph/s1-05d1-discovery-variants` | Implemented and independently reviewed; required PostgreSQL checks pass; depends on PR #75 | Signed draft submission pending |
+| S1.05d1 discovery variants | `feat/codegraph/s1-05d1-discovery-variants` | Implemented, independently reviewed and signed; depends on PR #75 | Draft [PR #76](https://github.com/balcsida/graphnest/pull/76); native stack #66, position 12 |
+| S1.05d2 file classification | `feat/codegraph/s1-05d2-file-classification` | Implemented; independently reviewed; depends on PR #76 | Accepted for signed native draft submission |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66

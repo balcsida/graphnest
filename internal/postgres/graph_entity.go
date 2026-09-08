@@ -131,7 +131,7 @@ func (s *Store) QueryEntities(ctx context.Context, q graphquery.EntityQuery) ([]
 		sql = `with scope as (select * from unnest($1::bigint[],$2::bigint[],$3::text[]) as v(repository_id,upload_id,commit)),
  name_candidates as materialized (
  select u.id upload_id,u.repository_id,n.occurrence_key,n.occurrence,d.original_name,d.name_size
- from scope join graph_uploads u on u.id=scope.upload_id and u.repository_id=scope.repository_id and u.commit=scope.commit and u.discovery_version=2
+ from scope join graph_uploads u on u.id=scope.upload_id and u.repository_id=scope.repository_id and u.commit=scope.commit and u.discovery_version>=2
  join graph_v2_nodes n on n.upload_id=u.id` + join + where + fmt.Sprintf(" order by %s offset $%d limit $%d", order, len(args)-1, len(args)) + `)
  select u.repository_id,u.public_repository,u.producer_name,u.producer_version,u.producer_configuration,case when octet_length(n.payload)<=$4 then n.payload end
  from name_candidates d join graph_uploads u on u.id=d.upload_id join graph_v2_nodes n on n.upload_id=d.upload_id and n.occurrence_key=d.occurrence_key order by ` + order
