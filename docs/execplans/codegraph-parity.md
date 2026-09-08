@@ -184,6 +184,30 @@ Implementation, validation, draft publication, and release are separate states.
   tests passing. Focused staticcheck and vet pass, including the correction of
   CI's test-only S1038 finding. C3 is draft PR #75 at native position 11;
   full S1.05 and Stage 1 remain open.
+- The signed admission/restoration updates are published at PR #74 head
+  `4d277ca` and PR #75 head `8a7b024`, with their exact native bases, signatures,
+  file deltas and descriptions verified remotely. CI runs `34167657724` and
+  `34167658451` pass on these exact heads, including every required check and
+  UI smoke. The separate AI scans fail before analysis because their requested
+  model is unsupported; those failures are not passing security analysis.
+  Work continues on
+  S1.05d1 discovery selectors, segment evidence and exact-SHA project tokens.
+- S1.05d1 is implemented and independently reviewed with its module-parser
+  finding corrected: CRLF declarations retain their token and malformed or
+  duplicate declarations supply none. Permanent regressions fail before the
+  correction; all project-token race tests pass in 1.460s, with focused vet,
+  staticcheck and formatting checks passing. After authorized OrbStack recovery,
+  all five required PostgreSQL oracle, replacement, segment, query-plan and
+  rebuild checks pass in 1.950s. The affected PostgreSQL race selection passes
+  in 45.327s: 27 tests pass and one pre-existing opt-in index-plan diagnostic
+  skips; the required D1 plan tests execute and pass. The reviewed code remains
+  unchanged. D1 is accepted for signed native draft submission; S1.05 and the
+  full Stage 1 gate remain open.
+- Read-only preparation for file classification and task context is frozen.
+  The task-context capture preserves twelve actual pinned method answers,
+  verified against its immediate journal, with original facts/source and
+  explicit budget/completeness boundaries. These captures prepare the next
+  layers; they do not establish native implementation or Stage 1 acceptance.
 
 ## Baselines
 
@@ -406,6 +430,7 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 | S1.05c1 file projections | `feat/codegraph/s1-05-compose` | Implemented, reviewed and signed; depends on PR #72 | Draft [PR #73](https://github.com/balcsida/graphnest/pull/73); native stack #66, position 9 |
 | S1.05c2 stateless exploration and allocation | `feat/codegraph/s1-05-allocation` | Implemented, reviewed and signed; depends on PR #73 | Draft [PR #74](https://github.com/balcsida/graphnest/pull/74); native stack #66, position 10 |
 | S1.05c3 scoped exploration history | `feat/codegraph/s1-05-sessions` | Implemented, independently reviewed and signed; depends on repaired PR #74 | Draft [PR #75](https://github.com/balcsida/graphnest/pull/75); native stack #66, position 11 |
+| S1.05d1 discovery variants | `feat/codegraph/s1-05d1-discovery-variants` | Implemented and independently reviewed; required PostgreSQL checks pass; depends on PR #75 | Signed draft submission pending |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66

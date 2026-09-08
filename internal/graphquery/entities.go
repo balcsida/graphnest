@@ -112,6 +112,17 @@ func (ready entityReady) current(ctx context.Context) error {
 }
 
 func validEntitySelector(s graphprotocol.EntitySelector) bool {
+	if s.NameMatch != nil {
+		m := s.NameMatch
+		if (m.Mode != "prefix" && m.Mode != "substring") || (m.Mode == "prefix" && m.ExcludePrefix) || len(m.Value) > 16384 || !utf8.ValidString(m.Value) || len(m.Kinds) > 32 {
+			return false
+		}
+		for _, k := range m.Kinds {
+			if len(k) > 64 || !utf8.ValidString(k) {
+				return false
+			}
+		}
+	}
 	for _, p := range []*string{s.Occurrence, s.Name, s.QualifiedName, s.Path} {
 		if p != nil && (len(*p) > 16384 || !utf8.ValidString(*p)) {
 			return false
@@ -139,6 +150,12 @@ func (service *Service) Entities(ctx context.Context, request graphprotocol.Enti
 		return graphprotocol.EntitiesResponse{}, err
 	}
 	limit := request.Limit
+	if limit == 0 && request.Selector.NameMatch != nil {
+		limit = 20
+		if request.Selector.NameMatch.Mode == "substring" {
+			limit = 30
+		}
+	}
 	if limit == 0 || limit > service.limits().MaxRows {
 		limit = service.limits().MaxRows
 	}

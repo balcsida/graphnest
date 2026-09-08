@@ -10,8 +10,8 @@ not authorize a principal itself.
 
 The request accepts query text, result and candidate limits, explicit `Symbols`
 and `Files`, and request-local `DiscoveryConfig`. `ProjectTerms` suppresses
-incidental project-name dominance; the caller obtains these terms from indexed
-repository manifests. `Deprioritize` accepts gitignore-style patterns: basename
+incidental project-name dominance; the authorized `ProjectNameTokens` operation
+below obtains these terms from exact-SHA source. `Deprioritize` accepts gitignore-style patterns: basename
 and rooted paths, directories, `*`, `**`, `?`, character classes, escaping,
 comments and ordered negation. Ignored parent directories remain ignored until
 explicitly re-included. Patterns change rank, not corpus membership. Configuration
@@ -102,7 +102,7 @@ construction and storage costs; accepted original facts are not discarded.
 ## Projection lifecycle
 
 Migration 028 adds `graph_v2_discovery` and `graph_uploads.discovery_version`.
-New v2 publication builds the projection and marks version 1 atomically in the
+New v2 publication builds the projection and marks version 2 atomically in the
 existing publication transaction. Failed publication cannot leave an active
 partially indexed generation. Replacement keeps retired generations immutable;
 their projection is generation-local and cascades with offline generation cleanup.
@@ -117,12 +117,93 @@ err := store.RebuildGraphDiscovery(ctx, internalRepositoryID, uploadID)
 ```
 
 The method uses the existing validated `LoadGraphV2`, locks that exact generation,
-replaces only its search projection, and marks version 1 in one transaction. It
+replaces only its search projection, and marks version 2 in one transaction. It
 can rebuild active or retired v2 generations. It is explicit and reproducible;
 request-time discovery never loads a full artifact or triggers a rebuild. A
 failed rebuild preserves the previous committed projection/version. Deployment
 operators must rebuild required existing v2 generations before enabling discovery.
 Future tokenizer/projection changes must use a new version and explicit rebuild.
+
+Migration 029 adds original/folded name bytes, length, literal byte grams, and
+identifier segments to that same disposable projection. Version 1 still serves
+`Discover`; name selectors and segment evidence require version 2 and return
+`ErrDiscoveryUnavailable` until explicitly rebuilt. Publication/rebuild writes
+all fields and the version in the existing transaction. No request performs a
+lazy rebuild, loads an artifact, or reads a worker's checkout.
+
+## Literal names and segment evidence
+
+`EntitiesRequest.Selector.NameMatch` accepts a typed `NameSelector` with `Mode`
+`prefix` or `substring`, `Value`, optional `Kinds`, and substring-only
+`ExcludePrefix`. Prefix membership is case-sensitive and defaults to 20 rows.
+Substring membership folds ASCII case only and defaults to 30 rows; `%`, `_`,
+NUL and non-ASCII characters remain literal. `Kinds` intersects membership.
+Substring pages prefer shorter names; prefix pages order by original name.
+Occurrence identity resolves remaining ties deterministically. Existing exact
+name/qualified-name/path/kind selectors retain their behavior and compose as
+intersections with the new selector.
+
+These use the existing entity maximum rows, 16 KiB selector, 4 MiB response,
+five-second deadline and immutable paging. Every cursor binds selector options,
+effective page size, repository selection, active upload and indexed SHA.
+Changing any bound input fails without partial output. Empty answers are valid;
+an empty literal selects all names (except substring `ExcludePrefix`, which
+excludes them all). Bounded page unions preserve original protobuf facts and all
+overloads. The four older exact selectors are directly compared against the
+frozen pinned methods; only test-side path/start-line ordering is projected.
+
+`graphquery.Service.SegmentMatches` accepts up to 32 original `Words` and a
+result `Limit` (default 6, maximum 100 and the configured entity row ceiling).
+It maps plural variants to their first original word. Tier A requires two
+distinct original words in one live name. Only when Tier A is empty, Tier B
+accepts words of at least five characters whose segment occurs in 2–25 distinct
+live names; candidate names must contain at least two segments. Names are unique,
+file/import-only names and orphan proposals cannot supply evidence, and every
+match contains a live original `Entity` plus sorted `MatchedWords`. More matched
+words precede fewer, then shorter names. `Truncated` reports one bounded
+lookahead row. Empty words yield an empty result with validated generation
+provenance. Cancellation, byte limits and generation replacement fail closed.
+
+Prefix candidates use an upload-scoped B-tree over the first 128 original bytes,
+followed by full literal equality. Substrings use GIN over hex byte grams with a
+full ASCII-folded byte containment recheck. Segments use a GIN array lookup and
+live original-node joins. Candidate identities are limited before protobuf
+payload joins; exact membership may require ranking indexed matching metadata,
+bounded by the deadline. The selective 4,000-node plan tests assert the actual
+indexes, immutable repository/upload/SHA joins and bounded result plans. Broad
+selectors are not constant-time operations. Existing generation cleanup cascades
+all derived rows; no new production dependency or PostgreSQL extension is used.
+
+## Authorized project tokens
+
+`graphservice.Service.ProjectNameTokens` resolves one authorized repository,
+captures its active generation, and uses `RepositorySnapshot.Name` plus
+`ContentReader.ReadFileAt` for `go.mod` and `package.json` at the selected SHA.
+The reader's existing 1 MiB transfer ceiling applies; each request asks for at
+most 512 lines and only complete manifest content at most 64 KiB contributes.
+Missing, malformed, oversized, truncated or unavailable manifests contribute no
+token. Module/package/repository basenames normalize to lowercase ASCII
+alphanumerics; unique tokens need at least five characters. The module declaration
+is parsed narrowly, without general Go/runtime configuration loading.
+An answer ending at line 512 does not establish EOF and contributes no token,
+even when the reader's `Truncated` flag is false for that explicit selection.
+
+The service validates returned repository/path/SHA coordinates, then revalidates
+the graph generation and repository authorization after the reads. Lost grants,
+SHA drift, generation replacement, cancellation and invalid scope discard the
+entire result. The result exposes `Tokens` and `Generations`; a composition caller
+passes `Tokens` as `DiscoveryConfig.ProjectTerms` for that same scope/generation
+and keeps the existing final authority checks. Automatic Explore/context/public
+adapter wiring remains later composition work. Artifact metadata has no invented
+project-token key: the pinned package manifest is source evidence, absent from
+the converted fixture's original file facts.
+
+`test/fixtures/codegraph/discovery-variants.json` preserves all 16 actual pinned
+method answers with commit/runtime/source/config/reference hashes. The two
+limit-two captures are complete returned arrays, not exhaustive membership;
+native pagination recovers their third overload. Exact SQLite ties/FTS scores,
+uncapped arrays, public transports, file predicates, context workflows and
+broader language/configuration parity are not claimed here.
 
 ## Composition boundary
 
