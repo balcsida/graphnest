@@ -235,6 +235,35 @@ Implementation, validation, draft publication, and release are separate states.
   4.201s. Independent scoped re-review approves the correction with no remaining
   findings. D2 is accepted for signed native draft publication.
 
+- S1.05d2 is signed as `c5ea8d4` and published in draft PR #77, native stack
+  #66 position 13. GitHub confirms its valid signature, exact PR #76 parent,
+  fifteen-file delta, description, and unchanged preceding twelve entries.
+  CI `34219098355` passes verify, integration, end-to-end, Helm and UI smoke
+  on this exact head; every required check is independently read back passing.
+  The separate AI security run `34219102346` fails before analysis because
+  its requested model is unsupported; it is not passing security analysis.
+  Work continues on S1.05d3 task-context composition; the full Stage 1 gate
+  remains open.
+
+- S1.05d3 task-context discovery and exact-SHA code-block composition is
+  implemented and independently approved after two focused review corrections.
+  All twelve frozen upstream cases pass against real PostgreSQL with exact
+  required node/edge identities and source-prefix assertions. The no-code case
+  retains incoming and outgoing graph witnesses while returning zero blocks.
+  Builder selectors, seed availability fallback, reader truncation metadata,
+  generation/authority checks and limits have focused coverage. Affected package
+  unit/race tests, PostgreSQL race, vet, staticcheck, formatting and hygiene pass.
+  A pre-existing 50 ms deadline test flaked once; unchanged reruns passed and
+  the original failure remains retained. Signed draft publication is next.
+  S1.06 path/site linkage and S1.07/S1.09 presentation remain separate obligations.
+
+- S1.06a1 oracle preparation is complete for the existing fixture and a separate
+  positive cycle/inheritance-only fixture. Complete semantic answers agree
+  across two captures. Independent read-back checked source/fact identities
+  and normalized logical equality; original failed attempts and raw operational
+  differences remain preserved. This is reference evidence only; native file
+  dependency and affected-test implementation remains pending.
+
 ## Baselines
 
 | Component | Verified source identity |
@@ -478,7 +507,8 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 | S1.05c2 stateless exploration and allocation | `feat/codegraph/s1-05-allocation` | Implemented, reviewed and signed; depends on PR #73 | Draft [PR #74](https://github.com/balcsida/graphnest/pull/74); native stack #66, position 10 |
 | S1.05c3 scoped exploration history | `feat/codegraph/s1-05-sessions` | Implemented, independently reviewed and signed; depends on repaired PR #74 | Draft [PR #75](https://github.com/balcsida/graphnest/pull/75); native stack #66, position 11 |
 | S1.05d1 discovery variants | `feat/codegraph/s1-05d1-discovery-variants` | Implemented, independently reviewed and signed; depends on PR #75 | Draft [PR #76](https://github.com/balcsida/graphnest/pull/76); native stack #66, position 12 |
-| S1.05d2 file classification | `feat/codegraph/s1-05d2-file-classification` | Implemented; independently reviewed; depends on PR #76 | Accepted for signed native draft submission |
+| S1.05d2 file classification | `feat/codegraph/s1-05d2-file-classification` | Implemented, independently reviewed and signed; depends on PR #76 | Draft [PR #77](https://github.com/balcsida/graphnest/pull/77); native stack #66, position 13 |
+| S1.05d3 task context | `feat/codegraph/s1-05d3-task-context` | Implemented and independently approved; depends on PR #77 | Not submitted |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
