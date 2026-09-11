@@ -1,0 +1,262 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-06T17:52:23.723337+00:00",
+  "graphnest_commit": "49e77d1bcd7f4be7198d8368e58e062778b68235",
+  "scope": "Existing shared graphquery service with a test-only in-memory store; warm committed-snapshot queries.",
+  "unmeasured": [
+    "PostgreSQL latency and SQL query counts",
+    "REST/MCP transport and graphservice authorization",
+    "browser latency",
+    "CodeGraph engine or produced data",
+    "representative large repositories",
+    "peak process memory"
+  ],
+  "environment": {
+    "os": "Darwin 25.6.0 arm64",
+    "cpu": "Apple M3 Max",
+    "physical_memory_bytes": 38654705664,
+    "toolchain": "go1.26.6",
+    "goos": "darwin",
+    "goarch": "arm64",
+    "GOWORK": "off",
+    "GOMAXPROCS": 1,
+    "isolation": "Shared developer machine; no CPU isolation."
+  },
+  "corpus": {
+    "source": "Three-symbol calls-only cycle from internal/postgres/graph_query_parity_test.go:parityArtifact",
+    "golden": "test/fixtures/graph/query/parity.json",
+    "golden_sha256": "341dac19f42b2a4f72b84fb4f5083344c46280840236f94899d1af1ca3417e72",
+    "repository_count": 1,
+    "symbol_count": 3,
+    "call_edge_count": 3,
+    "snapshot_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "cycle": [
+      "root",
+      "next",
+      "last",
+      "root"
+    ],
+    "confidence": [
+      0.9,
+      0.7,
+      0.6
+    ],
+    "note": "A deliberately small existing GraphNest regression corpus, not a generated CodeGraph reference database."
+  },
+  "harness": {
+    "file": "internal/graphquery/benchmark_test.go",
+    "sha256": "499b10bf421a0d4fc3fa1ca9b0a0797838cd0c139071f017b11a5d419d358c0f",
+    "command": "GOTOOLCHAIN=go1.26.6 GOWORK=off go test ./internal/graphquery -run . -bench '^BenchmarkGraphQueryWarm$' -benchtime=10000x -count=5 -cpu=1",
+    "validation": "Each workload compares answer UIDs with the existing parity golden before timing. All five runs passed.",
+    "warmup_queries_per_run": 100,
+    "additional_untimed_validation_queries_per_run": 1,
+    "percentile_method": "Nearest rank within each run; summary is the median of five run percentiles. Each sample includes timer instrumentation.",
+    "allocation_scope": "Go benchmark allocations per measured query; sample storage and warmup excluded.",
+    "query_count_scope": "manifests/query, symbols/query, and neighbors/query are in-memory Store method invocations, not SQL queries."
+  },
+  "queries": {
+    "context": {
+      "uid": "next",
+      "relations": [
+        "calls"
+      ],
+      "per_category_limit": 2
+    },
+    "impact": {
+      "target_uid": "root",
+      "direction": "downstream",
+      "relations": [
+        "calls"
+      ],
+      "max_depth": 4,
+      "include_tests": true
+    },
+    "trace": {
+      "source_uid": "root",
+      "target_uid": "last",
+      "max_depth": 4
+    }
+  },
+  "results": {
+    "context": {
+      "iterations_per_run": 10000,
+      "runs": [
+        {
+          "ns/op": 1538.0,
+          "manifests/query": 1.0,
+          "neighbors/query": 2.0,
+          "p50-ns/query": 1083.0,
+          "p95-ns/query": 2417.0,
+          "symbols/query": 1.0,
+          "B/op": 4352.0,
+          "allocs/op": 28.0
+        },
+        {
+          "ns/op": 1805.0,
+          "manifests/query": 1.0,
+          "neighbors/query": 2.0,
+          "p50-ns/query": 1166.0,
+          "p95-ns/query": 3375.0,
+          "symbols/query": 1.0,
+          "B/op": 4352.0,
+          "allocs/op": 28.0
+        },
+        {
+          "ns/op": 1472.0,
+          "manifests/query": 1.0,
+          "neighbors/query": 2.0,
+          "p50-ns/query": 1042.0,
+          "p95-ns/query": 2334.0,
+          "symbols/query": 1.0,
+          "B/op": 4352.0,
+          "allocs/op": 28.0
+        },
+        {
+          "ns/op": 1447.0,
+          "manifests/query": 1.0,
+          "neighbors/query": 2.0,
+          "p50-ns/query": 1041.0,
+          "p95-ns/query": 2292.0,
+          "symbols/query": 1.0,
+          "B/op": 4352.0,
+          "allocs/op": 28.0
+        },
+        {
+          "ns/op": 1452.0,
+          "manifests/query": 1.0,
+          "neighbors/query": 2.0,
+          "p50-ns/query": 1041.0,
+          "p95-ns/query": 2292.0,
+          "symbols/query": 1.0,
+          "B/op": 4352.0,
+          "allocs/op": 28.0
+        }
+      ],
+      "median_p50_ns": 1042.0,
+      "median_p95_ns": 2334.0,
+      "proposed_same_host_p95_ceiling_ns": 2567.4
+    },
+    "impact": {
+      "iterations_per_run": 10000,
+      "runs": [
+        {
+          "ns/op": 1649.0,
+          "manifests/query": 1.0,
+          "neighbors/query": 3.0,
+          "p50-ns/query": 1209.0,
+          "p95-ns/query": 2625.0,
+          "symbols/query": 1.0,
+          "B/op": 3584.0,
+          "allocs/op": 27.0
+        },
+        {
+          "ns/op": 1708.0,
+          "manifests/query": 1.0,
+          "neighbors/query": 3.0,
+          "p50-ns/query": 1250.0,
+          "p95-ns/query": 2750.0,
+          "symbols/query": 1.0,
+          "B/op": 3584.0,
+          "allocs/op": 27.0
+        },
+        {
+          "ns/op": 1683.0,
+          "manifests/query": 1.0,
+          "neighbors/query": 3.0,
+          "p50-ns/query": 1250.0,
+          "p95-ns/query": 2667.0,
+          "symbols/query": 1.0,
+          "B/op": 3584.0,
+          "allocs/op": 27.0
+        },
+        {
+          "ns/op": 1676.0,
+          "manifests/query": 1.0,
+          "neighbors/query": 3.0,
+          "p50-ns/query": 1250.0,
+          "p95-ns/query": 2667.0,
+          "symbols/query": 1.0,
+          "B/op": 3584.0,
+          "allocs/op": 27.0
+        },
+        {
+          "ns/op": 1671.0,
+          "manifests/query": 1.0,
+          "neighbors/query": 3.0,
+          "p50-ns/query": 1208.0,
+          "p95-ns/query": 2667.0,
+          "symbols/query": 1.0,
+          "B/op": 3584.0,
+          "allocs/op": 27.0
+        }
+      ],
+      "median_p50_ns": 1250.0,
+      "median_p95_ns": 2667.0,
+      "proposed_same_host_p95_ceiling_ns": 2933.7
+    },
+    "trace": {
+      "iterations_per_run": 10000,
+      "runs": [
+        {
+          "ns/op": 1994.0,
+          "manifests/query": 1.0,
+          "neighbors/query": 2.0,
+          "p50-ns/query": 1417.0,
+          "p95-ns/query": 3208.0,
+          "symbols/query": 2.0,
+          "B/op": 3832.0,
+          "allocs/op": 25.0
+        },
+        {
+          "ns/op": 1913.0,
+          "manifests/query": 1.0,
+          "neighbors/query": 2.0,
+          "p50-ns/query": 1375.0,
+          "p95-ns/query": 3000.0,
+          "symbols/query": 2.0,
+          "B/op": 3832.0,
+          "allocs/op": 25.0
+        },
+        {
+          "ns/op": 1828.0,
+          "manifests/query": 1.0,
+          "neighbors/query": 2.0,
+          "p50-ns/query": 1416.0,
+          "p95-ns/query": 2875.0,
+          "symbols/query": 2.0,
+          "B/op": 3832.0,
+          "allocs/op": 25.0
+        },
+        {
+          "ns/op": 1933.0,
+          "manifests/query": 1.0,
+          "neighbors/query": 2.0,
+          "p50-ns/query": 1416.0,
+          "p95-ns/query": 3042.0,
+          "symbols/query": 2.0,
+          "B/op": 3832.0,
+          "allocs/op": 25.0
+        },
+        {
+          "ns/op": 1792.0,
+          "manifests/query": 1.0,
+          "neighbors/query": 2.0,
+          "p50-ns/query": 1333.0,
+          "p95-ns/query": 2875.0,
+          "symbols/query": 2.0,
+          "B/op": 3832.0,
+          "allocs/op": 25.0
+        }
+      ],
+      "median_p50_ns": 1416.0,
+      "median_p95_ns": 3000.0,
+      "proposed_same_host_p95_ceiling_ns": 3300.0
+    }
+  },
+  "budget": {
+    "status": "proposed",
+    "warm_query_p95_max_regression_fraction": 0.1,
+    "comparison": "Rerun the same corpus, harness, toolchain and host settings; compare median run p95. No CI absolute latency threshold is enforced.",
+    "remaining_release_gate": "Add representative PostgreSQL, transport, browser and real-producer measurements before claiming server parity or adopting release budgets."
+  }
+}

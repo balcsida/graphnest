@@ -1,0 +1,99 @@
+{
+  "reference": "b9ca4b7981116909900368cc1686a1074cd4d4c1",
+  "capture_sha256": "3021b492066cd0605062650c627953da106ebab9ec2e85b2bcff9829602500b0",
+  "uncertainty_sha256": "fbba9baa31a07bfa18fde8b62c40140646521c43f9aac4c4dbde456ee9d95a5a",
+  "facts": {"nodes": 68, "edges": 93, "files": 13, "unresolved": 6},
+  "upstream_storage": {"database_bytes": 208896, "wal_bytes": 0, "last_updated_is_call_time": true},
+  "ids": [
+    "function:2e0f1da852db2702796c16967fca2efb",
+    "class:be32feaed3e6dfaf83e7636dac9eab2b",
+    "function:7e9336030a46e65ce2d6c7fffdfc2672",
+    "function:34a6c31583c62b073c319681f7a84002",
+    "missing-fixture-id",
+    "function:2e0f1da852db2702796c16967fca2efb"
+  ],
+  "stats": {
+    "node_count": 68,
+    "edge_count": 93,
+    "file_count": 13,
+    "unresolved_count": 6,
+    "nodes_by_kind": {"class":6,"component":1,"constant":2,"enum":1,"enum_member":2,"field":1,"file":13,"function":14,"import":6,"interface":2,"method":8,"module":1,"namespace":1,"property":2,"route":2,"struct":2,"trait":1,"type_alias":1,"union":1,"variable":1},
+    "edges_by_kind": {"calls":15,"contains":56,"decorates":1,"extends":2,"implements":3,"imports":11,"instantiates":2,"navigates":1,"references":2},
+    "files_by_language": {"java":1,"ruby":1,"rust":1,"swift":1,"tsx":2,"typescript":6,"vue":1}
+  },
+  "fan_in": [
+    {"id":"class:be32feaed3e6dfaf83e7636dac9eab2b","count":6},
+    {"id":"function:2e0f1da852db2702796c16967fca2efb","count":8},
+    {"id":"function:34a6c31583c62b073c319681f7a84002","count":1},
+    {"id":"function:7e9336030a46e65ce2d6c7fffdfc2672","count":3}
+  ],
+  "fan_out": [
+    {"id":"class:be32feaed3e6dfaf83e7636dac9eab2b","count":5},
+    {"id":"function:7e9336030a46e65ce2d6c7fffdfc2672","count":3}
+  ],
+  "node_metrics": {"incoming_edge_count":8,"outgoing_edge_count":0,"call_count":0,"caller_count":4,"child_count":0,"depth":1},
+  "ambiguous_names": ["normalize"],
+  "export_languages": ["tsx","typescript"],
+  "unresolved_names": ["expo-router","name.trim","trim"],
+  "top_depended_on": [
+    {"node_id":"function:2e0f1da852db2702796c16967fca2efb","dependents":6},
+    {"node_id":"class:be32feaed3e6dfaf83e7636dac9eab2b","dependents":4},
+    {"node_id":"function:7e9336030a46e65ce2d6c7fffdfc2672","dependents":2},
+    {"node_id":"function:b86a54b1e1a6502d2746c99aea27dca3","dependents":2},
+    {"node_id":"method:a07bfacd1db56624cfb45f337daa8afd","dependents":2}
+  ],
+  "top_calling_files": [
+    {"node_id":"file:Widget.vue","file_path":"Widget.vue","calls":1,"reaches":1,"score":2},
+    {"node_id":"file:core.ts","file_path":"core.ts","calls":1,"reaches":0,"score":1}
+  ],
+  "file_paths": ["core.ts","main.ts","orphan.ts","__missing__.ts","core.ts"],
+  "file_nodes": [
+    {"occurrence":"file:core.ts","path":"core.ts","language":"typescript","start_line":0,"end_line":16},
+    {"occurrence":"file:main.ts","path":"main.ts","language":"typescript","start_line":0,"end_line":2},
+    {"occurrence":"file:orphan.ts","path":"orphan.ts","language":"typescript","start_line":0,"end_line":1}
+  ],
+  "assignments": [
+    {"file_path":"Model.java","module":"(root files)"},
+    {"file_path":"Widget.vue","module":"(root files)"},
+    {"file_path":"app/details.tsx","module":"app"},
+    {"file_path":"app/index.tsx","module":"app"},
+    {"file_path":"consumer.test.ts","module":"(root files)"},
+    {"file_path":"consumer.ts","module":"(root files)"},
+    {"file_path":"core.ts","module":"(root files)"},
+    {"file_path":"main.ts","module":"main.ts"},
+    {"file_path":"model.rb","module":"(root files)"},
+    {"file_path":"model.rs","module":"(root files)"},
+    {"file_path":"model.swift","module":"(root files)"},
+    {"file_path":"orphan.ts","module":"(root files)"},
+    {"file_path":"unicode.ts","module":"(root files)"}
+  ],
+  "module_options": {
+    "kinds":["calls","imports","references","instantiates","extends","implements","navigates"],
+    "min_confidence":0.6,
+    "top_pairs_per_link":4,
+    "pair_kinds":["calls","imports","instantiates","navigates"]
+  },
+  "module_links": [
+    {"source":"(root files)","target":"main.ts","kind":"calls","count":1,"declared":1,"uncertain":0},
+    {"source":"(root files)","target":"main.ts","kind":"imports","count":1,"declared":1,"uncertain":0},
+    {"source":"main.ts","target":"(root files)","kind":"calls","count":2,"declared":2,"uncertain":0},
+    {"source":"main.ts","target":"(root files)","kind":"imports","count":2,"declared":2,"uncertain":0},
+    {"source":"main.ts","target":"(root files)","kind":"instantiates","count":1,"declared":1,"uncertain":0}
+  ],
+  "module_pairs": [
+    {"source":"(root files)","target":"main.ts","from":"consumer.ts","to":"run","count":1,"declared":1},
+    {"source":"(root files)","target":"main.ts","from":"processGreeting","to":"run","count":1,"declared":1},
+    {"source":"main.ts","target":"(root files)","from":"main.ts","to":"normalize","count":1,"declared":1},
+    {"source":"main.ts","target":"(root files)","from":"main.ts","to":"Service","count":1,"declared":1},
+    {"source":"main.ts","target":"(root files)","from":"run","to":"greet","count":1,"declared":1},
+    {"source":"main.ts","target":"(root files)","from":"run","to":"normalize","count":1,"declared":1}
+  ],
+  "uncertain_links": [
+    {"source":"(root files)","target":"main.ts","kind":"calls","count":0,"declared":0,"uncertain":1},
+    {"source":"(root files)","target":"main.ts","kind":"imports","count":0,"declared":0,"uncertain":1},
+    {"source":"main.ts","target":"(root files)","kind":"calls","count":0,"declared":0,"uncertain":2},
+    {"source":"main.ts","target":"(root files)","kind":"imports","count":0,"declared":0,"uncertain":2},
+    {"source":"main.ts","target":"(root files)","kind":"instantiates","count":0,"declared":0,"uncertain":1}
+  ],
+  "unresolved": {"source":"function:2e0f1da852db2702796c16967fca2efb","path":"core.ts","source_id":"17","name":"name.trim","kind":"calls","line":2,"column":57,"language":"typescript"}
+}

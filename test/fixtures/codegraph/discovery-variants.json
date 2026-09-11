@@ -1,0 +1,1276 @@
+{
+  "capturedAt": "2026-09-07T22:22:49.899Z",
+  "immutableReference": {
+    "commit": "b9ca4b7981116909900368cc1686a1074cd4d4c1",
+    "tree": "a679d702d548720edbbc8f59d4444f3e86da5d5c",
+    "trackedStatus": "clean",
+    "packageVersion": "1.6.0"
+  },
+  "captureAccounting": {
+    "originalMaximumCalls": 18,
+    "selectedCases": 16,
+    "attempt1ExecutedCalls": 16,
+    "attempt1PreservedCalls": 0,
+    "attempt2ExecutedCalls": 16,
+    "attempt2PreservedCalls": 16,
+    "cumulativeExecutions": 32,
+    "exception": "controller authorized one exact retry after attempt 1 lost answers only during provenance serialization",
+    "finalAssemblyMethodCalls": 0,
+    "journalComplete": true
+  },
+  "countSemantics": {
+    "returnedCount": "number of items in the preserved reference-method answer",
+    "totalCount": "same returned-array count; not an exhaustive selector-membership claim",
+    "complete": "the preserved returned reference-method answer is not truncated by capture storage",
+    "queryMembershipComplete": "whether the returned array exhausts known matching selector membership"
+  },
+  "methodContracts": {
+    "getNodesByQualifiedName": {
+      "defaults": {}
+    },
+    "getNodesInFile": {
+      "defaults": {}
+    },
+    "getNodesByKind": {
+      "defaults": {}
+    },
+    "getNodesByName": {
+      "defaults": {}
+    },
+    "getNodesByNamePrefix": {
+      "defaults": {
+        "limit": 20
+      }
+    },
+    "getNodesByNameSubstring": {
+      "defaults": {
+        "options": "{}",
+        "kinds": "undefined",
+        "limit": 30,
+        "excludePrefix": "undefined"
+      }
+    },
+    "getSegmentMatches": {
+      "defaults": {
+        "limit": 6
+      }
+    },
+    "getProjectNameTokens": {
+      "defaults": {}
+    }
+  },
+  "runtime": {
+    "nodeVersion": "v24.13.0",
+    "executable": "/private/tmp/discovery-oracle/node",
+    "executableSha256": "6f2e835e57feb7a29ffcd53a4d4eb60224ec264a1e002c3ba6d99999ea29807d",
+    "packageJsonSha256": "2a633f7579cf687307f0c1a6edea025a7ff09f1c48790bca0ba205789c88e1c8",
+    "packageLockSha256": "51f3b7f40b2e555ba17ca4df8ac99c02ce4871848a69b165d242b09d8c32c649",
+    "sourceSha256": {
+      "src/index.ts": "a9a4d24dc6d727553463f675181c3f9ecd803f6e40e3519b395c501ae705fd58",
+      "src/db/queries.ts": "bad34808a0bc2fe896d9ed293541c46bbc73e22bc24cabc2e224e211b0a45f7c",
+      "src/search/query-utils.ts": "1ea5922cf155e2523a2e8b918e3d3ffaa658c2245fb0336e51fbb101e11dac53",
+      "src/search/identifier-segments.ts": "0ed5d2e0054836884e1a805aff0f83459a3c902bc25b9a7c29b4bac6f2285557"
+    },
+    "compiledSha256": {
+      "dist/index.js": "7fa7f419ce8e2ddab1dfa7caa4badf365c9364e1f5c74114cd177b9a793d0ce0",
+      "dist/db/queries.js": "99a989dae6c052bd0002fe670ea6180ea1c44feff216b4652a000a8d10aaa95d",
+      "dist/search/query-utils.js": "d4ef1ec64ef8c33dad27137aef982a68fe98b6196813b05d9efb100e84c63675",
+      "dist/search/identifier-segments.js": "2cc6b9e89836c2d5464fb0072298c787e8aa1dcf52354c0ccf9b67c15210efbf"
+    },
+    "sourceMapTargets": {
+      "dist/index.js.map": [
+        "../../../Users/hu901131/github.com/codegraph-parity-reference/src/index.ts"
+      ],
+      "dist/db/queries.js.map": [
+        "../../../../Users/hu901131/github.com/codegraph-parity-reference/src/db/queries.ts"
+      ],
+      "dist/search/query-utils.js.map": [
+        "../../../../Users/hu901131/github.com/codegraph-parity-reference/src/search/query-utils.ts"
+      ],
+      "dist/search/identifier-segments.js.map": [
+        "../../../../Users/hu901131/github.com/codegraph-parity-reference/src/search/identifier-segments.ts"
+      ]
+    }
+  },
+  "fixture": {
+    "sourceRoot": "/Users/hu901131/github.com/graphnest-codegraph/test/fixtures/codegraph/source",
+    "disposableProject": "/tmp/graphnest-s1-05d1-oracle/project",
+    "sourceSha256": {
+      "app/details.tsx": "70c6aaf54d62d7d66d09b11edbe854c9919151a6f84e40b39f43bd9f6add45db",
+      "app/index.tsx": "338bf907e923cd371f0291f0779837a28fa1ce447d4776a3008014ffd9f83290",
+      "codegraph.json": "97b622d95b355ad66c0b4b7d5cdb45558bc6f737e01b773484bb5ed0f0b4fd76",
+      "consumer.test.ts": "c7d411fa09d3c99f3fa3186b249e425f258a9d4ce774c5371ce22d20b0a057e0",
+      "consumer.ts": "ec49a530d75c291fd2cc2fa58c44f467cb9ad6a5e7498949852e39196ff90006",
+      "core.ts": "4a8c5542c1e8937aeb9d99b372c97ea208c20e8727799beaabd21b928b831265",
+      "excluded.ts": "054d00bebe2f72e32649be3b977a0f87aeec5951b7f4f67bf922baf0fd6d88a8",
+      "main.ts": "d51c9e9597311eacf4462078298351803d9b084e4e5817e2d2916ab2447e3185",
+      "Model.java": "02a16031c03ee9f1902dc68d31850f7c5e3270e8deaf54d79c748a5e8350f0cf",
+      "model.rb": "60e92c7499511dca3dc7561437244bfa2055959518ea414dbde82349f8b92dcb",
+      "model.rs": "587f1de86c37a89393e07f6981e11b4c9ffbffe7a6c28a101b7fa35dd189ec11",
+      "model.swift": "5dd51a945575706f24630feb9f910b2be28c4f6d76bc40245bf015ebd2f245d2",
+      "orphan.ts": "664144a746a677831562ad72b34986455c19b6c18ad991d3e26cb9bc2d385222",
+      "package.json": "94ff11cb027b309edf2c4917ec8ceaf63b649a8af112144318b5ba97620e61be",
+      "unicode.ts": "c7f5ba5a4cabe21dd7ec2ff0a4f8f4a40f62641ab4cb8b0efdda50a9b6d974cc",
+      "Widget.vue": "a54ce4b79d17fb5089f097049d75234afeef1b4985279048a8fc4483b71589c2"
+    },
+    "originalDatabase": "/Users/hu901131/github.com/graphnest-codegraph/test/fixtures/codegraph/reference.db",
+    "originalDatabaseSha256": "c7a83a0aceb204e592bbd35dd8fdf5cd7231adde940fdda69777fd40eb4e1e43",
+    "initialDisposableDatabaseSha256": "c7a83a0aceb204e592bbd35dd8fdf5cd7231adde940fdda69777fd40eb4e1e43",
+    "finalDisposableDatabaseSha256": "e323eb750b5558408f572291e599c63ecb144abedf508c965233a94e20c8fa89",
+    "projectTokenEvidence": {
+      "repositoryBasename": "project",
+      "packageJson": {
+        "name": "graphnest-parity-fixture",
+        "private": true,
+        "dependencies": {
+          "expo-router": "0.0.0-fixture"
+        }
+      },
+      "goModPresent": false
+    }
+  },
+  "environment": {
+    "NODE_PATH": "/Users/hu901131/github.com/codegraph-parity-reference/node_modules",
+    "CODEGRAPH_KERNEL": "0",
+    "CODEGRAPH_NO_RELAUNCH": "1",
+    "DO_NOT_TRACK": "1",
+    "LANG": "C.UTF-8",
+    "LC_ALL": "C.UTF-8",
+    "TZ": "UTC"
+  },
+  "calls": [
+    {
+      "id": "exact-qualified-name",
+      "method": "getNodesByQualifiedName",
+      "args": [
+        "Service::greet"
+      ],
+      "defaults": {},
+      "returnedCount": 1,
+      "totalCount": 1,
+      "complete": true,
+      "answer": [
+        {
+          "id": "method:a07bfacd1db56624cfb45f337daa8afd",
+          "kind": "method",
+          "name": "greet",
+          "qualifiedName": "Service::greet",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 8,
+          "endLine": 8,
+          "startColumn": 2,
+          "endColumn": 66,
+          "signature": "(name: string): string",
+          "visibility": null,
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        }
+      ],
+      "completenessScope": "entire returned reference-method answer",
+      "effectiveLimit": null,
+      "queryMembershipComplete": true
+    },
+    {
+      "id": "exact-file-path",
+      "method": "getNodesInFile",
+      "args": [
+        "core.ts"
+      ],
+      "defaults": {},
+      "returnedCount": 18,
+      "totalCount": 18,
+      "complete": true,
+      "answer": [
+        {
+          "id": "file:core.ts",
+          "kind": "file",
+          "name": "core.ts",
+          "qualifiedName": "core.ts",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 1,
+          "endLine": 17,
+          "startColumn": 0,
+          "endColumn": 0,
+          "visibility": null,
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "interface:e30cb316976fe998ad14cbaf7315f7c3",
+          "kind": "interface",
+          "name": "Greeter",
+          "qualifiedName": "Greeter",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 1,
+          "endLine": 1,
+          "startColumn": 7,
+          "endColumn": 57,
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "class:22d52fa5b3261b6828f46f747644d941",
+          "kind": "class",
+          "name": "Base",
+          "qualifiedName": "Base",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 2,
+          "endLine": 2,
+          "startColumn": 7,
+          "endColumn": 66,
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "method:b778deb8eb78dbc30913a4b58e88d059",
+          "kind": "method",
+          "name": "greet",
+          "qualifiedName": "Base::greet",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 2,
+          "endLine": 2,
+          "startColumn": 20,
+          "endColumn": 64,
+          "signature": "(name: string): string",
+          "visibility": null,
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "function:2e0f1da852db2702796c16967fca2efb",
+          "kind": "function",
+          "name": "normalize",
+          "qualifiedName": "normalize",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 3,
+          "endLine": 3,
+          "startColumn": 7,
+          "endColumn": 71,
+          "signature": "(name: string): string",
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "function:33d0684689de083569e74b5164d4296f",
+          "kind": "function",
+          "name": "logged",
+          "qualifiedName": "logged",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 4,
+          "endLine": 4,
+          "startColumn": 7,
+          "endColumn": 48,
+          "signature": "(target: unknown): void",
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+          "kind": "class",
+          "name": "Service",
+          "qualifiedName": "Service",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 6,
+          "endLine": 9,
+          "startColumn": 7,
+          "endColumn": 1,
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "property:0703d73c48e77b84818882e615bd88f9",
+          "kind": "property",
+          "name": "label",
+          "qualifiedName": "Service::label",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 7,
+          "endLine": 7,
+          "startColumn": 2,
+          "endColumn": 36,
+          "signature": "string label",
+          "visibility": null,
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "method:a07bfacd1db56624cfb45f337daa8afd",
+          "kind": "method",
+          "name": "greet",
+          "qualifiedName": "Service::greet",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 8,
+          "endLine": 8,
+          "startColumn": 2,
+          "endColumn": 66,
+          "signature": "(name: string): string",
+          "visibility": null,
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "function:20881e230caa501e0f712d9435fd20cd",
+          "kind": "function",
+          "name": "createService",
+          "qualifiedName": "createService",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 10,
+          "endLine": 10,
+          "startColumn": 7,
+          "endColumn": 66,
+          "signature": "(): Service",
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "constant:4d2f7d39372a2081087d43dc438ad8cb",
+          "kind": "constant",
+          "name": "answer",
+          "qualifiedName": "answer",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 11,
+          "endLine": 11,
+          "startColumn": 13,
+          "endColumn": 24,
+          "signature": "= 42",
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "variable:f695ca32dd7446c0621dcc89ebc1a505",
+          "kind": "variable",
+          "name": "current",
+          "qualifiedName": "current",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 12,
+          "endLine": 12,
+          "startColumn": 11,
+          "endColumn": 45,
+          "signature": "= createService()",
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "enum:fc3b02485378ba86fac427b0a8faecdb",
+          "kind": "enum",
+          "name": "State",
+          "qualifiedName": "State",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 13,
+          "endLine": 13,
+          "startColumn": 7,
+          "endColumn": 33,
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "enum_member:ec10e97271b9414b25847b49ec174e99",
+          "kind": "enum_member",
+          "name": "Ready",
+          "qualifiedName": "State::Ready",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 13,
+          "endLine": 13,
+          "startColumn": 20,
+          "endColumn": 25,
+          "visibility": null,
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "enum_member:e08d7f6cfed88e881fe5f45226e7891d",
+          "kind": "enum_member",
+          "name": "Done",
+          "qualifiedName": "State::Done",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 13,
+          "endLine": 13,
+          "startColumn": 27,
+          "endColumn": 31,
+          "visibility": null,
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "type_alias:a13e3ebb79377551ffad01a8821e294c",
+          "kind": "type_alias",
+          "name": "Label",
+          "qualifiedName": "Label",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 14,
+          "endLine": 14,
+          "startColumn": 7,
+          "endColumn": 27,
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "function:bc23b7caa58f431b58c9432845bf39e1",
+          "kind": "function",
+          "name": "identity",
+          "qualifiedName": "identity",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 15,
+          "endLine": 15,
+          "startColumn": 34,
+          "endColumn": 84,
+          "signature": "(value: string)",
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "function:34a6c31583c62b073c319681f7a84002",
+          "kind": "function",
+          "name": "dormantUtility",
+          "qualifiedName": "dormantUtility",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 16,
+          "endLine": 16,
+          "startColumn": 0,
+          "endColumn": 80,
+          "signature": "(): string",
+          "visibility": null,
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        }
+      ],
+      "completenessScope": "entire returned reference-method answer",
+      "effectiveLimit": null,
+      "queryMembershipComplete": true
+    },
+    {
+      "id": "exact-kind",
+      "method": "getNodesByKind",
+      "args": [
+        "class"
+      ],
+      "defaults": {},
+      "returnedCount": 6,
+      "totalCount": 6,
+      "complete": true,
+      "answer": [
+        {
+          "id": "class:7130530591b02c5bd2133c49635700dd",
+          "kind": "class",
+          "name": "Model",
+          "qualifiedName": "fixture.models::Model",
+          "filePath": "Model.java",
+          "language": "java",
+          "startLine": 2,
+          "endLine": 4,
+          "startColumn": 0,
+          "endColumn": 1,
+          "visibility": "public",
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "class:22d52fa5b3261b6828f46f747644d941",
+          "kind": "class",
+          "name": "Base",
+          "qualifiedName": "Base",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 2,
+          "endLine": 2,
+          "startColumn": 7,
+          "endColumn": 66,
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+          "kind": "class",
+          "name": "Service",
+          "qualifiedName": "Service",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 6,
+          "endLine": 9,
+          "startColumn": 7,
+          "endColumn": 1,
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "class:58714088a1e38fc2650878cdcd800f1a",
+          "kind": "class",
+          "name": "Model",
+          "qualifiedName": "Fixture::Model",
+          "filePath": "model.rb",
+          "language": "ruby",
+          "startLine": 2,
+          "endLine": 6,
+          "startColumn": 2,
+          "endColumn": 5,
+          "visibility": "public",
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "class:ecfbf264e0f9f87884235414a0854866",
+          "kind": "class",
+          "name": "Parent",
+          "qualifiedName": "Parent",
+          "filePath": "model.swift",
+          "language": "swift",
+          "startLine": 3,
+          "endLine": 3,
+          "startColumn": 0,
+          "endColumn": 58,
+          "visibility": "internal",
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "class:ca93b32ef38dd4f4036cb8751ab2e202",
+          "kind": "class",
+          "name": "Child",
+          "qualifiedName": "Child",
+          "filePath": "model.swift",
+          "language": "swift",
+          "startLine": 4,
+          "endLine": 4,
+          "startColumn": 0,
+          "endColumn": 80,
+          "visibility": "internal",
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        }
+      ],
+      "completenessScope": "entire returned reference-method answer",
+      "effectiveLimit": null,
+      "queryMembershipComplete": true
+    },
+    {
+      "id": "exact-name-overloads",
+      "method": "getNodesByName",
+      "args": [
+        "normalize"
+      ],
+      "defaults": {},
+      "returnedCount": 3,
+      "totalCount": 3,
+      "complete": true,
+      "answer": [
+        {
+          "id": "method:c6ebef81a3e080bc1b3fc001f4fcda0a",
+          "kind": "method",
+          "name": "normalize",
+          "qualifiedName": "fixture.models::Model::normalize",
+          "filePath": "Model.java",
+          "language": "java",
+          "startLine": 3,
+          "endLine": 3,
+          "startColumn": 4,
+          "endColumn": 64,
+          "signature": "String (String name)",
+          "visibility": "public",
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "returnType": "String",
+          "updatedAt": 0
+        },
+        {
+          "id": "function:2e0f1da852db2702796c16967fca2efb",
+          "kind": "function",
+          "name": "normalize",
+          "qualifiedName": "normalize",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 3,
+          "endLine": 3,
+          "startColumn": 7,
+          "endColumn": 71,
+          "signature": "(name: string): string",
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "method:cb20d69ed5ac61610cc500dc9cdc4d54",
+          "kind": "method",
+          "name": "normalize",
+          "qualifiedName": "Fixture::Model::normalize",
+          "filePath": "model.rb",
+          "language": "ruby",
+          "startLine": 3,
+          "endLine": 5,
+          "startColumn": 4,
+          "endColumn": 7,
+          "visibility": "public",
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        }
+      ],
+      "completenessScope": "entire returned reference-method answer",
+      "effectiveLimit": null,
+      "queryMembershipComplete": true
+    },
+    {
+      "id": "prefix-default",
+      "method": "getNodesByNamePrefix",
+      "args": [
+        "norm"
+      ],
+      "defaults": {
+        "limit": 20
+      },
+      "returnedCount": 3,
+      "totalCount": 3,
+      "complete": true,
+      "answer": [
+        {
+          "id": "method:c6ebef81a3e080bc1b3fc001f4fcda0a",
+          "kind": "method",
+          "name": "normalize",
+          "qualifiedName": "fixture.models::Model::normalize",
+          "filePath": "Model.java",
+          "language": "java",
+          "startLine": 3,
+          "endLine": 3,
+          "startColumn": 4,
+          "endColumn": 64,
+          "signature": "String (String name)",
+          "visibility": "public",
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "returnType": "String",
+          "updatedAt": 0
+        },
+        {
+          "id": "function:2e0f1da852db2702796c16967fca2efb",
+          "kind": "function",
+          "name": "normalize",
+          "qualifiedName": "normalize",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 3,
+          "endLine": 3,
+          "startColumn": 7,
+          "endColumn": 71,
+          "signature": "(name: string): string",
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "method:cb20d69ed5ac61610cc500dc9cdc4d54",
+          "kind": "method",
+          "name": "normalize",
+          "qualifiedName": "Fixture::Model::normalize",
+          "filePath": "model.rb",
+          "language": "ruby",
+          "startLine": 3,
+          "endLine": 5,
+          "startColumn": 4,
+          "endColumn": 7,
+          "visibility": "public",
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        }
+      ],
+      "completenessScope": "entire returned reference-method answer",
+      "effectiveLimit": 20,
+      "queryMembershipComplete": true
+    },
+    {
+      "id": "prefix-case-distinction",
+      "method": "getNodesByNamePrefix",
+      "args": [
+        "Norm"
+      ],
+      "defaults": {
+        "limit": 20
+      },
+      "returnedCount": 0,
+      "totalCount": 0,
+      "complete": true,
+      "answer": [],
+      "completenessScope": "entire returned reference-method answer",
+      "effectiveLimit": 20,
+      "queryMembershipComplete": true
+    },
+    {
+      "id": "prefix-explicit-limit",
+      "method": "getNodesByNamePrefix",
+      "args": [
+        "norm",
+        2
+      ],
+      "defaults": {
+        "limit": 20
+      },
+      "returnedCount": 2,
+      "totalCount": 2,
+      "complete": true,
+      "answer": [
+        {
+          "id": "method:c6ebef81a3e080bc1b3fc001f4fcda0a",
+          "kind": "method",
+          "name": "normalize",
+          "qualifiedName": "fixture.models::Model::normalize",
+          "filePath": "Model.java",
+          "language": "java",
+          "startLine": 3,
+          "endLine": 3,
+          "startColumn": 4,
+          "endColumn": 64,
+          "signature": "String (String name)",
+          "visibility": "public",
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "returnType": "String",
+          "updatedAt": 0
+        },
+        {
+          "id": "function:2e0f1da852db2702796c16967fca2efb",
+          "kind": "function",
+          "name": "normalize",
+          "qualifiedName": "normalize",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 3,
+          "endLine": 3,
+          "startColumn": 7,
+          "endColumn": 71,
+          "signature": "(name: string): string",
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        }
+      ],
+      "completenessScope": "entire returned reference-method answer",
+      "effectiveLimit": 2,
+      "queryMembershipComplete": false,
+      "knownMatchingPopulation": 3
+    },
+    {
+      "id": "substring-default-ascii-fold",
+      "method": "getNodesByNameSubstring",
+      "args": [
+        "NORM"
+      ],
+      "defaults": {
+        "limit": 30
+      },
+      "returnedCount": 3,
+      "totalCount": 3,
+      "complete": true,
+      "answer": [
+        {
+          "id": "method:c6ebef81a3e080bc1b3fc001f4fcda0a",
+          "kind": "method",
+          "name": "normalize",
+          "qualifiedName": "fixture.models::Model::normalize",
+          "filePath": "Model.java",
+          "language": "java",
+          "startLine": 3,
+          "endLine": 3,
+          "startColumn": 4,
+          "endColumn": 64,
+          "signature": "String (String name)",
+          "visibility": "public",
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "returnType": "String",
+          "updatedAt": 0
+        },
+        {
+          "id": "function:2e0f1da852db2702796c16967fca2efb",
+          "kind": "function",
+          "name": "normalize",
+          "qualifiedName": "normalize",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 3,
+          "endLine": 3,
+          "startColumn": 7,
+          "endColumn": 71,
+          "signature": "(name: string): string",
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "method:cb20d69ed5ac61610cc500dc9cdc4d54",
+          "kind": "method",
+          "name": "normalize",
+          "qualifiedName": "Fixture::Model::normalize",
+          "filePath": "model.rb",
+          "language": "ruby",
+          "startLine": 3,
+          "endLine": 5,
+          "startColumn": 4,
+          "endColumn": 7,
+          "visibility": "public",
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        }
+      ],
+      "completenessScope": "entire returned reference-method answer",
+      "effectiveLimit": 30,
+      "queryMembershipComplete": true
+    },
+    {
+      "id": "substring-kind-intersection",
+      "method": "getNodesByNameSubstring",
+      "args": [
+        "norm",
+        {
+          "kinds": [
+            "method"
+          ]
+        }
+      ],
+      "defaults": {
+        "limit": 30
+      },
+      "returnedCount": 2,
+      "totalCount": 2,
+      "complete": true,
+      "answer": [
+        {
+          "id": "method:c6ebef81a3e080bc1b3fc001f4fcda0a",
+          "kind": "method",
+          "name": "normalize",
+          "qualifiedName": "fixture.models::Model::normalize",
+          "filePath": "Model.java",
+          "language": "java",
+          "startLine": 3,
+          "endLine": 3,
+          "startColumn": 4,
+          "endColumn": 64,
+          "signature": "String (String name)",
+          "visibility": "public",
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "returnType": "String",
+          "updatedAt": 0
+        },
+        {
+          "id": "method:cb20d69ed5ac61610cc500dc9cdc4d54",
+          "kind": "method",
+          "name": "normalize",
+          "qualifiedName": "Fixture::Model::normalize",
+          "filePath": "model.rb",
+          "language": "ruby",
+          "startLine": 3,
+          "endLine": 5,
+          "startColumn": 4,
+          "endColumn": 7,
+          "visibility": "public",
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        }
+      ],
+      "completenessScope": "entire returned reference-method answer",
+      "effectiveLimit": 30,
+      "queryMembershipComplete": true
+    },
+    {
+      "id": "substring-exclude-prefix",
+      "method": "getNodesByNameSubstring",
+      "args": [
+        "ize",
+        {
+          "excludePrefix": true
+        }
+      ],
+      "defaults": {
+        "limit": 30
+      },
+      "returnedCount": 3,
+      "totalCount": 3,
+      "complete": true,
+      "answer": [
+        {
+          "id": "method:c6ebef81a3e080bc1b3fc001f4fcda0a",
+          "kind": "method",
+          "name": "normalize",
+          "qualifiedName": "fixture.models::Model::normalize",
+          "filePath": "Model.java",
+          "language": "java",
+          "startLine": 3,
+          "endLine": 3,
+          "startColumn": 4,
+          "endColumn": 64,
+          "signature": "String (String name)",
+          "visibility": "public",
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "returnType": "String",
+          "updatedAt": 0
+        },
+        {
+          "id": "function:2e0f1da852db2702796c16967fca2efb",
+          "kind": "function",
+          "name": "normalize",
+          "qualifiedName": "normalize",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 3,
+          "endLine": 3,
+          "startColumn": 7,
+          "endColumn": 71,
+          "signature": "(name: string): string",
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "method:cb20d69ed5ac61610cc500dc9cdc4d54",
+          "kind": "method",
+          "name": "normalize",
+          "qualifiedName": "Fixture::Model::normalize",
+          "filePath": "model.rb",
+          "language": "ruby",
+          "startLine": 3,
+          "endLine": 5,
+          "startColumn": 4,
+          "endColumn": 7,
+          "visibility": "public",
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        }
+      ],
+      "completenessScope": "entire returned reference-method answer",
+      "effectiveLimit": 30,
+      "queryMembershipComplete": true
+    },
+    {
+      "id": "substring-explicit-limit",
+      "method": "getNodesByNameSubstring",
+      "args": [
+        "norm",
+        {
+          "limit": 2
+        }
+      ],
+      "defaults": {
+        "limit": 30
+      },
+      "returnedCount": 2,
+      "totalCount": 2,
+      "complete": true,
+      "answer": [
+        {
+          "id": "method:c6ebef81a3e080bc1b3fc001f4fcda0a",
+          "kind": "method",
+          "name": "normalize",
+          "qualifiedName": "fixture.models::Model::normalize",
+          "filePath": "Model.java",
+          "language": "java",
+          "startLine": 3,
+          "endLine": 3,
+          "startColumn": 4,
+          "endColumn": 64,
+          "signature": "String (String name)",
+          "visibility": "public",
+          "isExported": false,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "returnType": "String",
+          "updatedAt": 0
+        },
+        {
+          "id": "function:2e0f1da852db2702796c16967fca2efb",
+          "kind": "function",
+          "name": "normalize",
+          "qualifiedName": "normalize",
+          "filePath": "core.ts",
+          "language": "typescript",
+          "startLine": 3,
+          "endLine": 3,
+          "startColumn": 7,
+          "endColumn": 71,
+          "signature": "(name: string): string",
+          "visibility": null,
+          "isExported": true,
+          "isAsync": false,
+          "isStatic": false,
+          "isAbstract": false,
+          "updatedAt": 0
+        }
+      ],
+      "completenessScope": "entire returned reference-method answer",
+      "effectiveLimit": 2,
+      "queryMembershipComplete": false,
+      "knownMatchingPopulation": 3
+    },
+    {
+      "id": "substring-absent",
+      "method": "getNodesByNameSubstring",
+      "args": [
+        "does-not-exist"
+      ],
+      "defaults": {
+        "limit": 30
+      },
+      "returnedCount": 0,
+      "totalCount": 0,
+      "complete": true,
+      "answer": [],
+      "completenessScope": "entire returned reference-method answer",
+      "effectiveLimit": 30,
+      "queryMembershipComplete": true
+    },
+    {
+      "id": "segment-tier-a",
+      "method": "getSegmentMatches",
+      "args": [
+        [
+          "process",
+          "greeting"
+        ]
+      ],
+      "defaults": {
+        "limit": 6
+      },
+      "returnedCount": 1,
+      "totalCount": 1,
+      "complete": true,
+      "answer": [
+        {
+          "name": "processGreeting",
+          "kind": "function",
+          "filePath": "consumer.ts",
+          "startLine": 2,
+          "matchedWords": [
+            "greeting",
+            "process"
+          ]
+        }
+      ],
+      "completenessScope": "entire returned reference-method answer",
+      "effectiveLimit": 6,
+      "queryMembershipComplete": "not-applicable"
+    },
+    {
+      "id": "segment-tier-b",
+      "method": "getSegmentMatches",
+      "args": [
+        [
+          "greeting"
+        ]
+      ],
+      "defaults": {
+        "limit": 6
+      },
+      "returnedCount": 2,
+      "totalCount": 2,
+      "complete": true,
+      "answer": [
+        {
+          "name": "testGreeting",
+          "kind": "function",
+          "filePath": "consumer.test.ts",
+          "startLine": 2,
+          "matchedWords": [
+            "greeting"
+          ]
+        },
+        {
+          "name": "processGreeting",
+          "kind": "function",
+          "filePath": "consumer.ts",
+          "startLine": 2,
+          "matchedWords": [
+            "greeting"
+          ]
+        }
+      ],
+      "completenessScope": "entire returned reference-method answer",
+      "effectiveLimit": 6,
+      "queryMembershipComplete": "not-applicable"
+    },
+    {
+      "id": "segment-empty",
+      "method": "getSegmentMatches",
+      "args": [
+        []
+      ],
+      "defaults": {
+        "limit": 6
+      },
+      "returnedCount": 0,
+      "totalCount": 0,
+      "complete": true,
+      "answer": [],
+      "completenessScope": "entire returned reference-method answer",
+      "effectiveLimit": 6,
+      "queryMembershipComplete": "not-applicable"
+    },
+    {
+      "id": "project-name-tokens",
+      "method": "getProjectNameTokens",
+      "args": [],
+      "defaults": {},
+      "returnedCount": 2,
+      "totalCount": 2,
+      "complete": true,
+      "answer": {
+        "observedIterationOrder": [
+          "graphnestparityfixture",
+          "project"
+        ],
+        "sortedMembership": [
+          "graphnestparityfixture",
+          "project"
+        ]
+      },
+      "completenessScope": "entire returned reference-method answer",
+      "effectiveLimit": null,
+      "queryMembershipComplete": "not-applicable"
+    }
+  ]
+}
