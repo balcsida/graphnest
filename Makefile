@@ -1,4 +1,4 @@
-ZOEKT_VERSION := v0.0.0-20260717095332-3c8b39b1ef4f
+ZOEKT_VERSION = $(shell GOWORK=off go -C tools list -m -f '{{.Version}}' github.com/sourcegraph/zoekt)
 STATICCHECK_VERSION := v0.7.0
 GOVULNCHECK_VERSION := v1.1.4
 POSTGRES_COMPOSE := docker compose -p graphnest-postgres
@@ -86,9 +86,9 @@ postgres-integration:
 
 tools:
 	mkdir -p .cache/bin
-	GOBIN=$$(pwd)/.cache/bin go install github.com/sourcegraph/zoekt/cmd/zoekt-index@$(ZOEKT_VERSION)
-	GOBIN=$$(pwd)/.cache/bin go install github.com/sourcegraph/zoekt/cmd/zoekt-git-index@$(ZOEKT_VERSION)
-	GOBIN=$$(pwd)/.cache/bin go install github.com/sourcegraph/zoekt/cmd/zoekt-webserver@$(ZOEKT_VERSION)
+	GOWORK=off GOBIN=$$(pwd)/.cache/bin go -C tools install github.com/sourcegraph/zoekt/cmd/zoekt-index
+	GOWORK=off GOBIN=$$(pwd)/.cache/bin go -C tools install github.com/sourcegraph/zoekt/cmd/zoekt-git-index
+	GOWORK=off GOBIN=$$(pwd)/.cache/bin go -C tools install github.com/sourcegraph/zoekt/cmd/zoekt-webserver
 
 e2e: tools
 	$(POSTGRES_COMPOSE) -f deploy/compose/compose.yml up -d --wait postgres

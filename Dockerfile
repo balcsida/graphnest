@@ -14,8 +14,9 @@ RUN GOWORK=off go build -trimpath -ldflags="-s -w" -o /out/graphnest-server ./cm
     GOWORK=off go build -trimpath -ldflags="-s -w" -o /out/graphnest-migrate ./cmd/graphnest-migrate && \
     GOWORK=off go build -trimpath -ldflags="-s -w" -o /out/graphnest-mcp ./cmd/graphnest-mcp && \
     GOWORK=off go build -trimpath -ldflags="-s -w" -o /out/graphnest-indexer ./cmd/graphnest-indexer
-RUN CGO_ENABLED=0 GOBIN=/out go install github.com/sourcegraph/zoekt/cmd/zoekt-index@"$ZOEKT_VERSION" && \
-    CGO_ENABLED=0 GOBIN=/out go install github.com/sourcegraph/zoekt/cmd/zoekt-webserver@"$ZOEKT_VERSION"
+RUN test "$ZOEKT_VERSION" = "$(GOWORK=off go -C tools list -m -f '{{.Version}}' github.com/sourcegraph/zoekt)" && \
+    CGO_ENABLED=0 GOWORK=off GOBIN=/out go -C tools install github.com/sourcegraph/zoekt/cmd/zoekt-index && \
+    CGO_ENABLED=0 GOWORK=off GOBIN=/out go -C tools install github.com/sourcegraph/zoekt/cmd/zoekt-webserver
 
 FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818 AS application
 
@@ -47,7 +48,7 @@ CMD ["graphnest-indexer"]
 FROM builder AS legacy-builder
 RUN GOWORK=off go -C scanner mod download && \
     go -C scanner build -trimpath -ldflags="-s -w" -o /out/graphnest-scanner ./cmd/graphnest-scanner && \
-    CGO_ENABLED=0 GOBIN=/out go install github.com/sourcegraph/zoekt/cmd/zoekt-git-index@"$ZOEKT_VERSION"
+    CGO_ENABLED=0 GOWORK=off GOBIN=/out go -C tools install github.com/sourcegraph/zoekt/cmd/zoekt-git-index
 
 FROM node AS legacy-node
 USER 0

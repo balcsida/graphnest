@@ -3,7 +3,11 @@
 Notable changes are recorded here. GraphNest is pre-1.0 pilot software; review
 the compatibility and migration notes before upgrading.
 
-## [0.4.0] - 2026-09-11
+## [0.4.1] - 2026-09-12
+
+This release includes all changes since v0.3.0. The v0.4.0 tag did not produce
+a published release: image scanning rejected its bundled Zoekt dependencies.
+v0.4.1 rebuilds those tools with fixed dependencies.
 
 This release introduces the GraphNest name, GitHub-derived repository access,
 MCP client sign-in, and an expanded experimental graph-analysis foundation.
@@ -99,6 +103,10 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
 
 ### Security
 
+- Build all bundled Zoekt tools from the pinned tools module, including gRPC
+  1.83.2 and go-git 5.19.2, instead of installing the upstream module in isolation.
+  This fixes the vulnerable transitive dependencies found by release image
+  scanning in both the default node binaries and the legacy Git-indexing tool.
 - MCP OAuth binds consent and provider handoffs to the initiating request and
   user, rejects refresh-token replay, encrypts retained GitHub credentials, and
   enforces registration/token-endpoint rate limits. OAuth access tokens are
@@ -112,7 +120,7 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
-[0.4.0]: https://github.com/balcsida/graphnest/compare/v0.3.0...v0.4.0
+[0.4.1]: https://github.com/balcsida/graphnest/compare/v0.3.0...v0.4.1
 [#36]: https://github.com/balcsida/graphnest/pull/36
 [#38]: https://github.com/balcsida/graphnest/pull/38
 [#49]: https://github.com/balcsida/graphnest/pull/49
