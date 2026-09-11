@@ -23,6 +23,10 @@ import (
 
 const (
 	maxResponseBytes = 64 * 1024
+	// maxListPageBytes bounds one installation or repository list page. GitHub
+	// serialises a repository at roughly 7 KiB, so a full page of 100 is just
+	// under 1 MiB; anything larger is not a list page.
+	maxListPageBytes = 1 << 20
 	// maxRepositoryPages bounds the accessible-repository walk per installation;
 	// GitHub serves at most 100 repositories per page.
 	maxRepositoryPages = 50
@@ -291,7 +295,7 @@ func (client *Client) getJSON(ctx context.Context, rawURL, accessToken string, t
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("status %d", response.StatusCode)
 	}
-	data, err := boundedBody(response.Body)
+	data, err := boundedBodyN(response.Body, maxListPageBytes)
 	if err != nil {
 		return nil, errors.New("read response")
 	}
@@ -331,8 +335,12 @@ func canonicalIssuer(web *url.URL) (string, error) {
 }
 
 func boundedBody(reader io.Reader) ([]byte, error) {
-	data, err := io.ReadAll(io.LimitReader(reader, maxResponseBytes+1))
-	if err != nil || len(data) > maxResponseBytes || !utf8.Valid(data) {
+	return boundedBodyN(reader, maxResponseBytes)
+}
+
+func boundedBodyN(reader io.Reader, limit int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil || int64(len(data)) > limit || !utf8.Valid(data) {
 		return nil, errors.New("invalid bounded response")
 	}
 	return data, nil
