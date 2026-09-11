@@ -396,7 +396,7 @@ func (service *Service) ModuleAggregation(ctx context.Context, request graphprot
 func foldModuleRows(rows []AggregateModuleRow, top int, pairKinds []int16) ([]graphprotocol.ModuleLink, []graphprotocol.ModulePair) {
 	links := []graphprotocol.ModuleLink{}
 	linkIndexes := map[string]int{}
-	pairTotals := map[string]graphprotocol.ModulePair{}
+	pairTotals := map[[4]string]graphprotocol.ModulePair{}
 	pairKindNames := map[string]bool{}
 	for _, kind := range pairKinds {
 		if relation, ok := graphartifact.RelationshipFromWire(graphv2.EdgeKind(kind)); ok {
@@ -415,7 +415,7 @@ func foldModuleRows(rows []AggregateModuleRow, top int, pairKinds []int16) ([]gr
 		links[position].Declared += row.Declared
 		links[position].Uncertain += row.Uncertain
 		if top > 0 && row.Count > 0 && pairKindNames[row.Kind] {
-			pairKey := row.Source + "\x00" + row.Target + "\x00" + row.From + "\x00" + row.To
+			pairKey := [4]string{row.Source, row.Target, row.From, row.To}
 			pair := pairTotals[pairKey]
 			pair.Source, pair.Target, pair.From, pair.To = row.Source, row.Target, row.From, row.To
 			pair.Count += row.Count
