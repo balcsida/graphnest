@@ -53,9 +53,11 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   revocation. Users can view and disconnect connected MCP clients from their
   account. GitHub-backed grants require a 32-byte
   `GRAPHNEST_MCP_OAUTH_KEY_FILE`; see [MCP OAuth operations](docs/operations.md#mcp-oauth-authorization-server).
+  For GitHub-backed authorization, the callback, consent POST, and client code
+  exchange must reach the same replica; browser-cookie affinity alone is insufficient.
   ([#62])
 - Administrator API-token delegation through `POST /v1/admin/api-tokens`, with
-  explicit repository scope and a maximum 24-hour lifetime. Delegated tokens
+  explicit repository scope and a maximum one-hour lifetime. Delegated tokens
   cannot manage account tokens. ([#61])
 - Optional GitHub search backend (`GRAPHNEST_SEARCH_BACKEND=github`) for
   low-volume deployments. Results are authorization-scoped and best-effort;
@@ -66,7 +68,8 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   exploration and task context; file-dependency analysis; aggregates; affected
   tests; and entity-impact analysis. The new operations are service-layer
   capabilities; their REST/MCP integration remains planned. Existing public
-  graph operations remain available. See the
+  graph operations remain available. Keep production v2 publication disabled
+  until its rollout gate is implemented. See the
   [graph foundation checkpoint](docs/execplans/codegraph-parity.md). ([#82])
 
 ### Changed
