@@ -145,12 +145,12 @@ func TestGraphDiscoveryVariantsRebuildRollback(t *testing.T) {
 	if err = s.RebuildGraphDiscovery(t.Context(), id, pub.Upload.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.pool.QueryRow(t.Context(), "select discovery_version from graph_uploads where id=$1", pub.Upload.ID).Scan(&version); err != nil || version != 3 {
+	if err = s.pool.QueryRow(t.Context(), "select discovery_version from graph_uploads where id=$1", pub.Upload.ID).Scan(&version); err != nil || version != 4 {
 		t.Fatalf("rebuilt version=%d err=%v", version, err)
 	}
 }
 
-func TestGraphDiscoveryVersionThreePreservesVariants(t *testing.T) {
+func TestGraphDiscoveryVersionFourPreservesVariants(t *testing.T) {
 	s, id := readyGraphStore(t, testSHA('a'))
 	a := storageV2Artifact()
 	a.ContentHash = nil
