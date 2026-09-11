@@ -144,29 +144,40 @@ func (s *Store) QueryEntities(ctx context.Context, q graphquery.EntityQuery) ([]
 	result := []graphprotocol.Entity{}
 	usedBytes := 0
 	for rows.Next() {
-		var e graphprotocol.Entity
-		var repository string
-		var name, version, configuration, payload []byte
-		if err = rows.Scan(&e.RepositoryID, &repository, &name, &version, &configuration, &payload); err != nil {
-			return nil, err
-		}
-		e.Fact = new(graphv2.Node)
-		if payload == nil {
-			return nil, graphquery.ErrQuerySize
-		}
-		if err = proto.Unmarshal(payload, e.Fact); err != nil {
-			return nil, err
-		}
-		e.ID, err = graphartifact.IdentityV2(&graphv2.Producer{Name: string(name), Version: string(version), Configuration: string(configuration)}, repository, e.Fact.SourceId, e.Fact.Occurrence)
-		if err != nil {
-			return nil, err
-		}
-		if err = graphquery.AddEntityQueryBytes(&usedBytes, e); err != nil {
-			return nil, err
+		e, scanErr := scanV2Entity(rows, &usedBytes)
+		if scanErr != nil {
+			return nil, scanErr
 		}
 		result = append(result, e)
 	}
 	return result, rows.Err()
+}
+
+type v2EntityRow interface{ Scan(...any) error }
+
+func scanV2Entity(row v2EntityRow, usedBytes *int) (graphprotocol.Entity, error) {
+	var entity graphprotocol.Entity
+	var repository string
+	var name, version, configuration, payload []byte
+	if err := row.Scan(&entity.RepositoryID, &repository, &name, &version, &configuration, &payload); err != nil {
+		return graphprotocol.Entity{}, err
+	}
+	if payload == nil {
+		return graphprotocol.Entity{}, graphquery.ErrQuerySize
+	}
+	entity.Fact = new(graphv2.Node)
+	if err := proto.Unmarshal(payload, entity.Fact); err != nil {
+		return graphprotocol.Entity{}, err
+	}
+	var err error
+	entity.ID, err = graphartifact.IdentityV2(&graphv2.Producer{Name: string(name), Version: string(version), Configuration: string(configuration)}, repository, entity.Fact.SourceId, entity.Fact.Occurrence)
+	if err != nil {
+		return graphprotocol.Entity{}, err
+	}
+	if err = graphquery.AddEntityQueryBytes(usedBytes, entity); err != nil {
+		return graphprotocol.Entity{}, err
+	}
+	return entity, nil
 }
 
 func (s *Store) EntityNeighbors(ctx context.Context, q graphquery.EntityNeighborQuery) ([]graphquery.EntityNeighbor, error) {

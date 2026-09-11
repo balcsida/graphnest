@@ -16,7 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const graphDiscoveryVersion = 3
+const graphDiscoveryVersion = 4
 
 var discoveryTestFile = regexp.MustCompile(`(?i)(^|/)(__tests__|tests?|specs?|fixtures?|examples?|icons?|i18n)(/|$)|[._](test|spec)[.]|_test[.]`)
 
@@ -69,7 +69,7 @@ func writeGraphDiscovery(ctx context.Context, tx pgx.Tx, id int64, a *graphv2.Ar
 			declarations[target].incoming = true
 		}
 	}
-	_, err := tx.CopyFrom(ctx, pgx.Identifier{"graph_v2_discovery"}, []string{"upload_id", "occurrence_key", "name", "qualified_name", "signature", "documentation", "path", "language", "kind", "name_document", "qualified_document", "signature_document", "documentation_document", "path_document", "grams", "usage_count", "generated", "ambient", "test_file", "original_name", "folded_name", "name_size", "selector_grams", "segments"}, pgx.CopyFromSlice(len(a.Nodes), func(i int) ([]any, error) {
+	_, err := tx.CopyFrom(ctx, pgx.Identifier{"graph_v2_discovery"}, []string{"upload_id", "occurrence_key", "name", "qualified_name", "signature", "documentation", "path", "language", "kind", "name_document", "qualified_document", "signature_document", "documentation_document", "path_document", "grams", "usage_count", "generated", "ambient", "test_file", "original_name", "original_qualified_name", "folded_name", "name_size", "selector_grams", "segments"}, pgx.CopyFromSlice(len(a.Nodes), func(i int) ([]any, error) {
 		n := a.Nodes[i]
 		values := []string{n.Name, n.QualifiedName, n.GetSignature(), n.GetDocumentation(), n.GetPath()}
 		docs := make([]string, len(values))
@@ -82,7 +82,7 @@ func writeGraphDiscovery(ctx context.Context, tx pgx.Tx, id int64, a *graphv2.Ar
 		ambient := files[n.GetPath()] != nil && files[n.GetPath()].Errors == nil && counts != nil && counts.declared > 0 && counts.declared == counts.typeDeclared && !counts.behavior && !counts.incoming
 		grams := graphquery.DiscoveryGrams(strings.Join(append(slices.Clone(values), n.Kind, n.Language), " "))
 		key := sha256.Sum256([]byte(n.Occurrence))
-		return []any{id, key[:], values[0], values[1], values[2], values[3], values[4], graphquery.NormalizeDiscovery(n.Language), n.Kind, docs[0], docs[1], docs[2], docs[3], docs[4], grams, usage[n.Occurrence], generated, ambient, discoveryTestFile.MatchString(n.GetPath()), []byte(n.Name), []byte(graphquery.FoldName(n.Name)), utf8.RuneCountInString(n.Name), graphquery.NameGrams(n.Name), graphquery.IdentifierSegments(n.Name)}, nil
+		return []any{id, key[:], values[0], values[1], values[2], values[3], values[4], graphquery.NormalizeDiscovery(n.Language), n.Kind, docs[0], docs[1], docs[2], docs[3], docs[4], grams, usage[n.Occurrence], generated, ambient, discoveryTestFile.MatchString(n.GetPath()), []byte(n.Name), []byte(n.QualifiedName), []byte(graphquery.FoldName(n.Name)), utf8.RuneCountInString(n.Name), graphquery.NameGrams(n.Name), graphquery.IdentifierSegments(n.Name)}, nil
 	}))
 	if err != nil {
 		return err

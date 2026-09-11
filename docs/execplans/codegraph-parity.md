@@ -300,10 +300,31 @@ Implementation, validation, draft publication, and release are separate states.
   review identified missing repository/commit/schema predicates in statistics.
   Both scans now authenticate the complete snapshot; real PostgreSQL mismatch
   regressions, the full aggregate oracle, focused race and static checks pass.
-  Scoped re-review cleared the finding. Signed publication remains pending.
-  A native stack read and bounded
-  GitHub API connection probe timed out on 2026-09-11; no refreshed remote state
-  is claimed.
+  Scoped re-review cleared the finding. Signed commit `85dee2e` is published
+  as draft PR #81 at native stack #66 position 16. Exact head, base, valid
+  signature, ten remote blobs, PR body, and unchanged prior fifteen entries
+  were verified. CI 34601896648 and CodeQL 34601890870 passed. Process-scoped
+  use of the configured macOS PAC proxy restored GitHub access. Native
+  `gh stack link` published only the reviewed branch while A3 remained local.
+
+- S1.06a3 implements seven entity-impact and projection operations. The full
+  68-node/93-edge/13-file/six-unresolved corpus, sixteen source/config hashes,
+  and fifty exact edge occurrences/endpoints are verified. Review fixes add
+  atomic node/evidence admission, shortest dependency depth through containment,
+  independent incoming/outgoing call traversal, and explicit analysis state.
+  Shortest-depth impact deliberately corrects the pinned upstream DFS omission;
+  original captures remain unchanged. The byte-safe qualified lookup correction
+  adds migration 030 and discovery projection version 4 with original qualified
+  bytes and an upload-scoped hash index. Older projections report qualified
+  lookup unavailable until an explicit rebuild. Literal/wildcard, Unicode/NUL,
+  malformed-byte, old-projection, and rebuild controls pass on a 1,102-entity
+  fixture. The exact and wildcard plans used 13/3,359 shared-buffer hits and
+  0.060/1.282 ms respectively; these are fixture measurements, not production
+  performance. Focused PostgreSQL, race, vet, staticcheck and formatting checks
+  pass. The second scoped fix review passed with no open correctness finding.
+  Large-repository wildcard cost remains a non-blocking measurement obligation
+  for S1.10; no production performance claim is made. Signing and draft
+  publication remain pending.
 
 ## Baselines
 
@@ -551,7 +572,8 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 | S1.05d2 file classification | `feat/codegraph/s1-05d2-file-classification` | Implemented, independently reviewed and signed; depends on PR #76 | Draft [PR #77](https://github.com/balcsida/graphnest/pull/77); native stack #66, position 13 |
 | S1.05d3 task context | `feat/codegraph/s1-05d3-task-context` | Implemented, independently approved and signed; depends on PR #77 | Draft [PR #78](https://github.com/balcsida/graphnest/pull/78); native stack #66, position 14 |
 | S1.06a1 file dependencies | `feat/codegraph/s1-06a1-file-dependencies` | Implemented, independently reviewed and signed; depends on PR #78 | Draft [PR #79](https://github.com/balcsida/graphnest/pull/79); native stack #66, position 15 |
-| S1.06a2 graph aggregates | `feat/codegraph/s1-06a2-graph-aggregates` | Implemented and independently reviewed; depends on PR #79 | Local native stack layer 16; publication pending GitHub reachability |
+| S1.06a2 graph aggregates | `feat/codegraph/s1-06a2-graph-aggregates` | Implemented, independently reviewed and signed (`85dee2e`); depends on PR #79 | Draft [PR #81](https://github.com/balcsida/graphnest/pull/81); native stack #66, position 16; CI and CodeQL passed |
+| S1.06a3 entity impact | `feat/codegraph/s1-06a3-entity-impact` | Implemented and independently approved; focused checks passed; depends on PR #81 | Local native stack layer 17; signing and publication pending |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66

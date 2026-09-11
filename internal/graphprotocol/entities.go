@@ -60,9 +60,10 @@ type EntitiesRequest struct {
 }
 
 type EntitiesResponse struct {
-	Entities    []Entity     `json:"entities"`
-	Generations []Generation `json:"generations"`
-	NextCursor  string       `json:"next_cursor,omitempty"`
+	Entities    []Entity       `json:"entities"`
+	Analysis    *AnalysisState `json:"analysis,omitempty"`
+	Generations []Generation   `json:"generations"`
+	NextCursor  string         `json:"next_cursor,omitempty"`
 }
 
 type TraverseRequest struct {

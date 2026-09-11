@@ -1,0 +1,492 @@
+{
+  "reference": "b9ca4b7981116909900368cc1686a1074cd4d4c1",
+  "capture_sha256": "0b8df25e1feb7844f4e1ca4684e0fa290f660a99ba2de6243f3425a132da1727",
+  "verification_sha256": "cb2d59382bd4cb54fa522cc319fb436a49a918538afd0b60fa2615839235eca3",
+  "library_expected_sha256": "b836bd1a569ba8b4cb2b4afa8057716fe693593ac8554e478dfeb10d99968676",
+  "facts": {
+    "nodes": 68,
+    "edges": 93,
+    "files": 13,
+    "unresolved": 6
+  },
+  "ids": {
+    "run": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+    "normalize": "function:2e0f1da852db2702796c16967fca2efb",
+    "service": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+    "service_greet": "method:a07bfacd1db56624cfb45f337daa8afd",
+    "home": "function:6ed067cb1c447a80dad50eeec41b25fa"
+  },
+  "call_graph": {
+    "nodes": [
+      "class:be32feaed3e6dfaf83e7636dac9eab2b",
+      "file:consumer.test.ts",
+      "file:consumer.ts",
+      "function:1a85b97a7e69c8c4b2429632cc2a6c31",
+      "function:2e0f1da852db2702796c16967fca2efb",
+      "function:7e9336030a46e65ce2d6c7fffdfc2672",
+      "function:b86a54b1e1a6502d2746c99aea27dca3",
+      "method:a07bfacd1db56624cfb45f337daa8afd"
+    ],
+    "edge_kinds": {
+      "calls": 4,
+      "imports": 2,
+      "instantiates": 1
+    },
+    "edges": [
+      {
+        "occurrence": "1365fe03d3b2005cd5554392380f9002e3114cbafa56afe2a4e91e65d1b634ca:0",
+        "source": "function:b86a54b1e1a6502d2746c99aea27dca3",
+        "target": "function:7e9336030a46e65ce2d6c7fffdfc2672"
+      },
+      {
+        "occurrence": "908d868811ebe291984fdbdbf7e6cae3f8f0e9fb1b8bf3789613db752074cd0e:0",
+        "source": "function:1a85b97a7e69c8c4b2429632cc2a6c31",
+        "target": "function:b86a54b1e1a6502d2746c99aea27dca3"
+      },
+      {
+        "occurrence": "c74334af9d940a10e9b06973dae8813168e0d6adb3063f11f3dc63ee81f36ada:0",
+        "source": "file:consumer.test.ts",
+        "target": "function:b86a54b1e1a6502d2746c99aea27dca3"
+      },
+      {
+        "occurrence": "b290c4f7f56268e0abf63f13a044442568fb2f9a4b91eb45fe8befa6c0dd7e5b:0",
+        "source": "file:consumer.ts",
+        "target": "function:7e9336030a46e65ce2d6c7fffdfc2672"
+      },
+      {
+        "occurrence": "dff0e657da6061a9d73313b1a19761d3a67bd1b6731c650bc272d6b4e3ecbc4c:0",
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "method:a07bfacd1db56624cfb45f337daa8afd"
+      },
+      {
+        "occurrence": "41913e8f5578040f8d891d04551213e123b322e144f7a6f652ac86f9f14b3a50:0",
+        "source": "method:a07bfacd1db56624cfb45f337daa8afd",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "occurrence": "b4cc4691f854db4740ddb4ec181bc45848e3cbe6b7cab032986739df12d85889:0",
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "class:be32feaed3e6dfaf83e7636dac9eab2b"
+      }
+    ]
+  },
+  "usages_normalize": {
+    "nodes": [
+      "file:Widget.vue",
+      "method:a07bfacd1db56624cfb45f337daa8afd",
+      "function:7e9336030a46e65ce2d6c7fffdfc2672",
+      "function:fa100d11c49c252d1e21edea9382ed7b",
+      "file:core.ts",
+      "file:Widget.vue",
+      "file:main.ts",
+      "file:unicode.ts"
+    ],
+    "edge_kinds": {
+      "calls": 4,
+      "contains": 1,
+      "imports": 3
+    },
+    "edges": [
+      {
+        "occurrence": "1c6c2c0d284019a8323bbf31e061c45cd12e93726c9b769a438eb836d637d99e:0",
+        "source": "file:Widget.vue",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "occurrence": "41913e8f5578040f8d891d04551213e123b322e144f7a6f652ac86f9f14b3a50:0",
+        "source": "method:a07bfacd1db56624cfb45f337daa8afd",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "occurrence": "a86c9112b51398d23870537757b94db3a0124ef48a12171ccb4ca4158427cc9e:0",
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "occurrence": "f8515cc36d96f4df09d7868e4774e58dadc87b43b14ab051003f39288b9b5f3d:0",
+        "source": "function:fa100d11c49c252d1e21edea9382ed7b",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "occurrence": "ab0ef10556dadfa2416f909f7cf46ad18ddf793bd3e4efa907be158191e4e381:0",
+        "source": "file:core.ts",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "occurrence": "3a6af4adda051b24bf7a3a8595ebd8809e85f680ad3587979adf7c89483721c4:0",
+        "source": "file:Widget.vue",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "occurrence": "07629cb491baf5eaf7c96965ae5e48c2eee01d17c9255271f9222c42e6c506ce:0",
+        "source": "file:main.ts",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      },
+      {
+        "occurrence": "65d3d9f4d2fa28c1d1b72342205669412ef4156f2b56527107ecbaafcb914bb5:0",
+        "source": "file:unicode.ts",
+        "target": "function:2e0f1da852db2702796c16967fca2efb"
+      }
+    ]
+  },
+  "impact_service_depth_3": {
+    "nodes": [
+      "class:be32feaed3e6dfaf83e7636dac9eab2b",
+      "file:consumer.test.ts",
+      "file:consumer.ts",
+      "file:core.ts",
+      "file:main.ts",
+      "function:1a85b97a7e69c8c4b2429632cc2a6c31",
+      "function:20881e230caa501e0f712d9435fd20cd",
+      "function:7e9336030a46e65ce2d6c7fffdfc2672",
+      "function:b86a54b1e1a6502d2746c99aea27dca3",
+      "method:a07bfacd1db56624cfb45f337daa8afd",
+      "method:b778deb8eb78dbc30913a4b58e88d059",
+      "property:0703d73c48e77b84818882e615bd88f9",
+      "variable:f695ca32dd7446c0621dcc89ebc1a505"
+    ],
+    "edge_kinds": {
+      "calls": 5,
+      "contains": 2,
+      "imports": 3,
+      "instantiates": 2,
+      "references": 2
+    },
+    "blast": {
+      "direct": 4,
+      "within_hops": 12,
+      "hops": 3,
+      "files": 4,
+      "test_files": 1,
+      "routes": 0,
+      "top_files": [
+        {
+          "file": "core.ts",
+          "symbols": 6,
+          "test": false
+        },
+        {
+          "file": "consumer.test.ts",
+          "symbols": 2,
+          "test": true
+        },
+        {
+          "file": "consumer.ts",
+          "symbols": 2,
+          "test": false
+        },
+        {
+          "file": "main.ts",
+          "symbols": 2,
+          "test": false
+        }
+      ]
+    },
+    "edges": [
+      {
+        "occurrence": "969f0016654e1563b860e14d5d2854e100adbe4ba4d93ac161d5f0737af0765a:0",
+        "source": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+        "target": "property:0703d73c48e77b84818882e615bd88f9"
+      },
+      {
+        "occurrence": "98d7c47b48c522b29cb7ad8e6bd58cb929a5cfdde629dc6668339839948f9df5:0",
+        "source": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+        "target": "method:a07bfacd1db56624cfb45f337daa8afd"
+      },
+      {
+        "occurrence": "dff0e657da6061a9d73313b1a19761d3a67bd1b6731c650bc272d6b4e3ecbc4c:0",
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "method:a07bfacd1db56624cfb45f337daa8afd"
+      },
+      {
+        "occurrence": "1365fe03d3b2005cd5554392380f9002e3114cbafa56afe2a4e91e65d1b634ca:0",
+        "source": "function:b86a54b1e1a6502d2746c99aea27dca3",
+        "target": "function:7e9336030a46e65ce2d6c7fffdfc2672"
+      },
+      {
+        "occurrence": "908d868811ebe291984fdbdbf7e6cae3f8f0e9fb1b8bf3789613db752074cd0e:0",
+        "source": "function:1a85b97a7e69c8c4b2429632cc2a6c31",
+        "target": "function:b86a54b1e1a6502d2746c99aea27dca3"
+      },
+      {
+        "occurrence": "c74334af9d940a10e9b06973dae8813168e0d6adb3063f11f3dc63ee81f36ada:0",
+        "source": "file:consumer.test.ts",
+        "target": "function:b86a54b1e1a6502d2746c99aea27dca3"
+      },
+      {
+        "occurrence": "b290c4f7f56268e0abf63f13a044442568fb2f9a4b91eb45fe8befa6c0dd7e5b:0",
+        "source": "file:consumer.ts",
+        "target": "function:7e9336030a46e65ce2d6c7fffdfc2672"
+      },
+      {
+        "occurrence": "3e52a486aa0fbb0f2a348a26851b74207ce7004496fe891565d9cb9dd4a45b58:0",
+        "source": "method:b778deb8eb78dbc30913a4b58e88d059",
+        "target": "method:a07bfacd1db56624cfb45f337daa8afd"
+      },
+      {
+        "occurrence": "038bb739e21391b7d04a90088d5909f42262286a41a8c82d64ce477537ae7a3b:0",
+        "source": "file:main.ts",
+        "target": "class:be32feaed3e6dfaf83e7636dac9eab2b"
+      },
+      {
+        "occurrence": "d0c69c568f51d313e706daf04d55c5cb4625aea320bfc7bd8e311ab63be8cbf4:0",
+        "source": "function:20881e230caa501e0f712d9435fd20cd",
+        "target": "class:be32feaed3e6dfaf83e7636dac9eab2b"
+      },
+      {
+        "occurrence": "686c033a186ecd04f6e003ece621ce4cfc97c28d07bc2ed4cd991d27ac52a471:0",
+        "source": "file:core.ts",
+        "target": "function:20881e230caa501e0f712d9435fd20cd"
+      },
+      {
+        "occurrence": "b4cc4691f854db4740ddb4ec181bc45848e3cbe6b7cab032986739df12d85889:0",
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "class:be32feaed3e6dfaf83e7636dac9eab2b"
+      },
+      {
+        "occurrence": "1c93a62d689fdf13221cf143a5c87a03d82a99b2c0e5bdcdf2adb3975544024b:0",
+        "source": "function:20881e230caa501e0f712d9435fd20cd",
+        "target": "class:be32feaed3e6dfaf83e7636dac9eab2b"
+      },
+      {
+        "occurrence": "2faaadf4d3ed59d342caf41a9ff57adcfe49dacabbc1c451aff77ca2efd51829:0",
+        "source": "variable:f695ca32dd7446c0621dcc89ebc1a505",
+        "target": "class:be32feaed3e6dfaf83e7636dac9eab2b"
+      }
+    ]
+  },
+  "impact_service_depth_1": {
+    "nodes": [
+      "class:be32feaed3e6dfaf83e7636dac9eab2b",
+      "file:main.ts",
+      "function:20881e230caa501e0f712d9435fd20cd",
+      "function:7e9336030a46e65ce2d6c7fffdfc2672",
+      "method:a07bfacd1db56624cfb45f337daa8afd",
+      "method:b778deb8eb78dbc30913a4b58e88d059",
+      "property:0703d73c48e77b84818882e615bd88f9",
+      "variable:f695ca32dd7446c0621dcc89ebc1a505"
+    ],
+    "edge_kinds": {
+      "calls": 2,
+      "contains": 2,
+      "imports": 1,
+      "instantiates": 2,
+      "references": 2
+    },
+    "edges": [
+      {
+        "occurrence": "969f0016654e1563b860e14d5d2854e100adbe4ba4d93ac161d5f0737af0765a:0",
+        "source": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+        "target": "property:0703d73c48e77b84818882e615bd88f9"
+      },
+      {
+        "occurrence": "98d7c47b48c522b29cb7ad8e6bd58cb929a5cfdde629dc6668339839948f9df5:0",
+        "source": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+        "target": "method:a07bfacd1db56624cfb45f337daa8afd"
+      },
+      {
+        "occurrence": "dff0e657da6061a9d73313b1a19761d3a67bd1b6731c650bc272d6b4e3ecbc4c:0",
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "method:a07bfacd1db56624cfb45f337daa8afd"
+      },
+      {
+        "occurrence": "3e52a486aa0fbb0f2a348a26851b74207ce7004496fe891565d9cb9dd4a45b58:0",
+        "source": "method:b778deb8eb78dbc30913a4b58e88d059",
+        "target": "method:a07bfacd1db56624cfb45f337daa8afd"
+      },
+      {
+        "occurrence": "038bb739e21391b7d04a90088d5909f42262286a41a8c82d64ce477537ae7a3b:0",
+        "source": "file:main.ts",
+        "target": "class:be32feaed3e6dfaf83e7636dac9eab2b"
+      },
+      {
+        "occurrence": "d0c69c568f51d313e706daf04d55c5cb4625aea320bfc7bd8e311ab63be8cbf4:0",
+        "source": "function:20881e230caa501e0f712d9435fd20cd",
+        "target": "class:be32feaed3e6dfaf83e7636dac9eab2b"
+      },
+      {
+        "occurrence": "b4cc4691f854db4740ddb4ec181bc45848e3cbe6b7cab032986739df12d85889:0",
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "class:be32feaed3e6dfaf83e7636dac9eab2b"
+      },
+      {
+        "occurrence": "1c93a62d689fdf13221cf143a5c87a03d82a99b2c0e5bdcdf2adb3975544024b:0",
+        "source": "function:20881e230caa501e0f712d9435fd20cd",
+        "target": "class:be32feaed3e6dfaf83e7636dac9eab2b"
+      },
+      {
+        "occurrence": "2faaadf4d3ed59d342caf41a9ff57adcfe49dacabbc1c451aff77ca2efd51829:0",
+        "source": "variable:f695ca32dd7446c0621dcc89ebc1a505",
+        "target": "class:be32feaed3e6dfaf83e7636dac9eab2b"
+      }
+    ]
+  },
+  "impact_service_greet": {
+    "nodes": [
+      "file:consumer.test.ts",
+      "file:consumer.ts",
+      "function:1a85b97a7e69c8c4b2429632cc2a6c31",
+      "function:7e9336030a46e65ce2d6c7fffdfc2672",
+      "function:b86a54b1e1a6502d2746c99aea27dca3",
+      "method:a07bfacd1db56624cfb45f337daa8afd",
+      "method:b778deb8eb78dbc30913a4b58e88d059"
+    ],
+    "edge_kinds": {
+      "calls": 4,
+      "imports": 2
+    },
+    "edges": [
+      {
+        "occurrence": "dff0e657da6061a9d73313b1a19761d3a67bd1b6731c650bc272d6b4e3ecbc4c:0",
+        "source": "function:7e9336030a46e65ce2d6c7fffdfc2672",
+        "target": "method:a07bfacd1db56624cfb45f337daa8afd"
+      },
+      {
+        "occurrence": "1365fe03d3b2005cd5554392380f9002e3114cbafa56afe2a4e91e65d1b634ca:0",
+        "source": "function:b86a54b1e1a6502d2746c99aea27dca3",
+        "target": "function:7e9336030a46e65ce2d6c7fffdfc2672"
+      },
+      {
+        "occurrence": "908d868811ebe291984fdbdbf7e6cae3f8f0e9fb1b8bf3789613db752074cd0e:0",
+        "source": "function:1a85b97a7e69c8c4b2429632cc2a6c31",
+        "target": "function:b86a54b1e1a6502d2746c99aea27dca3"
+      },
+      {
+        "occurrence": "c74334af9d940a10e9b06973dae8813168e0d6adb3063f11f3dc63ee81f36ada:0",
+        "source": "file:consumer.test.ts",
+        "target": "function:b86a54b1e1a6502d2746c99aea27dca3"
+      },
+      {
+        "occurrence": "b290c4f7f56268e0abf63f13a044442568fb2f9a4b91eb45fe8befa6c0dd7e5b:0",
+        "source": "file:consumer.ts",
+        "target": "function:7e9336030a46e65ce2d6c7fffdfc2672"
+      },
+      {
+        "occurrence": "3e52a486aa0fbb0f2a348a26851b74207ce7004496fe891565d9cb9dd4a45b58:0",
+        "source": "method:b778deb8eb78dbc30913a4b58e88d059",
+        "target": "method:a07bfacd1db56624cfb45f337daa8afd"
+      }
+    ]
+  },
+  "home_blast": {
+    "direct": 1,
+    "within_hops": 1,
+    "hops": 3,
+    "files": 1,
+    "test_files": 0,
+    "routes": 1,
+    "top_files": [
+      {
+        "file": "app/index.tsx",
+        "symbols": 1,
+        "test": false
+      }
+    ]
+  },
+  "exported_core": [
+    "interface:e30cb316976fe998ad14cbaf7315f7c3",
+    "class:22d52fa5b3261b6828f46f747644d941",
+    "function:2e0f1da852db2702796c16967fca2efb",
+    "function:33d0684689de083569e74b5164d4296f",
+    "class:be32feaed3e6dfaf83e7636dac9eab2b",
+    "function:20881e230caa501e0f712d9435fd20cd",
+    "constant:4d2f7d39372a2081087d43dc438ad8cb",
+    "variable:f695ca32dd7446c0621dcc89ebc1a505",
+    "enum:fc3b02485378ba86fac427b0a8faecdb",
+    "type_alias:a13e3ebb79377551ffad01a8821e294c",
+    "function:bc23b7caa58f431b58c9432845bf39e1"
+  ],
+  "qualified": {
+    "literal": [
+      "method:c6ebef81a3e080bc1b3fc001f4fcda0a"
+    ],
+    "star": [
+      "method:b778deb8eb78dbc30913a4b58e88d059",
+      "method:a07bfacd1db56624cfb45f337daa8afd",
+      "method:3b3556d71e8102f339e7b9be02e268e8",
+      "method:67b18bbb009b3066636247ea1b570e52"
+    ],
+    "question": [
+      "method:a07bfacd1db56624cfb45f337daa8afd"
+    ]
+  },
+  "modules": [
+    {
+      "directory": ".",
+      "files": [
+        "Model.java",
+        "Widget.vue",
+        "consumer.test.ts",
+        "consumer.ts",
+        "core.ts",
+        "main.ts",
+        "model.rb",
+        "model.rs",
+        "model.swift",
+        "orphan.ts",
+        "unicode.ts"
+      ]
+    },
+    {
+      "directory": "app",
+      "files": [
+        "app/details.tsx",
+        "app/index.tsx"
+      ]
+    }
+  ],
+  "filtered_core_exported": {
+    "nodes": [
+      "class:22d52fa5b3261b6828f46f747644d941",
+      "class:be32feaed3e6dfaf83e7636dac9eab2b",
+      "constant:4d2f7d39372a2081087d43dc438ad8cb",
+      "enum:fc3b02485378ba86fac427b0a8faecdb",
+      "function:20881e230caa501e0f712d9435fd20cd",
+      "function:2e0f1da852db2702796c16967fca2efb",
+      "function:33d0684689de083569e74b5164d4296f",
+      "function:bc23b7caa58f431b58c9432845bf39e1",
+      "interface:e30cb316976fe998ad14cbaf7315f7c3",
+      "type_alias:a13e3ebb79377551ffad01a8821e294c",
+      "variable:f695ca32dd7446c0621dcc89ebc1a505"
+    ],
+    "edge_kinds": {
+      "decorates": 1,
+      "extends": 1,
+      "implements": 1,
+      "instantiates": 1,
+      "references": 2
+    },
+    "edges": [
+      {
+        "occurrence": "9212fca48a9ca20c9d7cd6df757d61ad99bd0a9a21d7132ba3566aca94e8c64c:0",
+        "source": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+        "target": "function:33d0684689de083569e74b5164d4296f"
+      },
+      {
+        "occurrence": "38150a3cc5ddfb9f5535a15c28c3536ff9d834ac251be3a3742ed6c4ece6ba53:0",
+        "source": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+        "target": "class:22d52fa5b3261b6828f46f747644d941"
+      },
+      {
+        "occurrence": "dd822678f63e8c54a71819fff9c2f9af3e462a457044aab99b662c9bc698cd8f:0",
+        "source": "class:be32feaed3e6dfaf83e7636dac9eab2b",
+        "target": "interface:e30cb316976fe998ad14cbaf7315f7c3"
+      },
+      {
+        "occurrence": "d0c69c568f51d313e706daf04d55c5cb4625aea320bfc7bd8e311ab63be8cbf4:0",
+        "source": "function:20881e230caa501e0f712d9435fd20cd",
+        "target": "class:be32feaed3e6dfaf83e7636dac9eab2b"
+      },
+      {
+        "occurrence": "1c93a62d689fdf13221cf143a5c87a03d82a99b2c0e5bdcdf2adb3975544024b:0",
+        "source": "function:20881e230caa501e0f712d9435fd20cd",
+        "target": "class:be32feaed3e6dfaf83e7636dac9eab2b"
+      },
+      {
+        "occurrence": "2faaadf4d3ed59d342caf41a9ff57adcfe49dacabbc1c451aff77ca2efd51829:0",
+        "source": "variable:f695ca32dd7446c0621dcc89ebc1a505",
+        "target": "class:be32feaed3e6dfaf83e7636dac9eab2b"
+      }
+    ]
+  }
+}
