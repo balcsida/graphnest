@@ -91,3 +91,35 @@ cross-file pairs, dependent/reach counts, confidence filtering, and affected
 tests. A separately captured managed-source fixture has normalized fact SHA-256
 `b8643057b983b9c6a26ef0c46aff983c41b3608aed48a3cabeeb4a37614a9fa0` and
 supplies the positive two-file cycle and inheritance-only affected-test cases.
+
+## Graph aggregates and unresolved evidence
+
+The aggregate service exposes graph statistics, raw fan-in and fan-out counts,
+node metrics, ambiguous referenced names, languages with exports, unresolved
+name matches, top depended-on nodes, top calling files, file nodes, module
+aggregation, and unresolved references by source or file. Fan counts include
+every edge occurrence. Top depended-on counts distinct source nodes and excludes
+`contains` and self edges. Display limits on top results use one-row lookahead
+and report `row_limit`; they are never presented as global totals.
+
+Module aggregation accepts explicit file-to-module assignments, relationship
+kinds, a confidence floor, pair kinds, and a per-link pair cap. Confident,
+declared, and below-floor uncertain counts remain separate, including links with
+zero confident edges. PostgreSQL bounds candidate edges before Go decodes their
+original v2 protobuf payloads for resolution evidence. Row or byte exhaustion
+fails with `ErrQuerySize`, so incomplete scans cannot produce aggregate totals.
+
+Unresolved-name matching checks both the recorded full name and `name_tail`.
+Reference responses retain the complete original protobuf row, occurrence
+identity, coordinates, path, language, status, candidates, producer, commit,
+and upload generation. File results sort by zero-based line and UTF-16 column
+before applying the caller's cap. Aggregate queries use the same authorization,
+exact-generation recheck, five-second database deadline, and 4 MiB response
+ceiling as other graph analysis operations.
+
+The aggregate parity fixture uses the same pinned CodeGraph commit and the full
+68-node, 93-edge, 13-file, six-unresolved-row corpus. It compares all stable
+direct returns and the separate `0.95` uncertainty control. CodeGraph's SQLite
+database/WAL byte counts and call-time `lastUpdated` are recorded as upstream
+storage evidence; GraphNest reports persisted semantic counts and its own exact
+generation metadata instead of relabeling those values.
