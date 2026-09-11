@@ -16,6 +16,9 @@ func (service *Service) Context(ctx context.Context, request graphprotocol.Conte
 	if err != nil {
 		return response, err
 	}
+	for _, snapshot := range ready.querySnapshots(false) {
+		response.Snapshots = append(response.Snapshots, graphprotocol.ContextSnapshot{RepositoryID: snapshot.RepositoryID, UploadID: snapshot.UploadID, Commit: snapshot.Commit})
+	}
 	if len(ready.snapshots) == 0 {
 		return response, nil
 	}
@@ -86,4 +89,25 @@ func (service *Service) Context(ctx context.Context, request graphprotocol.Conte
 		response.Status, response.Candidates = graphprotocol.StatusAmbiguous, candidates
 	}
 	return response, nil
+}
+
+// ValidateContextSnapshots checks the actual legacy uploads captured before the
+// Context query, including a replacement at the same indexed commit.
+func (service *Service) ValidateContextSnapshots(ctx context.Context, snapshots []graphprotocol.ContextSnapshot) error {
+	if service == nil {
+		return ErrInvalidRequest
+	}
+	ctx, cancel := service.entityContext(ctx)
+	defer cancel()
+	manifests, err := service.queryStore().Manifests(ctx)
+	if err != nil {
+		return err
+	}
+	for _, snapshot := range snapshots {
+		manifest, ok := manifests[snapshot.RepositoryID]
+		if !ok || manifest.UploadID != snapshot.UploadID || manifest.Commit != snapshot.Commit {
+			return ErrGenerationChanged
+		}
+	}
+	return ctx.Err()
 }

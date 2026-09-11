@@ -36,7 +36,7 @@ func (s *Store) graphManifests(ctx context.Context, queryer graphQueryer) ([]gra
 	rows, err := queryer.Query(ctx, `select repositories.id, repositories.indexed_sha,
 		graph_uploads.id, graph_uploads.schema_version, graph_uploads.content_hash, graph_uploads.source
 		from installations join repositories on repositories.installation_id=installations.id
-		join graph_uploads on graph_uploads.repository_id=repositories.id and graph_uploads.commit=repositories.indexed_sha
+		join graph_uploads on graph_uploads.repository_id=repositories.id and graph_uploads.commit=repositories.indexed_sha and graph_uploads.active and graph_uploads.schema_version=1
 		where installations.status='active' and repositories.enabled and not repositories.archived and repositories.indexed_sha is not null
 		order by repositories.id`)
 	if err != nil {
@@ -173,7 +173,7 @@ func (s *Store) GraphStatus(ctx context.Context, repositoryID int64) (api.GraphS
 	err := s.pool.QueryRow(ctx, `select repositories.github_id, coalesce(repositories.indexed_sha, ''),
 		upload.source, job.state, job.error_code, scip.commit
 		from repositories
-		left join graph_uploads upload on upload.repository_id=repositories.id and upload.commit=repositories.indexed_sha
+		left join graph_uploads upload on upload.repository_id=repositories.id and upload.commit=repositories.indexed_sha and upload.active and upload.schema_version=1
 		left join lateral (
 			select state, error_code from graph_jobs
 			where repository_id=repositories.id and target_sha=repositories.indexed_sha
@@ -239,17 +239,18 @@ func replaceGraph(ctx context.Context, tx pgx.Tx, repositoryID int64, source Gra
 	}
 	var current GraphUpload
 	err := tx.QueryRow(ctx, `select id, repository_id, commit, schema_version, source, node_count, edge_count
-		from graph_uploads where repository_id=$1 for update`, repositoryID).Scan(
+		from graph_uploads where repository_id=$1 and active for update`, repositoryID).Scan(
 		&current.ID, &current.RepositoryID, &current.Commit, &current.SchemaVersion, &current.Source, &current.NodeCount, &current.EdgeCount)
 	if err != nil && err != pgx.ErrNoRows {
 		return GraphReplacement{}, err
 	}
-	if artifact.Commit != indexedSHA || current.Commit == indexedSHA &&
+	if current.SchemaVersion == 2 || artifact.Commit != indexedSHA || current.Commit == indexedSHA &&
 		(current.Source == GraphSourceExternal && source != GraphSourceExternal || current.Source == GraphSourceManaged && source == GraphSourceSCIP) {
 		return GraphReplacement{Upload: current}, nil
 	}
+	// ponytail: retain retired generations until offline cleanup; add bounded retention only with reader pinning.
 	if current.ID != 0 {
-		if _, err := tx.Exec(ctx, `delete from graph_uploads where id=$1`, current.ID); err != nil {
+		if _, err := tx.Exec(ctx, `update graph_uploads set active=false, retired_at=now() where id=$1`, current.ID); err != nil {
 			return GraphReplacement{}, err
 		}
 	}
@@ -503,14 +504,19 @@ func (s *Store) GraphQueueDepths(ctx context.Context) (map[string]int64, error) 
 }
 
 func (s *Store) LoadGraph(ctx context.Context, uploadID int64) (graphartifact.Artifact, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return graphartifact.Artifact{}, err
+	}
+	defer tx.Rollback(ctx)
 	var artifact graphartifact.Artifact
-	err := s.pool.QueryRow(ctx, `select schema_version, repository_id, commit, analyzer_name, analyzer_version, content_hash
-		from graph_uploads where id=$1`, uploadID).Scan(&artifact.SchemaVersion, &artifact.RepositoryID, &artifact.Commit,
+	err = tx.QueryRow(ctx, `select schema_version, repository_id, commit, analyzer_name, analyzer_version, content_hash
+		from graph_uploads where id=$1 and schema_version=1`, uploadID).Scan(&artifact.SchemaVersion, &artifact.RepositoryID, &artifact.Commit,
 		&artifact.Analyzer.Name, &artifact.Analyzer.Version, &artifact.ContentHash)
 	if err != nil {
 		return graphartifact.Artifact{}, err
 	}
-	nodes, err := s.pool.Query(ctx, `select uid, kind, path, language, symbol_kind, qualified_name, signature, scip_symbol,
+	nodes, err := tx.Query(ctx, `select uid, kind, path, language, symbol_kind, qualified_name, signature, scip_symbol,
 		start_line, start_character, end_line, end_character from graph_nodes where upload_id=$1 order by id`, uploadID)
 	if err != nil {
 		return graphartifact.Artifact{}, err
@@ -529,7 +535,7 @@ func (s *Store) LoadGraph(ctx context.Context, uploadID int64) (graphartifact.Ar
 	if err := nodes.Err(); err != nil {
 		return graphartifact.Artifact{}, err
 	}
-	edges, err := s.pool.Query(ctx, `select source_uid, target_uid, kind, path, start_line, start_character, end_line, end_character,
+	edges, err := tx.Query(ctx, `select source_uid, target_uid, kind, path, start_line, start_character, end_line, end_character,
 		confidence, resolution_reason from graph_edges where upload_id=$1 order by id`, uploadID)
 	if err != nil {
 		return graphartifact.Artifact{}, err
@@ -548,5 +554,5 @@ func (s *Store) LoadGraph(ctx context.Context, uploadID int64) (graphartifact.Ar
 	if err := edges.Err(); err != nil {
 		return graphartifact.Artifact{}, err
 	}
-	return artifact, nil
+	return artifact, tx.Commit(ctx)
 }

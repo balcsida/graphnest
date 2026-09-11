@@ -77,7 +77,7 @@ func TestSCIPGraphMaterializationRespectsExplicitUploadPrecedence(t *testing.T) 
 		t.Fatal(err)
 	}
 	var source GraphSource
-	if err := store.pool.QueryRow(t.Context(), `select source from graph_uploads where repository_id=$1`, repositoryID).Scan(&source); err != nil || source != GraphSourceSCIP {
+	if err := store.pool.QueryRow(t.Context(), `select source from graph_uploads where repository_id=$1 and active`, repositoryID).Scan(&source); err != nil || source != GraphSourceSCIP {
 		t.Fatalf("initial source=%q err=%v", source, err)
 	}
 
@@ -89,7 +89,7 @@ func TestSCIPGraphMaterializationRespectsExplicitUploadPrecedence(t *testing.T) 
 		t.Fatal(err)
 	}
 	var uploadID int64
-	if err := store.pool.QueryRow(t.Context(), `select id, source from graph_uploads where repository_id=$1`, repositoryID).Scan(&uploadID, &source); err != nil || uploadID != explicit.Upload.ID || source != GraphSourceManaged {
+	if err := store.pool.QueryRow(t.Context(), `select id, source from graph_uploads where repository_id=$1 and active`, repositoryID).Scan(&uploadID, &source); err != nil || uploadID != explicit.Upload.ID || source != GraphSourceManaged {
 		t.Fatalf("current explicit upload id=%d source=%q err=%v", uploadID, source, err)
 	}
 
@@ -99,7 +99,7 @@ func TestSCIPGraphMaterializationRespectsExplicitUploadPrecedence(t *testing.T) 
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('b'), uploadWith("current.go", globalSymbol, definitionRole)); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.pool.QueryRow(t.Context(), `select source from graph_uploads where repository_id=$1`, repositoryID).Scan(&source); err != nil || source != GraphSourceSCIP {
+	if err := store.pool.QueryRow(t.Context(), `select source from graph_uploads where repository_id=$1 and active`, repositoryID).Scan(&source); err != nil || source != GraphSourceSCIP {
 		t.Fatalf("replacement source=%q err=%v", source, err)
 	}
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('b'), uploadWith("refreshed.go", implementationSymbol, definitionRole)); err != nil {
@@ -107,7 +107,7 @@ func TestSCIPGraphMaterializationRespectsExplicitUploadPrecedence(t *testing.T) 
 	}
 	var path string
 	if err := store.pool.QueryRow(t.Context(), `select path from graph_nodes join graph_uploads on graph_uploads.id=graph_nodes.upload_id
-		where graph_uploads.repository_id=$1 and graph_nodes.kind=$2`, repositoryID, graphartifact.NodeFile).Scan(&path); err != nil || path != "refreshed.go" {
+		where graph_uploads.repository_id=$1 and graph_uploads.active and graph_nodes.kind=$2`, repositoryID, graphartifact.NodeFile).Scan(&path); err != nil || path != "refreshed.go" {
 		t.Fatalf("refreshed path=%q err=%v", path, err)
 	}
 }

@@ -1,0 +1,229 @@
+{
+  "referenceCommit": "b9ca4b7981116909900368cc1686a1074cd4d4c1",
+  "capturedResultsSha256": "d578525e872c5f9584ca972849658263cc976401635ea399f4a8d6d097c23007",
+  "defaults": {
+    "searchLimit": 3,
+    "traversalDepth": 1,
+    "maxNodes": 20,
+    "minScore": 0.3,
+    "maxCodeBlocks": 5,
+    "maxCodeBlockSize": 1500,
+    "includeCode": true
+  },
+  "cases": [
+    {
+      "id": "build-default-string-ambiguous",
+      "method": "buildContext",
+      "query": "normalize",
+      "requiredNames": ["normalize"],
+      "requiredNodes": [
+        {"occurrence": "method:cb20d69ed5ac61610cc500dc9cdc4d54", "name": "normalize", "kind": "method", "path": "model.rb"},
+        {"occurrence": "function:2e0f1da852db2702796c16967fca2efb", "name": "normalize", "kind": "function", "path": "core.ts"},
+        {"occurrence": "method:c6ebef81a3e080bc1b3fc001f4fcda0a", "name": "normalize", "kind": "method", "path": "Model.java"},
+        {"occurrence": "method:a07bfacd1db56624cfb45f337daa8afd", "name": "greet", "kind": "method", "path": "core.ts"},
+        {"occurrence": "function:7e9336030a46e65ce2d6c7fffdfc2672", "name": "run", "kind": "function", "path": "main.ts"}
+      ],
+      "requiredSources": [
+        {"occurrence": "method:cb20d69ed5ac61610cc500dc9cdc4d54", "path": "model.rb", "startLine": 3, "endLine": 5, "content": "    def normalize(name)\n      name.strip\n    end", "utf16": 48},
+        {"occurrence": "function:2e0f1da852db2702796c16967fca2efb", "path": "core.ts", "startLine": 3, "endLine": 3, "content": "export function normalize(name: string): string { return name.trim(); }", "utf16": 71},
+        {"occurrence": "method:c6ebef81a3e080bc1b3fc001f4fcda0a", "path": "Model.java", "startLine": 3, "endLine": 3, "content": "    public String normalize(String name) { return name.trim(); }", "utf16": 64},
+        {"occurrence": "method:a07bfacd1db56624cfb45f337daa8afd", "path": "core.ts", "startLine": 8, "endLine": 8, "content": "  override greet(name: string): string { return normalize(name); }", "utf16": 66},
+        {"occurrence": "function:7e9336030a46e65ce2d6c7fffdfc2672", "path": "main.ts", "startLine": 2, "endLine": 2, "content": "export function run(): string { const service = new Service(); return service.greet(normalize(' fixture ')); }", "utf16": 110}
+      ],
+      "original": {"responseBytes": 947}
+    },
+    {
+      "id": "build-title-description",
+      "method": "buildContext",
+      "title": "Normalize greeting",
+      "description": "Trace Service and processGreeting",
+      "requiredNames": ["Service", "processGreeting"],
+      "requiredFiles": ["core.ts", "consumer.ts"],
+      "requiredNodes": [
+        {"occurrence": "interface:e30cb316976fe998ad14cbaf7315f7c3", "name": "Greeter", "kind": "interface", "path": "core.ts"},
+        {"occurrence": "function:b86a54b1e1a6502d2746c99aea27dca3", "name": "processGreeting", "kind": "function", "path": "consumer.ts"},
+        {"occurrence": "method:a07bfacd1db56624cfb45f337daa8afd", "name": "greet", "kind": "method", "path": "core.ts"},
+        {"occurrence": "class:be32feaed3e6dfaf83e7636dac9eab2b", "name": "Service", "kind": "class", "path": "core.ts"},
+        {"occurrence": "function:7e9336030a46e65ce2d6c7fffdfc2672", "name": "run", "kind": "function", "path": "main.ts"},
+        {"occurrence": "function:1a85b97a7e69c8c4b2429632cc2a6c31", "name": "testGreeting", "kind": "function", "path": "consumer.test.ts"},
+        {"occurrence": "function:2e0f1da852db2702796c16967fca2efb", "name": "normalize", "kind": "function", "path": "core.ts"},
+        {"occurrence": "method:b778deb8eb78dbc30913a4b58e88d059", "name": "greet", "kind": "method", "path": "core.ts"}
+      ],
+      "requiredEdges": [
+        {"occurrence": "dd822678f63e8c54a71819fff9c2f9af3e462a457044aab99b662c9bc698cd8f:0", "kind": "implements", "source": "class:be32feaed3e6dfaf83e7636dac9eab2b", "target": "interface:e30cb316976fe998ad14cbaf7315f7c3"},
+        {"occurrence": "1365fe03d3b2005cd5554392380f9002e3114cbafa56afe2a4e91e65d1b634ca:0", "kind": "calls", "source": "function:b86a54b1e1a6502d2746c99aea27dca3", "target": "function:7e9336030a46e65ce2d6c7fffdfc2672"},
+        {"occurrence": "908d868811ebe291984fdbdbf7e6cae3f8f0e9fb1b8bf3789613db752074cd0e:0", "kind": "calls", "source": "function:1a85b97a7e69c8c4b2429632cc2a6c31", "target": "function:b86a54b1e1a6502d2746c99aea27dca3"},
+        {"occurrence": "98d7c47b48c522b29cb7ad8e6bd58cb929a5cfdde629dc6668339839948f9df5:0", "kind": "contains", "source": "class:be32feaed3e6dfaf83e7636dac9eab2b", "target": "method:a07bfacd1db56624cfb45f337daa8afd"},
+        {"occurrence": "41913e8f5578040f8d891d04551213e123b322e144f7a6f652ac86f9f14b3a50:0", "kind": "calls", "source": "method:a07bfacd1db56624cfb45f337daa8afd", "target": "function:2e0f1da852db2702796c16967fca2efb"},
+        {"occurrence": "dff0e657da6061a9d73313b1a19761d3a67bd1b6731c650bc272d6b4e3ecbc4c:0", "kind": "calls", "source": "function:7e9336030a46e65ce2d6c7fffdfc2672", "target": "method:a07bfacd1db56624cfb45f337daa8afd"},
+        {"occurrence": "3e52a486aa0fbb0f2a348a26851b74207ce7004496fe891565d9cb9dd4a45b58:0", "kind": "calls", "source": "method:b778deb8eb78dbc30913a4b58e88d059", "target": "method:a07bfacd1db56624cfb45f337daa8afd"},
+        {"occurrence": "a86c9112b51398d23870537757b94db3a0124ef48a12171ccb4ca4158427cc9e:0", "kind": "calls", "source": "function:7e9336030a46e65ce2d6c7fffdfc2672", "target": "function:2e0f1da852db2702796c16967fca2efb"}
+      ],
+      "requiredSources": [
+        {"occurrence": "interface:e30cb316976fe998ad14cbaf7315f7c3", "path": "core.ts", "startLine": 1, "endLine": 1, "content": "export interface Greeter { greet(name: string): string; }", "utf16": 57},
+        {"occurrence": "function:b86a54b1e1a6502d2746c99aea27dca3", "path": "consumer.ts", "startLine": 2, "endLine": 7, "content": "export function processGreeting(enabled: boolean): string {\n  if (enabled) {\n    return run();\n  }\n  return 'skipped';\n}", "utf16": 120},
+        {"occurrence": "method:a07bfacd1db56624cfb45f337daa8afd", "path": "core.ts", "startLine": 8, "endLine": 8, "content": "  override greet(name: string): string { return normalize(name); }", "utf16": 66},
+        {"occurrence": "function:7e9336030a46e65ce2d6c7fffdfc2672", "path": "main.ts", "startLine": 2, "endLine": 2, "content": "export function run(): string { const service = new Service(); return service.greet(normalize(' fixture ')); }", "utf16": 110},
+        {"occurrence": "function:1a85b97a7e69c8c4b2429632cc2a6c31", "path": "consumer.test.ts", "startLine": 2, "endLine": 2, "content": "export function testGreeting(): string { return processGreeting(true); }", "utf16": 72}
+      ],
+      "original": {"nodes": 8, "edges": 8, "roots": 3, "files": 4, "codeBlocks": 5, "codeUnits": 425}
+    },
+    {
+      "id": "build-no-code",
+      "method": "buildContext",
+      "query": "processGreeting",
+      "options": {"include_code": false},
+      "requiredNames": ["processGreeting"],
+      "requiredFiles": ["consumer.ts"],
+      "requiredNodes": [
+        {"occurrence": "function:b86a54b1e1a6502d2746c99aea27dca3", "name": "processGreeting", "kind": "function", "path": "consumer.ts"},
+        {"occurrence": "function:7e9336030a46e65ce2d6c7fffdfc2672", "name": "run", "kind": "function", "path": "main.ts"},
+        {"occurrence": "function:1a85b97a7e69c8c4b2429632cc2a6c31", "name": "testGreeting", "kind": "function", "path": "consumer.test.ts"}
+      ],
+      "requiredEdges": [
+        {"occurrence": "1365fe03d3b2005cd5554392380f9002e3114cbafa56afe2a4e91e65d1b634ca:0", "kind": "calls", "source": "function:b86a54b1e1a6502d2746c99aea27dca3", "target": "function:7e9336030a46e65ce2d6c7fffdfc2672"},
+        {"occurrence": "908d868811ebe291984fdbdbf7e6cae3f8f0e9fb1b8bf3789613db752074cd0e:0", "kind": "calls", "source": "function:1a85b97a7e69c8c4b2429632cc2a6c31", "target": "function:b86a54b1e1a6502d2746c99aea27dca3"}
+      ],
+      "original": {"nodes": 8, "edges": 6, "roots": 3, "files": 5, "codeBlocks": 0, "codeUnits": 0}
+    },
+    {
+      "id": "build-small-code-budget-utf16",
+      "method": "buildContext",
+      "query": "unicodeCaller",
+      "options": {"max_code_blocks": 1, "max_code_block_size": 56},
+      "requiredNames": ["unicodeCaller", "normalize"],
+      "requiredFiles": ["unicode.ts", "core.ts"],
+      "requiredNodes": [
+        {"occurrence": "function:fa100d11c49c252d1e21edea9382ed7b", "name": "unicodeCaller", "kind": "function", "path": "unicode.ts"},
+        {"occurrence": "function:2e0f1da852db2702796c16967fca2efb", "name": "normalize", "kind": "function", "path": "core.ts"}
+      ],
+      "requiredEdges": [
+        {"occurrence": "f8515cc36d96f4df09d7868e4774e58dadc87b43b14ab051003f39288b9b5f3d:0", "kind": "calls", "source": "function:fa100d11c49c252d1e21edea9382ed7b", "target": "function:2e0f1da852db2702796c16967fca2efb"}
+      ],
+      "requiredSources": [
+        {"occurrence": "function:fa100d11c49c252d1e21edea9382ed7b", "path": "unicode.ts", "startLine": 2, "endLine": 2, "content": "export function unicodeCaller() { const label = \"café 😀", "utf16": 56}
+      ],
+      "original": {"nodes": 2, "edges": 1, "roots": 1, "files": 2, "codeBlocks": 1, "sourceUnits": 86, "retainedSourceUnits": 56, "presentedCodeUnits": 76}
+    },
+    {
+      "id": "build-empty-query",
+      "method": "buildContext",
+      "query": "",
+      "original": {"nodes": 0, "edges": 0, "roots": 0, "files": 0, "codeBlocks": 0, "codeUnits": 0}
+    },
+    {
+      "id": "build-absent-query",
+      "method": "buildContext",
+      "query": "MissingFixtureSymbol987",
+      "requiredNames": ["Fixture", "normalize"],
+      "requiredFiles": ["Model.java", "model.rb"],
+      "requiredNodes": [
+        {"occurrence": "module:4ee8c3ee81918745b2a6647de3efc49e", "name": "Fixture", "kind": "module", "path": "model.rb"},
+        {"occurrence": "namespace:d439ddac537d08fdd602414390eed80a", "name": "fixture.models", "kind": "namespace", "path": "Model.java"},
+        {"occurrence": "method:cb20d69ed5ac61610cc500dc9cdc4d54", "name": "normalize", "kind": "method", "path": "model.rb"},
+        {"occurrence": "class:58714088a1e38fc2650878cdcd800f1a", "name": "Model", "kind": "class", "path": "model.rb"},
+        {"occurrence": "class:7130530591b02c5bd2133c49635700dd", "name": "Model", "kind": "class", "path": "Model.java"}
+      ],
+      "requiredEdges": [
+        {"occurrence": "c9f50d4eecb28887ddff53286783cc1aa4192e5cbcdf589e83c035249b8f4674:0", "kind": "contains", "source": "module:4ee8c3ee81918745b2a6647de3efc49e", "target": "class:58714088a1e38fc2650878cdcd800f1a"},
+        {"occurrence": "05c9f2c54a634fd172e0bdb8889a43108b7ddb85c02c20d3ab90ea05263ae7f2:0", "kind": "contains", "source": "namespace:d439ddac537d08fdd602414390eed80a", "target": "class:7130530591b02c5bd2133c49635700dd"},
+        {"occurrence": "486e2ebf78b62de8173bfb1ff4b0e8e50c449b073ad6202adec57fe6e39dc4ca:0", "kind": "contains", "source": "class:58714088a1e38fc2650878cdcd800f1a", "target": "method:cb20d69ed5ac61610cc500dc9cdc4d54"}
+      ],
+      "requiredSources": [
+        {"occurrence": "module:4ee8c3ee81918745b2a6647de3efc49e", "path": "model.rb", "startLine": 1, "endLine": 7, "content": "module Fixture\n  class Model\n    def normalize(name)\n      name.strip\n    end\n  end\nend", "utf16": 87},
+        {"occurrence": "namespace:d439ddac537d08fdd602414390eed80a", "path": "Model.java", "startLine": 1, "endLine": 1, "content": "package fixture.models;", "utf16": 23},
+        {"occurrence": "method:cb20d69ed5ac61610cc500dc9cdc4d54", "path": "model.rb", "startLine": 3, "endLine": 5, "content": "    def normalize(name)\n      name.strip\n    end", "utf16": 48},
+        {"occurrence": "class:58714088a1e38fc2650878cdcd800f1a", "path": "model.rb", "startLine": 2, "endLine": 6, "content": "  class Model\n    def normalize(name)\n      name.strip\n    end\n  end", "utf16": 68},
+        {"occurrence": "class:7130530591b02c5bd2133c49635700dd", "path": "Model.java", "startLine": 2, "endLine": 4, "content": "public class Model {\n    public String normalize(String name) { return name.trim(); }\n}", "utf16": 87}
+      ],
+      "original": {"nodes": 5, "edges": 3, "roots": 3, "files": 2, "codeBlocks": 5, "codeUnits": 313}
+    },
+    {
+      "id": "find-calls-only-service",
+      "method": "findRelevantContext",
+      "query": "Service",
+      "options": {"edge_kinds": ["calls"], "traversal_depth": 2},
+      "requiredNames": ["Service"],
+      "requiredEdgeKinds": ["calls", "extends", "implements", "references"],
+      "requiredNodes": [
+        {"occurrence": "class:be32feaed3e6dfaf83e7636dac9eab2b", "name": "Service", "kind": "class", "path": "core.ts"},
+        {"occurrence": "function:20881e230caa501e0f712d9435fd20cd", "name": "createService", "kind": "function", "path": "core.ts"},
+        {"occurrence": "method:a07bfacd1db56624cfb45f337daa8afd", "name": "greet", "kind": "method", "path": "core.ts"},
+        {"occurrence": "class:22d52fa5b3261b6828f46f747644d941", "name": "Base", "kind": "class", "path": "core.ts"},
+        {"occurrence": "interface:e30cb316976fe998ad14cbaf7315f7c3", "name": "Greeter", "kind": "interface", "path": "core.ts"},
+        {"occurrence": "function:7e9336030a46e65ce2d6c7fffdfc2672", "name": "run", "kind": "function", "path": "main.ts"},
+        {"occurrence": "function:fa100d11c49c252d1e21edea9382ed7b", "name": "unicodeCaller", "kind": "function", "path": "unicode.ts"},
+        {"occurrence": "function:b86a54b1e1a6502d2746c99aea27dca3", "name": "processGreeting", "kind": "function", "path": "consumer.ts"}
+      ],
+      "requiredEdges": [
+        {"occurrence": "38150a3cc5ddfb9f5535a15c28c3536ff9d834ac251be3a3742ed6c4ece6ba53:0", "kind": "extends", "source": "class:be32feaed3e6dfaf83e7636dac9eab2b", "target": "class:22d52fa5b3261b6828f46f747644d941"},
+        {"occurrence": "dd822678f63e8c54a71819fff9c2f9af3e462a457044aab99b662c9bc698cd8f:0", "kind": "implements", "source": "class:be32feaed3e6dfaf83e7636dac9eab2b", "target": "interface:e30cb316976fe998ad14cbaf7315f7c3"},
+        {"occurrence": "dff0e657da6061a9d73313b1a19761d3a67bd1b6731c650bc272d6b4e3ecbc4c:0", "kind": "calls", "source": "function:7e9336030a46e65ce2d6c7fffdfc2672", "target": "method:a07bfacd1db56624cfb45f337daa8afd"},
+        {"occurrence": "1365fe03d3b2005cd5554392380f9002e3114cbafa56afe2a4e91e65d1b634ca:0", "kind": "calls", "source": "function:b86a54b1e1a6502d2746c99aea27dca3", "target": "function:7e9336030a46e65ce2d6c7fffdfc2672"},
+        {"occurrence": "1c93a62d689fdf13221cf143a5c87a03d82a99b2c0e5bdcdf2adb3975544024b:0", "kind": "references", "source": "function:20881e230caa501e0f712d9435fd20cd", "target": "class:be32feaed3e6dfaf83e7636dac9eab2b"}
+      ],
+      "original": {"nodes": 8, "edges": 5, "roots": 3}
+    },
+    {
+      "id": "find-method-kind-normalize",
+      "method": "findRelevantContext",
+      "query": "normalize",
+      "options": {"node_kinds": ["method"]},
+      "requiredNames": ["normalize"],
+      "requiredNodes": [
+        {"occurrence": "method:cb20d69ed5ac61610cc500dc9cdc4d54", "name": "normalize", "kind": "method", "path": "model.rb"},
+        {"occurrence": "method:c6ebef81a3e080bc1b3fc001f4fcda0a", "name": "normalize", "kind": "method", "path": "Model.java"}
+      ],
+      "original": {"nodes": 2, "edges": 0, "roots": 2}
+    },
+    {
+      "id": "find-depth-zero-process-greeting",
+      "method": "findRelevantContext",
+      "query": "processGreeting",
+      "options": {"traversal_depth": 0},
+      "requiredNames": ["processGreeting"],
+      "requiredNodes": [
+        {"occurrence": "interface:e30cb316976fe998ad14cbaf7315f7c3", "name": "Greeter", "kind": "interface", "path": "core.ts"},
+        {"occurrence": "function:b86a54b1e1a6502d2746c99aea27dca3", "name": "processGreeting", "kind": "function", "path": "consumer.ts"},
+        {"occurrence": "method:3b3556d71e8102f339e7b9be02e268e8", "name": "greet", "kind": "method", "path": "model.swift"}
+      ],
+      "original": {"nodes": 3, "edges": 0, "roots": 3}
+    },
+    {
+      "id": "find-explicit-seed",
+      "method": "findRelevantContext",
+      "query": "MissingSeedText987",
+      "options": {"seed_names": ["processGreeting"]},
+      "requiredNames": ["processGreeting"],
+      "requiredEdgeKinds": ["calls"],
+      "requiredNodes": [
+        {"occurrence": "function:b86a54b1e1a6502d2746c99aea27dca3", "name": "processGreeting", "kind": "function", "path": "consumer.ts"},
+        {"occurrence": "function:7e9336030a46e65ce2d6c7fffdfc2672", "name": "run", "kind": "function", "path": "main.ts"},
+        {"occurrence": "function:1a85b97a7e69c8c4b2429632cc2a6c31", "name": "testGreeting", "kind": "function", "path": "consumer.test.ts"}
+      ],
+      "requiredEdges": [
+        {"occurrence": "1365fe03d3b2005cd5554392380f9002e3114cbafa56afe2a4e91e65d1b634ca:0", "kind": "calls", "source": "function:b86a54b1e1a6502d2746c99aea27dca3", "target": "function:7e9336030a46e65ce2d6c7fffdfc2672"},
+        {"occurrence": "908d868811ebe291984fdbdbf7e6cae3f8f0e9fb1b8bf3789613db752074cd0e:0", "kind": "calls", "source": "function:1a85b97a7e69c8c4b2429632cc2a6c31", "target": "function:b86a54b1e1a6502d2746c99aea27dca3"}
+      ],
+      "original": {"nodes": 3, "edges": 2, "roots": 1}
+    },
+    {
+      "id": "find-high-min-score-empty",
+      "method": "findRelevantContext",
+      "query": "normalize",
+      "options": {"min_score": 1000000},
+      "original": {"nodes": 0, "edges": 0, "roots": 0}
+    },
+    {
+      "id": "find-low-search-node-budget",
+      "method": "findRelevantContext",
+      "query": "normalize",
+      "options": {"search_limit": 1, "max_nodes": 1},
+      "requiredNames": ["normalize"],
+      "requiredNodes": [
+        {"occurrence": "method:cb20d69ed5ac61610cc500dc9cdc4d54", "name": "normalize", "kind": "method", "path": "model.rb"}
+      ],
+      "original": {"nodes": 1, "edges": 0, "roots": 1}
+    }
+  ]
+}
