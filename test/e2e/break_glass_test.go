@@ -54,15 +54,21 @@ func TestBreakGlassRecoveryAcrossRealReplicas(t *testing.T) {
 	zoekt := newHealthyZoekt(t)
 	files := writeServerSecrets(t, root, idp)
 
-	addressA, addressB, addressDisabled := freeDualAddress(t), freeDualAddress(t), freeDualAddress(t)
+	// Keep replica ports reserved while the TLS proxies bind their listeners.
+	addressA, releaseA := reserveDualAddress(t)
+	addressB, releaseB := reserveDualAddress(t)
+	addressDisabled, releaseDisabled := reserveDualAddress(t)
 	proxyA := newReplicaProxy(t, addressA, "tcp4")
 	proxyB := newReplicaProxy(t, addressB, "tcp4")
 	proxyBIPv6 := newReplicaProxy(t, addressB, "tcp6")
 	proxyDisabled := newReplicaProxy(t, addressDisabled, "tcp4")
 	publicOrigin := proxyA.URL
 
+	releaseA()
 	replicaA := startRealServer(t, serverBinary, addressA, databaseURL, publicOrigin, idp.server.URL, zoekt.URL, files, true)
+	releaseB()
 	replicaB := startRealServer(t, serverBinary, addressB, databaseURL, publicOrigin, idp.server.URL, zoekt.URL, files, true)
+	releaseDisabled()
 	disabled := startRealServer(t, serverBinary, addressDisabled, databaseURL, publicOrigin, idp.server.URL, zoekt.URL, files, false)
 	t.Cleanup(func() {
 		disabled.stop(t)
@@ -225,17 +231,33 @@ func newReplicaProxy(t *testing.T, targetAddress, network string) *httptest.Serv
 	return server
 }
 
-func freeDualAddress(t *testing.T) string {
+func TestReplicaAddressRemainsReserved(t *testing.T) {
+	address, release := reserveDualAddress(t)
+	listener, err := net.Listen("tcp", address)
+	if err == nil {
+		listener.Close()
+		t.Fatal("replica address was available to another listener before startup")
+	}
+	release()
+	listener, err = net.Listen("tcp", address)
+	if err != nil {
+		t.Fatalf("listen after releasing replica address: %v", err)
+	}
+	listener.Close()
+}
+
+func reserveDualAddress(t *testing.T) (string, func()) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "[::]:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	address := listener.Addr().String()
-	if err := listener.Close(); err != nil {
-		t.Fatal(err)
+	t.Cleanup(func() { listener.Close() })
+	return listener.Addr().String(), func() {
+		if err := listener.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
-	return address
 }
 
 func startRealServer(t *testing.T, binary, address, databaseURL, publicOrigin, issuerURL, zoektURL string, files serverSecretFiles, breakGlass bool) *managedProcess {
