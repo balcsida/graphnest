@@ -1,0 +1,1394 @@
+[
+  {
+    "count": 13,
+    "candidates": [
+      {
+        "path": "entry",
+        "score": 40,
+        "worth": 1,
+        "spine": true
+      },
+      {
+        "path": "callee",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "generated",
+        "score": 12,
+        "worth": 0.3,
+        "spine": false
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 13000,
+      "defaultMaxFiles": 4,
+      "maxCharsPerFile": 3800,
+      "gapThreshold": 7,
+      "maxSymbolsInFileHeader": 5,
+      "maxEdgesPerRelationshipKind": 4,
+      "includeRelationships": false,
+      "includeAdditionalFiles": false,
+      "includeCompletenessSignal": false,
+      "includeBudgetNote": false
+    },
+    "allowances": {
+      "entry": 9100,
+      "callee": 1944
+    },
+    "cliffed": [
+      "generated"
+    ],
+    "cliffAt": 10,
+    "pool": 12600
+  },
+  {
+    "count": 13,
+    "candidates": [
+      {
+        "path": "one",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "pin",
+        "score": 0,
+        "worth": 1,
+        "spine": false,
+        "pinned": true
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 13000,
+      "defaultMaxFiles": 4,
+      "maxCharsPerFile": 3800,
+      "gapThreshold": 7,
+      "maxSymbolsInFileHeader": 5,
+      "maxEdgesPerRelationshipKind": 4,
+      "includeRelationships": false,
+      "includeAdditionalFiles": false,
+      "includeCompletenessSignal": false,
+      "includeBudgetNote": false
+    },
+    "allowances": {
+      "one": 6300,
+      "pin": 6300
+    },
+    "cliffed": [],
+    "cliffAt": 1.5,
+    "pool": 12600
+  },
+  {
+    "count": 13,
+    "candidates": [
+      {
+        "path": "f0",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f1",
+        "score": 9,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f2",
+        "score": 8,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f3",
+        "score": 7,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f4",
+        "score": 6,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f5",
+        "score": 5,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f6",
+        "score": 4,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f7",
+        "score": 3,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f8",
+        "score": 2,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f9",
+        "score": 1,
+        "worth": 1,
+        "spine": true
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 13000,
+      "defaultMaxFiles": 4,
+      "maxCharsPerFile": 3800,
+      "gapThreshold": 7,
+      "maxSymbolsInFileHeader": 5,
+      "maxEdgesPerRelationshipKind": 4,
+      "includeRelationships": false,
+      "includeAdditionalFiles": false,
+      "includeCompletenessSignal": false,
+      "includeBudgetNote": false
+    },
+    "allowances": {
+      "f0": 3464,
+      "f1": 3188,
+      "f2": 2911,
+      "f3": 2635
+    },
+    "cliffed": [
+      "f4",
+      "f5",
+      "f6",
+      "f7",
+      "f8",
+      "f9"
+    ],
+    "cliffAt": 1.5,
+    "pool": 12200
+  },
+  {
+    "count": 149,
+    "candidates": [
+      {
+        "path": "entry",
+        "score": 40,
+        "worth": 1,
+        "spine": true
+      },
+      {
+        "path": "callee",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "generated",
+        "score": 12,
+        "worth": 0.3,
+        "spine": false
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 13000,
+      "defaultMaxFiles": 4,
+      "maxCharsPerFile": 3800,
+      "gapThreshold": 7,
+      "maxSymbolsInFileHeader": 5,
+      "maxEdgesPerRelationshipKind": 4,
+      "includeRelationships": false,
+      "includeAdditionalFiles": false,
+      "includeCompletenessSignal": false,
+      "includeBudgetNote": false
+    },
+    "allowances": {
+      "entry": 9100,
+      "callee": 1944
+    },
+    "cliffed": [
+      "generated"
+    ],
+    "cliffAt": 10,
+    "pool": 12600
+  },
+  {
+    "count": 149,
+    "candidates": [
+      {
+        "path": "one",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "pin",
+        "score": 0,
+        "worth": 1,
+        "spine": false,
+        "pinned": true
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 13000,
+      "defaultMaxFiles": 4,
+      "maxCharsPerFile": 3800,
+      "gapThreshold": 7,
+      "maxSymbolsInFileHeader": 5,
+      "maxEdgesPerRelationshipKind": 4,
+      "includeRelationships": false,
+      "includeAdditionalFiles": false,
+      "includeCompletenessSignal": false,
+      "includeBudgetNote": false
+    },
+    "allowances": {
+      "one": 6300,
+      "pin": 6300
+    },
+    "cliffed": [],
+    "cliffAt": 1.5,
+    "pool": 12600
+  },
+  {
+    "count": 149,
+    "candidates": [
+      {
+        "path": "f0",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f1",
+        "score": 9,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f2",
+        "score": 8,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f3",
+        "score": 7,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f4",
+        "score": 6,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f5",
+        "score": 5,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f6",
+        "score": 4,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f7",
+        "score": 3,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f8",
+        "score": 2,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f9",
+        "score": 1,
+        "worth": 1,
+        "spine": true
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 13000,
+      "defaultMaxFiles": 4,
+      "maxCharsPerFile": 3800,
+      "gapThreshold": 7,
+      "maxSymbolsInFileHeader": 5,
+      "maxEdgesPerRelationshipKind": 4,
+      "includeRelationships": false,
+      "includeAdditionalFiles": false,
+      "includeCompletenessSignal": false,
+      "includeBudgetNote": false
+    },
+    "allowances": {
+      "f0": 3464,
+      "f1": 3188,
+      "f2": 2911,
+      "f3": 2635
+    },
+    "cliffed": [
+      "f4",
+      "f5",
+      "f6",
+      "f7",
+      "f8",
+      "f9"
+    ],
+    "cliffAt": 1.5,
+    "pool": 12200
+  },
+  {
+    "count": 150,
+    "candidates": [
+      {
+        "path": "entry",
+        "score": 40,
+        "worth": 1,
+        "spine": true
+      },
+      {
+        "path": "callee",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "generated",
+        "score": 12,
+        "worth": 0.3,
+        "spine": false
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 18000,
+      "defaultMaxFiles": 5,
+      "maxCharsPerFile": 3800,
+      "gapThreshold": 8,
+      "maxSymbolsInFileHeader": 6,
+      "maxEdgesPerRelationshipKind": 6,
+      "includeRelationships": false,
+      "includeAdditionalFiles": false,
+      "includeCompletenessSignal": false,
+      "includeBudgetNote": false
+    },
+    "allowances": {
+      "entry": 12600,
+      "callee": 2500
+    },
+    "cliffed": [
+      "generated"
+    ],
+    "cliffAt": 10,
+    "pool": 17600
+  },
+  {
+    "count": 150,
+    "candidates": [
+      {
+        "path": "one",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "pin",
+        "score": 0,
+        "worth": 1,
+        "spine": false,
+        "pinned": true
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 18000,
+      "defaultMaxFiles": 5,
+      "maxCharsPerFile": 3800,
+      "gapThreshold": 8,
+      "maxSymbolsInFileHeader": 6,
+      "maxEdgesPerRelationshipKind": 6,
+      "includeRelationships": false,
+      "includeAdditionalFiles": false,
+      "includeCompletenessSignal": false,
+      "includeBudgetNote": false
+    },
+    "allowances": {
+      "one": 8800,
+      "pin": 8800
+    },
+    "cliffed": [],
+    "cliffAt": 1.5,
+    "pool": 17600
+  },
+  {
+    "count": 150,
+    "candidates": [
+      {
+        "path": "f0",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f1",
+        "score": 9,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f2",
+        "score": 8,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f3",
+        "score": 7,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f4",
+        "score": 6,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f5",
+        "score": 5,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f6",
+        "score": 4,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f7",
+        "score": 3,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f8",
+        "score": 2,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f9",
+        "score": 1,
+        "worth": 1,
+        "spine": true
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 18000,
+      "defaultMaxFiles": 5,
+      "maxCharsPerFile": 3800,
+      "gapThreshold": 8,
+      "maxSymbolsInFileHeader": 6,
+      "maxEdgesPerRelationshipKind": 6,
+      "includeRelationships": false,
+      "includeAdditionalFiles": false,
+      "includeCompletenessSignal": false,
+      "includeBudgetNote": false
+    },
+    "allowances": {
+      "f0": 4075,
+      "f1": 3737,
+      "f2": 3400,
+      "f3": 3062,
+      "f4": 2725
+    },
+    "cliffed": [
+      "f5",
+      "f6",
+      "f7",
+      "f8",
+      "f9"
+    ],
+    "cliffAt": 1.5,
+    "pool": 17000
+  },
+  {
+    "count": 499,
+    "candidates": [
+      {
+        "path": "entry",
+        "score": 40,
+        "worth": 1,
+        "spine": true
+      },
+      {
+        "path": "callee",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "generated",
+        "score": 12,
+        "worth": 0.3,
+        "spine": false
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 18000,
+      "defaultMaxFiles": 5,
+      "maxCharsPerFile": 3800,
+      "gapThreshold": 8,
+      "maxSymbolsInFileHeader": 6,
+      "maxEdgesPerRelationshipKind": 6,
+      "includeRelationships": false,
+      "includeAdditionalFiles": false,
+      "includeCompletenessSignal": false,
+      "includeBudgetNote": false
+    },
+    "allowances": {
+      "entry": 12600,
+      "callee": 2500
+    },
+    "cliffed": [
+      "generated"
+    ],
+    "cliffAt": 10,
+    "pool": 17600
+  },
+  {
+    "count": 499,
+    "candidates": [
+      {
+        "path": "one",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "pin",
+        "score": 0,
+        "worth": 1,
+        "spine": false,
+        "pinned": true
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 18000,
+      "defaultMaxFiles": 5,
+      "maxCharsPerFile": 3800,
+      "gapThreshold": 8,
+      "maxSymbolsInFileHeader": 6,
+      "maxEdgesPerRelationshipKind": 6,
+      "includeRelationships": false,
+      "includeAdditionalFiles": false,
+      "includeCompletenessSignal": false,
+      "includeBudgetNote": false
+    },
+    "allowances": {
+      "one": 8800,
+      "pin": 8800
+    },
+    "cliffed": [],
+    "cliffAt": 1.5,
+    "pool": 17600
+  },
+  {
+    "count": 499,
+    "candidates": [
+      {
+        "path": "f0",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f1",
+        "score": 9,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f2",
+        "score": 8,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f3",
+        "score": 7,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f4",
+        "score": 6,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f5",
+        "score": 5,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f6",
+        "score": 4,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f7",
+        "score": 3,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f8",
+        "score": 2,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f9",
+        "score": 1,
+        "worth": 1,
+        "spine": true
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 18000,
+      "defaultMaxFiles": 5,
+      "maxCharsPerFile": 3800,
+      "gapThreshold": 8,
+      "maxSymbolsInFileHeader": 6,
+      "maxEdgesPerRelationshipKind": 6,
+      "includeRelationships": false,
+      "includeAdditionalFiles": false,
+      "includeCompletenessSignal": false,
+      "includeBudgetNote": false
+    },
+    "allowances": {
+      "f0": 4075,
+      "f1": 3737,
+      "f2": 3400,
+      "f3": 3062,
+      "f4": 2725
+    },
+    "cliffed": [
+      "f5",
+      "f6",
+      "f7",
+      "f8",
+      "f9"
+    ],
+    "cliffAt": 1.5,
+    "pool": 17000
+  },
+  {
+    "count": 500,
+    "candidates": [
+      {
+        "path": "entry",
+        "score": 40,
+        "worth": 1,
+        "spine": true
+      },
+      {
+        "path": "callee",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "generated",
+        "score": 12,
+        "worth": 0.3,
+        "spine": false
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 24000,
+      "defaultMaxFiles": 8,
+      "maxCharsPerFile": 6500,
+      "gapThreshold": 12,
+      "maxSymbolsInFileHeader": 10,
+      "maxEdgesPerRelationshipKind": 10,
+      "includeRelationships": true,
+      "includeAdditionalFiles": true,
+      "includeCompletenessSignal": true,
+      "includeBudgetNote": true
+    },
+    "allowances": {
+      "entry": 16800,
+      "callee": 3166
+    },
+    "cliffed": [
+      "generated"
+    ],
+    "cliffAt": 10,
+    "pool": 23600
+  },
+  {
+    "count": 500,
+    "candidates": [
+      {
+        "path": "one",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "pin",
+        "score": 0,
+        "worth": 1,
+        "spine": false,
+        "pinned": true
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 24000,
+      "defaultMaxFiles": 8,
+      "maxCharsPerFile": 6500,
+      "gapThreshold": 12,
+      "maxSymbolsInFileHeader": 10,
+      "maxEdgesPerRelationshipKind": 10,
+      "includeRelationships": true,
+      "includeAdditionalFiles": true,
+      "includeCompletenessSignal": true,
+      "includeBudgetNote": true
+    },
+    "allowances": {
+      "one": 11800,
+      "pin": 11800
+    },
+    "cliffed": [],
+    "cliffAt": 1.5,
+    "pool": 23600
+  },
+  {
+    "count": 500,
+    "candidates": [
+      {
+        "path": "f0",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f1",
+        "score": 9,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f2",
+        "score": 8,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f3",
+        "score": 7,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f4",
+        "score": 6,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f5",
+        "score": 5,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f6",
+        "score": 4,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f7",
+        "score": 3,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f8",
+        "score": 2,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f9",
+        "score": 1,
+        "worth": 1,
+        "spine": true
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 24000,
+      "defaultMaxFiles": 8,
+      "maxCharsPerFile": 6500,
+      "gapThreshold": 12,
+      "maxSymbolsInFileHeader": 10,
+      "maxEdgesPerRelationshipKind": 10,
+      "includeRelationships": true,
+      "includeAdditionalFiles": true,
+      "includeCompletenessSignal": true,
+      "includeBudgetNote": true
+    },
+    "allowances": {
+      "f0": 3930,
+      "f1": 3607,
+      "f2": 3284,
+      "f3": 2961,
+      "f4": 2638,
+      "f5": 2315,
+      "f6": 1992,
+      "f7": 1669
+    },
+    "cliffed": [
+      "f8",
+      "f9"
+    ],
+    "cliffAt": 1.5,
+    "pool": 22400
+  },
+  {
+    "count": 4999,
+    "candidates": [
+      {
+        "path": "entry",
+        "score": 40,
+        "worth": 1,
+        "spine": true
+      },
+      {
+        "path": "callee",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "generated",
+        "score": 12,
+        "worth": 0.3,
+        "spine": false
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 24000,
+      "defaultMaxFiles": 8,
+      "maxCharsPerFile": 6500,
+      "gapThreshold": 12,
+      "maxSymbolsInFileHeader": 10,
+      "maxEdgesPerRelationshipKind": 10,
+      "includeRelationships": true,
+      "includeAdditionalFiles": true,
+      "includeCompletenessSignal": true,
+      "includeBudgetNote": true
+    },
+    "allowances": {
+      "entry": 16800,
+      "callee": 3166
+    },
+    "cliffed": [
+      "generated"
+    ],
+    "cliffAt": 10,
+    "pool": 23600
+  },
+  {
+    "count": 4999,
+    "candidates": [
+      {
+        "path": "one",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "pin",
+        "score": 0,
+        "worth": 1,
+        "spine": false,
+        "pinned": true
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 24000,
+      "defaultMaxFiles": 8,
+      "maxCharsPerFile": 6500,
+      "gapThreshold": 12,
+      "maxSymbolsInFileHeader": 10,
+      "maxEdgesPerRelationshipKind": 10,
+      "includeRelationships": true,
+      "includeAdditionalFiles": true,
+      "includeCompletenessSignal": true,
+      "includeBudgetNote": true
+    },
+    "allowances": {
+      "one": 11800,
+      "pin": 11800
+    },
+    "cliffed": [],
+    "cliffAt": 1.5,
+    "pool": 23600
+  },
+  {
+    "count": 4999,
+    "candidates": [
+      {
+        "path": "f0",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f1",
+        "score": 9,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f2",
+        "score": 8,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f3",
+        "score": 7,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f4",
+        "score": 6,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f5",
+        "score": 5,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f6",
+        "score": 4,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f7",
+        "score": 3,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f8",
+        "score": 2,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f9",
+        "score": 1,
+        "worth": 1,
+        "spine": true
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 24000,
+      "defaultMaxFiles": 8,
+      "maxCharsPerFile": 6500,
+      "gapThreshold": 12,
+      "maxSymbolsInFileHeader": 10,
+      "maxEdgesPerRelationshipKind": 10,
+      "includeRelationships": true,
+      "includeAdditionalFiles": true,
+      "includeCompletenessSignal": true,
+      "includeBudgetNote": true
+    },
+    "allowances": {
+      "f0": 3930,
+      "f1": 3607,
+      "f2": 3284,
+      "f3": 2961,
+      "f4": 2638,
+      "f5": 2315,
+      "f6": 1992,
+      "f7": 1669
+    },
+    "cliffed": [
+      "f8",
+      "f9"
+    ],
+    "cliffAt": 1.5,
+    "pool": 22400
+  },
+  {
+    "count": 5000,
+    "candidates": [
+      {
+        "path": "entry",
+        "score": 40,
+        "worth": 1,
+        "spine": true
+      },
+      {
+        "path": "callee",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "generated",
+        "score": 12,
+        "worth": 0.3,
+        "spine": false
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 24000,
+      "defaultMaxFiles": 8,
+      "maxCharsPerFile": 7000,
+      "gapThreshold": 15,
+      "maxSymbolsInFileHeader": 15,
+      "maxEdgesPerRelationshipKind": 15,
+      "includeRelationships": true,
+      "includeAdditionalFiles": true,
+      "includeCompletenessSignal": true,
+      "includeBudgetNote": true
+    },
+    "allowances": {
+      "entry": 16800,
+      "callee": 3166
+    },
+    "cliffed": [
+      "generated"
+    ],
+    "cliffAt": 10,
+    "pool": 23600
+  },
+  {
+    "count": 5000,
+    "candidates": [
+      {
+        "path": "one",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "pin",
+        "score": 0,
+        "worth": 1,
+        "spine": false,
+        "pinned": true
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 24000,
+      "defaultMaxFiles": 8,
+      "maxCharsPerFile": 7000,
+      "gapThreshold": 15,
+      "maxSymbolsInFileHeader": 15,
+      "maxEdgesPerRelationshipKind": 15,
+      "includeRelationships": true,
+      "includeAdditionalFiles": true,
+      "includeCompletenessSignal": true,
+      "includeBudgetNote": true
+    },
+    "allowances": {
+      "one": 11800,
+      "pin": 11800
+    },
+    "cliffed": [],
+    "cliffAt": 1.5,
+    "pool": 23600
+  },
+  {
+    "count": 5000,
+    "candidates": [
+      {
+        "path": "f0",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f1",
+        "score": 9,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f2",
+        "score": 8,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f3",
+        "score": 7,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f4",
+        "score": 6,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f5",
+        "score": 5,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f6",
+        "score": 4,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f7",
+        "score": 3,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f8",
+        "score": 2,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f9",
+        "score": 1,
+        "worth": 1,
+        "spine": true
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 24000,
+      "defaultMaxFiles": 8,
+      "maxCharsPerFile": 7000,
+      "gapThreshold": 15,
+      "maxSymbolsInFileHeader": 15,
+      "maxEdgesPerRelationshipKind": 15,
+      "includeRelationships": true,
+      "includeAdditionalFiles": true,
+      "includeCompletenessSignal": true,
+      "includeBudgetNote": true
+    },
+    "allowances": {
+      "f0": 3930,
+      "f1": 3607,
+      "f2": 3284,
+      "f3": 2961,
+      "f4": 2638,
+      "f5": 2315,
+      "f6": 1992,
+      "f7": 1669
+    },
+    "cliffed": [
+      "f8",
+      "f9"
+    ],
+    "cliffAt": 1.5,
+    "pool": 22400
+  },
+  {
+    "count": 15000,
+    "candidates": [
+      {
+        "path": "entry",
+        "score": 40,
+        "worth": 1,
+        "spine": true
+      },
+      {
+        "path": "callee",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "generated",
+        "score": 12,
+        "worth": 0.3,
+        "spine": false
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 24000,
+      "defaultMaxFiles": 8,
+      "maxCharsPerFile": 7000,
+      "gapThreshold": 15,
+      "maxSymbolsInFileHeader": 15,
+      "maxEdgesPerRelationshipKind": 15,
+      "includeRelationships": true,
+      "includeAdditionalFiles": true,
+      "includeCompletenessSignal": true,
+      "includeBudgetNote": true
+    },
+    "allowances": {
+      "entry": 16800,
+      "callee": 3166
+    },
+    "cliffed": [
+      "generated"
+    ],
+    "cliffAt": 10,
+    "pool": 23600
+  },
+  {
+    "count": 15000,
+    "candidates": [
+      {
+        "path": "one",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "pin",
+        "score": 0,
+        "worth": 1,
+        "spine": false,
+        "pinned": true
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 24000,
+      "defaultMaxFiles": 8,
+      "maxCharsPerFile": 7000,
+      "gapThreshold": 15,
+      "maxSymbolsInFileHeader": 15,
+      "maxEdgesPerRelationshipKind": 15,
+      "includeRelationships": true,
+      "includeAdditionalFiles": true,
+      "includeCompletenessSignal": true,
+      "includeBudgetNote": true
+    },
+    "allowances": {
+      "one": 11800,
+      "pin": 11800
+    },
+    "cliffed": [],
+    "cliffAt": 1.5,
+    "pool": 23600
+  },
+  {
+    "count": 15000,
+    "candidates": [
+      {
+        "path": "f0",
+        "score": 10,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f1",
+        "score": 9,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f2",
+        "score": 8,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f3",
+        "score": 7,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f4",
+        "score": 6,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f5",
+        "score": 5,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f6",
+        "score": 4,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f7",
+        "score": 3,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f8",
+        "score": 2,
+        "worth": 1,
+        "spine": false
+      },
+      {
+        "path": "f9",
+        "score": 1,
+        "worth": 1,
+        "spine": true
+      }
+    ],
+    "budget": {
+      "maxOutputChars": 24000,
+      "defaultMaxFiles": 8,
+      "maxCharsPerFile": 7000,
+      "gapThreshold": 15,
+      "maxSymbolsInFileHeader": 15,
+      "maxEdgesPerRelationshipKind": 15,
+      "includeRelationships": true,
+      "includeAdditionalFiles": true,
+      "includeCompletenessSignal": true,
+      "includeBudgetNote": true
+    },
+    "allowances": {
+      "f0": 3930,
+      "f1": 3607,
+      "f2": 3284,
+      "f3": 2961,
+      "f4": 2638,
+      "f5": 2315,
+      "f6": 1992,
+      "f7": 1669
+    },
+    "cliffed": [
+      "f8",
+      "f9"
+    ],
+    "cliffAt": 1.5,
+    "pool": 22400
+  }
+]

@@ -25,14 +25,22 @@ func (s *fakeRepositoryStore) GraphRepositories(context.Context, authn.Principal
 }
 
 type fakeBackend struct {
-	context        func() graphprotocol.ContextResponse
-	impact         func() graphprotocol.ImpactResponse
-	trace          func() graphprotocol.TraceResponse
-	after          func()
-	calls          int
-	contextRequest graphprotocol.ContextRequest
-	impactRequest  graphprotocol.ImpactRequest
-	traceRequest   graphprotocol.TraceRequest
+	context         func() graphprotocol.ContextResponse
+	impact          func() graphprotocol.ImpactResponse
+	trace           func() graphprotocol.TraceResponse
+	after           func()
+	calls           int
+	contextRequest  graphprotocol.ContextRequest
+	impactRequest   graphprotocol.ImpactRequest
+	traceRequest    graphprotocol.TraceRequest
+	validateContext func() error
+}
+
+func (b *fakeBackend) ValidateContextSnapshots(context.Context, []graphprotocol.ContextSnapshot) error {
+	if b.validateContext != nil {
+		return b.validateContext()
+	}
+	return nil
 }
 
 func (b *fakeBackend) Context(_ context.Context, request graphprotocol.ContextRequest) (graphprotocol.ContextResponse, error) {
@@ -78,6 +86,48 @@ func TestContextReauthorizesAfterBackend(t *testing.T) {
 	_, err := service.Context(t.Context(), principalFor(101), api.GraphContextRequest{Repo: api.GraphRepositorySelector{ID: 101}, GraphSymbolSelector: api.GraphSymbolSelector{UID: "symbol:a"}})
 	if !errors.Is(err, ErrGraphNotReady) {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+type inspectionReader func(context.Context, authn.Principal, api.ReadFileRequest, string) (api.ReadFileResponse, error)
+
+func (f inspectionReader) ReadFileAt(ctx context.Context, p authn.Principal, r api.ReadFileRequest, sha string) (api.ReadFileResponse, error) {
+	return f(ctx, p, r, sha)
+}
+
+func TestContextReauthorizesAfterSource(t *testing.T) {
+	store := &fakeRepositoryStore{repositories: []repository.Repository{readyRepository("a")}}
+	backend := &fakeBackend{context: func() graphprotocol.ContextResponse {
+		return graphprotocol.ContextResponse{Status: graphprotocol.StatusFound, Symbol: &graphprotocol.Symbol{RepositoryID: 1, UID: "target", FilePath: "a.go"}, Commits: map[string]string{"a": strings.Repeat("a", 40)}}
+	}}
+	service := Service{Store: store, Backend: backend, Files: inspectionReader(func(_ context.Context, _ authn.Principal, _ api.ReadFileRequest, sha string) (api.ReadFileResponse, error) {
+		store.repositories = nil
+		return api.ReadFileResponse{Content: "revoked source", IndexedSHA: sha}, nil
+	})}
+	got, err := service.Context(t.Context(), principalFor(101), api.GraphContextRequest{Repo: api.GraphRepositorySelector{ID: 101}, GraphSymbolSelector: api.GraphSymbolSelector{UID: "target"}, IncludeContent: true})
+	if err == nil || got.Symbol != nil {
+		t.Fatalf("source survived revoked grant: result=%+v err=%v", got, err)
+	}
+}
+
+func TestContextRejectsSameSHAReplacementAfterSource(t *testing.T) {
+	store := &fakeRepositoryStore{repositories: []repository.Repository{readyRepository("a")}}
+	replaced := false
+	backend := &fakeBackend{context: func() graphprotocol.ContextResponse {
+		return graphprotocol.ContextResponse{Symbol: &graphprotocol.Symbol{RepositoryID: 1, UID: "target", FilePath: "a.go"}, Commits: map[string]string{"a": strings.Repeat("a", 40)}}
+	}, validateContext: func() error {
+		if replaced {
+			return ErrGraphNotReady
+		}
+		return nil
+	}}
+	service := Service{Store: store, Backend: backend, Files: inspectionReader(func(context.Context, authn.Principal, api.ReadFileRequest, string) (api.ReadFileResponse, error) {
+		replaced = true
+		return api.ReadFileResponse{Content: "old generation"}, nil
+	})}
+	got, err := service.Context(t.Context(), principalFor(101), api.GraphContextRequest{Repo: api.GraphRepositorySelector{ID: 101}, GraphSymbolSelector: api.GraphSymbolSelector{UID: "target"}, IncludeContent: true})
+	if err == nil || got.Symbol != nil {
+		t.Fatalf("same-SHA replacement leaked: %+v err=%v", got, err)
 	}
 }
 

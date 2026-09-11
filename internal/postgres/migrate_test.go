@@ -250,9 +250,7 @@ func TestMigrateBackfillsCurrentLegacySCIPGraph(t *testing.T) {
 		ProjectRoot: "file:///src", IndexerName: "test", IndexerVersion: "1",
 		Occurrences: []scipgraph.Occurrence{{Path: "main.go", Symbol: globalSymbol, EndCharacter: 1, PositionEncoding: 1}},
 	}
-	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), upload); err != nil {
-		t.Fatal(err)
-	}
+	seedLegacySCIP(t, store, repositoryID, upload)
 	if _, err := pool.Exec(t.Context(), `delete from graph_uploads where repository_id=$1`, repositoryID); err != nil {
 		t.Fatal(err)
 	}
@@ -280,12 +278,12 @@ func TestMigrateLegacySCIPBackfillPreservesNativeGraph(t *testing.T) {
 	}
 	store := New(pool)
 	repositoryID := seedReadyRepository(t, store, 101, testSHA('a'))
-	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("fallback.go", globalSymbol, definitionRole)); err != nil {
+	seedLegacySCIP(t, store, repositoryID, uploadWith("fallback.go", globalSymbol, definitionRole))
+	var nativeID int64
+	if err := pool.QueryRow(t.Context(), `insert into graph_uploads
+ (repository_id,commit,schema_version,source,analyzer_name,analyzer_version,content_hash,node_count,edge_count)
+ values ($1,$2,1,'managed','native','1',decode(repeat('01',32),'hex'),0,0) returning id`, repositoryID, testSHA('a')).Scan(&nativeID); err != nil {
 		t.Fatal(err)
-	}
-	native, err := store.ReplaceGraph(t.Context(), repositoryID, GraphSourceManaged, artifactFor(repositoryID, testSHA('a'), "native"))
-	if err != nil || !native.Applied {
-		t.Fatalf("ReplaceGraph()=%#v err=%v", native, err)
 	}
 
 	if err := Migrate(t.Context(), pool); err != nil {
@@ -293,7 +291,7 @@ func TestMigrateLegacySCIPBackfillPreservesNativeGraph(t *testing.T) {
 	}
 	var uploadID int64
 	var source GraphSource
-	if err := pool.QueryRow(t.Context(), `select id, source from graph_uploads where repository_id=$1`, repositoryID).Scan(&uploadID, &source); err != nil || uploadID != native.Upload.ID || source != GraphSourceManaged {
+	if err := pool.QueryRow(t.Context(), `select id, source from graph_uploads where repository_id=$1`, repositoryID).Scan(&uploadID, &source); err != nil || uploadID != nativeID || source != GraphSourceManaged {
 		t.Fatalf("upload=%d source=%q err=%v", uploadID, source, err)
 	}
 }
@@ -469,5 +467,23 @@ func TestIndexJobLeaseConstraint(t *testing.T) {
 		insert into index_jobs (repository_id, target_sha, state, lease_owner, lease_expires_at)
 		values ($1, repeat('a', 40), 'running', 'worker', now())`, newRepository()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Seed the old schema with SQL: current writers require the current migration.
+func seedLegacySCIP(t *testing.T, store *Store, repositoryID int64, upload scipgraph.Upload) {
+	t.Helper()
+	var id int64
+	if err := store.pool.QueryRow(t.Context(), `insert into scip_uploads(repository_id,commit,project_root,indexer_name,indexer_version) values($1,$2,$3,$4,$5) returning id`, repositoryID, testSHA('a'), upload.ProjectRoot, upload.IndexerName, upload.IndexerVersion).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range upload.Occurrences {
+		key, err := scipgraph.VersionlessSymbolKey(o.Symbol)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.pool.Exec(t.Context(), `insert into scip_occurrences(upload_id,path,symbol,start_line,start_character,end_line,end_character,position_encoding,roles,local,global_symbol_key) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, id, o.Path, o.Symbol, o.StartLine, o.StartCharacter, o.EndLine, o.EndCharacter, o.PositionEncoding, o.Roles, o.Local, key); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

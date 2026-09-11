@@ -1,0 +1,66 @@
+{
+  "reference": "b9ca4b7981116909900368cc1686a1074cd4d4c1",
+  "node": "v24.13.0",
+  "results": {
+    "flat": {
+      "args": {
+        "format": "flat"
+      },
+      "text": "**Files (13)**\n\n- app/details.tsx (tsx, 3 symbols)\n- app/index.tsx (tsx, 5 symbols)\n- consumer.test.ts (typescript, 3 symbols)\n- consumer.ts (typescript, 3 symbols)\n- core.ts (typescript, 18 symbols)\n- main.ts (typescript, 3 symbols)\n- Model.java (java, 4 symbols)\n- model.rb (ruby, 4 symbols)\n- model.rs (rust, 7 symbols)\n- model.swift (swift, 9 symbols)\n- orphan.ts (typescript, 2 symbols)\n- unicode.ts (typescript, 3 symbols)\n- Widget.vue (vue, 4 symbols)"
+    },
+    "tree": {
+      "args": {
+        "format": "tree"
+      },
+      "text": "**Project Structure (13 files)**\n\n├── app\n│   ├── details.tsx (tsx, 3 symbols)\n│   └── index.tsx (tsx, 5 symbols)\n├── consumer.test.ts (typescript, 3 symbols)\n├── consumer.ts (typescript, 3 symbols)\n├── core.ts (typescript, 18 symbols)\n├── main.ts (typescript, 3 symbols)\n├── Model.java (java, 4 symbols)\n├── model.rb (ruby, 4 symbols)\n├── model.rs (rust, 7 symbols)\n├── model.swift (swift, 9 symbols)\n├── orphan.ts (typescript, 2 symbols)\n├── unicode.ts (typescript, 3 symbols)\n└── Widget.vue (vue, 4 symbols)"
+    },
+    "grouped": {
+      "args": {
+        "format": "grouped"
+      },
+      "text": "**Files by Language (13 total)**\n\n**typescript (6)**\n- consumer.test.ts (3 symbols)\n- consumer.ts (3 symbols)\n- core.ts (18 symbols)\n- main.ts (3 symbols)\n- orphan.ts (2 symbols)\n- unicode.ts (3 symbols)\n\n**tsx (2)**\n- app/details.tsx (3 symbols)\n- app/index.tsx (5 symbols)\n\n**java (1)**\n- Model.java (4 symbols)\n\n**vue (1)**\n- Widget.vue (4 symbols)\n\n**ruby (1)**\n- model.rb (4 symbols)\n\n**rust (1)**\n- model.rs (7 symbols)\n\n**swift (1)**\n- model.swift (9 symbols)\n"
+    },
+    "tree-depth-1": {
+      "args": {
+        "format": "tree",
+        "maxDepth": 1
+      },
+      "text": "**Project Structure (13 files)**\n\n├── app\n├── consumer.test.ts (typescript, 3 symbols)\n├── consumer.ts (typescript, 3 symbols)\n├── core.ts (typescript, 18 symbols)\n├── main.ts (typescript, 3 symbols)\n├── Model.java (java, 4 symbols)\n├── model.rb (ruby, 4 symbols)\n├── model.rs (rust, 7 symbols)\n├── model.swift (swift, 9 symbols)\n├── orphan.ts (typescript, 2 symbols)\n├── unicode.ts (typescript, 3 symbols)\n└── Widget.vue (vue, 4 symbols)"
+    },
+    "tree-depth-2": {
+      "args": {
+        "format": "tree",
+        "maxDepth": 2
+      },
+      "text": "**Project Structure (13 files)**\n\n├── app\n│   ├── details.tsx (tsx, 3 symbols)\n│   └── index.tsx (tsx, 5 symbols)\n├── consumer.test.ts (typescript, 3 symbols)\n├── consumer.ts (typescript, 3 symbols)\n├── core.ts (typescript, 18 symbols)\n├── main.ts (typescript, 3 symbols)\n├── Model.java (java, 4 symbols)\n├── model.rb (ruby, 4 symbols)\n├── model.rs (rust, 7 symbols)\n├── model.swift (swift, 9 symbols)\n├── orphan.ts (typescript, 2 symbols)\n├── unicode.ts (typescript, 3 symbols)\n└── Widget.vue (vue, 4 symbols)"
+    },
+    "tree-app": {
+      "args": {
+        "format": "tree",
+        "path": "app"
+      },
+      "text": "**Project Structure (2 files)**\n\n└── app\n    ├── details.tsx (tsx, 3 symbols)\n    └── index.tsx (tsx, 5 symbols)"
+    },
+    "tree-no-metadata": {
+      "args": {
+        "format": "tree",
+        "includeMetadata": false
+      },
+      "text": "**Project Structure (13 files)**\n\n├── app\n│   ├── details.tsx\n│   └── index.tsx\n├── consumer.test.ts\n├── consumer.ts\n├── core.ts\n├── main.ts\n├── Model.java\n├── model.rb\n├── model.rs\n├── model.swift\n├── orphan.ts\n├── unicode.ts\n└── Widget.vue"
+    },
+    "flat-typescript": {
+      "args": {
+        "format": "flat",
+        "pattern": "*.ts"
+      },
+      "text": "**Files (8)**\n\n- app/details.tsx (tsx, 3 symbols)\n- app/index.tsx (tsx, 5 symbols)\n- consumer.test.ts (typescript, 3 symbols)\n- consumer.ts (typescript, 3 symbols)\n- core.ts (typescript, 18 symbols)\n- main.ts (typescript, 3 symbols)\n- orphan.ts (typescript, 2 symbols)\n- unicode.ts (typescript, 3 symbols)"
+    },
+    "tree-missing": {
+      "args": {
+        "format": "tree",
+        "path": "missing"
+      },
+      "text": "No files found matching the criteria."
+    }
+  }
+}

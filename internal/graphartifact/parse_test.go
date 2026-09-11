@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -126,4 +127,21 @@ func marshalArtifact(t *testing.T, artifact *graphv1.Artifact) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func TestParseRejectsEnumsBeforeNarrowing(t *testing.T) {
+	for _, value := range []int32{257, 258, 259, 260, -255, 65537} {
+		t.Run(fmt.Sprint(value), func(t *testing.T) {
+			a := validWireArtifact()
+			a.Nodes[0].Kind = graphv1.NodeKind(value)
+			if _, err := Parse(marshalArtifact(t, a), testLimits); !errors.Is(err, ErrInvalidArtifact) {
+				t.Errorf("node kind %d accepted: %v", value, err)
+			}
+			a = validWireArtifact()
+			a.Edges[0].Kind = graphv1.EdgeKind(value)
+			if _, err := Parse(marshalArtifact(t, a), testLimits); !errors.Is(err, ErrInvalidArtifact) {
+				t.Errorf("edge kind %d accepted: %v", value, err)
+			}
+		})
+	}
 }
