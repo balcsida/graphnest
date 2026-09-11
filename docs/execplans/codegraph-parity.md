@@ -5,6 +5,13 @@ Implementation, validation, draft publication, and release are separate states.
 
 ## Progress
 
+- 2026-09-11: Owner approved an intermediate foundation integration checkpoint
+  through the existing seventeen draft layers ending at PR #82. New feature
+  implementation is paused; partial B1 files and reference evidence are preserved.
+  Cumulative review and compatibility verification passed on initial published
+  head `931e7d9` plus the reviewed aggregate identity correction; final hosted
+  checks and merge authorization remain pending. Remaining Stage 1 features
+  will use smaller stacks after this foundation lands. Full parity is not complete.
 - 2026-09-06: Read the accepted roadmap and repository instructions; inspected the current default branch and existing pull requests.
 - Created an isolated checkout at `../graphnest-codegraph`; preserved the original checkout's modified `go.work.sum`.
 - Initialized the local native-stack metadata with `github/gh-stack` v0.1.1: `main ← feat/codegraph/s1-01-contract`.
@@ -323,8 +330,64 @@ Implementation, validation, draft publication, and release are separate states.
   performance. Focused PostgreSQL, race, vet, staticcheck and formatting checks
   pass. The second scoped fix review passed with no open correctness finding.
   Large-repository wildcard cost remains a non-blocking measurement obligation
-  for S1.10; no production performance claim is made. Signing and draft
-  publication remain pending.
+  for S1.10; no production performance claim is made. Signed commit `931e7d9`
+  is published as draft PR #82 at native stack #66 position 17. Exact parent,
+  valid signature, fifteen remote blobs, body, and the unchanged preceding
+  sixteen entries are verified. CI 34635773050 and CodeQL 34635763523 passed,
+  including all required checks and UI smoke. Direct GitHub access
+  works again; the previously configured proxy hostname is unavailable.
+
+## Foundation integration checkpoint
+
+The owner approved preparing native stack #66 through PR #82 as an intermediate
+foundation on 2026-09-11. The initial reviewed code candidate is `931e7d9`, above main
+`49e77d1`. This milestone includes stored facts and shared discovery/exploration/
+analysis services. Existing HTTP/MCP context, impact and trace remain the public
+graph query surface; new service methods do not imply public feature availability.
+
+Independent cumulative review found one aggregation identity defect, corrected
+in the owning A2 layer by signed commit `2e3d926`. The focused regression failed
+before the fix; query/service race, vet and format checks passed afterward.
+Scoped re-review accepted the correction and plan amendment with no new blocker.
+The four nonblocking follow-ups below remain open. A clean archive matched all
+661 tracked blobs before verification. Fresh checks passed with Go 1.26.6 and
+`GOWORK=off`: the complete unit race suite, required PostgreSQL integration race
+tests (PostgreSQL, authorization, webhook, integration, indexer and server),
+`go vet ./...` and command builds. Integration covers populated v1 migration,
+retry after failed backfill, generation replacement, discovery projection
+rebuild rollback and legacy SCIP behavior. Hosted checks separately cover e2e,
+UI smoke, Helm, static analysis, dependency vulnerabilities and CodeQL.
+
+Initial live read-back found seventeen draft PRs, twenty-six valid signed commits,
+all sixty-eight required checks passing and zero unresolved GitHub review
+threads. No human GitHub reviews are recorded; independent cumulative review
+is accepted, and owner merge approval remains separate. Historical canceled duplicate CI
+runs on PRs #71 and #75 have successful required-check replacements.
+
+The final exact head must pass review and the required checks before merge is
+proposed. No prefix is merged and the full Stage 1 gate has not passed. The
+unmeasured A3 wildcard cost on large generations remains a performance-gate
+obligation; the small fixture timings are not production evidence.
+
+Deployment must follow the [drained migration procedure](../graph-storage.md):
+pause and drain graph/SCIP/index writers and in-flight work, apply migrations,
+replace all readers/writers with compatible binaries, then resume. Mixed old/new
+binaries and binary-only rollback are unsupported because old readers do not
+filter retained inactive generations. Monitor retained-generation storage and
+use the documented offline cleanup procedure; do not delete facts under readers.
+
+Four nonblocking items remain recorded: benchmark reports require successful
+process exit and cleanup, optional Buf package-directory lint follows the existing
+v1 convention, affected-test counts exclude each walk's own root (another root
+can reach a changed file), and wildcard scaling needs representative measurements
+before public exposure. These do not justify claiming the later full Stage 1 gate.
+
+After this foundation lands, use smaller feature stacks. Start with a bounded
+REST/MCP slice exposing existing discovery/exploration services, including
+capabilities and authorization tests. Retain B1/B2, all thirteen source languages,
+flows/maps/screens/steps, publication policy, browser workflows and the full
+Stage 1 conformance/performance gate. Paused B1 edits and reference captures are
+preserved outside this published prefix; they are not complete or discarded.
 
 ## Baselines
 
@@ -573,7 +636,7 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 | S1.05d3 task context | `feat/codegraph/s1-05d3-task-context` | Implemented, independently approved and signed; depends on PR #77 | Draft [PR #78](https://github.com/balcsida/graphnest/pull/78); native stack #66, position 14 |
 | S1.06a1 file dependencies | `feat/codegraph/s1-06a1-file-dependencies` | Implemented, independently reviewed and signed; depends on PR #78 | Draft [PR #79](https://github.com/balcsida/graphnest/pull/79); native stack #66, position 15 |
 | S1.06a2 graph aggregates | `feat/codegraph/s1-06a2-graph-aggregates` | Implemented, independently reviewed and signed (`85dee2e`); depends on PR #79 | Draft [PR #81](https://github.com/balcsida/graphnest/pull/81); native stack #66, position 16; CI and CodeQL passed |
-| S1.06a3 entity impact | `feat/codegraph/s1-06a3-entity-impact` | Implemented and independently approved; focused checks passed; depends on PR #81 | Local native stack layer 17; signing and publication pending |
+| S1.06a3 entity impact | `feat/codegraph/s1-06a3-entity-impact` | Implemented, independently approved and signed (`931e7d9`); depends on PR #81 | Draft [PR #82](https://github.com/balcsida/graphnest/pull/82); native stack #66, position 17; CI and CodeQL passed |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
