@@ -268,6 +268,39 @@ func TestExchangeWithAccessSyncCollectsInstallationRepositories(t *testing.T) {
 	}
 }
 
+// GitHub serialises a repository at roughly 7 KiB, so a full page of 100
+// runs to about 700 KiB; a login must survive that, not just a toy fixture.
+func TestExchangeWithAccessSyncAcceptsFullRepositoryPage(t *testing.T) {
+	fixture := newSyncFixture(t, 532, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/login/oauth/access_token":
+			fmt.Fprint(w, validToken())
+		case "/api/v3/user":
+			fmt.Fprint(w, `{"id":42,"login":"ada"}`)
+		case "/api/v3/user/installations":
+			fmt.Fprint(w, `{"installations":[{"id":10,"app_id":532}]}`)
+		case "/api/v3/user/installations/10/repositories":
+			fmt.Fprint(w, `{"repositories":[`)
+			for i := 1; i <= 100; i++ {
+				if i > 1 {
+					fmt.Fprint(w, ",")
+				}
+				fmt.Fprintf(w, `{"id":%d,"pad":%q}`, i, strings.Repeat("x", 7*1024))
+			}
+			fmt.Fprint(w, `]}`)
+		default:
+			t.Errorf("unexpected request %s", r.URL.Path)
+		}
+	})
+	identity, err := fixture.client.Exchange(t.Context(), testCode, "verifier", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.AccessSync == nil || len(identity.AccessSync.RepositoryIDs) != 100 {
+		t.Fatalf("identity = %#v", identity)
+	}
+}
+
 func TestExchangeWithoutAccessSyncNeverListsInstallations(t *testing.T) {
 	fixture := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -296,6 +329,7 @@ func TestExchangeWithAccessSyncFailsClosed(t *testing.T) {
 		{"repositories status", `{"installations":[{"id":10,"app_id":532}]}`, bodyCanary, http.StatusBadGateway, 0},
 		{"repositories trailing JSON", `{"installations":[{"id":10,"app_id":532}]}`, `{"repositories":[{"id":1}]} ` + bodyCanary, http.StatusOK, 0},
 		{"unbounded pagination", `{"installations":[{"id":10,"app_id":532}]}`, `{"repositories":[{"id":1}]}`, http.StatusOK, maxRepositoryPages + 1},
+		{"oversized repositories page", `{"installations":[{"id":10,"app_id":532}]}`, `{"repositories":[{"id":1,"pad":"` + strings.Repeat("x", maxListPageBytes) + `"}]}`, http.StatusOK, 0},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
