@@ -1,5 +1,27 @@
 # GraphNest: CodeGraph-only server and local CLI parity
 
+## Foundation integration checkpoint (approved 2026-09-11)
+
+Prepare the existing seventeen native draft layers through PR #82 as a
+foundation milestone before implementing more features. The candidate head is
+`931e7d9df2da912b292a02882eb062244dfc4a1c`; any blocker fixes must receive
+focused review and verification before the exact final prefix is presented
+for owner merge authorization.
+
+This intermediate gate requires cumulative correctness/security review,
+migration and old-client compatibility, passing required checks, valid signed
+history and verified native stack membership. It does not assert complete
+CodeGraph parity or measured production performance. Merge remains a separate
+owner decision.
+
+Preserve unfinished B1 work and all reference evidence. After the foundation
+lands, continue remaining Stage 1 obligations in smaller feature stacks,
+starting with a useful REST/MCP slice over existing discovery/exploration
+services. Keep every parity row and all thirteen source languages. The full
+Stage 1 gate and Stage 2/3 ordering below remain binding. This checkpoint
+supersedes the earlier requirement to finish all Stage 1 before the first
+integration merge.
+
 ## Execution brief
 
 Implement this roadmap in `balcsida/graphnest`, preserving the user's sequence:
