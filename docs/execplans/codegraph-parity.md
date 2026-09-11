@@ -278,10 +278,32 @@ Implementation, validation, draft publication, and release are separate states.
   performance evidence. Affected formatting, vet and staticcheck are clean.
   Static boundary follow-through confirms reuse of managed exact-generation
   selection and independent SCIP storage/query paths; those unchanged broad
-  suites were not rerun for this layer. Signed draft publication is next.
+  suites were not rerun locally for this layer. Signed commit `af47bcc` is
+  published as draft PR #79, native stack #66 position 15; exact signature,
+  file blobs and membership were verified. CI 34253583489 and all required
+  checks pass, including the broader hosted regression suites. The separate
+  AI scan 34253589150 failed before analysis due to an unsupported model.
   Aggregate main/uncertainty reference
   captures are frozen and independently verified; native aggregate parity
   remains pending.
+
+
+- S1.06a2 implements thirteen generation-scoped aggregate and unresolved-evidence
+  operations. The complete 68-node, 93-edge, 13-file, six-unresolved-row corpus
+  and all 16 source/config hashes are checked against the frozen direct and
+  uncertainty captures. Bounded PostgreSQL selection decodes original v2 payloads
+  where metadata has no projected column; exhausted scans return an explicit
+  query-size error. Query/service tests and race tests pass, as do the full
+  affected PostgreSQL integration package, focused oracle race, vet and
+  staticcheck. The tiny-fixture module plan uses 153 shared-buffer hits and
+  0.371 ms; representative production performance remains unmeasured. Independent
+  review identified missing repository/commit/schema predicates in statistics.
+  Both scans now authenticate the complete snapshot; real PostgreSQL mismatch
+  regressions, the full aggregate oracle, focused race and static checks pass.
+  Scoped re-review cleared the finding. Signed publication remains pending.
+  A native stack read and bounded
+  GitHub API connection probe timed out on 2026-09-11; no refreshed remote state
+  is claimed.
 
 ## Baselines
 
@@ -528,6 +550,8 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 | S1.05d1 discovery variants | `feat/codegraph/s1-05d1-discovery-variants` | Implemented, independently reviewed and signed; depends on PR #75 | Draft [PR #76](https://github.com/balcsida/graphnest/pull/76); native stack #66, position 12 |
 | S1.05d2 file classification | `feat/codegraph/s1-05d2-file-classification` | Implemented, independently reviewed and signed; depends on PR #76 | Draft [PR #77](https://github.com/balcsida/graphnest/pull/77); native stack #66, position 13 |
 | S1.05d3 task context | `feat/codegraph/s1-05d3-task-context` | Implemented, independently approved and signed; depends on PR #77 | Draft [PR #78](https://github.com/balcsida/graphnest/pull/78); native stack #66, position 14 |
+| S1.06a1 file dependencies | `feat/codegraph/s1-06a1-file-dependencies` | Implemented, independently reviewed and signed; depends on PR #78 | Draft [PR #79](https://github.com/balcsida/graphnest/pull/79); native stack #66, position 15 |
+| S1.06a2 graph aggregates | `feat/codegraph/s1-06a2-graph-aggregates` | Implemented and independently reviewed; depends on PR #79 | Local native stack layer 16; publication pending GitHub reachability |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
