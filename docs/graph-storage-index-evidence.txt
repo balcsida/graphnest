@@ -1,0 +1,41 @@
+=== RUN   TestGraphV2IndexPlanEvidence
+    graph_index_evidence_test.go:31: PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2); enable_seqscan=on; corpus: 5000 function nodes with unique names/paths, 5000 calls in a directed ring
+    graph_index_evidence_test.go:72: SQL: explain (analyze,buffers,settings) select occurrence from graph_v2_nodes where upload_id=$1 and sha256(name)=sha256($2::bytea) and name=$2::bytea; parameter $1=1; parameter $2 bytea hex=6e6f64652d32333435; checked facts=[2345]
+    graph_index_evidence_test.go:83: Index Scan using graph_v2_nodes_name on graph_v2_nodes  (cost=0.28..8.30 rows=1 width=4) (actual time=0.007..0.007 rows=1.00 loops=1)
+    graph_index_evidence_test.go:83:   Index Cond: ((upload_id = '1'::bigint) AND (sha256(name) = '\x79d824eeb276704ba7d2b2dd65253988fcd2e316732ea77467dfc22f8a49ed2c'::bytea))
+    graph_index_evidence_test.go:83:   Filter: (name = '\x6e6f64652d32333435'::bytea)
+    graph_index_evidence_test.go:83:   Index Searches: 1
+    graph_index_evidence_test.go:83:   Buffers: shared hit=3
+    graph_index_evidence_test.go:83: Settings: search_path = 'graphnest_test_3c134758374136e3'
+    graph_index_evidence_test.go:83: Planning Time: 0.044 ms
+    graph_index_evidence_test.go:83: Execution Time: 0.012 ms
+    graph_index_evidence_test.go:72: SQL: explain (analyze,buffers,settings) select occurrence from graph_v2_nodes where upload_id=$1 and sha256(path)=sha256($2::bytea) and path=$2::bytea; parameter $1=1; parameter $2 bytea hex=66696c652d323334352e7473; checked facts=[2345]
+    graph_index_evidence_test.go:83: Index Scan using graph_v2_nodes_path on graph_v2_nodes  (cost=0.28..8.30 rows=1 width=4) (actual time=0.004..0.004 rows=1.00 loops=1)
+    graph_index_evidence_test.go:83:   Index Cond: ((upload_id = '1'::bigint) AND (sha256(path) = '\xd352cec0d445dd520a97152c1bca0ffc52d3464c605463f226ec59bee40e2497'::bytea))
+    graph_index_evidence_test.go:83:   Filter: (path = '\x66696c652d323334352e7473'::bytea)
+    graph_index_evidence_test.go:83:   Index Searches: 1
+    graph_index_evidence_test.go:83:   Buffers: shared hit=3
+    graph_index_evidence_test.go:83: Settings: search_path = 'graphnest_test_3c134758374136e3'
+    graph_index_evidence_test.go:83: Planning Time: 0.037 ms
+    graph_index_evidence_test.go:83: Execution Time: 0.007 ms
+    graph_index_evidence_test.go:72: SQL: explain (analyze,buffers,settings) select target from graph_v2_edges where upload_id=$1 and source_key=sha256($2::bytea) and source=$2::bytea and kind=4; parameter $1=1; parameter $2 bytea hex=32333435; checked facts=[2346]
+    graph_index_evidence_test.go:83: Index Scan using graph_v2_edges_outgoing on graph_v2_edges  (cost=0.28..8.31 rows=1 width=4) (actual time=0.004..0.004 rows=1.00 loops=1)
+    graph_index_evidence_test.go:83:   Index Cond: ((upload_id = '1'::bigint) AND (source_key = '\x38083c7ee9121e17401883566a148aa5c2e2d55dc53bc4a94a026517dbff3c6b'::bytea) AND (kind = 4))
+    graph_index_evidence_test.go:83:   Filter: (source = '\x32333435'::bytea)
+    graph_index_evidence_test.go:83:   Index Searches: 1
+    graph_index_evidence_test.go:83:   Buffers: shared hit=3
+    graph_index_evidence_test.go:83: Settings: search_path = 'graphnest_test_3c134758374136e3'
+    graph_index_evidence_test.go:83: Planning Time: 0.028 ms
+    graph_index_evidence_test.go:83: Execution Time: 0.006 ms
+    graph_index_evidence_test.go:72: SQL: explain (analyze,buffers,settings) select source from graph_v2_edges where upload_id=$1 and target_key=sha256($2::bytea) and target=$2::bytea and kind=4; parameter $1=1; parameter $2 bytea hex=32333435; checked facts=[2344]
+    graph_index_evidence_test.go:83: Index Scan using graph_v2_edges_incoming on graph_v2_edges  (cost=0.28..8.31 rows=1 width=4) (actual time=0.003..0.003 rows=1.00 loops=1)
+    graph_index_evidence_test.go:83:   Index Cond: ((upload_id = '1'::bigint) AND (target_key = '\x38083c7ee9121e17401883566a148aa5c2e2d55dc53bc4a94a026517dbff3c6b'::bytea) AND (kind = 4))
+    graph_index_evidence_test.go:83:   Filter: (target = '\x32333435'::bytea)
+    graph_index_evidence_test.go:83:   Index Searches: 1
+    graph_index_evidence_test.go:83:   Buffers: shared hit=3
+    graph_index_evidence_test.go:83: Settings: search_path = 'graphnest_test_3c134758374136e3'
+    graph_index_evidence_test.go:83: Planning Time: 0.025 ms
+    graph_index_evidence_test.go:83: Execution Time: 0.006 ms
+--- PASS: TestGraphV2IndexPlanEvidence (0.35s)
+PASS
+ok  	github.com/balcsida/graphnest/internal/postgres	0.818s

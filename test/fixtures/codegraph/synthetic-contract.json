@@ -1,0 +1,204 @@
+{
+  "edge_kinds": [
+    "contains",
+    "calls",
+    "imports",
+    "exports",
+    "extends",
+    "implements",
+    "references",
+    "type_of",
+    "returns",
+    "instantiates",
+    "overrides",
+    "decorates",
+    "navigates"
+  ],
+  "edges": [
+    {
+      "kind": "contains",
+      "source": "synthetic:function",
+      "target": "synthetic:class"
+    },
+    {
+      "kind": "calls",
+      "source": "synthetic:function",
+      "target": "synthetic:class"
+    },
+    {
+      "kind": "imports",
+      "source": "synthetic:function",
+      "target": "synthetic:class"
+    },
+    {
+      "kind": "exports",
+      "source": "synthetic:function",
+      "target": "synthetic:class"
+    },
+    {
+      "kind": "extends",
+      "source": "synthetic:function",
+      "target": "synthetic:class"
+    },
+    {
+      "kind": "implements",
+      "source": "synthetic:function",
+      "target": "synthetic:class"
+    },
+    {
+      "kind": "references",
+      "source": "synthetic:function",
+      "target": "synthetic:class"
+    },
+    {
+      "kind": "type_of",
+      "source": "synthetic:function",
+      "target": "synthetic:class"
+    },
+    {
+      "kind": "returns",
+      "source": "synthetic:function",
+      "target": "synthetic:class"
+    },
+    {
+      "kind": "instantiates",
+      "source": "synthetic:function",
+      "target": "synthetic:class"
+    },
+    {
+      "kind": "overrides",
+      "source": "synthetic:function",
+      "target": "synthetic:class"
+    },
+    {
+      "kind": "decorates",
+      "source": "synthetic:function",
+      "target": "synthetic:class"
+    },
+    {
+      "kind": "navigates",
+      "source": "synthetic:function",
+      "target": "synthetic:class"
+    }
+  ],
+  "node_kinds": [
+    "file",
+    "module",
+    "class",
+    "struct",
+    "interface",
+    "trait",
+    "protocol",
+    "function",
+    "method",
+    "property",
+    "field",
+    "variable",
+    "constant",
+    "enum",
+    "enum_member",
+    "type_alias",
+    "namespace",
+    "parameter",
+    "import",
+    "export",
+    "route",
+    "component",
+    "union"
+  ],
+  "nodes": [
+    {
+      "id": "synthetic:file",
+      "kind": "file"
+    },
+    {
+      "id": "synthetic:module",
+      "kind": "module"
+    },
+    {
+      "id": "synthetic:class",
+      "kind": "class"
+    },
+    {
+      "id": "synthetic:struct",
+      "kind": "struct"
+    },
+    {
+      "id": "synthetic:interface",
+      "kind": "interface"
+    },
+    {
+      "id": "synthetic:trait",
+      "kind": "trait"
+    },
+    {
+      "id": "synthetic:protocol",
+      "kind": "protocol"
+    },
+    {
+      "id": "synthetic:function",
+      "kind": "function"
+    },
+    {
+      "id": "synthetic:method",
+      "kind": "method"
+    },
+    {
+      "id": "synthetic:property",
+      "kind": "property"
+    },
+    {
+      "id": "synthetic:field",
+      "kind": "field"
+    },
+    {
+      "id": "synthetic:variable",
+      "kind": "variable"
+    },
+    {
+      "id": "synthetic:constant",
+      "kind": "constant"
+    },
+    {
+      "id": "synthetic:enum",
+      "kind": "enum"
+    },
+    {
+      "id": "synthetic:enum_member",
+      "kind": "enum_member"
+    },
+    {
+      "id": "synthetic:type_alias",
+      "kind": "type_alias"
+    },
+    {
+      "id": "synthetic:namespace",
+      "kind": "namespace"
+    },
+    {
+      "id": "synthetic:parameter",
+      "kind": "parameter"
+    },
+    {
+      "id": "synthetic:import",
+      "kind": "import"
+    },
+    {
+      "id": "synthetic:export",
+      "kind": "export"
+    },
+    {
+      "id": "synthetic:route",
+      "kind": "route"
+    },
+    {
+      "id": "synthetic:component",
+      "kind": "component"
+    },
+    {
+      "id": "synthetic:union",
+      "kind": "union"
+    }
+  ],
+  "origin": "synthetic schema vocabulary; not producer extraction"
+}

@@ -75,6 +75,7 @@ type ContextRequest struct {
 }
 
 type ContextResponse struct {
+	Snapshots     []ContextSnapshot         `json:"-"`
 	Status        string                    `json:"status"`
 	Symbol        *Symbol                   `json:"symbol,omitempty"`
 	Candidates    []Symbol                  `json:"candidates,omitempty"`
@@ -84,6 +85,12 @@ type ContextResponse struct {
 	OutgoingEdges map[string][]Relationship `json:"outgoing_edges,omitempty"`
 	Boundaries    []Boundary                `json:"boundaries,omitempty"`
 	Commits       map[string]string         `json:"commits"`
+}
+
+// ContextSnapshot is internal legacy source-composition state, never public JSON.
+type ContextSnapshot struct {
+	RepositoryID, UploadID int64
+	Commit                 string
 }
 
 type ImpactRequest struct {

@@ -1,0 +1,579 @@
+{
+  "source": {
+    "reference_commit": "b9ca4b7981116909900368cc1686a1074cd4d4c1",
+    "reference_tree": "a679d702d548720edbbc8f59d4444f3e86da5d5c",
+    "original_fixture": "polyglot-core",
+    "positive_fixture": "s1-06a1-positive-cycle-noncall-v1",
+    "positive_facts_sha256": "b8643057b983b9c6a26ef0c46aff983c41b3608aed48a3cabeeb4a37614a9fa0",
+    "positive_raw_facts_pass1_sha256": "ab0d8291d67ba4b77e9b7eff0f46a548f085dc1a56dec9618da5e7eb8cc80c45",
+    "positive_raw_facts_pass2_sha256": "c7748e7a467cc974541d66de5fefe5cb1e9be5dd073075828ce1dbb7939280a0"
+  },
+  "original": {
+    "pairs": [
+      {
+        "source": "Widget.vue",
+        "target": "core.ts"
+      },
+      {
+        "source": "app/index.tsx",
+        "target": "app/details.tsx"
+      },
+      {
+        "source": "consumer.test.ts",
+        "target": "consumer.ts"
+      },
+      {
+        "source": "consumer.ts",
+        "target": "main.ts"
+      },
+      {
+        "source": "main.ts",
+        "target": "core.ts"
+      },
+      {
+        "source": "unicode.ts",
+        "target": "core.ts"
+      }
+    ],
+    "dependencies": [
+      "core.ts"
+    ],
+    "dependents": [
+      "Widget.vue",
+      "main.ts",
+      "unicode.ts"
+    ],
+    "dependent_counts": [
+      {
+        "path": "core.ts",
+        "dependents": 3
+      },
+      {
+        "path": "main.ts",
+        "dependents": 1
+      }
+    ],
+    "reach_counts": [
+      {
+        "path": "consumer.test.ts",
+        "reaches": 1,
+        "references": 2
+      },
+      {
+        "path": "main.ts",
+        "reaches": 1,
+        "references": 5
+      }
+    ],
+    "affected": {
+      "changed_files": [
+        "core.ts"
+      ],
+      "affected_tests": [
+        "consumer.test.ts"
+      ],
+      "total_dependents_traversed": 5
+    },
+    "unrelated": {
+      "changed_files": [
+        "orphan.ts"
+      ],
+      "affected_tests": [],
+      "total_dependents_traversed": 0
+    }
+  },
+  "positive": {
+    "files": [
+      {
+        "path": "cycle-a.ts",
+        "content_hash": "cd2dec826cea4845ef462834a43a451d8cf1dd604d15668fa32f02179b3a5b08",
+        "language": "typescript",
+        "size": 93,
+        "modified_at": 0,
+        "indexed_at": 0,
+        "node_count": 3,
+        "errors": null,
+        "generated": 0
+      },
+      {
+        "path": "cycle-b.ts",
+        "content_hash": "e385f7c269d49815e78605258d28cabdcbe6d468ba2267c33aa78e9cbf557c11",
+        "language": "typescript",
+        "size": 93,
+        "modified_at": 0,
+        "indexed_at": 0,
+        "node_count": 3,
+        "errors": null,
+        "generated": 0
+      },
+      {
+        "path": "non-call-base.ts",
+        "content_hash": "b354bdf372223f4f266344b6e4f190440b0ff646ccf53394caf246ba648c096f",
+        "language": "typescript",
+        "size": 28,
+        "modified_at": 0,
+        "indexed_at": 0,
+        "node_count": 2,
+        "errors": null,
+        "generated": 0
+      },
+      {
+        "path": "non-call-only.test.ts",
+        "content_hash": "c35d252957d0bce39ad8534b3c53552307d877970562f836ebc6ba03129c4111",
+        "language": "typescript",
+        "size": 100,
+        "modified_at": 0,
+        "indexed_at": 0,
+        "node_count": 3,
+        "errors": null,
+        "generated": 0
+      }
+    ],
+    "nodes": [
+      {
+        "id": "class:000188f75d07d128626a893cf7585c8a",
+        "kind": "class",
+        "name": "NonCallOnlyTest",
+        "qualified_name": "NonCallOnlyTest",
+        "file_path": "non-call-only.test.ts",
+        "language": "typescript",
+        "start_line": 3,
+        "end_line": 3,
+        "start_column": 7,
+        "end_column": 51,
+        "docstring": null,
+        "signature": null,
+        "visibility": null,
+        "is_exported": 1,
+        "is_async": 0,
+        "is_static": 0,
+        "is_abstract": 0,
+        "decorators": null,
+        "type_parameters": null,
+        "return_type": null,
+        "updated_at": 0
+      },
+      {
+        "id": "class:0462f779502998288aba55c0737d5a2b",
+        "kind": "class",
+        "name": "NonCallBase",
+        "qualified_name": "NonCallBase",
+        "file_path": "non-call-base.ts",
+        "language": "typescript",
+        "start_line": 1,
+        "end_line": 1,
+        "start_column": 7,
+        "end_column": 27,
+        "docstring": null,
+        "signature": null,
+        "visibility": null,
+        "is_exported": 1,
+        "is_async": 0,
+        "is_static": 0,
+        "is_abstract": 0,
+        "decorators": null,
+        "type_parameters": null,
+        "return_type": null,
+        "updated_at": 0
+      },
+      {
+        "id": "file:cycle-a.ts",
+        "kind": "file",
+        "name": "cycle-a.ts",
+        "qualified_name": "cycle-a.ts",
+        "file_path": "cycle-a.ts",
+        "language": "typescript",
+        "start_line": 1,
+        "end_line": 6,
+        "start_column": 0,
+        "end_column": 0,
+        "docstring": null,
+        "signature": null,
+        "visibility": null,
+        "is_exported": 0,
+        "is_async": 0,
+        "is_static": 0,
+        "is_abstract": 0,
+        "decorators": null,
+        "type_parameters": null,
+        "return_type": null,
+        "updated_at": 0
+      },
+      {
+        "id": "file:cycle-b.ts",
+        "kind": "file",
+        "name": "cycle-b.ts",
+        "qualified_name": "cycle-b.ts",
+        "file_path": "cycle-b.ts",
+        "language": "typescript",
+        "start_line": 1,
+        "end_line": 6,
+        "start_column": 0,
+        "end_column": 0,
+        "docstring": null,
+        "signature": null,
+        "visibility": null,
+        "is_exported": 0,
+        "is_async": 0,
+        "is_static": 0,
+        "is_abstract": 0,
+        "decorators": null,
+        "type_parameters": null,
+        "return_type": null,
+        "updated_at": 0
+      },
+      {
+        "id": "file:non-call-base.ts",
+        "kind": "file",
+        "name": "non-call-base.ts",
+        "qualified_name": "non-call-base.ts",
+        "file_path": "non-call-base.ts",
+        "language": "typescript",
+        "start_line": 1,
+        "end_line": 2,
+        "start_column": 0,
+        "end_column": 0,
+        "docstring": null,
+        "signature": null,
+        "visibility": null,
+        "is_exported": 0,
+        "is_async": 0,
+        "is_static": 0,
+        "is_abstract": 0,
+        "decorators": null,
+        "type_parameters": null,
+        "return_type": null,
+        "updated_at": 0
+      },
+      {
+        "id": "file:non-call-only.test.ts",
+        "kind": "file",
+        "name": "non-call-only.test.ts",
+        "qualified_name": "non-call-only.test.ts",
+        "file_path": "non-call-only.test.ts",
+        "language": "typescript",
+        "start_line": 1,
+        "end_line": 4,
+        "start_column": 0,
+        "end_column": 0,
+        "docstring": null,
+        "signature": null,
+        "visibility": null,
+        "is_exported": 0,
+        "is_async": 0,
+        "is_static": 0,
+        "is_abstract": 0,
+        "decorators": null,
+        "type_parameters": null,
+        "return_type": null,
+        "updated_at": 0
+      },
+      {
+        "id": "function:92707669334c2bd95a1de88814332f64",
+        "kind": "function",
+        "name": "cycleA",
+        "qualified_name": "cycleA",
+        "file_path": "cycle-a.ts",
+        "language": "typescript",
+        "start_line": 3,
+        "end_line": 5,
+        "start_column": 7,
+        "end_column": 1,
+        "docstring": null,
+        "signature": "(): number",
+        "visibility": null,
+        "is_exported": 1,
+        "is_async": 0,
+        "is_static": 0,
+        "is_abstract": 0,
+        "decorators": null,
+        "type_parameters": null,
+        "return_type": null,
+        "updated_at": 0
+      },
+      {
+        "id": "function:9c26b8c8425fd583efff86fe497f7218",
+        "kind": "function",
+        "name": "cycleB",
+        "qualified_name": "cycleB",
+        "file_path": "cycle-b.ts",
+        "language": "typescript",
+        "start_line": 3,
+        "end_line": 5,
+        "start_column": 7,
+        "end_column": 1,
+        "docstring": null,
+        "signature": "(): number",
+        "visibility": null,
+        "is_exported": 1,
+        "is_async": 0,
+        "is_static": 0,
+        "is_abstract": 0,
+        "decorators": null,
+        "type_parameters": null,
+        "return_type": null,
+        "updated_at": 0
+      },
+      {
+        "id": "import:184b0fe03d0a95fe4214a5f144559330",
+        "kind": "import",
+        "name": "./cycle-a",
+        "qualified_name": "./cycle-a",
+        "file_path": "cycle-b.ts",
+        "language": "typescript",
+        "start_line": 1,
+        "end_line": 1,
+        "start_column": 0,
+        "end_column": 35,
+        "docstring": null,
+        "signature": "import { cycleA } from './cycle-a';",
+        "visibility": null,
+        "is_exported": 0,
+        "is_async": 0,
+        "is_static": 0,
+        "is_abstract": 0,
+        "decorators": null,
+        "type_parameters": null,
+        "return_type": null,
+        "updated_at": 0
+      },
+      {
+        "id": "import:4daf1ed8cad15ad635b502e01ebaa26f",
+        "kind": "import",
+        "name": "./non-call-base",
+        "qualified_name": "./non-call-base",
+        "file_path": "non-call-only.test.ts",
+        "language": "typescript",
+        "start_line": 1,
+        "end_line": 1,
+        "start_column": 0,
+        "end_column": 46,
+        "docstring": null,
+        "signature": "import { NonCallBase } from './non-call-base';",
+        "visibility": null,
+        "is_exported": 0,
+        "is_async": 0,
+        "is_static": 0,
+        "is_abstract": 0,
+        "decorators": null,
+        "type_parameters": null,
+        "return_type": null,
+        "updated_at": 0
+      },
+      {
+        "id": "import:f0d6cbaaa223ab0e2eddf5de4ef98ce2",
+        "kind": "import",
+        "name": "./cycle-b",
+        "qualified_name": "./cycle-b",
+        "file_path": "cycle-a.ts",
+        "language": "typescript",
+        "start_line": 1,
+        "end_line": 1,
+        "start_column": 0,
+        "end_column": 35,
+        "docstring": null,
+        "signature": "import { cycleB } from './cycle-b';",
+        "visibility": null,
+        "is_exported": 0,
+        "is_async": 0,
+        "is_static": 0,
+        "is_abstract": 0,
+        "decorators": null,
+        "type_parameters": null,
+        "return_type": null,
+        "updated_at": 0
+      }
+    ],
+    "edges": [
+      {
+        "id": 1,
+        "source": "file:cycle-a.ts",
+        "target": "import:f0d6cbaaa223ab0e2eddf5de4ef98ce2",
+        "kind": "contains",
+        "metadata": null,
+        "line": null,
+        "col": null,
+        "provenance": null
+      },
+      {
+        "id": 10,
+        "source": "function:92707669334c2bd95a1de88814332f64",
+        "target": "function:9c26b8c8425fd583efff86fe497f7218",
+        "kind": "calls",
+        "metadata": "{\"confidence\":0.9,\"resolvedBy\":\"import\",\"refName\":\"cycleB\"}",
+        "line": 4,
+        "col": 9,
+        "provenance": null
+      },
+      {
+        "id": 11,
+        "source": "file:cycle-b.ts",
+        "target": "import:184b0fe03d0a95fe4214a5f144559330",
+        "kind": "imports",
+        "metadata": "{\"confidence\":0.95,\"resolvedBy\":\"qualified-name\",\"refName\":\"./cycle-a\"}",
+        "line": 1,
+        "col": 0,
+        "provenance": null
+      },
+      {
+        "id": 12,
+        "source": "file:cycle-b.ts",
+        "target": "function:92707669334c2bd95a1de88814332f64",
+        "kind": "imports",
+        "metadata": "{\"confidence\":0.9,\"resolvedBy\":\"import\",\"refName\":\"cycleA\"}",
+        "line": 1,
+        "col": 9,
+        "provenance": null
+      },
+      {
+        "id": 13,
+        "source": "function:9c26b8c8425fd583efff86fe497f7218",
+        "target": "function:92707669334c2bd95a1de88814332f64",
+        "kind": "calls",
+        "metadata": "{\"confidence\":0.9,\"resolvedBy\":\"import\",\"refName\":\"cycleA\"}",
+        "line": 4,
+        "col": 9,
+        "provenance": null
+      },
+      {
+        "id": 14,
+        "source": "file:non-call-only.test.ts",
+        "target": "import:4daf1ed8cad15ad635b502e01ebaa26f",
+        "kind": "imports",
+        "metadata": "{\"confidence\":0.95,\"resolvedBy\":\"qualified-name\",\"refName\":\"./non-call-base\"}",
+        "line": 1,
+        "col": 0,
+        "provenance": null
+      },
+      {
+        "id": 15,
+        "source": "file:non-call-only.test.ts",
+        "target": "class:0462f779502998288aba55c0737d5a2b",
+        "kind": "imports",
+        "metadata": "{\"confidence\":0.9,\"resolvedBy\":\"import\",\"refName\":\"NonCallBase\"}",
+        "line": 1,
+        "col": 9,
+        "provenance": null
+      },
+      {
+        "id": 16,
+        "source": "class:000188f75d07d128626a893cf7585c8a",
+        "target": "class:0462f779502998288aba55c0737d5a2b",
+        "kind": "extends",
+        "metadata": "{\"confidence\":0.9,\"resolvedBy\":\"import\",\"refName\":\"NonCallBase\"}",
+        "line": 3,
+        "col": 37,
+        "provenance": null
+      },
+      {
+        "id": 2,
+        "source": "file:cycle-a.ts",
+        "target": "function:92707669334c2bd95a1de88814332f64",
+        "kind": "contains",
+        "metadata": null,
+        "line": null,
+        "col": null,
+        "provenance": null
+      },
+      {
+        "id": 3,
+        "source": "file:cycle-b.ts",
+        "target": "import:184b0fe03d0a95fe4214a5f144559330",
+        "kind": "contains",
+        "metadata": null,
+        "line": null,
+        "col": null,
+        "provenance": null
+      },
+      {
+        "id": 4,
+        "source": "file:cycle-b.ts",
+        "target": "function:9c26b8c8425fd583efff86fe497f7218",
+        "kind": "contains",
+        "metadata": null,
+        "line": null,
+        "col": null,
+        "provenance": null
+      },
+      {
+        "id": 5,
+        "source": "file:non-call-base.ts",
+        "target": "class:0462f779502998288aba55c0737d5a2b",
+        "kind": "contains",
+        "metadata": null,
+        "line": null,
+        "col": null,
+        "provenance": null
+      },
+      {
+        "id": 6,
+        "source": "file:non-call-only.test.ts",
+        "target": "import:4daf1ed8cad15ad635b502e01ebaa26f",
+        "kind": "contains",
+        "metadata": null,
+        "line": null,
+        "col": null,
+        "provenance": null
+      },
+      {
+        "id": 7,
+        "source": "file:non-call-only.test.ts",
+        "target": "class:000188f75d07d128626a893cf7585c8a",
+        "kind": "contains",
+        "metadata": null,
+        "line": null,
+        "col": null,
+        "provenance": null
+      },
+      {
+        "id": 8,
+        "source": "file:cycle-a.ts",
+        "target": "import:f0d6cbaaa223ab0e2eddf5de4ef98ce2",
+        "kind": "imports",
+        "metadata": "{\"confidence\":0.95,\"resolvedBy\":\"qualified-name\",\"refName\":\"./cycle-b\"}",
+        "line": 1,
+        "col": 0,
+        "provenance": null
+      },
+      {
+        "id": 9,
+        "source": "file:cycle-a.ts",
+        "target": "function:9c26b8c8425fd583efff86fe497f7218",
+        "kind": "imports",
+        "metadata": "{\"confidence\":0.9,\"resolvedBy\":\"import\",\"refName\":\"cycleB\"}",
+        "line": 1,
+        "col": 9,
+        "provenance": null
+      }
+    ],
+    "pairs": [
+      {
+        "source": "cycle-a.ts",
+        "target": "cycle-b.ts"
+      },
+      {
+        "source": "cycle-b.ts",
+        "target": "cycle-a.ts"
+      },
+      {
+        "source": "non-call-only.test.ts",
+        "target": "non-call-base.ts"
+      }
+    ],
+    "cycles": [
+      [
+        "cycle-a.ts",
+        "cycle-b.ts"
+      ]
+    ],
+    "affected": {
+      "changed_files": [
+        "non-call-base.ts"
+      ],
+      "affected_tests": [
+        "non-call-only.test.ts"
+      ],
+      "total_dependents_traversed": 1
+    }
+  }
+}

@@ -1,0 +1,211 @@
+# Graph exploration
+
+`graphservice.Service.Explore(ctx, currentPrincipal, ExploreRequest)` composes
+semantic discovery, indexed file facts, occurrence-preserving one-hop graph
+queries and exact indexed-commit source in a single domain operation. HTTP/MCP
+adapters remain S1.07. Optional repeated-call history retains only exact coverage
+fingerprints; no principal, source text, graph result or file metadata is cached.
+
+The request selects one repository and optional branch. Query, Symbols, Files,
+Limit and CandidateLimit use accepted discovery semantics. RequiredOccurrences
+selects exact producer occurrences independently of relevance ranking. Explicit
+file paths, including literal paths in query text, remain selectable when they
+have no callable entities. Missing required occurrences/files remain boundaries.
+Overloads retain separate original occurrences and source selections.
+
+ExploreConfig embeds DiscoveryConfig (ProjectTerms, Deprioritize, NoMultiterm).
+NoMultiterm disables corroboration before the SQL candidate limit as well as
+final ranking. LineNumbers defaults true and is a presentation flag: segments
+always contain original source bytes; renderers can prefix lines using StartLine.
+Adaptive defaults true. It emits original signature-line segments for off-answer
+implementation siblings when at least three distinct implementing entities are
+present in returned extends/implements evidence. A file defining that family
+supertype can mix named method bodies with signatures for redundant members,
+even when the file is required. A required god-file also uses this focused view
+when its named bodies exceed its grant and there are named bodies outside the
+explicit RequiredOccurrences. Exact required occurrences take priority, followed
+by named bodies that fit the per-file cap. Pinned files retain ordinary body
+selection. A required entry must exist before adaptive reduction applies. No
+source field contains inserted elisions, rewritten signatures or line numbers.
+
+## Allocation and source evidence
+
+An unfiltered IndexedFiles request with IncludeCount and a one-file page supplies
+the immutable corpus size. Default source budgets mirror the pinned allocator:
+13,000 UTF-16 units/four files below 150 files; 18,000/five below 500; 24,000/eight
+thereafter. SourceUnits overrides the logical budget up to 100,000. SourceBytes
+is an independent UTF-8 ceiling, default/maximum 256 KiB. This covers the UTF-8
+cost of default logical tiers, including BMP-heavy source. The final JSON limit
+still applies independently and includes all original graph/provenance facts.
+
+Per-file allocation uses relevance scores with a second source-worth penalty,
+700-unit floors, a relative 15% cliff capped at score ten, a twofold required-file
+weight, and a 70% maximum initial share. Pinned files weigh at least as much as
+the strongest file. The pinned allocator's 200-unit per-file presentation reserve
+is retained for numerical parity; it is not a substitute for measuring JSON.
+Graph-only neighbors inherit one quarter of the contributing root's score,
+with a floor of one. Stored generated metadata lowers their worth too. Files
+under the cliff remain original fact/entity pointers and consume no source slot.
+Unused reservations are distributed proportionally to remaining source demand.
+
+RequiredOccurrences and explicitly named callable discovery matches supply the
+required-file weight. This is bounded source allocation over the accepted graph,
+not a claim of S1.06 dynamic flow-spine extraction. File pins and files resolved
+from exact RequiredOccurrences are admitted first. An explicit MaxFiles which
+cannot hold those distinct hard obligations is refused. Named matches retain
+body priority and weighting, but do not force every matching file into the source
+budget. With MaxFiles omitted, the default may expand for preferred named files
+up to twenty. Omitted named candidates retain original fact/occurrence pointers,
+source boundaries and a focus handoff; Complete is false. Explicit MaxFiles is
+never exceeded. Unavoidable source-budget truncation remains visible even for
+required entities.
+
+A bounded prefix read preserves affordable small files, including BMP-heavy
+UTF-8 files; reader EOF evidence decides whether the whole file was captured.
+Larger files receive whole-line windows. Required bodies across all buffered
+ranges are funded before optional bodies and surrounding context. A read is
+redundant only when an earlier buffer covers the entire required range; overlapping
+buffers emit each original line once. Disjoint required
+regions can require separate exact-SHA ReadFileAt calls, sharing the operation's
+read/byte ceilings. Each segment carries its original line bounds, indexed SHA
+and blob SHA. Selections reference a segment and retain the original zero-based
+UTF-16 Location plus an end-exclusive byte selection when the whole entity range
+is present. Missing, partial, invalid and windowed ranges never become exact
+selections. CR characters, Unicode and internal LF bytes remain verbatim.
+
+## Bounds and authority
+
+- Five seconds cover discovery, graph work, source I/O and final validation.
+- Existing discovery bounds: 16-KiB query, 100 matches, 1,000 candidates. Symbols,
+  Files and RequiredOccurrences each accept at most twenty entries. Original
+  per-value bounds and discovery configuration bounds also apply.
+- Query file hints perform at most twenty distinct exact path probes. At most
+  ten entry roots perform two one-hop traversals each. Returned neighborhoods
+  total at most 1,000 entities, 5,000 edges and four MiB of encoded query data;
+  a neighborhood that exceeds row limits is withheld with graph_work_limit.
+  The underlying engine bounds still govern each query, including a query whose
+  result is withheld. At most twenty traversals can execute.
+- At most 100 contributing file candidates have metadata queried. Aggregate file
+  facts have a separate four-MiB bound. A pinned file-only outline has at most
+  100 original entities and reports a continuation boundary. These projections
+  use existing stores; no full artifact is loaded by Explore.
+- At most twenty source read attempts execute, including disjoint windows.
+  Repository ReadFileAt enforces its one-MiB decoded-file ceiling and bounded
+  GitHub envelope, so repeated reads can process at most twenty MiB of decoded
+  files. The aggregate retained source buffers are at most four MiB. Each read
+  contributes at most 1,000 lines; lower repository limits remain visible.
+  Files beyond the repository ceiling report oversized rather than bypassing it.
+- Window construction works only on those bounded lines/entities. Reservations,
+  source UTF-8 bytes and final serialized response bytes are separate limits.
+  Final JSON defaults/maxes at 256 KiB and honors lower service limits. Overflow
+  refuses the complete result with ErrQuerySize.
+
+Every graph step must match the captured repository, upload generation and SHA.
+Every source call uses that exact indexed SHA. A final generation validation and
+repository/grant/branch/installation check runs after all source and composition,
+followed by a cancellation check. Failure returns the zero result, including no
+paths, scores, counts, source or provenance. An unrelated authorized v1 repository
+is excluded from the selected v2 scope.
+
+Complete describes the selected bounded neighborhood and source only. Weak or
+missing entry points, omitted graph/file/source evidence, extraction errors,
+generation diagnostics and unresolved analysis prevent completeness. Successful
+source remains useful alongside these boundaries. Handoffs identify how to focus
+another request without inventing an entry point or suggesting that missing source
+has been supplied.
+
+Principal has no credential identity or expiration. The domain rechecks current
+repository eligibility; current-request credential authentication and mid-call
+credential revocation remain adapter-owned. No old Principal is reused as authority.
+
+## Repeated calls
+
+`SessionID` is an optional opaque conversation identifier, at most 128 UTF-8
+bytes, without NUL/CR/LF. The adapter supplies a distinct identifier for each
+conversation using the **current authenticated request**. A session request
+requires a nonempty current principal Subject and refuses ForceRotation. The
+identifier is not a credential. An empty SessionID keeps Explore stateless.
+`Config.Dedup` defaults true; false re-serves all source while recording
+successful delivered coverage, so a later enabled call can use that coverage.
+
+History is local to the Service instance. Its hashed key includes the session
+identifier, current principal value (subject, method, installation, roles and
+current grants), explicit selected repository/branch/commit scope, and immutable
+generation identity. No Principal object or grant list survives the call. A new
+principal, repository, generation, indexed SHA, or source blob identity starts
+without matching coverage. Every call still performs discovery, original graph
+queries and exact-SHA source reads. Before returning, it validates current
+repository authorization, generation and SHA after all source work. The existing
+adapter-owned credential-expiry/mid-call revocation boundary remains unchanged.
+
+Each recorded line has only a hashed file/commit/blob identity, its line number
+and a SHA-256 digest of the exact returned line bytes, including LF only when
+that separator was delivered within the segment. CR stays part of the line, so
+both partial and full CRLF expansions remain unseen until emitted. A partial
+line cannot cover an expanded line on a later call. Separately delivered adjacent
+ranges do not prove the separator between them. At a new-source/covered-source
+split, the first known line is conservatively re-served to keep the separator
+inside an original whole-line segment; the remaining reference must still cover
+at least eight source lines. A terminal LF's empty split element does not turn
+seven source lines into eight, and an empty remainder cannot defeat restoration.
+
+A run of at least eight proven matching source lines can become a file's
+`References` entry with `status: already_seen`, original indexed/blob SHA and
+line bounds, and no Content. This explicitly points to source returned earlier
+in the same conversation. Current original file/entity facts remain alongside
+it. `Selections` retain original UTF-16 ranges: an exact referenced selection
+has `status: already_seen`, `Segment: -1`, a zero-based `Reference` index and
+byte offsets relative to that referenced line span. A selection spanning emitted
+and referenced segments remains windowed; it is never invented as one exact
+selection. Existing source/analysis/completeness boundaries remain intact.
+
+Shorter covered runs are re-served. Every unseen source byte selected by C2 is
+preserved, including a tiny remainder; the reference renderer's optional
+sub-160-character remainder omission is deliberately not applied to domain
+source. Dedup does not alter C2 ranking, protected-file admission or allocation.
+It reduces output, not source I/O, and does not promise to refill freed file
+slots with candidates below the allocation cliff. If dedup would emit no source
+bytes, the first fully suppressed file is restored with all its original
+segments/selections and without its pointer. `SessionRestored` records this
+case. `Usage.DedupSavedUnits` measures actual returned source UTF-16 savings;
+SourceUnits/SourceBytes count emitted source, excluding references.
+
+The **final structured JSON size check runs after references/restoration**.
+Only after successful size, generation, grant and cancellation checks are the
+actually emitted segments admitted to history. Failed, canceled, unauthorized
+or oversized domain responses admit nothing, including an expanded range in an
+otherwise known file. Unreadable/oversized/binary/invalid/unavailable source
+results also admit nothing. Admission checks both final file status and every
+retained file boundary: a later successful read cannot erase an earlier refusal.
+Successful bounded windows without refusal can contribute their precise returned
+bytes even when other bounds or incomplete entity selections keep Complete false. No transport acknowledgement is implied; adapters
+own delivery after the domain call returns.
+
+State uses fixed ceilings, without a background goroutine or persistent store:
+
+- 64 retained scope/session entries per Service; at most four per authenticated
+  subject/method/installation identity, across conversations and repositories.
+- 256 KiB charged per entry, at most 2,046 line fingerprints. Admission retains
+  existing records and only admits new lines while room remains; omitted history
+  merely causes source to be re-served. Each entry charges 256 bytes plus a
+  conservative 128 bytes per line, including map/key/value overhead.
+- Four MiB aggregate charged state. Successful admission evicts least-recently
+  successfully used entries until both global and per-principal limits hold.
+- A fixed 15-minute lifetime from entry creation, unaffected by repeated calls.
+  Expired entries are removed on the next history operation; no expired entry
+  can be used or revived. Unused instances retain at most the same byte ceiling.
+
+A short mutex protects only bounded snapshot/admission scans. Source/graph I/O
+runs outside it. Each call uses a cloned snapshot of prior **completed** results;
+concurrent calls may both re-serve source, and successful results merge without
+losing coverage. A pending or failed call never supplies another call's history.
+Eviction, restart, expiry or unadmitted lines affect efficiency only; current
+source is still returned under the same mandatory authorization checks.
+
+The native session restoration test uses the frozen reference's exact
+`core.ts Service normalize` query with MaxFiles=1 and SourceUnits=13000, without
+added file/symbol pins or filters. Both calls return only original core.ts source
+and its Service/normalize occurrences. The second restores that source with zero
+references or savings. Other named files can remain incomplete pointers under
+the explicit one-file cap. Native source retains its final LF/empty EOF line;
+this comparison does not claim identical public rendered envelopes.
