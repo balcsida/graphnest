@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	graphv2 "github.com/balcsida/graphnest/internal/graphartifact/v2"
 	"github.com/balcsida/graphnest/internal/graphprotocol"
 )
 
@@ -54,6 +55,23 @@ func TestFanInPreservesObservedCountsAndGeneration(t *testing.T) {
 	})
 	if err != nil || !reflect.DeepEqual(got.Counts, store.counts) || len(got.Generations) != 1 {
 		t.Fatalf("fan-in=%+v err=%v", got, err)
+	}
+}
+
+func TestFoldModuleRowsKeepsNULSeparatedPairsDistinct(t *testing.T) {
+	rows := []AggregateModuleRow{
+		{Source: "source", Target: "target", Kind: "calls", From: "a\x00b", To: "c", Count: 1},
+		{Source: "source", Target: "target", Kind: "calls", From: "a", To: "b\x00c", Count: 1},
+		{Source: "source", Target: "target", Kind: "calls", From: "a\x00b", To: "c", Count: 1},
+	}
+
+	_, got := foldModuleRows(rows, 2, []int16{int16(graphv2.EdgeKind_EDGE_KIND_CALLS)})
+	want := []graphprotocol.ModulePair{
+		{Source: "source", Target: "target", From: "a\x00b", To: "c", Count: 2},
+		{Source: "source", Target: "target", From: "a", To: "b\x00c", Count: 1},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("pairs=%+v, want %+v", got, want)
 	}
 }
 
