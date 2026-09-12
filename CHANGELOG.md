@@ -3,6 +3,13 @@
 Notable changes are recorded here. GraphNest is pre-1.0 pilot software; review
 the compatibility and migration notes before upgrading.
 
+## [Unreleased]
+
+### Security
+
+- Update Zoekt's OpenTelemetry OpenTracing bridge to v1.45.0 to fix concurrent
+  baggage access that can crash the process (CVE-2026-45404 / GHSA-42cj-99w8-cp2p).
+
 ## [0.4.1] - 2026-09-12
 
 This release includes all changes since v0.3.0. The v0.4.0 tag did not produce
