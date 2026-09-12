@@ -5,6 +5,11 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+### Changed
+
+- Require Go 1.27.1 for the service, scanner, developer tools, CI, and container
+  builds. Update Staticcheck to v0.8.1 for Go 1.27 compatibility.
+
 ### Security
 
 - Update Zoekt's OpenTelemetry OpenTracing bridge to v1.45.0 to fix concurrent
@@ -127,6 +132,7 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
+[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.4.1...HEAD
 [0.4.1]: https://github.com/balcsida/graphnest/compare/v0.3.0...v0.4.1
 [#36]: https://github.com/balcsida/graphnest/pull/36
 [#38]: https://github.com/balcsida/graphnest/pull/38

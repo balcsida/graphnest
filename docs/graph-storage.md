@@ -164,7 +164,7 @@ sequential scans or assert optimizer plan names. The schema is dropped by the
 existing test cleanup.
 
 ```sh
-rtk proxy env GOTOOLCHAIN=go1.26.6 GOWORK=off \
+rtk proxy env GOTOOLCHAIN=go1.27.1 GOWORK=off \
   GRAPHNEST_GRAPH_INDEX_EVIDENCE=1 GRAPHNEST_REQUIRE_POSTGRES=1 \
   'GRAPHNEST_TEST_POSTGRES_DSN=postgres://graphnest:graphnest@127.0.0.1:32771/graphnest?sslmode=disable' \
   go test -tags=integration ./internal/postgres \
