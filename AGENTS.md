@@ -15,7 +15,7 @@ GraphNest is a Go code-search service. Executables live in `cmd/` (`graphnest-se
 - `make fmt lint staticcheck govulncheck` checks formatting, `go vet`, static analysis, and known vulnerabilities.
 - `make helm-lint helm-test` validates and renders the Helm chart.
 
-Go 1.26.6, Git, Docker Compose, and Helm 4.2.3 are required.
+Go 1.27.1, Git, Docker Compose, and Helm 4.2.3 are required.
 
 ## Coding Style & Naming Conventions
 

@@ -1,6 +1,6 @@
 module github.com/balcsida/graphnest/tools
 
-go 1.26.6
+go 1.27.1
 
 require (
 	github.com/bufbuild/buf v1.72.0

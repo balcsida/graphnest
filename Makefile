@@ -1,5 +1,5 @@
 ZOEKT_VERSION = $(shell GOWORK=off go -C tools list -m -f '{{.Version}}' github.com/sourcegraph/zoekt)
-STATICCHECK_VERSION := v0.7.0
+STATICCHECK_VERSION := v0.8.1
 GOVULNCHECK_VERSION := v1.1.4
 POSTGRES_COMPOSE := docker compose -p graphnest-postgres
 GRAPHNEST_TEST_POSTGRES_DSN ?= $(GRAPHNEST_TEST_DATABASE_URL)

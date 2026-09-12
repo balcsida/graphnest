@@ -84,7 +84,7 @@ The fixture profile is the fastest way to try GraphNest. It starts a determinist
 
 ### Prerequisites
 
-- Go 1.26.6
+- Go 1.27.1
 - Git
 - Docker with Docker Compose
 - `jq`
