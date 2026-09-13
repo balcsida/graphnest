@@ -3,18 +3,19 @@
 Notable changes are recorded here. GraphNest is pre-1.0 pilot software; review
 the compatibility and migration notes before upgrading.
 
-## [Unreleased]
+## [0.4.2] - 2026-09-13
 
 ### Changed
 
 - Require Go 1.27.1 for the service, scanner, developer tools, CI, and container
   builds. Update Staticcheck to v0.8.1 and govulncheck to v1.8.0 for Go 1.27
-  compatibility.
+  compatibility. ([#87])
 
 ### Security
 
 - Update Zoekt's OpenTelemetry OpenTracing bridge to v1.45.0 to fix concurrent
   baggage access that can crash the process (CVE-2026-45404 / GHSA-42cj-99w8-cp2p).
+  ([#87])
 
 ## [0.4.1] - 2026-09-12
 
@@ -133,7 +134,7 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
-[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.4.1...HEAD
+[0.4.2]: https://github.com/balcsida/graphnest/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/balcsida/graphnest/compare/v0.3.0...v0.4.1
 [#36]: https://github.com/balcsida/graphnest/pull/36
 [#38]: https://github.com/balcsida/graphnest/pull/38
@@ -145,3 +146,4 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
 [#82]: https://github.com/balcsida/graphnest/pull/82
 [#83]: https://github.com/balcsida/graphnest/pull/83
 [#84]: https://github.com/balcsida/graphnest/pull/84
+[#87]: https://github.com/balcsida/graphnest/pull/87
