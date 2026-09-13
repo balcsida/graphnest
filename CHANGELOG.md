@@ -3,6 +3,21 @@
 Notable changes are recorded here. GraphNest is pre-1.0 pilot software; review
 the compatibility and migration notes before upgrading.
 
+## [0.4.3] - 2026-09-13
+
+### Security
+
+- Apply Debian security updates while building the application and node runtime
+  images, fixing PCRE2 vulnerabilities CVE-2026-86145 and CVE-2026-89161.
+- Include the OpenTelemetry dependency fix and Go 1.27.1 upgrade documented in
+  v0.4.2 below.
+
+### Release notes
+
+- v0.4.2 was tagged but not published: its image security gate detected the PCRE2
+  vulnerabilities. v0.4.3 includes all changes since the last published release,
+  v0.4.1.
+
 ## [0.4.2] - 2026-09-13
 
 ### Changed
@@ -134,6 +149,7 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
+[0.4.3]: https://github.com/balcsida/graphnest/compare/v0.4.1...v0.4.3
 [0.4.2]: https://github.com/balcsida/graphnest/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/balcsida/graphnest/compare/v0.3.0...v0.4.1
 [#36]: https://github.com/balcsida/graphnest/pull/36

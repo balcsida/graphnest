@@ -21,6 +21,7 @@ RUN test "$ZOEKT_VERSION" = "$(GOWORK=off go -C tools list -m -f '{{.Version}}' 
 FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818 AS application
 
 RUN apt-get update && \
+    apt-get upgrade --no-install-recommends -y && \
     apt-get install --no-install-recommends -y ca-certificates wget && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir -p /tmp /var/run/graphnest && \
@@ -34,6 +35,7 @@ CMD ["graphnest-server"]
 FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818 AS node
 
 RUN apt-get update && \
+    apt-get upgrade --no-install-recommends -y && \
     apt-get install --no-install-recommends -y ca-certificates && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir -p /data /tmp /var/run/graphnest && \
