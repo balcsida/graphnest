@@ -8,7 +8,8 @@ the compatibility and migration notes before upgrading.
 ### Changed
 
 - Require Go 1.27.1 for the service, scanner, developer tools, CI, and container
-  builds. Update Staticcheck to v0.8.1 for Go 1.27 compatibility.
+  builds. Update Staticcheck to v0.8.1 and govulncheck to v1.8.0 for Go 1.27
+  compatibility.
 
 ### Security
 
