@@ -173,11 +173,11 @@ coordinates, and randomized ordering/timestamp/row-ID changes. Bounded fuzz
 targets cover protobuf parsing, identities, and JSON canonicalization.
 
 ```sh
-GOTOOLCHAIN=go1.26.6 GOWORK=off go test -race ./internal/graphartifact ./internal/graphingest ./internal/enrichment ./internal/postgres
-GOTOOLCHAIN=go1.26.6 GOWORK=off go test ./internal/graphartifact -run '^$' -fuzz '^FuzzV2Parse$' -fuzztime=10s -parallel=2
-GOTOOLCHAIN=go1.26.6 GOWORK=off go test ./internal/graphartifact -run '^$' -fuzz '^FuzzV2Identity$' -fuzztime=10s -parallel=2
-GOTOOLCHAIN=go1.26.6 GOWORK=off go test ./internal/graphartifact -run '^$' -fuzz '^FuzzV2JSON$' -fuzztime=10s -parallel=2
-GOTOOLCHAIN=go1.26.6 make tools-check
+GOTOOLCHAIN=go1.27.1 GOWORK=off go test -race ./internal/graphartifact ./internal/graphingest ./internal/enrichment ./internal/postgres
+GOTOOLCHAIN=go1.27.1 GOWORK=off go test ./internal/graphartifact -run '^$' -fuzz '^FuzzV2Parse$' -fuzztime=10s -parallel=2
+GOTOOLCHAIN=go1.27.1 GOWORK=off go test ./internal/graphartifact -run '^$' -fuzz '^FuzzV2Identity$' -fuzztime=10s -parallel=2
+GOTOOLCHAIN=go1.27.1 GOWORK=off go test ./internal/graphartifact -run '^$' -fuzz '^FuzzV2JSON$' -fuzztime=10s -parallel=2
+GOTOOLCHAIN=go1.27.1 make tools-check
 ```
 
 Generation uses the existing pinned tool workspace, with separate v1/v2 Buf
