@@ -205,7 +205,7 @@ repeat-call history/deduplication remains C3.
 Run the normal PostgreSQL gate with only the test database DSN:
 
 ```sh
-GOTOOLCHAIN=go1.26.6 GOWORK=off GRAPHNEST_REQUIRE_POSTGRES=1 \
+GOTOOLCHAIN=go1.27.1 GOWORK=off GRAPHNEST_REQUIRE_POSTGRES=1 \
   GRAPHNEST_TEST_POSTGRES_DSN="$GRAPHNEST_TEST_POSTGRES_DSN" make postgres-test
 ```
 

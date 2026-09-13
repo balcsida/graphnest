@@ -85,11 +85,11 @@ A separate synthetic fixture covers all 23 CodeGraph kinds and 13 relations
 (26 traversals). Synthetic vocabulary is not producer extraction evidence.
 
 ```sh
-rtk proxy env GOTOOLCHAIN=go1.26.6 GOWORK=off \
+rtk proxy env GOTOOLCHAIN=go1.27.1 GOWORK=off \
   GRAPHNEST_TEST_CODEGRAPH_V2_FIXTURE=/tmp/graphnest-s1-04-oracle.pb \
   go test ./internal/graphartifact \
   -run '^TestV2(ExportQueryFixture|CodeGraphSQLiteLossless)$' -count=1 -v
-rtk proxy env GOTOOLCHAIN=go1.26.6 GOWORK=off \
+rtk proxy env GOTOOLCHAIN=go1.27.1 GOWORK=off \
   GRAPHNEST_TEST_CODEGRAPH_V2_FIXTURE=/tmp/graphnest-s1-04-oracle.pb \
   GRAPHNEST_REQUIRE_POSTGRES=1 GRAPHNEST_TEST_POSTGRES_DSN="$GRAPHNEST_TEST_POSTGRES_DSN" \
   go test -tags=integration ./internal/postgres -run '^TestGraphEntit' -count=1 -v
