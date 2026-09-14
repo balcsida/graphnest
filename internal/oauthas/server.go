@@ -843,6 +843,7 @@ button.allow{background:var(--accent);border-color:var(--accent);color:#0b0e14;f
 </form></main></body></html>`))
 
 func (server *Server) consent(writer http.ResponseWriter, request *http.Request, requestID string, pending authn.OAuthAuthorizationRequest, client authn.OAuthClient) {
+	writer.Header().Set("Referrer-Policy", "same-origin")
 	principal, _ := server.sessionPrincipal(request)
 	name := principal.Subject
 	if server.UserName != nil {
