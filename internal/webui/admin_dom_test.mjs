@@ -342,6 +342,12 @@ assert.equal(upload.path, "/v1/scip/uploads?repository_id=7&commit=" + "a".repea
 assert.equal(upload.options.headers.get("Content-Type"), "application/vnd.scip+protobuf");
 assert.equal(upload.options.body, file);
 
+// A proxy timeout answers with HTML, not the API error envelope; the console must still say what happened.
+mutationDenial = 504;
+await ids.get("scip-upload").dispatch("submit");
+assert.equal(ids.get("admin-status").textContent, "Request failed with HTTP 504.", "a non-JSON error must not leave the status empty");
+mutationDenial = 0;
+
 const failedJobRow = ids.get("job-rows").children.find(row => row.children[4].children[0].textContent === "failed");
 const retry = failedJobRow.children.at(-1).children[0];
 await retry.dispatch("click");
