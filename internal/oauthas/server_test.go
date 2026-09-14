@@ -397,6 +397,14 @@ func (h *harness) runConsent(t *testing.T, clientID, redirect, challenge, decisi
 	if response.Code != http.StatusOK {
 		t.Fatalf("authorize status=%d body=%s", response.Code, response.Body.String())
 	}
+	if got := response.Header().Get("Referrer-Policy"); got != "same-origin" {
+		t.Fatalf("consent referrer policy=%q", got)
+	}
+	redirectURL, _ := url.Parse(redirect)
+	wantCSP := "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' " + redirectURL.Scheme + "://" + redirectURL.Host + "; frame-ancestors 'none'"
+	if got := response.Header().Get("Content-Security-Policy"); got != wantCSP {
+		t.Fatalf("consent CSP=%q", got)
+	}
 	page := response.Body.String()
 	for _, want := range []string{"OpenCode", "Ada Lovelace", "http://127.0.0.1:5000", `name="decision" value="allow"`, `name="decision" value="deny"`} {
 		if !strings.Contains(page, want) {
