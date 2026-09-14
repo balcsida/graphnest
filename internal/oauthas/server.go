@@ -843,6 +843,7 @@ button.allow{background:var(--accent);border-color:var(--accent);color:#0b0e14;f
 </form></main></body></html>`))
 
 func (server *Server) consent(writer http.ResponseWriter, request *http.Request, requestID string, pending authn.OAuthAuthorizationRequest, client authn.OAuthClient) {
+	writer.Header().Set("Referrer-Policy", "same-origin")
 	principal, _ := server.sessionPrincipal(request)
 	name := principal.Subject
 	if server.UserName != nil {
@@ -851,8 +852,10 @@ func (server *Server) consent(writer http.ResponseWriter, request *http.Request,
 		}
 	}
 	target, _ := url.Parse(pending.RedirectURI)
+	// Chromium applies form-action to the post-submit redirect, so the client's
+	// registered callback origin must be allowed alongside this server.
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-	writer.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
+	writer.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' "+target.Scheme+"://"+target.Host+"; frame-ancestors 'none'")
 	writer.Header().Set("X-Frame-Options", "DENY")
 	writer.WriteHeader(http.StatusOK)
 	_ = consentTemplate.Execute(writer, map[string]string{
