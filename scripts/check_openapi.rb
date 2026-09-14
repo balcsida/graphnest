@@ -108,11 +108,34 @@ schemas = document.fetch("components").fetch("schemas")
 end
 explore_response = schemas.fetch("GraphExploreResponse")
 require_value(explore_response["additionalProperties"], false, "GraphExploreResponse additionalProperties")
+array_schema = lambda do |property|
+  property.fetch("anyOf", []).find { |variant| variant["type"] == "array" } || property
+end
+raise OpenAPIError, "GraphEntityV2 must require depth" unless schemas.fetch("GraphEntityV2").fetch("required").include?("depth")
+selection_segment = schemas.fetch("GraphExploreSelection").dig("properties", "segment")
+require_value(selection_segment["minimum"], -1, "GraphExploreSelection.segment minimum")
+raise OpenAPIError, "GraphExploreSelection.segment must document -1" unless selection_segment.fetch("description", "").include?("-1")
+nullable_collections = %w[GraphExploreResponse GraphExploreFile GraphTraverseResponse].flat_map do |schema_name|
+  schemas.fetch(schema_name).fetch("properties").filter_map do |field, property|
+    types = property.fetch("anyOf", []).filter_map { |variant| variant["type"] }.sort
+    [schema_name, field] if types == %w[array null]
+  end
+end
+expected_nullable_collections = [
+  ["GraphExploreResponse", "files"],
+  ["GraphExploreResponse", "relationships"],
+  ["GraphExploreFile", "entities"],
+  ["GraphExploreFile", "segments"],
+  ["GraphExploreFile", "selections"],
+  ["GraphTraverseResponse", "edges"]
+]
+require_value(nullable_collections.sort, expected_nullable_collections.sort, "nullable exploration collections")
 {
   "files" => "GraphExploreFile",
   "relationships" => "GraphTraverseResponse"
 }.each do |field, component|
-  require_value(explore_response.dig("properties", field, "items", "$ref"), "#/components/schemas/#{component}", "GraphExploreResponse.#{field} items")
+  property = array_schema.call(explore_response.dig("properties", field))
+  require_value(property.dig("items", "$ref"), "#/components/schemas/#{component}", "GraphExploreResponse.#{field} items")
 end
 require_value(explore_response.dig("properties", "usage", "$ref"), "#/components/schemas/GraphExploreUsage", "GraphExploreResponse.usage")
 %w[GraphExploreFile GraphTraverseResponse GraphInspectionSource GraphExploreSelection GraphExploreUsage GraphEvidenceV2 GraphBoundary].each do |name|
@@ -135,7 +158,7 @@ end
   ["GraphInspectionSource", "file_errors"] => "GraphArtifactExtensionV2"
 }.each do |(schema_name, property_name, nested), component|
   property = schemas.fetch(schema_name).dig("properties", property_name)
-  property = property.fetch(nested) if nested
+  property = array_schema.call(property).fetch(nested) if nested
   require_value(property["$ref"], "#/components/schemas/#{component}", "#{schema_name}.#{property_name} schema")
 end
 {
