@@ -1428,10 +1428,11 @@ components:
     GraphEntityV2:
       type: object
       additionalProperties: false
-      required: [repository_id, id, fact]
+      required: [repository_id, id, depth, fact]
       properties:
         repository_id: {type: integer, format: int64, minimum: 1, description: GitHub repository ID}
         id: {type: string}
+        depth: {type: integer, minimum: 0}
         fact: {$ref: '#/components/schemas/GraphArtifactNodeV2'}
     GraphDiscoveryMatch:
       type: object
@@ -1513,7 +1514,7 @@ components:
       properties:
         entity_id: {type: string}
         range: {$ref: '#/components/schemas/GraphArtifactLocationV2'}
-        segment: {type: integer, minimum: 0}
+        segment: {type: integer, minimum: -1, description: '-1 means no delivered source segment contains this entity range, including missing locations and ranges outside delivered source windows.'}
         reference: {type: integer, minimum: 0}
         selection: {$ref: '#/components/schemas/GraphSourceSelection'}
         status: {type: string}
@@ -1524,16 +1525,25 @@ components:
       properties:
         path: {type: string}
         fact: {$ref: '#/components/schemas/GraphArtifactFileV2'}
-        entities: {type: array, items: {$ref: '#/components/schemas/GraphEntityV2'}}
+        entities:
+          anyOf:
+            - {type: array, items: {$ref: '#/components/schemas/GraphEntityV2'}}
+            - {type: 'null'}
         pinned: {type: boolean}
         required: {type: boolean}
         score: {type: number, format: double}
         reservation_utf16_units: {type: integer, minimum: 0}
         status: {type: string}
         mode: {type: string}
-        segments: {type: array, items: {$ref: '#/components/schemas/GraphInspectionSource'}}
+        segments:
+          anyOf:
+            - {type: array, items: {$ref: '#/components/schemas/GraphInspectionSource'}}
+            - {type: 'null'}
         references: {type: array, items: {$ref: '#/components/schemas/GraphInspectionSource'}}
-        selections: {type: array, items: {$ref: '#/components/schemas/GraphExploreSelection'}}
+        selections:
+          anyOf:
+            - {type: array, items: {$ref: '#/components/schemas/GraphExploreSelection'}}
+            - {type: 'null'}
         boundaries: {type: array, items: {type: string}}
     GraphEvidenceV2:
       type: object
@@ -1551,7 +1561,10 @@ components:
       properties:
         status: {type: string}
         entities: {type: array, items: {$ref: '#/components/schemas/GraphEntityV2'}}
-        edges: {type: array, items: {$ref: '#/components/schemas/GraphEvidenceV2'}}
+        edges:
+          anyOf:
+            - {type: array, items: {$ref: '#/components/schemas/GraphEvidenceV2'}}
+            - {type: 'null'}
         generations: {type: array, minItems: 1, items: {$ref: '#/components/schemas/GraphGeneration'}}
         boundaries: {type: array, items: {$ref: '#/components/schemas/GraphBoundary'}}
         partial: {type: boolean}
@@ -1571,8 +1584,14 @@ components:
       required: [discovery, files, relationships, generations, corpus_files, line_numbers, complete, usage, source_utf16_units_limit, source_bytes_limit, file_limit]
       properties:
         discovery: {$ref: '#/components/schemas/GraphDiscoverResponse'}
-        files: {type: array, items: {$ref: '#/components/schemas/GraphExploreFile'}}
-        relationships: {type: array, items: {$ref: '#/components/schemas/GraphTraverseResponse'}}
+        files:
+          anyOf:
+            - {type: array, items: {$ref: '#/components/schemas/GraphExploreFile'}}
+            - {type: 'null'}
+        relationships:
+          anyOf:
+            - {type: array, items: {$ref: '#/components/schemas/GraphTraverseResponse'}}
+            - {type: 'null'}
         generations: {type: array, minItems: 1, items: {$ref: '#/components/schemas/GraphGeneration'}}
         corpus_files: {type: integer, format: int64, minimum: 0}
         line_numbers: {type: boolean}
