@@ -15,6 +15,7 @@ import (
 	"github.com/balcsida/graphnest/internal/authn"
 	"github.com/balcsida/graphnest/internal/authz"
 	"github.com/balcsida/graphnest/internal/githubapp"
+	graphv2 "github.com/balcsida/graphnest/internal/graphartifact/v2"
 	"github.com/balcsida/graphnest/internal/graphprotocol"
 	"github.com/balcsida/graphnest/internal/graphservice"
 	"github.com/balcsida/graphnest/internal/httpapi"
@@ -41,7 +42,7 @@ func TestGraphMCPMatchesService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	budget := mcpResultSize(t, want)
+	budget := 16 << 10
 	server := NewWithLimits(Services{Search: testService(t, &recordingBackend{}), Graph: graphService}, Limits{MaxOutputBytes: int64(budget), GraphMaxOutputBytes: int64(budget)})
 	handler := httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{
 		"secret": principal,
@@ -60,9 +61,13 @@ func TestGraphMCPMatchesService(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, description := range map[string]string{
-		"context": "Inspect a symbol's incoming and outgoing code relationships.",
-		"impact":  "Analyze the upstream or downstream impact of a code symbol.",
-		"trace":   "Trace code relationships between two symbols.",
+		"context":            "Inspect a symbol's incoming and outgoing code relationships.",
+		"impact":             "Analyze the upstream or downstream impact of a code symbol.",
+		"trace":              "Trace code relationships between two symbols.",
+		"graph_discover":     "Find bounded entry points in an indexed graph.",
+		"explore":            "Explore bounded graph facts and exact indexed source.",
+		"graph_files":        "List bounded files from an indexed graph generation.",
+		"graph_capabilities": "Report graph query, upload, and selected generation capabilities.",
 	} {
 		schema := repositoryToolSchema(t, tools.Tools, name)
 		if schema["additionalProperties"] != false {
@@ -91,6 +96,18 @@ func TestGraphMCPMatchesService(t *testing.T) {
 	traceProperties := repositoryToolSchema(t, tools.Tools, "trace")["properties"].(map[string]any)
 	if property := traceProperties["max_depth"].(map[string]any); property["default"] == nil || !strings.Contains(property["description"].(string), "default: 10; values above 30 are capped") {
 		t.Fatalf("trace.max_depth schema = %#v", property)
+	}
+	exploreProperties := repositoryToolSchema(t, tools.Tools, "explore")["properties"].(map[string]any)
+	for _, field := range []string{"symbols", "files"} {
+		if got := exploreProperties[field].(map[string]any)["maxItems"]; got != float64(20) {
+			t.Fatalf("explore.%s maxItems = %#v, want 20", field, got)
+		}
+	}
+	discoverProperties := repositoryToolSchema(t, tools.Tools, "graph_discover")["properties"].(map[string]any)
+	for _, field := range []string{"symbols", "files"} {
+		if got := discoverProperties[field].(map[string]any)["maxItems"]; got != float64(32) {
+			t.Fatalf("graph_discover.%s maxItems = %#v, want 32", field, got)
+		}
 	}
 	contextSchema := repositoryToolSchema(t, tools.Tools, "context")
 	if contextSchema["properties"].(map[string]any)["uid"] == nil || contextSchema["properties"].(map[string]any)["name"] == nil {
@@ -121,6 +138,47 @@ func TestGraphMCPMatchesService(t *testing.T) {
 	decodeStructured(t, result.StructuredContent, &got)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got=%#v want=%#v", got, want)
+	}
+	discoverRequest := api.GraphDiscoverRequest{Repo: api.GraphRepositorySelector{Name: "acme/one"}, Branch: "main", Query: "symbol"}
+	wantDiscover, err := graphService.Discover(t.Context(), principal, discoverRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	discoverResult, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "graph_discover", Arguments: map[string]any{"repo": "acme/one", "branch": "main", "query": "symbol"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotDiscover graphprotocol.DiscoverResponse
+	decodeStructured(t, discoverResult.StructuredContent, &gotDiscover)
+	if !reflect.DeepEqual(gotDiscover, wantDiscover) {
+		t.Fatalf("discover=%#v want=%#v", gotDiscover, wantDiscover)
+	}
+	restMux := http.NewServeMux()
+	httpapi.RegisterGraphQueries(restMux, authn.NewStatic(map[string]authn.Principal{"secret": principal}), graphService, int64(budget), int64(budget))
+	restResponse := httptest.NewRecorder()
+	restRequest := httptest.NewRequest(http.MethodPost, "/v1/graph/discover", strings.NewReader(`{"repo":"acme/one","branch":"main","query":"symbol"}`))
+	restRequest.Header.Set("Authorization", "Bearer secret")
+	restRequest.Header.Set("Content-Type", "application/json")
+	restMux.ServeHTTP(restResponse, restRequest)
+	if restResponse.Code != http.StatusOK {
+		t.Fatalf("REST discover status=%d body=%q", restResponse.Code, restResponse.Body.String())
+	}
+	mcpJSON, err := json.Marshal(discoverResult.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restWire, mcpWire any
+	if err := json.Unmarshal(restResponse.Body.Bytes(), &restWire); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(mcpJSON, &mcpWire); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(restWire, mcpWire) {
+		t.Fatalf("REST discover=%s MCP discover=%s", restResponse.Body.Bytes(), mcpJSON)
+	}
+	if gotDiscover.Matches[0].Entity.Fact.GetName() != "a" || gotDiscover.Matches[0].Entity.Fact.GetPath() != "a.go" || gotDiscover.Generations[0].Commit != store.repository.IndexedSHA {
+		t.Fatalf("encoded discovery facts=%#v", gotDiscover)
 	}
 	if store.principal.InstallationID != principal.InstallationID || !slices.Equal(store.principal.RepositoryIDs, principal.RepositoryIDs) {
 		t.Fatalf("principal=%#v want=%#v", store.principal, principal)
@@ -166,6 +224,30 @@ func (mcpGraphBackend) Impact(_ context.Context, request graphprotocol.ImpactReq
 }
 func (mcpGraphBackend) Trace(context.Context, graphprotocol.TraceRequest) (graphprotocol.TraceResponse, error) {
 	return graphprotocol.TraceResponse{}, nil
+}
+func (mcpGraphBackend) Discover(_ context.Context, request graphprotocol.DiscoverRequest) (graphprotocol.DiscoverResponse, error) {
+	generation := mcpGraphGeneration(request.Scope)
+	return graphprotocol.DiscoverResponse{Status: "candidates", Confidence: "discovery_only", Matches: []graphprotocol.DiscoveryMatch{{Entity: mcpGraphEntity()}}, Generations: []graphprotocol.Generation{generation}, Coverage: "entry_points_only"}, nil
+}
+func (mcpGraphBackend) Entities(_ context.Context, request graphprotocol.EntitiesRequest) (graphprotocol.EntitiesResponse, error) {
+	return graphprotocol.EntitiesResponse{Entities: []graphprotocol.Entity{mcpGraphEntity()}, Generations: []graphprotocol.Generation{mcpGraphGeneration(request.Scope)}}, nil
+}
+func (mcpGraphBackend) Traverse(_ context.Context, request graphprotocol.TraverseRequest) (graphprotocol.TraverseResponse, error) {
+	return graphprotocol.TraverseResponse{Status: "ok", Entities: []graphprotocol.Entity{mcpGraphEntity()}, Generations: []graphprotocol.Generation{mcpGraphGeneration(request.Scope)}}, nil
+}
+func (mcpGraphBackend) IndexedFiles(_ context.Context, request graphprotocol.FilesRequest) (graphprotocol.FilesResponse, error) {
+	total := int64(1)
+	return graphprotocol.FilesResponse{Files: []graphprotocol.IndexedFile{{RepositoryID: 101, Fact: &graphv2.File{Path: "a.go"}}}, Generations: []graphprotocol.Generation{mcpGraphGeneration(request.Scope)}, TotalFiles: &total}, nil
+}
+func (mcpGraphBackend) ValidateGenerations(context.Context, graphprotocol.Scope, []graphprotocol.Generation) error {
+	return nil
+}
+func mcpGraphEntity() graphprotocol.Entity {
+	path := "a.go"
+	return graphprotocol.Entity{RepositoryID: 101, ID: "symbol:a", Fact: &graphv2.Node{Occurrence: "symbol:a", Name: "a", Path: &path}}
+}
+func mcpGraphGeneration(scope graphprotocol.Scope) graphprotocol.Generation {
+	return graphprotocol.Generation{RepositoryID: 101, UploadID: 1, Commit: scope.Repositories[0].Commit, Capabilities: []string{"relations"}}
 }
 func TestRepositoryToolsUseAuthenticatedService(t *testing.T) {
 	repositoryService := mcpRepositoryService()
