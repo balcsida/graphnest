@@ -45,6 +45,51 @@ func TestFromSCIPBuildsDeterministicExplicitGraph(t *testing.T) {
 	}
 }
 
+// A symbol's location is where it is defined. Occurrences arrive in document
+// order, so a reference in an alphabetically earlier file must not win over
+// the definition; without any definition the first occurrence stays.
+func TestFromSCIPLocatesSymbolsAtTheirDefinition(t *testing.T) {
+	repository := SCIPRepository{ID: 101, Commit: strings.Repeat("a", 40)}
+	const symbol = "scip-go gomod example.com/acme v1 `example.com/acme`/Config#"
+	const definitionRole = 1
+	occurrences := []scipgraph.Occurrence{
+		{Path: "agent_token.go", Symbol: symbol, StartLine: 170, EndLine: 170, EndCharacter: 6},
+		{Path: "config.go", Symbol: symbol, StartLine: 14, StartCharacter: 5, EndLine: 14, EndCharacter: 11, Roles: definitionRole},
+		{Path: "main.go", Symbol: symbol, StartLine: 3, EndLine: 3, EndCharacter: 6},
+	}
+	artifact, err := FromSCIP(repository, occurrences, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := symbolNode(t, artifact)
+	if node.Path != "config.go" || node.Range != (Range{14, 5, 14, 11}) {
+		t.Fatalf("definition location = %q %+v", node.Path, node.Range)
+	}
+	reversed := []scipgraph.Occurrence{occurrences[2], occurrences[1], occurrences[0]}
+	again, err := FromSCIP(repository, reversed, nil)
+	if err != nil || !bytes.Equal(artifact.ContentHash, again.ContentHash) {
+		t.Fatalf("occurrence order changed the artifact: %v", err)
+	}
+	undefined, err := FromSCIP(repository, []scipgraph.Occurrence{occurrences[0], occurrences[2]}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node := symbolNode(t, undefined); node.Path != "agent_token.go" {
+		t.Fatalf("fallback location = %q, want first occurrence", node.Path)
+	}
+}
+
+func symbolNode(t *testing.T, artifact Artifact) Node {
+	t.Helper()
+	for _, node := range artifact.Nodes {
+		if node.Kind == NodeSymbol {
+			return node
+		}
+	}
+	t.Fatal("no symbol node")
+	return Node{}
+}
+
 // Context/impact/trace look symbols up by the name a developer types, so the
 // fallback graph must expose the SCIP descriptor name and kind rather than the
 // raw symbol string, which is never what a caller has in hand.
