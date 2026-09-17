@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -211,6 +212,127 @@ func TestAdminDelegatedTokenRouteMintsNarrowedToken(t *testing.T) {
 	mux.ServeHTTP(response, request)
 	if response.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("GET status=%d", response.Code)
+	}
+}
+
+type activeRepositoryStub struct{ active map[int64]bool }
+
+func (s activeRepositoryStub) ActiveRepository(_ context.Context, id int64) (bool, error) {
+	return s.active[id], nil
+}
+
+// A broker holding a delegation-only token can mint for any active repository
+// without its own ceiling, but is refused everywhere else on the account API.
+func TestDelegationOnlyTokenMintsForAnyActiveRepositoryAndNothingElse(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	service := &account.Service{
+		Manager:      authn.TokenManager{Store: &accountStoreStub{}, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))},
+		Repositories: activeRepositoryStub{active: map[int64]bool{22639: true}},
+	}
+	mux := http.NewServeMux()
+	RegisterAccount(mux, authn.RequestAuthenticator{Bearer: authn.NewStatic(map[string]authn.Principal{
+		"broker": {Subject: "3", Method: "api_token", Administrator: true, DelegationOnly: true},
+	})}, service, 1024, 4096)
+	call := func(method, path, body string) *httptest.ResponseRecorder {
+		var reader io.Reader
+		if body != "" {
+			reader = strings.NewReader(body)
+		}
+		request := httptest.NewRequest(method, path, reader)
+		request.Header.Set("Authorization", "Bearer broker")
+		if body != "" {
+			request.Header.Set("Content-Type", "application/json")
+		}
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, request)
+		return response
+	}
+
+	response := call(http.MethodPost, "/v1/admin/api-tokens", `{"expires_at":"2026-08-01T00:15:00Z","repository_ids":[22639]}`)
+	if response.Code != http.StatusCreated || !strings.Contains(response.Body.String(), `"repository_ids":[22639]`) {
+		t.Fatalf("mint status=%d body=%s", response.Code, response.Body.String())
+	}
+	if response := call(http.MethodPost, "/v1/admin/api-tokens", `{"expires_at":"2026-08-01T00:15:00Z","repository_ids":[999]}`); response.Code != http.StatusForbidden {
+		t.Fatalf("unknown repository status=%d body=%s", response.Code, response.Body.String())
+	}
+	for name, tc := range map[string]struct{ method, path, body string }{
+		"list own tokens":       {http.MethodGet, "/v1/account/api-tokens", ""},
+		"mint ordinary token":   {http.MethodPost, "/v1/account/api-tokens", `{"expires_at":"2026-08-29T00:00:00Z","repository_ids":[22639]}`},
+		"revoke a token":        {http.MethodDelete, "/v1/account/api-tokens/3", ""},
+		"list oauth grants":     {http.MethodGet, "/v1/account/oauth-grants", ""},
+		"revoke an oauth grant": {http.MethodDelete, "/v1/account/oauth-grants/5", ""},
+	} {
+		if response := call(tc.method, tc.path, tc.body); response.Code != http.StatusForbidden {
+			t.Errorf("%s: status=%d want=403 body=%s", name, response.Code, response.Body.String())
+		}
+	}
+}
+
+// Interactive administrators mint delegation-only tokens through a dedicated
+// route, so the flag can never be smuggled into an ordinary token request.
+func TestDelegationOnlyTokenRouteIsInteractiveAdministratorOnly(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	// Two successful mints below; each consumes 32 bytes of Rand.
+	service := &account.Service{Manager: authn.TokenManager{Store: &accountStoreStub{}, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 64))}}
+	mux := http.NewServeMux()
+	RegisterAccount(mux, authn.RequestAuthenticator{Bearer: authn.NewStatic(map[string]authn.Principal{
+		"admin-oidc":  {Subject: "1", Method: "oidc", Administrator: true},
+		"user-oidc":   {Subject: "11", Method: "oidc", RepositoryIDs: []int64{101}},
+		"admin-token": {Subject: "1", Method: "api_token", Administrator: true, RepositoryIDs: []int64{101}},
+		"broker":      {Subject: "3", Method: "api_token", Administrator: true, DelegationOnly: true},
+	})}, service, 1024, 4096)
+	call := func(token, body string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/v1/account/delegation-tokens", strings.NewReader(body))
+		request.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, request)
+		return response
+	}
+
+	response := call("admin-oidc", `{}`)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var created struct {
+		Token          string  `json:"token"`
+		DelegationOnly bool    `json:"delegation_only"`
+		RepositoryIDs  []int64 `json:"repository_ids"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(created.Token, "gnp_") || !created.DelegationOnly || len(created.RepositoryIDs) != 0 {
+		t.Fatalf("created=%+v", created)
+	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control=%q", response.Header().Get("Cache-Control"))
+	}
+	if response := call("admin-oidc", `{"expires_at":"2026-08-29T00:00:00Z"}`); response.Code != http.StatusCreated {
+		t.Fatalf("with expiry status=%d body=%s", response.Code, response.Body.String())
+	}
+	for name, tc := range map[string]struct {
+		token, body string
+		want        int
+	}{
+		"ordinary user":           {"user-oidc", `{}`, http.StatusForbidden},
+		"administrator api token": {"admin-token", `{}`, http.StatusForbidden},
+		"delegation-only token":   {"broker", `{}`, http.StatusForbidden},
+		"repository ceiling":      {"admin-oidc", `{"repository_ids":[101]}`, http.StatusBadRequest},
+		"past expiry":             {"admin-oidc", `{"expires_at":"2026-07-01T00:00:00Z"}`, http.StatusBadRequest},
+	} {
+		if response := call(tc.token, tc.body); response.Code != tc.want {
+			t.Errorf("%s: status=%d want=%d body=%s", name, response.Code, tc.want, response.Body.String())
+		}
+	}
+	// Ordinary token creation never accepts the flag.
+	request := httptest.NewRequest(http.MethodPost, "/v1/account/api-tokens", strings.NewReader(`{"delegation_only":true}`))
+	request.Header.Set("Authorization", "Bearer admin-oidc")
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("delegation_only on ordinary route status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

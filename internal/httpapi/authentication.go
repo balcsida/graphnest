@@ -8,11 +8,31 @@ import (
 	"github.com/balcsida/graphnest/internal/authn"
 )
 
+// delegationRoutePath is the only request a delegation-only token may make.
+const delegationRoutePath = "/v1/admin/api-tokens"
+
+// confinesDelegationOnly reports whether a delegation-only principal must be
+// refused for this request. Such a principal is an administrator with an
+// empty repository ceiling, which several administrative read paths treat as
+// "every repository"; confining it here means no handler has to know about
+// the special case, and a leaked broker credential can only mint.
+func confinesDelegationOnly(principal authn.Principal, request *http.Request) bool {
+	return principal.DelegationOnly && !(request.Method == http.MethodPost && request.URL.Path == delegationRoutePath)
+}
+
+func writeForbidden(writer http.ResponseWriter) {
+	writeError(writer, http.StatusForbidden, "forbidden", "forbidden", false)
+}
+
 func AuthenticateRequest(authenticator authn.RequestAuthenticator, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		principal, err := authenticator.AuthenticateRequest(request)
 		if err != nil || principal.ForceRotation {
 			writeUnauthenticated(writer)
+			return
+		}
+		if confinesDelegationOnly(principal, request) {
+			writeForbidden(writer)
 			return
 		}
 		next.ServeHTTP(writer, request.WithContext(context.WithValue(request.Context(), principalContextKey{}, principal)))
@@ -55,6 +75,10 @@ func AuthenticateBearerWithChallenge(authenticator authn.Authenticator, challeng
 		principal, err := authenticator.Authenticate(request.Context(), parts[1])
 		if err != nil {
 			reject(writer, true)
+			return
+		}
+		if confinesDelegationOnly(principal, request) {
+			writeForbidden(writer)
 			return
 		}
 		ctx := context.WithValue(request.Context(), principalContextKey{}, principal)
