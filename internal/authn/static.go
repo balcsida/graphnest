@@ -10,9 +10,15 @@ import (
 var ErrUnauthenticated = errors.New("unauthenticated")
 
 type Principal struct {
-	Subject         string
-	Method          string
-	Administrator   bool
+	Subject       string
+	Method        string
+	Administrator bool
+	// DelegationOnly marks an administrator API token that may only mint
+	// narrowed, short-lived tokens (POST /v1/admin/api-tokens) for any active
+	// repository. It carries no repository access of its own and is refused
+	// by every other endpoint, so a leaked broker credential cannot read,
+	// search, or upload anything directly.
+	DelegationOnly  bool
 	ForceRotation   bool
 	InstallationID  int64
 	RepositoryIDs   []int64
