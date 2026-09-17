@@ -184,6 +184,65 @@ func TestOIDCAdministratorIsGlobalWhileAPITokenKeepsCeiling(t *testing.T) {
 	}
 }
 
+// A delegation-only administrator token is the one exception to "administrator
+// API tokens need a non-empty ceiling": it authenticates with no repository
+// access at all, and only Delegate consults the flag.
+func TestDelegationOnlyAdministratorTokenAuthenticatesWithoutCeiling(t *testing.T) {
+	store := migratedStore(t)
+	userID := insertIdentityUser(t, store, "directory-6", "broker")
+	seedReadyRepository(t, store, 101, testSHA('a'))
+	if _, err := store.pool.Exec(t.Context(), `insert into user_roles (user_id, administrator) values ($1, true)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{
+		TokenHash: [32]byte{12}, Prefix: "gn_test", UserID: userID, DelegationOnly: true, CreatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	principal, err := store.APIPrincipal(t.Context(), [32]byte{12}, now)
+	if err != nil || !principal.Administrator || !principal.DelegationOnly || principal.Method != "api_token" || len(principal.RepositoryIDs) != 0 {
+		t.Fatalf("principal=%#v err=%v", principal, err)
+	}
+	// It is listed with the flag so operators can tell it apart.
+	tokens, err := store.ListAPITokens(t.Context(), userID)
+	if err != nil || len(tokens) != 1 || !tokens[0].DelegationOnly {
+		t.Fatalf("tokens=%#v err=%v", tokens, err)
+	}
+	// The flag never makes a non-administrator special: without the role it is
+	// just an ordinary token with an empty ceiling.
+	plainUser := insertIdentityUser(t, store, "directory-7", "plain")
+	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{
+		TokenHash: [32]byte{13}, Prefix: "gn_test", UserID: plainUser, DelegationOnly: true, CreatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	plain, err := store.APIPrincipal(t.Context(), [32]byte{13}, now)
+	if err != nil || plain.Administrator || plain.DelegationOnly || len(plain.RepositoryIDs) != 0 {
+		t.Fatalf("non-administrator principal=%#v err=%v", plain, err)
+	}
+}
+
+// The delegation-only path needs to know whether a repository is active
+// without any principal ceiling; that is what Delegate checks each requested
+// ID against.
+func TestActiveRepositoryReportsOnlyEnabledActiveInstallations(t *testing.T) {
+	store := migratedStore(t)
+	seedReadyRepository(t, store, 101, testSHA('a'))
+	if ok, err := store.ActiveRepository(t.Context(), 101); err != nil || !ok {
+		t.Fatalf("active repository ok=%v err=%v", ok, err)
+	}
+	if ok, err := store.ActiveRepository(t.Context(), 999); err != nil || ok {
+		t.Fatalf("unknown repository ok=%v err=%v", ok, err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `update repositories set enabled=false where github_id=101`); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := store.ActiveRepository(t.Context(), 101); err != nil || ok {
+		t.Fatalf("disabled repository ok=%v err=%v", ok, err)
+	}
+}
+
 func TestAPIPrincipalDistinguishesEmptyTokenCeiling(t *testing.T) {
 	store := migratedStore(t)
 	userID := insertIdentityUser(t, store, "directory-4", "kai")

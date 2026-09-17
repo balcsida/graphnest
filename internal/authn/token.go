@@ -35,6 +35,17 @@ func (m TokenManager) Create(ctx context.Context, userID int64, repositoryIDs []
 }
 
 func (m TokenManager) CreateWithMethod(ctx context.Context, userID int64, method string, repositoryIDs []int64, expiresAt *time.Time) (int64, string, error) {
+	return m.create(ctx, userID, method, repositoryIDs, false, expiresAt)
+}
+
+// CreateDelegationOnly mints a token with no repository ceiling that only the
+// delegation endpoint honours. Callers must have verified the owner is an
+// interactive administrator; the store makes the flag inert for anyone else.
+func (m TokenManager) CreateDelegationOnly(ctx context.Context, userID int64, method string, expiresAt *time.Time) (int64, string, error) {
+	return m.create(ctx, userID, method, nil, true, expiresAt)
+}
+
+func (m TokenManager) create(ctx context.Context, userID int64, method string, repositoryIDs []int64, delegationOnly bool, expiresAt *time.Time) (int64, string, error) {
 	if m.Store == nil || userID <= 0 {
 		return 0, "", ErrUnauthenticated
 	}
@@ -58,7 +69,8 @@ func (m TokenManager) CreateWithMethod(ctx context.Context, userID int64, method
 	}
 	record := APITokenRecord{
 		TokenHash: sha256.Sum256([]byte(plaintext)), Prefix: plaintext[:12], UserID: userID,
-		RepositoryIDs: append([]int64(nil), repositoryIDs...), CreatedAt: now, ExpiresAt: expiry,
+		RepositoryIDs: append([]int64(nil), repositoryIDs...), DelegationOnly: delegationOnly,
+		CreatedAt: now, ExpiresAt: expiry,
 	}
 	var id int64
 	var err error
