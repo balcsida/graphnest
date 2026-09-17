@@ -32,11 +32,16 @@ func FromSCIP(repository SCIPRepository, occurrences []scipgraph.Occurrence, rel
 	}
 	repositoryUID := fmt.Sprintf("repository:%d", repository.ID)
 	addNode(Node{UID: repositoryUID, Kind: NodeRepository})
-	addSymbol := func(symbol, path string, r Range) string {
+	// A symbol node sits at its definition. Occurrences arrive in document
+	// order, so the first sighting is usually a reference in some other file;
+	// the definition-role occurrence replaces it whenever one exists.
+	defined := map[string]bool{}
+	addSymbol := func(symbol, path string, r Range, definition bool) string {
 		uid := "symbol:" + symbol
-		if _, ok := nodes[uid]; !ok {
+		if _, ok := nodes[uid]; !ok || definition && !defined[uid] {
 			name, kind := symbolNameAndKind(symbol)
 			addNode(Node{UID: uid, Kind: NodeSymbol, Path: path, SymbolKind: kind, QualifiedName: name, SCIPSymbol: symbol, Range: r})
+			defined[uid] = defined[uid] || definition
 		}
 		return uid
 	}
@@ -50,12 +55,12 @@ func FromSCIP(repository SCIPRepository, occurrences []scipgraph.Occurrence, rel
 	}
 	for _, occurrence := range occurrences {
 		fileUID := addFile(occurrence.Path)
-		symbolUID := addSymbol(occurrence.Symbol, occurrence.Path, Range{occurrence.StartLine, occurrence.StartCharacter, occurrence.EndLine, occurrence.EndCharacter})
+		symbolUID := addSymbol(occurrence.Symbol, occurrence.Path, Range{occurrence.StartLine, occurrence.StartCharacter, occurrence.EndLine, occurrence.EndCharacter}, occurrence.Roles&int32(scip.SymbolRole_Definition) != 0)
 		addEdge(Edge{SourceUID: fileUID, TargetUID: symbolUID, Kind: EdgeContains, Path: occurrence.Path, Range: Range{occurrence.StartLine, occurrence.StartCharacter, occurrence.EndLine, occurrence.EndCharacter}, Confidence: 1})
 	}
 	for _, relationship := range relationships {
-		sourceUID := addSymbol(relationship.Source, relationship.Path, Range{})
-		targetUID := addSymbol(relationship.Target, relationship.Path, Range{})
+		sourceUID := addSymbol(relationship.Source, relationship.Path, Range{}, false)
+		targetUID := addSymbol(relationship.Target, relationship.Path, Range{}, false)
 		for _, kind := range []struct {
 			enabled bool
 			kind    EdgeKind
