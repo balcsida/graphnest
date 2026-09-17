@@ -76,13 +76,18 @@ func (client *Client) Search(ctx context.Context, request search.BackendRequest)
 		ctx, cancel = context.WithTimeout(ctx, request.Timeout)
 		defer cancel()
 	}
+	// MaxDocDisplayCount only bounds files; a common term in a few large files
+	// still returns hundreds of line matches, and that payload overruns the
+	// response cap and fails the whole search. The service keeps at most Limit
+	// matches anyway, so ask Zoekt for exactly that many.
 	result, err := client.call(ctx, wireRequest{
 		Q:       request.Query,
 		RepoIDs: append([]uint32{}, request.RepositoryIDs...),
 		Opts: wireOptions{
-			NumContextLines:    request.ContextLines,
-			MaxDocDisplayCount: request.Limit,
-			MaxWallTime:        int64(request.Timeout),
+			NumContextLines:      request.ContextLines,
+			MaxDocDisplayCount:   request.Limit,
+			MaxMatchDisplayCount: request.Limit,
+			MaxWallTime:          int64(request.Timeout),
 		},
 	}, client.maxBytes)
 	if err != nil {
@@ -301,9 +306,10 @@ type wireRequest struct {
 }
 
 type wireOptions struct {
-	NumContextLines    int   `json:"NumContextLines"`
-	MaxDocDisplayCount int   `json:"MaxDocDisplayCount"`
-	MaxWallTime        int64 `json:"MaxWallTime"`
+	NumContextLines      int   `json:"NumContextLines"`
+	MaxDocDisplayCount   int   `json:"MaxDocDisplayCount"`
+	MaxMatchDisplayCount int   `json:"MaxMatchDisplayCount"`
+	MaxWallTime          int64 `json:"MaxWallTime"`
 }
 
 type wireResponse struct {

@@ -30,9 +30,10 @@ func TestSearchUsesPinnedJSONContract(t *testing.T) {
 			"Q":       "needle",
 			"RepoIDs": []any{float64(7)},
 			"Opts": map[string]any{
-				"NumContextLines":    float64(3),
-				"MaxDocDisplayCount": float64(20),
-				"MaxWallTime":        float64(time.Second),
+				"NumContextLines":      float64(3),
+				"MaxDocDisplayCount":   float64(20),
+				"MaxMatchDisplayCount": float64(20),
+				"MaxWallTime":          float64(time.Second),
 			},
 		}
 		if !equalJSON(body, want) {
