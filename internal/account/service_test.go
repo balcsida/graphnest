@@ -194,6 +194,115 @@ func TestDelegateRequiresCeilingWithinGrantAndShortExpiry(t *testing.T) {
 	}
 }
 
+// activeRepositoryStub answers "does this repository exist and is it
+// active?" for the delegation-only path, which has no ceiling of its own.
+type activeRepositoryStub struct{ active map[int64]bool }
+
+func (s activeRepositoryStub) ActiveRepository(_ context.Context, repositoryID int64) (bool, error) {
+	return s.active[repositoryID], nil
+}
+
+// A delegation-only administrator token is the credential a broker service
+// holds: it may hand out narrowed, short-lived tokens for any active
+// repository, so its own ceiling is irrelevant and it need not be re-widened
+// whenever a repository is onboarded.
+func TestDelegateFromDelegationOnlyTokenCoversAnyActiveRepository(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	store := &storeStub{}
+	s := &Service{
+		Manager:      authn.TokenManager{Store: store, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))},
+		Repositories: activeRepositoryStub{active: map[int64]bool{22639: true}},
+	}
+	broker := authn.Principal{Subject: "3", Method: "api_token", Administrator: true, DelegationOnly: true}
+	expires := now.Add(15 * time.Minute)
+	token, plaintext, err := s.Delegate(t.Context(), broker, &expires, []int64{22639})
+	if err != nil || plaintext == "" || len(token.RepositoryIDs) != 1 || token.RepositoryIDs[0] != 22639 {
+		t.Fatalf("token=%#v plaintext=%q err=%v", token, plaintext, err)
+	}
+	if store.created.DelegationOnly {
+		t.Fatal("delegated child token must not itself be delegation-only")
+	}
+	if store.created.UserID != 3 || len(store.created.RepositoryIDs) != 1 || store.created.RepositoryIDs[0] != 22639 {
+		t.Fatalf("stored=%#v", store.created)
+	}
+}
+
+func TestDelegateFromDelegationOnlyTokenRejectsUnknownRepository(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	s := &Service{
+		Manager:      authn.TokenManager{Store: &storeStub{}, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))},
+		Repositories: activeRepositoryStub{active: map[int64]bool{101: true}},
+	}
+	broker := authn.Principal{Subject: "3", Method: "api_token", Administrator: true, DelegationOnly: true}
+	expires := now.Add(15 * time.Minute)
+	// One known and one unknown repository: the whole request is refused so a
+	// caller cannot probe which IDs exist by watching what gets minted.
+	if _, _, err := s.Delegate(t.Context(), broker, &expires, []int64{101, 999}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("unknown repository err=%v, want ErrForbidden", err)
+	}
+}
+
+// Without a repository lookup wired in, a delegation-only token cannot prove
+// a repository is active, so it must fail closed rather than mint blindly.
+func TestDelegateFromDelegationOnlyTokenFailsClosedWithoutRepositoryLookup(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	s := &Service{Manager: authn.TokenManager{Store: &storeStub{}, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+	broker := authn.Principal{Subject: "3", Method: "api_token", Administrator: true, DelegationOnly: true}
+	expires := now.Add(15 * time.Minute)
+	if _, _, err := s.Delegate(t.Context(), broker, &expires, []int64{101}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("err=%v, want ErrForbidden", err)
+	}
+}
+
+// Only an interactive administrator may mint a delegation-only token, and
+// it carries no ceiling: the flag replaces the ceiling rather than widening it.
+func TestCreateTokenMintsDelegationOnlyForInteractiveAdministrator(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	store := &storeStub{}
+	s := &Service{Manager: authn.TokenManager{Store: store, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+	admin := authn.Principal{Subject: "1", Method: "oidc", Administrator: true}
+	token, plaintext, err := s.CreateDelegationOnlyToken(t.Context(), admin, nil)
+	if err != nil || plaintext == "" || !token.DelegationOnly || len(token.RepositoryIDs) != 0 {
+		t.Fatalf("token=%#v plaintext=%q err=%v", token, plaintext, err)
+	}
+	if !store.created.DelegationOnly || len(store.created.RepositoryIDs) != 0 || store.created.UserID != 1 {
+		t.Fatalf("stored=%#v", store.created)
+	}
+}
+
+func TestCreateDelegationOnlyTokenRequiresInteractiveAdministrator(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	s := &Service{Manager: authn.TokenManager{Store: &storeStub{}, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+	for name, principal := range map[string]authn.Principal{
+		"ordinary interactive user": {Subject: "11", Method: "oidc", RepositoryIDs: []int64{101}},
+		"administrator api token":   {Subject: "11", Method: "api_token", Administrator: true, RepositoryIDs: []int64{101}},
+		"delegation-only token":     {Subject: "3", Method: "api_token", Administrator: true, DelegationOnly: true},
+		"oauth access token":        {Subject: "11", Method: authn.ProviderOAuthToken, Administrator: true},
+	} {
+		if _, _, err := s.CreateDelegationOnlyToken(t.Context(), principal, nil); !errors.Is(err, ErrForbidden) {
+			t.Fatalf("%s: err=%v, want ErrForbidden", name, err)
+		}
+	}
+}
+
+// A delegation-only token exists to mint; it must not be able to manage the
+// owning account's credentials, or a leak becomes an account takeover.
+func TestDelegationOnlyTokenCannotManageCredentials(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	s := &Service{Manager: authn.TokenManager{Store: &storeStub{}, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+	broker := authn.Principal{Subject: "3", Method: "api_token", Administrator: true, DelegationOnly: true}
+	expires := now.Add(15 * time.Minute)
+	if _, _, err := s.CreateToken(t.Context(), broker, &expires, []int64{101}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("CreateToken err=%v", err)
+	}
+	if _, err := s.Tokens(t.Context(), broker); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("Tokens err=%v", err)
+	}
+	if err := s.RevokeToken(t.Context(), broker, 1); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("RevokeToken err=%v", err)
+	}
+}
+
 // MCP OAuth access tokens act as the user but must never mint or manage
 // long-lived credentials: a leaked hour-long token stays an hour-long token.
 func TestOAuthAccessTokensCannotManageCredentials(t *testing.T) {
