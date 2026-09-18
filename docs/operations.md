@@ -176,9 +176,11 @@ token) with `POST /v1/account/delegation-tokens`, optionally passing
 
 Revoke it like any other token from the owner's session
 (`DELETE /v1/account/api-tokens/{id}`); it is listed with
-`"delegation_only": true`. Setting the flag on a non-administrator's token has
-no effect. Prefer a dedicated local service user as the owner so revoking a
-person's access never disables the broker.
+`"delegation_only": true`. The token is tied to the owner's administrator
+role: if the owner is demoted, the token stops authenticating altogether
+rather than degrading into an ordinary token over the owner's grants. Prefer a
+dedicated local service user as the owner so revoking a person's access never
+disables the broker.
 
 ## Production control gates
 
