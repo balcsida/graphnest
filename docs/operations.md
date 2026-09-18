@@ -149,6 +149,41 @@ audit-retention or deletion mechanism, and the database trigger rejects updates
 deletes, and truncation. Operators must account for that growth in PostgreSQL
 retention and backup policy.
 
+## Service credentials for CI upload brokers
+
+A broker service (for example a GitHub App that hands each CI job a
+single-repository SCIP upload token) authenticates to GraphNest with an
+administrator API token and calls `POST /v1/admin/api-tokens`. Ordinary
+administrator API tokens carry an explicit repository ceiling and may only
+delegate inside it, so such a broker credential silently stops covering
+repositories onboarded after it was minted; delegation for those returns 403.
+
+Use a **delegation-only** token for the broker instead. Mint it as an
+interactive administrator (session or OIDC sign-in; never from another API
+token) with `POST /v1/account/delegation-tokens`, optionally passing
+`expires_at`. The token:
+
+- has no repository ceiling and needs no re-widening as repositories are
+  onboarded;
+- may delegate a one-hour, narrowed token for any repository that is enabled,
+  not archived, and on an active installation; a request naming any other
+  repository is refused as a whole, so the response does not enumerate
+  repositories;
+- mints children that cannot delegate again, so a leaked job token expires
+  within the hour instead of renewing itself after the broker is revoked;
+- is refused by every other endpoint: it cannot search, read, upload, list or
+  revoke tokens, or manage OAuth grants. A leaked broker credential therefore
+  yields only the ability to mint short-lived single-repository tokens until it
+  is revoked.
+
+Revoke it like any other token from the owner's session
+(`DELETE /v1/account/api-tokens/{id}`); it is listed with
+`"delegation_only": true`. The token is tied to the owner's administrator
+role: if the owner is demoted, the token stops authenticating altogether
+rather than degrading into an ordinary token over the owner's grants. Prefer a
+dedicated local service user as the owner so revoking a person's access never
+disables the broker.
+
 ## Production control gates
 
 Treat the following as deployment prerequisites, not settings supplied by this
