@@ -3,6 +3,81 @@
 Notable changes are recorded here. GraphNest is pre-1.0 pilot software; review
 the compatibility and migration notes before upgrading.
 
+## [0.5.0] - 2026-09-18
+
+This release adds repository-scoped graph discovery and exploration, introduces
+delegation-only administrator tokens for CI upload brokers, and repairs the MCP
+tools that failed against live deployments.
+
+### Upgrade guidance
+
+- Migrations 031 and 032 add two boolean columns to `api_tokens`; they run
+  automatically at startup and default to `false`, so existing tokens keep
+  their current behaviour. No configuration changes are required.
+- Graph discovery, exploration, file listing, and capabilities require an
+  existing v2 graph generation for the selected repository; repositories with
+  only v1 uploads return an error that names the missing generation. ([#91])
+
+### Added
+
+- Repository-scoped graph discovery, exact-commit source exploration, indexed
+  file listing, and capability reporting through `POST /v1/graph/discover`,
+  `/v1/graph/explore`, `/v1/graph/files`, and `/v1/graph/capabilities`, and the
+  matching MCP tools `graph_discover`, `explore`, `graph_files`, and
+  `graph_capabilities`. Both transports recheck credentials and repository
+  access before returning results. ([#91])
+- Delegation-only administrator API tokens, minted by an interactive
+  administrator through `POST /v1/account/delegation-tokens`. Such a token has
+  no repository ceiling, so a CI upload broker no longer needs re-minting as
+  repositories are onboarded, yet it is refused by every endpoint other than
+  `POST /v1/admin/api-tokens`, so a leaked broker credential grants no direct
+  read, search, or upload access. The account console labels these tokens.
+  ([#94])
+
+### Fixed
+
+- MCP `search_code` returned "search service is unavailable" for common
+  terms: Zoekt was asked for unbounded line matches and the payload exceeded
+  the response budget. Requests now cap line matches at the page size, and a
+  capped page reports `truncated: true` using Zoekt's match count rather than
+  the display-limited result. ([#93])
+- MCP `context`, `impact`, and `trace` returned "repository not found" for
+  every OAuth and API-token principal: graph repository lookup required an
+  installation match that non-installation principals never have. Such
+  principals are now bounded only by their repository grants, while
+  administrator-owned PATs keep their repository ceiling. ([#93], [#91])
+- Digit-only repository selector strings such as `"825"` are treated as
+  repository IDs rather than names. ([#93])
+- Symbols in SCIP-fallback graphs are named from the SCIP descriptor instead of
+  the raw symbol string and placed at their definition occurrence, so name-based
+  `context` lookups (`Config`, `LoadConfig`, method names) resolve. ([#93])
+- MCP OAuth consent could not be completed from a browser: `Referrer-Policy:
+  no-referrer` made the consent form post arrive with `Origin: null`, and the
+  `form-action` CSP directive blocked the post-consent redirect to the client's
+  registered callback. ([#90])
+- The admin console reports the HTTP status of non-JSON error responses, so an
+  ingress proxy timeout during a long SCIP upload is distinguishable from a
+  GraphNest failure. The Helm chart README documents raising the ingress
+  timeout for large uploads. ([#92])
+
+### Security
+
+- A delegation-only token whose owner is later demoted from administrator is
+  rejected outright instead of degrading into an ordinary token over all of the
+  owner's repository grants. ([#94])
+- Tokens minted by `POST /v1/admin/api-tokens` are recorded as delegated and
+  may not delegate again, so delegation is one generation deep and a stolen
+  job token cannot renew itself past its own expiry after the broker token is
+  revoked. This closes a pre-existing gap. ([#94])
+- Update the OTLP trace exporters bundled with the Zoekt tooling to v1.46.0
+  (GHSA-8wmf-6v46-5gfg). ([#100])
+
+### Changed
+
+- Update `github.com/modelcontextprotocol/go-sdk` to v1.8.0 and `buf` to
+  v1.73.0; update the `docker/setup-buildx-action` and
+  `docker/setup-qemu-action` release workflow actions to v4.4.0. ([#99])
+
 ## [0.4.3] - 2026-09-13
 
 ### Security
@@ -149,6 +224,7 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
+[0.5.0]: https://github.com/balcsida/graphnest/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/balcsida/graphnest/compare/v0.4.1...v0.4.3
 [0.4.2]: https://github.com/balcsida/graphnest/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/balcsida/graphnest/compare/v0.3.0...v0.4.1
@@ -163,3 +239,10 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
 [#83]: https://github.com/balcsida/graphnest/pull/83
 [#84]: https://github.com/balcsida/graphnest/pull/84
 [#87]: https://github.com/balcsida/graphnest/pull/87
+[#90]: https://github.com/balcsida/graphnest/pull/90
+[#91]: https://github.com/balcsida/graphnest/pull/91
+[#92]: https://github.com/balcsida/graphnest/pull/92
+[#93]: https://github.com/balcsida/graphnest/pull/93
+[#94]: https://github.com/balcsida/graphnest/pull/94
+[#99]: https://github.com/balcsida/graphnest/pull/99
+[#100]: https://github.com/balcsida/graphnest/pull/100
