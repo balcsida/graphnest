@@ -10,8 +10,11 @@ type APITokenRecord struct {
 	// DelegationOnly tokens have no ceiling and no repository access; they
 	// exist solely to call the delegation endpoint. See Principal.
 	DelegationOnly bool
-	CreatedAt      time.Time
-	ExpiresAt      *time.Time
+	// Delegated tokens were minted by the delegation endpoint and may not
+	// delegate again. See Principal.
+	Delegated bool
+	CreatedAt time.Time
+	ExpiresAt *time.Time
 }
 
 type APITokenMetadata struct {
@@ -19,6 +22,7 @@ type APITokenMetadata struct {
 	Prefix         string
 	RepositoryIDs  []int64
 	DelegationOnly bool
+	Delegated      bool
 	CreatedAt      time.Time
 	LastUsedAt     *time.Time
 	ExpiresAt      *time.Time

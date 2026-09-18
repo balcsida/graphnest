@@ -255,6 +255,46 @@ func TestDelegationOnlyTokenIsRejectedOnceOwnerIsDemoted(t *testing.T) {
 	}
 }
 
+// A token minted by Delegate is an ordinary scoped administrator token that
+// must additionally come back marked Delegated, so Delegate can refuse it and
+// a chain of children cannot renew itself indefinitely.
+func TestAPIPrincipalSurfacesDelegatedTokens(t *testing.T) {
+	store := migratedStore(t)
+	userID := insertIdentityUser(t, store, "directory-9", "job")
+	seedReadyRepository(t, store, 101, testSHA('a'))
+	if _, err := store.pool.Exec(t.Context(), `insert into user_roles (user_id, administrator) values ($1, true)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	expires := now.Add(time.Hour)
+	manager := authn.TokenManager{Store: store, Now: func() time.Time { return now }}
+	_, plaintext, err := manager.CreateDelegated(t.Context(), userID, "api_token", []int64{101}, &expires)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := manager.Authenticate(t.Context(), plaintext)
+	if err != nil || !child.Delegated || !child.Administrator || child.DelegationOnly || child.Method != "api_token" ||
+		!reflect.DeepEqual(child.RepositoryIDs, []int64{101}) {
+		t.Fatalf("delegated principal=%#v err=%v", child, err)
+	}
+	// An ordinary scoped token created the usual way is not marked.
+	_, plaintext, err = manager.CreateWithMethod(t.Context(), userID, "oidc", []int64{101}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain, err := manager.Authenticate(t.Context(), plaintext); err != nil || plain.Delegated {
+		t.Fatalf("ordinary principal=%#v err=%v", plain, err)
+	}
+	// The child is listed with the marker so operators can tell it apart.
+	tokens, err := store.ListAPITokens(t.Context(), userID)
+	if err != nil || len(tokens) != 2 || !tokens[0].Delegated || tokens[1].Delegated {
+		t.Fatalf("tokens=%#v err=%v", tokens, err)
+	}
+}
+
+// The delegation-only path needs to know whether a repository is active
+// without any principal ceiling; that is what Delegate checks each requested
+// ID against.
 func TestActiveRepositoryReportsOnlyEnabledActiveInstallations(t *testing.T) {
 	store := migratedStore(t)
 	seedReadyRepository(t, store, 101, testSHA('a'))
