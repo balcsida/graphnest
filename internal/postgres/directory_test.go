@@ -209,23 +209,52 @@ func TestDelegationOnlyAdministratorTokenAuthenticatesWithoutCeiling(t *testing.
 	if err != nil || len(tokens) != 1 || !tokens[0].DelegationOnly {
 		t.Fatalf("tokens=%#v err=%v", tokens, err)
 	}
-	// The flag never makes a non-administrator special: without the role it is
-	// just an ordinary token with an empty ceiling.
+	// The flag never widens a non-administrator: such a token does not
+	// authenticate at all, because read as an ordinary token its NULL ceiling
+	// would mean "every grant the owner has".
 	plainUser := insertIdentityUser(t, store, "directory-7", "plain")
 	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{
 		TokenHash: [32]byte{13}, Prefix: "gn_test", UserID: plainUser, DelegationOnly: true, CreatedAt: now,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	plain, err := store.APIPrincipal(t.Context(), [32]byte{13}, now)
-	if err != nil || plain.Administrator || plain.DelegationOnly || len(plain.RepositoryIDs) != 0 {
-		t.Fatalf("non-administrator principal=%#v err=%v", plain, err)
+	if plain, err := store.APIPrincipal(t.Context(), [32]byte{13}, now); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("non-administrator principal=%#v err=%v, want ErrNoRows", plain, err)
 	}
 }
 
-// The delegation-only path needs to know whether a repository is active
-// without any principal ceiling; that is what Delegate checks each requested
-// ID against.
+// A delegation-only token is stored with no ceiling, so if it were ever read
+// as an ordinary token it would inherit every grant its owner has. Demoting
+// the owner must therefore invalidate the token, not widen it.
+func TestDelegationOnlyTokenIsRejectedOnceOwnerIsDemoted(t *testing.T) {
+	store := migratedStore(t)
+	userID := insertIdentityUser(t, store, "directory-8", "demoted-broker")
+	seedReadyRepository(t, store, 101, testSHA('a'))
+	if _, err := store.pool.Exec(t.Context(), `insert into user_roles (user_id, administrator) values ($1, true)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into user_repository_grants (user_id, repository_id) values ($1, 101)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{
+		TokenHash: [32]byte{14}, Prefix: "gn_test", UserID: userID, DelegationOnly: true, CreatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	broker, err := store.APIPrincipal(t.Context(), [32]byte{14}, now)
+	if err != nil || !broker.DelegationOnly || len(broker.RepositoryIDs) != 0 {
+		t.Fatalf("principal before demotion=%#v err=%v", broker, err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `delete from user_roles where user_id=$1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	demoted, err := store.APIPrincipal(t.Context(), [32]byte{14}, now)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("demoted owner: principal=%#v err=%v, want ErrNoRows", demoted, err)
+	}
+}
+
 func TestActiveRepositoryReportsOnlyEnabledActiveInstallations(t *testing.T) {
 	store := migratedStore(t)
 	seedReadyRepository(t, store, 101, testSHA('a'))

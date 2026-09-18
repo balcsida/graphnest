@@ -66,10 +66,19 @@ func (s *Store) APIPrincipal(ctx context.Context, tokenHash [32]byte, now time.T
 	if err != nil {
 		return authn.Principal{}, err
 	}
-	if principal.Administrator && delegationOnly {
-		// The flag is only meaningful on an administrator token. It replaces
-		// the ceiling: the principal authenticates with no repository access
-		// and only the delegation endpoint consults DelegationOnly.
+	if delegationOnly && !principal.Administrator {
+		// A delegation-only token is stored with a NULL ceiling, which the
+		// ordinary path below reads as "every grant the owner holds". If the
+		// owner has been demoted (or never was an administrator), falling
+		// through would turn the broker credential into a full-access token,
+		// so it is rejected outright, exactly like an administrator token
+		// with an empty ceiling.
+		return authn.Principal{}, pgx.ErrNoRows
+	}
+	if delegationOnly {
+		// The flag replaces the ceiling: the principal authenticates with no
+		// repository access and only the delegation endpoint consults
+		// DelegationOnly.
 		principal.DelegationOnly = true
 		principal.RepositoryIDs = nil
 		principal.Method = "api_token"
