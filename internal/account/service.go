@@ -95,8 +95,12 @@ func (s *Service) CreateToken(ctx context.Context, principal authn.Principal, ex
 // further token for the same user that is narrower than its own: a non-empty
 // repository ceiling inside the caller's, and a mandatory expiry within
 // MaxDelegatedTokenLifetime. Interactive sessions use CreateToken instead.
+//
+// The child is stored as delegated and is refused here, so delegation is one
+// generation deep: a child cannot renew itself past its own expiry, and
+// revoking or expiring the parent ends the chain within an hour.
 func (s *Service) Delegate(ctx context.Context, principal authn.Principal, expires *time.Time, repositoryIDs []int64) (Token, string, error) {
-	if principal.Method != "api_token" || !principal.Administrator {
+	if principal.Method != "api_token" || !principal.Administrator || principal.Delegated {
 		return Token{}, "", ErrForbidden
 	}
 	userID, err := strconv.ParseInt(principal.Subject, 10, 64)
@@ -126,7 +130,7 @@ func (s *Service) Delegate(ctx context.Context, principal authn.Principal, expir
 	} else if !granted(principal.RepositoryIDs, repositoryIDs) {
 		return Token{}, "", ErrForbidden
 	}
-	id, plaintext, err := s.Manager.CreateWithMethod(ctx, userID, principal.Method, repositoryIDs, expires)
+	id, plaintext, err := s.Manager.CreateDelegated(ctx, userID, principal.Method, repositoryIDs, expires)
 	if err != nil {
 		return Token{}, "", err
 	}

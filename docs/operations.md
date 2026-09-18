@@ -169,6 +169,8 @@ token) with `POST /v1/account/delegation-tokens`, optionally passing
   not archived, and on an active installation; a request naming any other
   repository is refused as a whole, so the response does not enumerate
   repositories;
+- mints children that cannot delegate again, so a leaked job token expires
+  within the hour instead of renewing itself after the broker is revoked;
 - is refused by every other endpoint: it cannot search, read, upload, list or
   revoke tokens, or manage OAuth grants. A leaked broker credential therefore
   yields only the ability to mint short-lived single-repository tokens until it

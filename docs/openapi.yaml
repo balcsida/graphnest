@@ -54,7 +54,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/admin/api-tokens:
     post:
-      description: Administrator API-token delegation. The caller must authenticate with an administrator API token; the new token belongs to the same user and must expire within one hour. An ordinary administrator token may delegate a non-empty subset of its own repository ceiling; a delegation-only token (see /v1/account/delegation-tokens) may delegate for any active repository, and any unknown or inactive repository refuses the whole request. Interactive sessions use /v1/account/api-tokens instead.
+      description: Administrator API-token delegation. The caller must authenticate with an administrator API token; the new token belongs to the same user and must expire within one hour. An ordinary administrator token may delegate a non-empty subset of its own repository ceiling; a delegation-only token (see /v1/account/delegation-tokens) may delegate for any active repository, and any unknown or inactive repository refuses the whole request. A delegated token cannot delegate again (403), so delegation is one generation deep. Interactive sessions use /v1/account/api-tokens instead.
       security: [{bearerAuth: []}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DelegateAPITokenRequest'}}}}
       responses:

@@ -35,17 +35,27 @@ func (m TokenManager) Create(ctx context.Context, userID int64, repositoryIDs []
 }
 
 func (m TokenManager) CreateWithMethod(ctx context.Context, userID int64, method string, repositoryIDs []int64, expiresAt *time.Time) (int64, string, error) {
-	return m.create(ctx, userID, method, repositoryIDs, false, expiresAt)
+	return m.create(ctx, userID, method, repositoryIDs, tokenKind{}, expiresAt)
 }
 
 // CreateDelegationOnly mints a token with no repository ceiling that only the
 // delegation endpoint honours. Callers must have verified the owner is an
-// interactive administrator; the store makes the flag inert for anyone else.
+// interactive administrator; the store rejects the token for anyone else.
 func (m TokenManager) CreateDelegationOnly(ctx context.Context, userID int64, method string, expiresAt *time.Time) (int64, string, error) {
-	return m.create(ctx, userID, method, nil, true, expiresAt)
+	return m.create(ctx, userID, method, nil, tokenKind{delegationOnly: true}, expiresAt)
 }
 
-func (m TokenManager) create(ctx context.Context, userID int64, method string, repositoryIDs []int64, delegationOnly bool, expiresAt *time.Time) (int64, string, error) {
+// CreateDelegated mints the child token the delegation endpoint hands out: a
+// scoped token that is marked so it can never delegate in turn.
+func (m TokenManager) CreateDelegated(ctx context.Context, userID int64, method string, repositoryIDs []int64, expiresAt *time.Time) (int64, string, error) {
+	return m.create(ctx, userID, method, repositoryIDs, tokenKind{delegated: true}, expiresAt)
+}
+
+// tokenKind carries the mutually exclusive delegation markers a token is
+// stored with; the zero value is an ordinary token.
+type tokenKind struct{ delegationOnly, delegated bool }
+
+func (m TokenManager) create(ctx context.Context, userID int64, method string, repositoryIDs []int64, kind tokenKind, expiresAt *time.Time) (int64, string, error) {
 	if m.Store == nil || userID <= 0 {
 		return 0, "", ErrUnauthenticated
 	}
@@ -69,7 +79,8 @@ func (m TokenManager) create(ctx context.Context, userID int64, method string, r
 	}
 	record := APITokenRecord{
 		TokenHash: sha256.Sum256([]byte(plaintext)), Prefix: plaintext[:12], UserID: userID,
-		RepositoryIDs: append([]int64(nil), repositoryIDs...), DelegationOnly: delegationOnly,
+		RepositoryIDs:  append([]int64(nil), repositoryIDs...),
+		DelegationOnly: kind.delegationOnly, Delegated: kind.delegated,
 		CreatedAt: now, ExpiresAt: expiry,
 	}
 	var id int64

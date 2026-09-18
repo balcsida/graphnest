@@ -18,7 +18,13 @@ type Principal struct {
 	// repository. It carries no repository access of its own and is refused
 	// by every other endpoint, so a leaked broker credential cannot read,
 	// search, or upload anything directly.
-	DelegationOnly  bool
+	DelegationOnly bool
+	// Delegated marks an API token minted by the delegation endpoint. It is
+	// an ordinary scoped token in every other respect, but it may not
+	// delegate again: otherwise each generation could choose a fresh expiry
+	// and a stolen child could be rotated indefinitely after its parent was
+	// revoked or expired.
+	Delegated       bool
 	ForceRotation   bool
 	InstallationID  int64
 	RepositoryIDs   []int64

@@ -227,6 +227,41 @@ func TestDelegateFromDelegationOnlyTokenCoversAnyActiveRepository(t *testing.T) 
 	}
 }
 
+// A delegated child is a one-hour credential for one job. If it could delegate
+// again, each generation could pick a fresh hour-long expiry and a stolen
+// token could be rotated indefinitely, outliving the revoked or expired
+// broker. The child is therefore stored as delegated and Delegate refuses it,
+// while an ordinary scoped administrator token keeps delegating as before.
+func TestDelegatedChildCannotDelegateAgain(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	store := &storeStub{}
+	s := &Service{
+		Manager:      authn.TokenManager{Store: store, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 64))},
+		Repositories: activeRepositoryStub{active: map[int64]bool{101: true}},
+	}
+	expires := now.Add(15 * time.Minute)
+	for name, parent := range map[string]authn.Principal{
+		"delegation-only broker":     {Subject: "3", Method: "api_token", Administrator: true, DelegationOnly: true},
+		"scoped administrator token": {Subject: "3", Method: "api_token", Administrator: true, RepositoryIDs: []int64{101}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			token, _, err := s.Delegate(t.Context(), parent, &expires, []int64{101})
+			if err != nil {
+				t.Fatalf("parent delegate err=%v", err)
+			}
+			if !store.created.Delegated || store.created.DelegationOnly {
+				t.Fatalf("child must be stored as delegated: %#v", store.created)
+			}
+			// This is the principal APIPrincipal builds for the child: an
+			// administrator api_token with the child's ceiling, marked delegated.
+			child := authn.Principal{Subject: "3", Method: "api_token", Administrator: true, Delegated: true, RepositoryIDs: token.RepositoryIDs}
+			if _, _, err := s.Delegate(t.Context(), child, &expires, []int64{101}); !errors.Is(err, ErrForbidden) {
+				t.Fatalf("delegated child delegated again: err=%v, want ErrForbidden", err)
+			}
+		})
+	}
+}
+
 func TestDelegateFromDelegationOnlyTokenRejectsUnknownRepository(t *testing.T) {
 	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	s := &Service{
