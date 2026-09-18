@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -30,9 +31,10 @@ func TestSearchUsesPinnedJSONContract(t *testing.T) {
 			"Q":       "needle",
 			"RepoIDs": []any{float64(7)},
 			"Opts": map[string]any{
-				"NumContextLines":    float64(3),
-				"MaxDocDisplayCount": float64(20),
-				"MaxWallTime":        float64(time.Second),
+				"NumContextLines":      float64(3),
+				"MaxDocDisplayCount":   float64(20),
+				"MaxMatchDisplayCount": float64(21),
+				"MaxWallTime":          float64(time.Second),
 			},
 		}
 		if !equalJSON(body, want) {
@@ -207,6 +209,54 @@ func TestSearchHonorsRequestTimeout(t *testing.T) {
 	_, err = client.Search(t.Context(), search.BackendRequest{Query: "needle", Timeout: time.Millisecond})
 	if !errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+// Capping the wire to Limit matches must not make a capped result look
+// complete. Two signals cover it: a sentinel match beyond Limit (dropped
+// before return) and Zoekt's MatchCount, which counts every match found
+// rather than what the display cap let through. The second matters because
+// MaxMatchDisplayCount spends its budget on sub-line fragments, so a line
+// with several hits can swallow the sentinel.
+func TestSearchMarksCappedMatchesTruncated(t *testing.T) {
+	line := func(number int) string {
+		return `{"Line":"eA==","LineNumber":` + strconv.Itoa(number) + `,"LineStart":0,"LineEnd":1,"Score":1}`
+	}
+	file := func(lines ...string) string {
+		return `{"FileName":"main.go","Repository":"acme/one","Version":"abc123","Branches":["main"],"RepositoryID":7,"Score":1,"LineMatches":[` + strings.Join(lines, ",") + `]}`
+	}
+	for _, test := range []struct {
+		name       string
+		files      string
+		matchCount int
+		matches    int
+		truncated  bool
+	}{
+		{"fewer than limit", file(line(1)), 1, 1, false},
+		{"exactly limit", file(line(1), line(2)), 2, 2, false},
+		{"limit plus sentinel", file(line(1), line(2), line(3)), 3, 2, true},
+		{"sentinel in later file", file(line(1), line(2)) + "," + file(line(9)), 3, 2, true},
+		{"sentinel eaten by fragments, MatchCount tells", file(line(1)), 4, 1, true},
+		{"MatchCount above a full page", file(line(1), line(2)), 5, 2, true},
+		{"missing MatchCount is not truncation", file(line(1), line(2)), 0, 2, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				_, _ = writer.Write([]byte(`{"Result":{"MatchCount":` + strconv.Itoa(test.matchCount) + `,"Files":[` + test.files + `]}}`))
+			}))
+			defer server.Close()
+			client, err := New(server.URL, server.Client(), 64<<10, observability.New())
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := client.Search(t.Context(), search.BackendRequest{Query: "needle", RepositoryIDs: []uint32{7}, Limit: 2})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(response.Matches) != test.matches || response.Truncated != test.truncated {
+				t.Fatalf("matches = %d, truncated = %v; want %d, %v", len(response.Matches), response.Truncated, test.matches, test.truncated)
+			}
+		})
 	}
 }
 

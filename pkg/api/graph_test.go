@@ -15,6 +15,15 @@ func TestGraphRepositorySelectorJSON(t *testing.T) {
 	}{
 		{`101`, 101, "", true},
 		{`"owner/repo"`, 0, "owner/repo", true},
+		// MCP clients often stringify oneOf integer|string fields; a digit-only
+		// string can never be an owner/name, so it is the ID it spells.
+		{`"101"`, 101, "", true},
+		{`"0"`, 0, "", false},
+		{`"99999999999999999999"`, 0, "", false},
+		// Anything that is not digit-only stays a name; an unknown name is
+		// simply not found, never misread as an ID.
+		{`"-1"`, 0, "-1", true},
+		{`"1.0"`, 0, "1.0", true},
 		{`0`, 0, "", false},
 		{`-1`, 0, "", false},
 		{`1.0`, 0, "", false},

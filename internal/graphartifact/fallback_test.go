@@ -44,3 +44,84 @@ func TestFromSCIPBuildsDeterministicExplicitGraph(t *testing.T) {
 		t.Fatalf("artifact=%#v", first)
 	}
 }
+
+// A symbol's location is where it is defined. Occurrences arrive in document
+// order, so a reference in an alphabetically earlier file must not win over
+// the definition; without any definition the first occurrence stays.
+func TestFromSCIPLocatesSymbolsAtTheirDefinition(t *testing.T) {
+	repository := SCIPRepository{ID: 101, Commit: strings.Repeat("a", 40)}
+	const symbol = "scip-go gomod example.com/acme v1 `example.com/acme`/Config#"
+	const definitionRole = 1
+	occurrences := []scipgraph.Occurrence{
+		{Path: "agent_token.go", Symbol: symbol, StartLine: 170, EndLine: 170, EndCharacter: 6},
+		{Path: "config.go", Symbol: symbol, StartLine: 14, StartCharacter: 5, EndLine: 14, EndCharacter: 11, Roles: definitionRole},
+		{Path: "main.go", Symbol: symbol, StartLine: 3, EndLine: 3, EndCharacter: 6},
+	}
+	artifact, err := FromSCIP(repository, occurrences, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := symbolNode(t, artifact)
+	if node.Path != "config.go" || node.Range != (Range{14, 5, 14, 11}) {
+		t.Fatalf("definition location = %q %+v", node.Path, node.Range)
+	}
+	reversed := []scipgraph.Occurrence{occurrences[2], occurrences[1], occurrences[0]}
+	again, err := FromSCIP(repository, reversed, nil)
+	if err != nil || !bytes.Equal(artifact.ContentHash, again.ContentHash) {
+		t.Fatalf("occurrence order changed the artifact: %v", err)
+	}
+	undefined, err := FromSCIP(repository, []scipgraph.Occurrence{occurrences[0], occurrences[2]}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node := symbolNode(t, undefined); node.Path != "agent_token.go" {
+		t.Fatalf("fallback location = %q, want first occurrence", node.Path)
+	}
+}
+
+func symbolNode(t *testing.T, artifact Artifact) Node {
+	t.Helper()
+	for _, node := range artifact.Nodes {
+		if node.Kind == NodeSymbol {
+			return node
+		}
+	}
+	t.Fatal("no symbol node")
+	return Node{}
+}
+
+// Context/impact/trace look symbols up by the name a developer types, so the
+// fallback graph must expose the SCIP descriptor name and kind rather than the
+// raw symbol string, which is never what a caller has in hand.
+func TestFromSCIPDerivesNameAndKindFromSymbol(t *testing.T) {
+	repository := SCIPRepository{ID: 101, Commit: strings.Repeat("a", 40)}
+	for _, test := range []struct {
+		symbol, name, kind string
+	}{
+		{"scip-go gomod example.com/acme v1 `example.com/acme`/Config#", "Config", "type"},
+		{"scip-go gomod example.com/acme v1 `example.com/acme`/Config#GitHubAppID.", "GitHubAppID", "field"},
+		{"scip-go gomod example.com/acme v1 `example.com/acme`/LoadConfig().", "LoadConfig", "function"},
+		{"scip-go gomod example.com/acme v1 `example.com/acme`/Config#Validate().", "Validate", "method"},
+		{"scip-go gomod example.com/acme v1 `example.com/acme`/ParseDiff().(rev)", "rev", "parameter"},
+		{"scip-go gomod example.com/acme v1 `example.com/acme`/", "example.com/acme", "namespace"},
+		{"scip-typescript npm pkg 1.0.0 src/`index.ts`/Foo#[T]", "T", "type_parameter"},
+		{"scip-go gomod example.com/acme v1 `example.com/acme`/Kind:", "Kind", "meta"},
+		{"local 42", "42", "local"},
+		// Unparsable symbols keep the raw string so they stay addressable.
+		{"scip go A#", "scip go A#", ""},
+	} {
+		artifact, err := FromSCIP(repository, []scipgraph.Occurrence{{Path: "a.go", Symbol: test.symbol, EndCharacter: 1}}, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", test.symbol, err)
+		}
+		var found *Node
+		for index := range artifact.Nodes {
+			if artifact.Nodes[index].Kind == NodeSymbol {
+				found = &artifact.Nodes[index]
+			}
+		}
+		if found == nil || found.QualifiedName != test.name || found.SymbolKind != test.kind || found.SCIPSymbol != test.symbol {
+			t.Fatalf("%s => %#v, want name=%q kind=%q", test.symbol, found, test.name, test.kind)
+		}
+	}
+}
