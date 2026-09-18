@@ -26,21 +26,32 @@ const MaxDelegatedTokenLifetime = time.Hour
 const maxOAuthGrantPageSize = 100
 
 type Token struct {
-	ID            int64      `json:"id"`
-	Prefix        string     `json:"prefix"`
-	RepositoryIDs []int64    `json:"repository_ids,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	LastUsedAt    *time.Time `json:"last_used_at,omitempty"`
-	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
+	ID             int64      `json:"id"`
+	Prefix         string     `json:"prefix"`
+	RepositoryIDs  []int64    `json:"repository_ids,omitempty"`
+	DelegationOnly bool       `json:"delegation_only,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	LastUsedAt     *time.Time `json:"last_used_at,omitempty"`
+	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
 }
 
 type repositoryAuthorizer interface {
 	AuthorizedRepository(context.Context, authn.Principal, int64) (repository.Repository, error)
 }
 
+// activeRepositoryLookup answers whether a GitHub repository ID is enabled and
+// belongs to an active installation, independent of any principal ceiling.
+// *postgres.Store satisfies it.
+type activeRepositoryLookup interface {
+	ActiveRepository(context.Context, int64) (bool, error)
+}
+
 type Service struct {
 	Manager    authn.TokenManager
 	Authorizer repositoryAuthorizer
+	// Repositories validates the target of a delegation-only mint. When nil,
+	// delegation-only principals are refused (fail closed).
+	Repositories activeRepositoryLookup
 }
 
 func (s *Service) CreateToken(ctx context.Context, principal authn.Principal, expires *time.Time, repositoryIDs []int64) (Token, string, error) {
@@ -84,8 +95,12 @@ func (s *Service) CreateToken(ctx context.Context, principal authn.Principal, ex
 // further token for the same user that is narrower than its own: a non-empty
 // repository ceiling inside the caller's, and a mandatory expiry within
 // MaxDelegatedTokenLifetime. Interactive sessions use CreateToken instead.
+//
+// The child is stored as delegated and is refused here, so delegation is one
+// generation deep: a child cannot renew itself past its own expiry, and
+// revoking or expiring the parent ends the chain within an hour.
 func (s *Service) Delegate(ctx context.Context, principal authn.Principal, expires *time.Time, repositoryIDs []int64) (Token, string, error) {
-	if principal.Method != "api_token" || !principal.Administrator {
+	if principal.Method != "api_token" || !principal.Administrator || principal.Delegated {
 		return Token{}, "", ErrForbidden
 	}
 	userID, err := strconv.ParseInt(principal.Subject, 10, 64)
@@ -96,15 +111,60 @@ func (s *Service) Delegate(ctx context.Context, principal authn.Principal, expir
 	if len(repositoryIDs) == 0 || expires == nil || !expires.After(now) || expires.After(now.Add(MaxDelegatedTokenLifetime)) {
 		return Token{}, "", ErrInvalid
 	}
-	if !granted(principal.RepositoryIDs, repositoryIDs) {
+	if principal.DelegationOnly {
+		// No ceiling to compare against: every requested repository must be
+		// active. Any unknown ID refuses the whole request so the response
+		// cannot be used to enumerate repositories.
+		if s.Repositories == nil {
+			return Token{}, "", ErrForbidden
+		}
+		for _, repositoryID := range repositoryIDs {
+			active, err := s.Repositories.ActiveRepository(ctx, repositoryID)
+			if err != nil {
+				return Token{}, "", err
+			}
+			if !active {
+				return Token{}, "", ErrForbidden
+			}
+		}
+	} else if !granted(principal.RepositoryIDs, repositoryIDs) {
 		return Token{}, "", ErrForbidden
 	}
-	id, plaintext, err := s.Manager.CreateWithMethod(ctx, userID, principal.Method, repositoryIDs, expires)
+	id, plaintext, err := s.Manager.CreateDelegated(ctx, userID, principal.Method, repositoryIDs, expires)
 	if err != nil {
 		return Token{}, "", err
 	}
 	expiry := *expires
 	return Token{ID: id, Prefix: plaintext[:12], RepositoryIDs: append([]int64(nil), repositoryIDs...), CreatedAt: now, ExpiresAt: &expiry}, plaintext, nil
+}
+
+// CreateDelegationOnlyToken mints an administrator token whose only power is
+// Delegate. It has no repository ceiling, so it never needs re-widening as
+// repositories are onboarded, and it is refused by every other endpoint, so a
+// leak grants no direct repository access. Only an interactive administrator
+// may mint one; API tokens of any kind cannot.
+func (s *Service) CreateDelegationOnlyToken(ctx context.Context, principal authn.Principal, expires *time.Time) (Token, string, error) {
+	if !authn.IsInteractiveMethod(principal.Method) || !principal.Administrator || principal.DelegationOnly {
+		return Token{}, "", ErrForbidden
+	}
+	userID, err := userID(principal)
+	if err != nil {
+		return Token{}, "", ErrForbidden
+	}
+	now := s.now()
+	if expires != nil && (!expires.After(now) || expires.After(now.Add(MaxTokenLifetime))) {
+		return Token{}, "", ErrInvalid
+	}
+	id, plaintext, err := s.Manager.CreateDelegationOnly(ctx, userID, principal.Method, expires)
+	if err != nil {
+		return Token{}, "", err
+	}
+	var expiry *time.Time
+	if expires != nil {
+		value := *expires
+		expiry = &value
+	}
+	return Token{ID: id, Prefix: plaintext[:12], DelegationOnly: true, CreatedAt: now, ExpiresAt: expiry}, plaintext, nil
 }
 
 func (s *Service) now() time.Time {
@@ -134,7 +194,7 @@ func (s *Service) Tokens(ctx context.Context, principal authn.Principal) ([]Toke
 	}
 	result := make([]Token, len(items))
 	for i, item := range items {
-		result[i] = Token{ID: item.ID, Prefix: item.Prefix, RepositoryIDs: append([]int64(nil), item.RepositoryIDs...), CreatedAt: item.CreatedAt, LastUsedAt: item.LastUsedAt, ExpiresAt: item.ExpiresAt}
+		result[i] = Token{ID: item.ID, Prefix: item.Prefix, RepositoryIDs: append([]int64(nil), item.RepositoryIDs...), DelegationOnly: item.DelegationOnly, CreatedAt: item.CreatedAt, LastUsedAt: item.LastUsedAt, ExpiresAt: item.ExpiresAt}
 	}
 	return result, nil
 }

@@ -184,6 +184,134 @@ func TestOIDCAdministratorIsGlobalWhileAPITokenKeepsCeiling(t *testing.T) {
 	}
 }
 
+// A delegation-only administrator token is the one exception to "administrator
+// API tokens need a non-empty ceiling": it authenticates with no repository
+// access at all, and only Delegate consults the flag.
+func TestDelegationOnlyAdministratorTokenAuthenticatesWithoutCeiling(t *testing.T) {
+	store := migratedStore(t)
+	userID := insertIdentityUser(t, store, "directory-6", "broker")
+	seedReadyRepository(t, store, 101, testSHA('a'))
+	if _, err := store.pool.Exec(t.Context(), `insert into user_roles (user_id, administrator) values ($1, true)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{
+		TokenHash: [32]byte{12}, Prefix: "gn_test", UserID: userID, DelegationOnly: true, CreatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	principal, err := store.APIPrincipal(t.Context(), [32]byte{12}, now)
+	if err != nil || !principal.Administrator || !principal.DelegationOnly || principal.Method != "api_token" || len(principal.RepositoryIDs) != 0 {
+		t.Fatalf("principal=%#v err=%v", principal, err)
+	}
+	// It is listed with the flag so operators can tell it apart.
+	tokens, err := store.ListAPITokens(t.Context(), userID)
+	if err != nil || len(tokens) != 1 || !tokens[0].DelegationOnly {
+		t.Fatalf("tokens=%#v err=%v", tokens, err)
+	}
+	// The flag never widens a non-administrator: such a token does not
+	// authenticate at all, because read as an ordinary token its NULL ceiling
+	// would mean "every grant the owner has".
+	plainUser := insertIdentityUser(t, store, "directory-7", "plain")
+	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{
+		TokenHash: [32]byte{13}, Prefix: "gn_test", UserID: plainUser, DelegationOnly: true, CreatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if plain, err := store.APIPrincipal(t.Context(), [32]byte{13}, now); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("non-administrator principal=%#v err=%v, want ErrNoRows", plain, err)
+	}
+}
+
+// A delegation-only token is stored with no ceiling, so if it were ever read
+// as an ordinary token it would inherit every grant its owner has. Demoting
+// the owner must therefore invalidate the token, not widen it.
+func TestDelegationOnlyTokenIsRejectedOnceOwnerIsDemoted(t *testing.T) {
+	store := migratedStore(t)
+	userID := insertIdentityUser(t, store, "directory-8", "demoted-broker")
+	seedReadyRepository(t, store, 101, testSHA('a'))
+	if _, err := store.pool.Exec(t.Context(), `insert into user_roles (user_id, administrator) values ($1, true)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into user_repository_grants (user_id, repository_id) values ($1, 101)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{
+		TokenHash: [32]byte{14}, Prefix: "gn_test", UserID: userID, DelegationOnly: true, CreatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	broker, err := store.APIPrincipal(t.Context(), [32]byte{14}, now)
+	if err != nil || !broker.DelegationOnly || len(broker.RepositoryIDs) != 0 {
+		t.Fatalf("principal before demotion=%#v err=%v", broker, err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `delete from user_roles where user_id=$1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	demoted, err := store.APIPrincipal(t.Context(), [32]byte{14}, now)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("demoted owner: principal=%#v err=%v, want ErrNoRows", demoted, err)
+	}
+}
+
+// A token minted by Delegate is an ordinary scoped administrator token that
+// must additionally come back marked Delegated, so Delegate can refuse it and
+// a chain of children cannot renew itself indefinitely.
+func TestAPIPrincipalSurfacesDelegatedTokens(t *testing.T) {
+	store := migratedStore(t)
+	userID := insertIdentityUser(t, store, "directory-9", "job")
+	seedReadyRepository(t, store, 101, testSHA('a'))
+	if _, err := store.pool.Exec(t.Context(), `insert into user_roles (user_id, administrator) values ($1, true)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	expires := now.Add(time.Hour)
+	manager := authn.TokenManager{Store: store, Now: func() time.Time { return now }}
+	_, plaintext, err := manager.CreateDelegated(t.Context(), userID, "api_token", []int64{101}, &expires)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := manager.Authenticate(t.Context(), plaintext)
+	if err != nil || !child.Delegated || !child.Administrator || child.DelegationOnly || child.Method != "api_token" ||
+		!reflect.DeepEqual(child.RepositoryIDs, []int64{101}) {
+		t.Fatalf("delegated principal=%#v err=%v", child, err)
+	}
+	// An ordinary scoped token created the usual way is not marked.
+	_, plaintext, err = manager.CreateWithMethod(t.Context(), userID, "oidc", []int64{101}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain, err := manager.Authenticate(t.Context(), plaintext); err != nil || plain.Delegated {
+		t.Fatalf("ordinary principal=%#v err=%v", plain, err)
+	}
+	// The child is listed with the marker so operators can tell it apart.
+	tokens, err := store.ListAPITokens(t.Context(), userID)
+	if err != nil || len(tokens) != 2 || !tokens[0].Delegated || tokens[1].Delegated {
+		t.Fatalf("tokens=%#v err=%v", tokens, err)
+	}
+}
+
+// The delegation-only path needs to know whether a repository is active
+// without any principal ceiling; that is what Delegate checks each requested
+// ID against.
+func TestActiveRepositoryReportsOnlyEnabledActiveInstallations(t *testing.T) {
+	store := migratedStore(t)
+	seedReadyRepository(t, store, 101, testSHA('a'))
+	if ok, err := store.ActiveRepository(t.Context(), 101); err != nil || !ok {
+		t.Fatalf("active repository ok=%v err=%v", ok, err)
+	}
+	if ok, err := store.ActiveRepository(t.Context(), 999); err != nil || ok {
+		t.Fatalf("unknown repository ok=%v err=%v", ok, err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `update repositories set enabled=false where github_id=101`); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := store.ActiveRepository(t.Context(), 101); err != nil || ok {
+		t.Fatalf("disabled repository ok=%v err=%v", ok, err)
+	}
+}
+
 func TestAPIPrincipalDistinguishesEmptyTokenCeiling(t *testing.T) {
 	store := migratedStore(t)
 	userID := insertIdentityUser(t, store, "directory-4", "kai")

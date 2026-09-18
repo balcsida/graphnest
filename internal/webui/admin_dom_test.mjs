@@ -113,7 +113,7 @@ const responses = {
   "/v1/admin/jobs?cursor=page-2": {jobs:[24,26,27].map(id=>({id,repository:"acme/repo",target_ref:"",target_sha:"b".repeat(40),state:"succeeded",error_code:"",attempt:1,max_attempts:3,updated_at:"2025-12-31T00:00:00Z"}))},
   "/v1/admin/users": {users:[{id:7,user_name:"ada",display_name:"Ada",scim_active:true,suspended:false,administrator:true,repository_ids:[101,102],direct_administrator:false,direct_repository_ids:[101]}],truncated:true},
   "/v1/admin/groups": {groups:[{id:9,display_name:"Engineering",administrator:true,repository_ids:[101,102],member_count:2}],truncated:true},
-  "/v1/account/api-tokens": {tokens:[{id:3,prefix:"gnp_visible",repository_ids:[101],created_at:"2026-01-01T00:00:00Z",expires_at:"2026-08-29T00:00:00Z"}]},
+  "/v1/account/api-tokens": {tokens:[{id:3,prefix:"gnp_visible",repository_ids:[101],created_at:"2026-01-01T00:00:00Z",expires_at:"2026-08-29T00:00:00Z"},{id:5,prefix:"gnp_broker__",delegation_only:true,created_at:"2026-01-02T00:00:00Z"}]},
   "/v1/account/oauth-grants": {grants:Array.from({length:100},(_,index)=>({id:index+9,client_name:index === 0 ? "OpenCode" : "MCP client "+(index+1),scope:"",created_at:"2026-09-01T00:00:00Z",last_used_at:"2026-09-04T00:00:00Z",expires_at:"2026-10-01T00:00:00Z"})),truncated:true,next_cursor:"grants-page-2"},
   "/v1/account/oauth-grants?cursor=grants-page-2": {grants:[{id:109,client_name:"MCP client 101",scope:"",created_at:"2026-09-01T00:00:00Z",last_used_at:"2026-09-04T00:00:00Z",expires_at:"2026-10-01T00:00:00Z"}],truncated:false},
   "/v1/admin/scip/uploads": {uploads:[],truncated:true},
@@ -291,6 +291,7 @@ assert.match(text(groupRow), /Engineering.*2.*Administrator/);
 
 const tokenRow = ids.get("token-rows").children[0];
 assert.match(text(tokenRow), /gnp_visible.*101/);
+assert.match(text(ids.get("token-rows").children[1]), /gnp_broker__.*Delegation only/);
 const revokeToken = tokenRow.children.at(-1).children[0];
 await revokeToken.dispatch("click");
 assert.equal(requests.findLast(request => request.path === "/v1/account/api-tokens/3").options.method, "DELETE");

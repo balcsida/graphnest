@@ -62,6 +62,54 @@ func TestAuthenticateRequestWritesGenericErrorAndAttachesPrincipalOnce(t *testin
 	}
 }
 
+// A delegation-only token is an administrator with an empty ceiling, which is
+// exactly the shape several admin read paths treat as "all repositories". The
+// middleware must therefore refuse it on every route but the one it exists
+// for, so no handler has to remember the special case.
+func TestAuthenticateRequestConfinesDelegationOnlyTokenToDelegationRoute(t *testing.T) {
+	broker := authn.Principal{Subject: "3", Method: "api_token", Administrator: true, DelegationOnly: true}
+	reached := 0
+	handler := AuthenticateRequest(requestAuthenticator(httpSession{principal: broker}), http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		reached++
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	call := func(method, path string) int {
+		request := httptest.NewRequest(method, path, nil)
+		request.Header.Set("Authorization", "Bearer broker")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response.Code
+	}
+	if code := call(http.MethodPost, "/v1/admin/api-tokens"); code != http.StatusNoContent || reached != 1 {
+		t.Fatalf("delegation route status=%d reached=%d", code, reached)
+	}
+	for _, path := range []string{"/v1/admin/overview", "/v1/admin/jobs", "/v1/repositories", "/v1/search", "/v1/account/api-tokens", "/v1/scip/uploads"} {
+		if code := call(http.MethodGet, path); code != http.StatusForbidden {
+			t.Errorf("%s: status=%d want=403", path, code)
+		}
+	}
+	if code := call(http.MethodGet, "/v1/admin/api-tokens"); code != http.StatusForbidden {
+		t.Errorf("wrong method on delegation route: status=%d want=403", code)
+	}
+	if reached != 1 {
+		t.Fatalf("handler reached %d times; delegation-only principal leaked past the gate", reached)
+	}
+}
+
+func TestAuthenticateBearerConfinesDelegationOnlyToken(t *testing.T) {
+	broker := authn.Principal{Subject: "3", Method: "api_token", Administrator: true, DelegationOnly: true}
+	handler := AuthenticateBearer(httpSession{principal: broker}, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		t.Fatal("delegation-only principal reached a bearer-only route")
+	}))
+	request := httptest.NewRequest(http.MethodPost, "/v1/graph/uploads", nil)
+	request.Header.Set("Authorization", "Bearer broker")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status=%d want=403", response.Code)
+	}
+}
+
 func TestAuthenticateRequestRejectsForcedRotationSession(t *testing.T) {
 	handler := AuthenticateRequest(authn.RequestAuthenticator{Session: httpSession{principal: authn.Principal{
 		Subject: "recovery-admin", Method: "local", Administrator: true, ForceRotation: true,
