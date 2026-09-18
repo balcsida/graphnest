@@ -40,7 +40,7 @@ func TestProxyForwardsToolsWithBearerAuthentication(t *testing.T) {
 	t.Chdir(root)
 	authenticated := false
 	upstream := mcp.NewServer(&mcp.Implementation{Name: "upstream", Version: "1"}, nil)
-	mcp.AddTool(upstream, &mcp.Tool{Name: "search_code"}, func(_ context.Context, _ *mcp.CallToolRequest, input struct {
+	mcp.AddTool(upstream, &mcp.Tool{Name: "graph_discover"}, func(_ context.Context, _ *mcp.CallToolRequest, input struct {
 		Query string `json:"query"`
 	}) (*mcp.CallToolResult, map[string]any, error) {
 		return nil, map[string]any{"query": input.Query}, nil
@@ -70,7 +70,7 @@ func TestProxyForwardsToolsWithBearerAuthentication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "search_code", Arguments: map[string]any{"query": "needle"}})
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "graph_discover", Arguments: map[string]any{"query": "needle"}})
 	if err != nil {
 		t.Fatal(err)
 	}

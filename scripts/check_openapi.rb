@@ -98,6 +98,78 @@ end
   require_value(reference, "#/components/schemas/OAuthError", "OAuth #{endpoint} HTTP #{status} response schema")
 end
 schemas = document.fetch("components").fetch("schemas")
+{
+  "GraphDiscoverRequest" => 32,
+  "GraphExploreRequest" => 20
+}.each do |name, max_items|
+  %w[symbols files].each do |field|
+    require_value(schemas.fetch(name).dig("properties", field, "maxItems"), max_items, "#{name}.#{field} maxItems")
+  end
+end
+explore_response = schemas.fetch("GraphExploreResponse")
+require_value(explore_response["additionalProperties"], false, "GraphExploreResponse additionalProperties")
+array_schema = lambda do |property|
+  property.fetch("anyOf", []).find { |variant| variant["type"] == "array" } || property
+end
+raise OpenAPIError, "GraphEntityV2 must require depth" unless schemas.fetch("GraphEntityV2").fetch("required").include?("depth")
+selection_segment = schemas.fetch("GraphExploreSelection").dig("properties", "segment")
+require_value(selection_segment["minimum"], -1, "GraphExploreSelection.segment minimum")
+raise OpenAPIError, "GraphExploreSelection.segment must document -1" unless selection_segment.fetch("description", "").include?("-1")
+nullable_collections = %w[GraphExploreResponse GraphExploreFile GraphTraverseResponse].flat_map do |schema_name|
+  schemas.fetch(schema_name).fetch("properties").filter_map do |field, property|
+    types = property.fetch("anyOf", []).filter_map { |variant| variant["type"] }.sort
+    [schema_name, field] if types == %w[array null]
+  end
+end
+expected_nullable_collections = [
+  ["GraphExploreResponse", "files"],
+  ["GraphExploreResponse", "relationships"],
+  ["GraphExploreFile", "entities"],
+  ["GraphExploreFile", "segments"],
+  ["GraphExploreFile", "selections"],
+  ["GraphTraverseResponse", "edges"]
+]
+require_value(nullable_collections.sort, expected_nullable_collections.sort, "nullable exploration collections")
+{
+  "files" => "GraphExploreFile",
+  "relationships" => "GraphTraverseResponse"
+}.each do |field, component|
+  property = array_schema.call(explore_response.dig("properties", field))
+  require_value(property.dig("items", "$ref"), "#/components/schemas/#{component}", "GraphExploreResponse.#{field} items")
+end
+require_value(explore_response.dig("properties", "usage", "$ref"), "#/components/schemas/GraphExploreUsage", "GraphExploreResponse.usage")
+%w[GraphExploreFile GraphTraverseResponse GraphInspectionSource GraphExploreSelection GraphExploreUsage GraphEvidenceV2 GraphBoundary].each do |name|
+  require_value(schemas.fetch(name)["additionalProperties"], false, "#{name} additionalProperties")
+end
+{
+  ["GraphEntityV2", "fact"] => "GraphArtifactNodeV2",
+  ["GraphDiscoveryMatch", "file"] => "GraphArtifactFileV2",
+  ["GraphExploreFile", "fact"] => "GraphArtifactFileV2",
+  ["GraphExploreFile", "entities", "items"] => "GraphEntityV2",
+  ["GraphExploreFile", "segments", "items"] => "GraphInspectionSource",
+  ["GraphExploreFile", "references", "items"] => "GraphInspectionSource",
+  ["GraphExploreFile", "selections", "items"] => "GraphExploreSelection",
+  ["GraphTraverseResponse", "entities", "items"] => "GraphEntityV2",
+  ["GraphTraverseResponse", "edges", "items"] => "GraphEvidenceV2",
+  ["GraphTraverseResponse", "generations", "items"] => "GraphGeneration",
+  ["GraphTraverseResponse", "boundaries", "items"] => "GraphBoundary",
+  ["GraphInspectionSource", "range"] => "GraphArtifactLocationV2",
+  ["GraphInspectionSource", "selection"] => "GraphSourceSelection",
+  ["GraphInspectionSource", "file_errors"] => "GraphArtifactExtensionV2"
+}.each do |(schema_name, property_name, nested), component|
+  property = schemas.fetch(schema_name).dig("properties", property_name)
+  property = array_schema.call(property).fetch(nested) if nested
+  require_value(property["$ref"], "#/components/schemas/#{component}", "#{schema_name}.#{property_name} schema")
+end
+{
+  "producer" => "GraphArtifactProducerV2",
+  "metadata" => "GraphArtifactMetadataEntryV2",
+  "extensions" => "GraphArtifactExtensionV2"
+}.each do |field, component|
+  property = schemas.fetch("GraphGeneration").dig("properties", field)
+  property = property.fetch("items") if %w[metadata extensions].include?(field)
+  require_value(property["$ref"], "#/components/schemas/#{component}", "GraphGeneration.#{field} schema")
+end
 grant_list_operation = document.dig("paths", "/v1/account/oauth-grants", "get")
 grant_cursor = grant_list_operation.fetch("parameters", []).find { |parameter| parameter["name"] == "cursor" && parameter["in"] == "query" }
 raise OpenAPIError, "OAuth grant cursor is missing" unless grant_cursor
