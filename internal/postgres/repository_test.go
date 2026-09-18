@@ -260,10 +260,20 @@ func TestGraphRepositoriesEnforcePrincipalEligibility(t *testing.T) {
 	if err != nil || len(user) != 1 || user[0].GitHubID != 101 || user[0].Name != "Acme/One" {
 		t.Fatalf("user repositories = %#v, %v", user, err)
 	}
-	for _, repositoryIDs := range [][]int64{nil, {}} {
-		got, err := store.GraphRepositories(t.Context(), authn.Principal{InstallationID: 10, RepositoryIDs: repositoryIDs})
+	// Durable principals (sessions, API tokens, OAuth grants) carry no
+	// installation: their grants already span installations, so the grant
+	// list alone decides visibility, exactly as AuthorizedRepositories does.
+	durable, err := store.GraphRepositories(t.Context(), authn.Principal{RepositoryIDs: []int64{101, 201, 301}})
+	if err != nil || len(durable) != 2 || durable[0].GitHubID != 101 || durable[1].GitHubID != 201 {
+		t.Fatalf("durable principal repositories = %#v, %v", durable, err)
+	}
+	for _, principal := range []authn.Principal{
+		{InstallationID: 10}, {InstallationID: 10, RepositoryIDs: []int64{}},
+		{}, {RepositoryIDs: []int64{}},
+	} {
+		got, err := store.GraphRepositories(t.Context(), principal)
 		if err != nil || len(got) != 0 {
-			t.Fatalf("empty repository IDs = %#v, %v", got, err)
+			t.Fatalf("empty repository IDs %+v = %#v, %v", principal, got, err)
 		}
 	}
 	admin, err := store.GraphRepositories(t.Context(), authn.Principal{Administrator: true})
