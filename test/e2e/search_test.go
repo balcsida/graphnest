@@ -120,6 +120,18 @@ func TestPinnedFixtureSearch(t *testing.T) {
 		decode(t, result.StructuredContent, &response)
 		assertFixtureMatch(t, response.Matches, sha)
 	})
+	t.Run("capped page reports truncation", func(t *testing.T) {
+		// "e" hits several fixture lines; a page of one must say so, and a
+		// page wide enough for everything must not.
+		capped := restSearch(t, server, api.SearchRequest{Query: "e", Repositories: []string{fixtureName}, Limit: 1})
+		if len(capped.Matches) != 1 || !capped.Truncated {
+			t.Fatalf("capped page: matches = %d, truncated = %v, want 1 and true", len(capped.Matches), capped.Truncated)
+		}
+		full := restSearch(t, server, api.SearchRequest{Query: "e", Repositories: []string{fixtureName}, Limit: 100})
+		if len(full.Matches) <= 1 || full.Truncated {
+			t.Fatalf("full page: matches = %d, truncated = %v, want >1 and false", len(full.Matches), full.Truncated)
+		}
+	})
 	t.Run("authorization", func(t *testing.T) {
 		before := backend.callCount()
 		response := restSearch(t, server, api.SearchRequest{Query: needle, Repositories: []string{"forbidden/repository"}})
