@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/graphquery"
 	"github.com/balcsida/graphnest/internal/graphservice"
 	"github.com/balcsida/graphnest/internal/httpapi"
 	"github.com/balcsida/graphnest/pkg/api"
@@ -26,6 +28,22 @@ func registerGraphTools(server *mcp.Server, service *graphservice.Service, maxOu
 		response, err := service.Trace(ctx, httpapi.PrincipalFromContext(ctx), input)
 		return graphResult(response, err, maxOutputBytes)
 	})
+	mcp.AddTool(server, &mcp.Tool{Name: "graph_discover", Description: "Find bounded entry points in an indexed graph.", InputSchema: graphDiscoverSchema()}, func(ctx context.Context, _ *mcp.CallToolRequest, input api.GraphDiscoverRequest) (*mcp.CallToolResult, any, error) {
+		response, err := service.Discover(ctx, httpapi.PrincipalFromContext(ctx), input)
+		return graphResult(response, err, maxOutputBytes)
+	})
+	mcp.AddTool(server, &mcp.Tool{Name: "explore", Description: "Explore bounded graph facts and exact indexed source.", InputSchema: graphExploreSchema()}, func(ctx context.Context, _ *mcp.CallToolRequest, input api.GraphExploreRequest) (*mcp.CallToolResult, any, error) {
+		response, err := service.ExplorePublic(ctx, httpapi.PrincipalFromContext(ctx), input)
+		return graphResult(response, err, maxOutputBytes)
+	})
+	mcp.AddTool(server, &mcp.Tool{Name: "graph_files", Description: "List bounded files from an indexed graph generation.", InputSchema: graphFilesSchema()}, func(ctx context.Context, _ *mcp.CallToolRequest, input api.GraphFilesRequest) (*mcp.CallToolResult, any, error) {
+		response, err := service.ListFilesPublic(ctx, httpapi.PrincipalFromContext(ctx), input)
+		return graphResult(response, err, maxOutputBytes)
+	})
+	mcp.AddTool(server, &mcp.Tool{Name: "graph_capabilities", Description: "Report graph query, upload, and selected generation capabilities.", InputSchema: graphCapabilitiesSchema()}, func(ctx context.Context, _ *mcp.CallToolRequest, input api.GraphCapabilitiesRequest) (*mcp.CallToolResult, any, error) {
+		response, err := service.Capabilities(ctx, httpapi.PrincipalFromContext(ctx), input)
+		return graphResult(response, err, maxOutputBytes)
+	})
 }
 
 func graphResult[T any](response T, err error, maxBytes int64) (*mcp.CallToolResult, any, error) {
@@ -40,16 +58,22 @@ func graphResult[T any](response T, err error, maxBytes int64) (*mcp.CallToolRes
 
 func graphError(err error) error {
 	switch {
-	case errors.Is(err, graphservice.ErrInvalidRequest), errors.Is(err, graphservice.ErrInvalidRepositorySelector):
+	case errors.Is(err, graphservice.ErrInvalidRequest), errors.Is(err, graphservice.ErrInvalidRepositorySelector), errors.Is(err, graphquery.ErrInvalidRequest):
 		return errors.New("graph request is invalid")
+	case errors.Is(err, authn.ErrUnauthenticated):
+		return errors.New("authentication required")
 	case errors.Is(err, graphservice.ErrRepositoryNotFound):
 		return errors.New("repository not found")
 	case errors.Is(err, graphservice.ErrRepositoryRequired):
 		return errors.New("repository selection is ambiguous")
 	case errors.Is(err, graphservice.ErrBranchNotIndexed):
 		return errors.New("branch is not indexed")
-	case errors.Is(err, graphservice.ErrGraphNotReady):
+	case errors.Is(err, graphservice.ErrGraphNotReady), errors.Is(err, graphquery.ErrGenerationChanged), errors.Is(err, graphquery.ErrDiscoveryUnavailable):
 		return errors.New("graph is not ready")
+	case errors.Is(err, graphquery.ErrQuerySize):
+		return errors.New("graph query response is too large")
+	case errors.Is(err, context.DeadlineExceeded):
+		return errors.New("graph query timed out")
 	default:
 		return errors.New("graph service is unavailable")
 	}
@@ -95,6 +119,60 @@ func graphTraceSchema() map[string]any {
 	properties["target_uid"] = map[string]any{"type": "string", "minLength": 1, "description": "target symbol UID"}
 	properties["max_depth"] = cappedIntegerSchema("maximum traversal depth; default: 10; values above 30 are capped", 10)
 	return map[string]any{"type": "object", "additionalProperties": false, "required": []string{"source_uid", "target_uid"}, "properties": properties}
+}
+
+func graphDiscoverSchema() map[string]any {
+	properties := graphBaseProperties()
+	properties["query"] = map[string]any{"type": "string", "maxLength": 16384}
+	properties["limit"] = map[string]any{"type": "integer", "minimum": 0, "maximum": 100}
+	properties["candidate_limit"] = map[string]any{"type": "integer", "minimum": 0, "maximum": 1000}
+	properties["symbols"] = stringArraySchema(32)
+	properties["files"] = stringArraySchema(32)
+	properties["config"] = graphDiscoveryConfigSchema()
+	return map[string]any{"type": "object", "additionalProperties": false, "properties": properties}
+}
+
+func graphExploreSchema() map[string]any {
+	properties := graphDiscoverSchema()["properties"].(map[string]any)
+	properties["symbols"] = stringArraySchema(20)
+	properties["files"] = stringArraySchema(20)
+	properties["required_occurrences"] = stringArraySchema(20)
+	properties["max_files"] = map[string]any{"type": "integer", "minimum": 0, "maximum": 20}
+	properties["source_utf16_units"] = map[string]any{"type": "integer", "minimum": 0, "maximum": 100000}
+	properties["source_bytes"] = map[string]any{"type": "integer", "minimum": 0, "maximum": 262144}
+	properties["config"] = graphExploreConfigSchema()
+	return map[string]any{"type": "object", "additionalProperties": false, "properties": properties}
+}
+
+func graphFilesSchema() map[string]any {
+	properties := graphBaseProperties()
+	properties["directory"] = map[string]any{"type": "string"}
+	properties["glob"] = map[string]any{"type": "string"}
+	properties["limit"] = map[string]any{"type": "integer", "minimum": 0, "maximum": 100}
+	properties["cursor"] = map[string]any{"type": "string"}
+	return map[string]any{"type": "object", "additionalProperties": false, "properties": properties}
+}
+
+func graphCapabilitiesSchema() map[string]any {
+	return map[string]any{"type": "object", "additionalProperties": false, "properties": graphBaseProperties()}
+}
+
+func graphDiscoveryConfigSchema() map[string]any {
+	return map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
+		"no_multiterm": map[string]any{"type": "boolean"}, "project_terms": stringArraySchema(32), "deprioritize": stringArraySchema(32),
+	}}
+}
+
+func graphExploreConfigSchema() map[string]any {
+	properties := graphDiscoveryConfigSchema()["properties"].(map[string]any)
+	properties["line_numbers"] = map[string]any{"type": "boolean"}
+	properties["adaptive"] = map[string]any{"type": "boolean"}
+	properties["dedup"] = map[string]any{"type": "boolean"}
+	return map[string]any{"type": "object", "additionalProperties": false, "properties": properties}
+}
+
+func stringArraySchema(maxItems int) map[string]any {
+	return map[string]any{"type": "array", "maxItems": maxItems, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 16384}}
 }
 
 func relationSchema() map[string]any {

@@ -57,7 +57,11 @@ func AuthenticateBearerWithChallenge(authenticator authn.Authenticator, challeng
 			reject(writer, true)
 			return
 		}
-		next.ServeHTTP(writer, request.WithContext(context.WithValue(request.Context(), principalContextKey{}, principal)))
+		ctx := context.WithValue(request.Context(), principalContextKey{}, principal)
+		ctx = authn.WithFreshPrincipal(ctx, func(ctx context.Context) (authn.Principal, error) {
+			return authenticator.Authenticate(ctx, parts[1])
+		})
+		next.ServeHTTP(writer, request.WithContext(ctx))
 	})
 }
 

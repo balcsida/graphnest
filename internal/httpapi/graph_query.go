@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/graphquery"
 	"github.com/balcsida/graphnest/internal/graphservice"
 	"github.com/balcsida/graphnest/pkg/api"
 )
@@ -35,6 +36,38 @@ func RegisterGraphQueries(mux *http.ServeMux, authenticator authn.Authenticator,
 		}
 		writeBoundedJSON(writer, response, maxResponseBytes)
 	}))))
+	mux.Handle("/v1/graph/discover", exactMethod(http.MethodPost, AuthenticateBearer(authenticator, jsonSCIPHandler(maxRequestBytes, func(writer http.ResponseWriter, request *http.Request, input api.GraphDiscoverRequest) {
+		response, err := service.Discover(request.Context(), PrincipalFromContext(request.Context()), input)
+		if err != nil {
+			writeGraphQueryError(writer, err)
+			return
+		}
+		writeBoundedJSON(writer, response, maxResponseBytes)
+	}))))
+	mux.Handle("/v1/graph/explore", exactMethod(http.MethodPost, AuthenticateBearer(authenticator, jsonSCIPHandler(maxRequestBytes, func(writer http.ResponseWriter, request *http.Request, input api.GraphExploreRequest) {
+		response, err := service.ExplorePublic(request.Context(), PrincipalFromContext(request.Context()), input)
+		if err != nil {
+			writeGraphQueryError(writer, err)
+			return
+		}
+		writeBoundedJSON(writer, response, maxResponseBytes)
+	}))))
+	mux.Handle("/v1/graph/files", exactMethod(http.MethodPost, AuthenticateBearer(authenticator, jsonSCIPHandler(maxRequestBytes, func(writer http.ResponseWriter, request *http.Request, input api.GraphFilesRequest) {
+		response, err := service.ListFilesPublic(request.Context(), PrincipalFromContext(request.Context()), input)
+		if err != nil {
+			writeGraphQueryError(writer, err)
+			return
+		}
+		writeBoundedJSON(writer, response, maxResponseBytes)
+	}))))
+	mux.Handle("/v1/graph/capabilities", exactMethod(http.MethodPost, AuthenticateBearer(authenticator, jsonSCIPHandler(maxRequestBytes, func(writer http.ResponseWriter, request *http.Request, input api.GraphCapabilitiesRequest) {
+		response, err := service.Capabilities(request.Context(), PrincipalFromContext(request.Context()), input)
+		if err != nil {
+			writeGraphQueryError(writer, err)
+			return
+		}
+		writeBoundedJSON(writer, response, maxResponseBytes)
+	}))))
 }
 
 func writeGraphQueryError(writer http.ResponseWriter, err error) {
@@ -44,16 +77,20 @@ func writeGraphQueryError(writer http.ResponseWriter, err error) {
 
 func classifyGraphQueryError(err error) (int, string, string, bool) {
 	switch {
-	case errors.Is(err, graphservice.ErrInvalidRequest), errors.Is(err, graphservice.ErrInvalidRepositorySelector):
+	case errors.Is(err, graphservice.ErrInvalidRequest), errors.Is(err, graphservice.ErrInvalidRepositorySelector), errors.Is(err, graphquery.ErrInvalidRequest):
 		return http.StatusBadRequest, "invalid_request", "request is invalid", false
+	case errors.Is(err, authn.ErrUnauthenticated):
+		return http.StatusUnauthorized, "unauthenticated", "authentication required", false
 	case errors.Is(err, graphservice.ErrRepositoryNotFound):
 		return http.StatusNotFound, "not_found", "repository not found", false
 	case errors.Is(err, graphservice.ErrRepositoryRequired):
 		return http.StatusConflict, "ambiguous", "repository selection is ambiguous", false
 	case errors.Is(err, graphservice.ErrBranchNotIndexed):
 		return http.StatusConflict, "branch_not_indexed", "branch is not indexed", false
-	case errors.Is(err, graphservice.ErrGraphNotReady):
+	case errors.Is(err, graphservice.ErrGraphNotReady), errors.Is(err, graphquery.ErrGenerationChanged), errors.Is(err, graphquery.ErrDiscoveryUnavailable):
 		return http.StatusConflict, "graph_not_ready", "graph is not ready", true
+	case errors.Is(err, graphquery.ErrQuerySize):
+		return http.StatusRequestEntityTooLarge, "response_too_large", "graph query response is too large", false
 	case errors.Is(err, context.DeadlineExceeded):
 		return http.StatusGatewayTimeout, "timeout", "graph query timed out", true
 	default:

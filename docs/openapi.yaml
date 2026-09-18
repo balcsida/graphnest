@@ -494,6 +494,66 @@ paths:
         '500': {description: Response exceeded the configured byte limit}
         '503': {$ref: '#/components/responses/Unavailable'}
         '504': {$ref: '#/components/responses/Timeout'}
+  /v1/graph/discover:
+    post:
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/GraphDiscoverRequest'}}}}
+      responses:
+        '200': {description: Bounded graph discovery result, content: {application/json: {schema: {$ref: '#/components/schemas/GraphDiscoverResponse'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/GraphConflict'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {$ref: '#/components/responses/Timeout'}
+  /v1/graph/explore:
+    post:
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/GraphExploreRequest'}}}}
+      responses:
+        '200': {description: Bounded graph and exact-source exploration, content: {application/json: {schema: {$ref: '#/components/schemas/GraphExploreResponse'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/GraphConflict'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {$ref: '#/components/responses/Timeout'}
+  /v1/graph/files:
+    post:
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/GraphFilesRequest'}}}}
+      responses:
+        '200': {description: Bounded indexed file page, content: {application/json: {schema: {$ref: '#/components/schemas/GraphFilesResponse'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/GraphConflict'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {$ref: '#/components/responses/Timeout'}
+  /v1/graph/capabilities:
+    post:
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/GraphCapabilitiesRequest'}}}}
+      responses:
+        '200': {description: Versioned graph server and selected-generation capabilities, content: {application/json: {schema: {$ref: '#/components/schemas/GraphCapabilitiesResponse'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/GraphConflict'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {$ref: '#/components/responses/Timeout'}
   /v1/scip/navigation:
     post:
       security: [{bearerAuth: []}, {sessionCookie: []}]
@@ -1195,6 +1255,373 @@ components:
       oneOf:
         - {type: integer, format: int64, minimum: 1}
         - {type: string, minLength: 1}
+    GraphDiscoveryConfig:
+      type: object
+      additionalProperties: false
+      properties:
+        no_multiterm: {type: boolean}
+        project_terms: {type: array, maxItems: 32, items: {type: string, minLength: 1, maxLength: 16384}}
+        deprioritize: {type: array, maxItems: 32, items: {type: string, minLength: 1, maxLength: 16384}}
+    GraphDiscoverRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        repo: {$ref: '#/components/schemas/GraphRepositorySelector'}
+        branch: {type: string, minLength: 1}
+        query: {type: string, maxLength: 16384}
+        limit: {type: integer, minimum: 0, maximum: 100}
+        candidate_limit: {type: integer, minimum: 0, maximum: 1000}
+        symbols: {type: array, maxItems: 32, items: {type: string, minLength: 1, maxLength: 16384}}
+        files: {type: array, maxItems: 32, items: {type: string, minLength: 1, maxLength: 16384}}
+        config: {$ref: '#/components/schemas/GraphDiscoveryConfig'}
+    GraphExploreRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        repo: {$ref: '#/components/schemas/GraphRepositorySelector'}
+        branch: {type: string, minLength: 1}
+        query: {type: string, maxLength: 16384}
+        limit: {type: integer, minimum: 0, maximum: 100}
+        candidate_limit: {type: integer, minimum: 0, maximum: 1000}
+        symbols: {type: array, maxItems: 20, items: {type: string, minLength: 1, maxLength: 16384}}
+        files: {type: array, maxItems: 20, items: {type: string, minLength: 1, maxLength: 16384}}
+        required_occurrences: {type: array, maxItems: 20, items: {type: string, minLength: 1, maxLength: 16384}}
+        max_files: {type: integer, minimum: 0, maximum: 20}
+        source_utf16_units: {type: integer, minimum: 0, maximum: 100000}
+        source_bytes: {type: integer, minimum: 0, maximum: 262144}
+        config:
+          type: object
+          additionalProperties: false
+          properties:
+            no_multiterm: {type: boolean}
+            project_terms: {type: array, maxItems: 32, items: {type: string, minLength: 1, maxLength: 16384}}
+            deprioritize: {type: array, maxItems: 32, items: {type: string, minLength: 1, maxLength: 16384}}
+            line_numbers: {type: boolean}
+            adaptive: {type: boolean}
+            dedup: {type: boolean}
+    GraphFilesRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        repo: {$ref: '#/components/schemas/GraphRepositorySelector'}
+        branch: {type: string, minLength: 1}
+        directory: {type: string}
+        glob: {type: string}
+        limit: {type: integer, minimum: 0, maximum: 100}
+        cursor: {type: string}
+    GraphCapabilitiesRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        repo: {$ref: '#/components/schemas/GraphRepositorySelector'}
+        branch: {type: string, minLength: 1}
+    GraphArtifactPositionV2:
+      type: object
+      additionalProperties: false
+      properties:
+        line: {type: integer, format: int32, minimum: 0}
+        character: {type: integer, format: int32, minimum: 0}
+    GraphArtifactLocationV2:
+      type: object
+      additionalProperties: false
+      properties:
+        path: {type: string}
+        start: {$ref: '#/components/schemas/GraphArtifactPositionV2'}
+        end: {$ref: '#/components/schemas/GraphArtifactPositionV2'}
+    GraphArtifactStringListV2:
+      type: object
+      additionalProperties: false
+      properties:
+        values: {type: array, items: {type: string}}
+    GraphArtifactExtensionV2:
+      type: object
+      additionalProperties: false
+      properties:
+        namespace: {type: string}
+        json: {type: string, format: byte}
+    GraphArtifactProducerV2:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {type: string}
+        version: {type: string}
+        configuration: {type: string}
+    GraphArtifactMetadataEntryV2:
+      type: object
+      additionalProperties: false
+      properties:
+        key: {type: string}
+        value: {type: string}
+        updated_at: {type: integer, format: int64}
+    GraphArtifactNodeV2:
+      type: object
+      additionalProperties: false
+      properties:
+        source_id: {type: string}
+        occurrence: {type: string}
+        kind: {type: string}
+        name: {type: string}
+        qualified_name: {type: string}
+        path: {type: string}
+        language: {type: string}
+        location: {$ref: '#/components/schemas/GraphArtifactLocationV2'}
+        documentation: {type: string}
+        signature: {type: string}
+        visibility: {type: string}
+        is_exported: {type: boolean}
+        is_async: {type: boolean}
+        is_static: {type: boolean}
+        is_abstract: {type: boolean}
+        decorators: {$ref: '#/components/schemas/GraphArtifactStringListV2'}
+        type_parameters: {$ref: '#/components/schemas/GraphArtifactStringListV2'}
+        return_type: {type: string}
+        extensions: {type: array, items: {$ref: '#/components/schemas/GraphArtifactExtensionV2'}}
+        updated_at: {type: integer, format: int64}
+        scip_symbol: {type: string}
+    GraphArtifactEdgeV2:
+      type: object
+      additionalProperties: false
+      properties:
+        source_id: {type: string}
+        occurrence: {type: string}
+        source: {type: string}
+        target: {type: string}
+        kind: {type: integer, enum: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]}
+        location: {$ref: '#/components/schemas/GraphArtifactLocationV2'}
+        confidence: {type: number, format: double, minimum: 0, maximum: 1}
+        provenance: {type: string}
+        resolution_reason: {type: string}
+        extensions: {type: array, items: {$ref: '#/components/schemas/GraphArtifactExtensionV2'}}
+    GraphArtifactFileV2:
+      type: object
+      additionalProperties: false
+      properties:
+        path: {type: string}
+        content_hash: {type: string}
+        language: {type: string}
+        size: {type: integer, format: int64, minimum: 0}
+        modified_at: {type: integer, format: int64}
+        indexed_at: {type: integer, format: int64}
+        node_count: {type: integer, format: int64, minimum: 0}
+        generated: {type: boolean}
+        errors: {$ref: '#/components/schemas/GraphArtifactExtensionV2'}
+        extensions: {type: array, items: {$ref: '#/components/schemas/GraphArtifactExtensionV2'}}
+    GraphGeneration:
+      type: object
+      additionalProperties: false
+      required: [repository, publisher, repository_id, generation, commit, producer, content_hash, capabilities, node_count, edge_count, unresolved_count, diagnostic_count]
+      properties:
+        repository: {type: string}
+        publisher: {type: string}
+        repository_id: {type: integer, format: int64, minimum: 1, description: GitHub repository ID}
+        generation: {type: integer, format: int64, minimum: 1}
+        commit: {type: string, pattern: '^[0-9a-f]{40}$'}
+        producer: {$ref: '#/components/schemas/GraphArtifactProducerV2'}
+        content_hash: {type: string, format: byte}
+        capabilities: {type: array, items: {type: string}}
+        node_count: {type: integer, minimum: 0}
+        edge_count: {type: integer, minimum: 0}
+        unresolved_count: {type: integer, minimum: 0}
+        diagnostic_count: {type: integer, minimum: 0}
+        metadata: {type: array, items: {$ref: '#/components/schemas/GraphArtifactMetadataEntryV2'}}
+        extensions: {type: array, items: {$ref: '#/components/schemas/GraphArtifactExtensionV2'}}
+    GraphEntityV2:
+      type: object
+      additionalProperties: false
+      required: [repository_id, id, depth, fact]
+      properties:
+        repository_id: {type: integer, format: int64, minimum: 1, description: GitHub repository ID}
+        id: {type: string}
+        depth: {type: integer, minimum: 0}
+        fact: {$ref: '#/components/schemas/GraphArtifactNodeV2'}
+    GraphDiscoveryMatch:
+      type: object
+      additionalProperties: false
+      required: [entity, fuzzy, edit_distance, score, fields, matched_terms, usage_count, pinned, generated, ambient, test, deprioritized]
+      properties:
+        entity: {$ref: '#/components/schemas/GraphEntityV2'}
+        file: {$ref: '#/components/schemas/GraphArtifactFileV2'}
+        fuzzy: {type: boolean}
+        edit_distance: {type: integer, minimum: 0}
+        score: {type: number}
+        fields: {type: array, items: {type: string}}
+        matched_terms: {type: integer, minimum: 0}
+        usage_count: {type: integer, minimum: 0}
+        pinned: {type: boolean}
+        generated: {type: boolean}
+        ambient: {type: boolean}
+        test: {type: boolean}
+        deprioritized: {type: boolean}
+    GraphDiscoverResponse:
+      type: object
+      additionalProperties: false
+      required: [status, confidence, matches, generations, candidate_limit, candidates_examined, candidate_truncated, result_truncated, coverage]
+      properties:
+        status: {type: string}
+        confidence: {type: string}
+        matches: {type: array, items: {$ref: '#/components/schemas/GraphDiscoveryMatch'}}
+        generations: {type: array, minItems: 1, items: {$ref: '#/components/schemas/GraphGeneration'}}
+        candidate_limit: {type: integer, minimum: 0}
+        candidates_examined: {type: integer, minimum: 0}
+        candidate_truncated: {type: boolean}
+        result_truncated: {type: boolean}
+        coverage: {type: string}
+    GraphFilesResponse:
+      type: object
+      additionalProperties: false
+      required: [files, generations]
+      properties:
+        files:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [repository_id, fact]
+            properties:
+              repository_id: {type: integer, format: int64, minimum: 1, description: GitHub repository ID}
+              fact: {$ref: '#/components/schemas/GraphArtifactFileV2'}
+        generations: {type: array, minItems: 1, items: {$ref: '#/components/schemas/GraphGeneration'}}
+        next_cursor: {type: string}
+        total_files: {type: integer, format: int64, minimum: 0}
+    GraphSourceSelection:
+      type: object
+      additionalProperties: false
+      required: [start_byte, end_byte]
+      properties:
+        start_byte: {type: integer, minimum: 0}
+        end_byte: {type: integer, minimum: 0}
+    GraphInspectionSource:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        entity_id: {type: string}
+        path: {type: string}
+        status: {type: string, enum: [ok, truncated, unreadable, oversized, invalid_range, binary, budget_exhausted, source_unavailable, file_not_indexed, missing_range, virtual_entity, partial_range]}
+        precision: {type: string, enum: [lines, utf16]}
+        content: {type: string}
+        indexed_sha: {type: string, pattern: '^[0-9a-f]{40}$'}
+        blob_sha: {type: string}
+        start_line: {type: integer, minimum: 1}
+        end_line: {type: integer, minimum: 1}
+        range: {$ref: '#/components/schemas/GraphArtifactLocationV2'}
+        selection: {$ref: '#/components/schemas/GraphSourceSelection'}
+        file_errors: {$ref: '#/components/schemas/GraphArtifactExtensionV2'}
+    GraphExploreSelection:
+      type: object
+      additionalProperties: false
+      required: [entity_id, segment, status]
+      properties:
+        entity_id: {type: string}
+        range: {$ref: '#/components/schemas/GraphArtifactLocationV2'}
+        segment: {type: integer, minimum: -1, description: '-1 means no delivered source segment contains this entity range, including missing locations and ranges outside delivered source windows.'}
+        reference: {type: integer, minimum: 0}
+        selection: {$ref: '#/components/schemas/GraphSourceSelection'}
+        status: {type: string}
+    GraphExploreFile:
+      type: object
+      additionalProperties: false
+      required: [path, entities, pinned, required, score, reservation_utf16_units, status, mode, segments, selections]
+      properties:
+        path: {type: string}
+        fact: {$ref: '#/components/schemas/GraphArtifactFileV2'}
+        entities:
+          anyOf:
+            - {type: array, items: {$ref: '#/components/schemas/GraphEntityV2'}}
+            - {type: 'null'}
+        pinned: {type: boolean}
+        required: {type: boolean}
+        score: {type: number, format: double}
+        reservation_utf16_units: {type: integer, minimum: 0}
+        status: {type: string}
+        mode: {type: string}
+        segments:
+          anyOf:
+            - {type: array, items: {$ref: '#/components/schemas/GraphInspectionSource'}}
+            - {type: 'null'}
+        references: {type: array, items: {$ref: '#/components/schemas/GraphInspectionSource'}}
+        selections:
+          anyOf:
+            - {type: array, items: {$ref: '#/components/schemas/GraphExploreSelection'}}
+            - {type: 'null'}
+        boundaries: {type: array, items: {type: string}}
+    GraphEvidenceV2:
+      type: object
+      additionalProperties: false
+      required: [repository_id, source_id, target_id, fact]
+      properties:
+        repository_id: {type: integer, format: int64, minimum: 1}
+        source_id: {type: string}
+        target_id: {type: string}
+        fact: {$ref: '#/components/schemas/GraphArtifactEdgeV2'}
+    GraphTraverseResponse:
+      type: object
+      additionalProperties: false
+      required: [status, entities, edges, generations, partial]
+      properties:
+        status: {type: string}
+        entities: {type: array, items: {$ref: '#/components/schemas/GraphEntityV2'}}
+        edges:
+          anyOf:
+            - {type: array, items: {$ref: '#/components/schemas/GraphEvidenceV2'}}
+            - {type: 'null'}
+        generations: {type: array, minItems: 1, items: {$ref: '#/components/schemas/GraphGeneration'}}
+        boundaries: {type: array, items: {$ref: '#/components/schemas/GraphBoundary'}}
+        partial: {type: boolean}
+    GraphExploreUsage:
+      type: object
+      additionalProperties: false
+      required: [source_reads, source_bytes, source_utf16_units, graph_queries]
+      properties:
+        source_reads: {type: integer, minimum: 0}
+        source_bytes: {type: integer, minimum: 0}
+        source_utf16_units: {type: integer, minimum: 0}
+        graph_queries: {type: integer, minimum: 0}
+        dedup_saved_utf16_units: {type: integer, minimum: 0}
+    GraphExploreResponse:
+      type: object
+      additionalProperties: false
+      required: [discovery, files, relationships, generations, corpus_files, line_numbers, complete, usage, source_utf16_units_limit, source_bytes_limit, file_limit]
+      properties:
+        discovery: {$ref: '#/components/schemas/GraphDiscoverResponse'}
+        files:
+          anyOf:
+            - {type: array, items: {$ref: '#/components/schemas/GraphExploreFile'}}
+            - {type: 'null'}
+        relationships:
+          anyOf:
+            - {type: array, items: {$ref: '#/components/schemas/GraphTraverseResponse'}}
+            - {type: 'null'}
+        generations: {type: array, minItems: 1, items: {$ref: '#/components/schemas/GraphGeneration'}}
+        corpus_files: {type: integer, format: int64, minimum: 0}
+        line_numbers: {type: boolean}
+        complete: {type: boolean}
+        boundaries: {type: array, items: {type: string}}
+        handoffs: {type: array, items: {type: string}}
+        usage: {$ref: '#/components/schemas/GraphExploreUsage'}
+        source_utf16_units_limit: {type: integer, minimum: 0}
+        source_bytes_limit: {type: integer, minimum: 0}
+        file_limit: {type: integer, minimum: 0}
+        session_restored: {type: boolean}
+    GraphCapabilitiesResponse:
+      type: object
+      additionalProperties: false
+      required: [version, query_artifact_versions, upload_artifact_versions, workflows, status, freshness, repository_id, repository, branch, current_indexed_commit, generation, producer_capabilities, discovery_projection, discovery_coverage]
+      properties:
+        version: {type: integer, const: 1}
+        query_artifact_versions: {type: array, items: {type: integer, enum: [1, 2]}}
+        upload_artifact_versions: {type: array, items: {type: integer, enum: [1]}, description: Public upload supports v1 only; no public v2 upload endpoint exists.}
+        workflows: {type: array, items: {type: object, additionalProperties: false, required: [name, artifact_version], properties: {name: {type: string, enum: [context, impact, trace, discover, explore, files, capabilities]}, artifact_version: {type: integer, enum: [1, 2]}}}}
+        status: {type: string, enum: [ready]}
+        freshness: {type: string, enum: [current]}
+        repository_id: {type: integer, format: int64, minimum: 1}
+        repository: {type: string}
+        branch: {type: string}
+        current_indexed_commit: {type: string, pattern: '^[0-9a-f]{40}$'}
+        generation: {$ref: '#/components/schemas/GraphGeneration'}
+        producer_capabilities: {type: array, items: {type: string}, description: Capabilities recorded by the selected producer; these do not expand server workflows.}
+        discovery_projection: {type: boolean, const: true}
+        discovery_coverage: {type: string}
     GraphContextRequest:
       type: object
       additionalProperties: false

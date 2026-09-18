@@ -377,7 +377,8 @@ func (s *Store) AllAuthorizedRepositories(ctx context.Context, names []string) (
 }
 
 func (s *Store) GraphRepositories(ctx context.Context, principal authn.Principal) ([]repository.Repository, error) {
-	rows, err := s.pool.Query(ctx, graphRepositoriesQuery, principal.Administrator, principal.InstallationID, principal.RepositoryIDs)
+	globalAdministrator := principal.Administrator && principal.Method != "api_token"
+	rows, err := s.pool.Query(ctx, graphRepositoriesQuery, globalAdministrator, principal.InstallationID, principal.RepositoryIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -436,7 +437,7 @@ const repositoryByIDQuery = `select ` + repositoryColumns + ` from repositories 
 // so only the repository grants bound what it can see.
 const graphRepositoriesQuery = `select ` + repositoryColumns + ` from repositories join installations on installations.id = repositories.installation_id
 	where installations.status = 'active' and repositories.enabled and not repositories.archived
-	and ($1 or ($2 = 0 or installations.github_id = $2) and repositories.github_id = any($3))
+	and ($1 or (coalesce(cardinality($3::bigint[]), 0) > 0 and ($2 = 0 or installations.github_id = $2) and repositories.github_id = any($3)))
 	order by repositories.owner, repositories.name, repositories.github_id`
 
 type repositoryScanner interface{ Scan(...any) error }

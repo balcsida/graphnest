@@ -121,6 +121,10 @@ func (s *Service) finishInspection(ctx context.Context, p authn.Principal, i ins
 	if err := i.backend.ValidateGenerations(ctx, i.scope, generations); err != nil {
 		return err
 	}
+	p, err = authn.FreshPrincipal(ctx, p)
+	if err != nil || p.ForceRotation {
+		return authn.ErrUnauthenticated
+	}
 	if err := s.reauthorize(ctx, p, i.selected, nil); err != nil {
 		return err
 	}

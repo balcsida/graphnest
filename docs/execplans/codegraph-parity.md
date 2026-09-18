@@ -5,6 +5,18 @@ Implementation, validation, draft publication, and release are separate states.
 
 ## Progress
 
+- 2026-09-14: The partial S1.07 discovery transport milestone exposes bounded
+  v2 discovery, exploration, file inventory, and versioned capabilities over
+  bearer-only REST and MCP while preserving existing context/impact/trace
+  workflows. It reports the selected generation and explicit v1-only public
+  upload boundary. Browser, remaining CodeGraph command parity, and the full
+  Stage 1 gate remain open. Published as draft [PR #91](https://github.com/balcsida/graphnest/pull/91),
+  based on `main`, after independent review and schema-fidelity corrections.
+  Full unit race, PostgreSQL integration race, build/vet/format, OpenAPI, and
+  Staticcheck pass; hosted checks remain pending. Submitted with native
+  `gh stack submit --auto --remote origin`; GitHub reports no remote stack
+  object for this single-PR milestone, and `gh stack link` requires at least
+  two PRs. Local tracking contains only `feat/codegraph/discovery-api`.
 - 2026-09-11: Owner approved an intermediate foundation integration checkpoint
   through the existing seventeen draft layers ending at PR #82. New feature
   implementation is paused; partial B1 files and reference evidence are preserved.

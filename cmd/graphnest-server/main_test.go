@@ -964,15 +964,17 @@ func TestGraphQueryRoutesRegisterOnlyWithService(t *testing.T) {
 	settings := config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024}}
 	without := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	with := newAPIHandler(settings, observability.New(), testRequestAuthenticator(authenticator), nil, nil, nil, nil, &graphservice.Service{}, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/graph/context", nil))
-		want := http.StatusNotFound
-		if name == "durable" {
-			want = http.StatusUnauthorized
-		}
-		if response.Code != want {
-			t.Fatalf("%s status=%d want=%d", name, response.Code, want)
+	for _, path := range []string{"/v1/graph/context", "/v1/graph/discover", "/v1/graph/explore", "/v1/graph/files", "/v1/graph/capabilities"} {
+		for name, handler := range map[string]http.Handler{"static": without, "durable": with} {
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, nil))
+			want := http.StatusNotFound
+			if name == "durable" {
+				want = http.StatusUnauthorized
+			}
+			if response.Code != want {
+				t.Fatalf("%s %s status=%d want=%d", name, path, response.Code, want)
+			}
 		}
 	}
 }

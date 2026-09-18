@@ -260,6 +260,31 @@ func TestGraphRepositoriesEnforcePrincipalEligibility(t *testing.T) {
 	if err != nil || len(user) != 1 || user[0].GitHubID != 101 || user[0].Name != "Acme/One" {
 		t.Fatalf("user repositories = %#v, %v", user, err)
 	}
+	for _, test := range []struct {
+		name      string
+		principal authn.Principal
+		want      []int64
+	}{
+		{"durable PAT spans installations", authn.Principal{Method: "api_token", RepositoryIDs: []int64{101, 201}}, []int64{101, 201}},
+		{"durable OAuth spans installations", authn.Principal{Method: "oauth", RepositoryIDs: []int64{101, 201}}, []int64{101, 201}},
+		{"admin PAT retains ceiling", authn.Principal{Method: "api_token", Administrator: true, RepositoryIDs: []int64{201}}, []int64{201}},
+		{"durable PAT empty ceiling", authn.Principal{Method: "api_token"}, nil},
+		{"durable OAuth empty grants", authn.Principal{Method: "oauth"}, nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := store.GraphRepositories(t.Context(), test.principal)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids := make([]int64, len(got))
+			for index := range got {
+				ids[index] = got[index].GitHubID
+			}
+			if !slices.Equal(ids, test.want) {
+				t.Fatalf("repository IDs = %v, want %v", ids, test.want)
+			}
+		})
+	}
 	// Durable principals (sessions, API tokens, OAuth grants) carry no
 	// installation: their grants already span installations, so the grant
 	// list alone decides visibility, exactly as AuthorizedRepositories does.

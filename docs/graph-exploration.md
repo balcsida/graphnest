@@ -2,8 +2,9 @@
 
 `graphservice.Service.Explore(ctx, currentPrincipal, ExploreRequest)` composes
 semantic discovery, indexed file facts, occurrence-preserving one-hop graph
-queries and exact indexed-commit source in a single domain operation. HTTP/MCP
-adapters remain S1.07. Optional repeated-call history retains only exact coverage
+queries and exact indexed-commit source in a single domain operation. The bounded public HTTP/MCP
+transport slice is described in [Public discovery API](#public-discovery-api).
+Optional repeated-call history retains only exact coverage
 fingerprints; no principal, source text, graph result or file metadata is cached.
 
 The request selects one repository and optional branch. Query, Symbols, Files,
@@ -209,3 +210,21 @@ and its Service/normalize occurrences. The second restores that source with zero
 references or savings. Other named files can remain incomplete pointers under
 the explicit one-file cap. Native source retains its final LF/empty EOF line;
 this comparison does not claim identical public rendered envelopes.
+
+## Public discovery API
+
+Authenticated clients can call `POST /v1/graph/discover`, `/v1/graph/explore`,
+`/v1/graph/files`, and `/v1/graph/capabilities`; MCP exposes the equivalent
+`graph_discover`, `explore`, `graph_files`, and `graph_capabilities` tools. Each
+request selects an authorized repository by GitHub ID or name and may name only
+its current indexed branch. Results stay within one immutable graph generation
+and are discarded if the credential, grant, indexed commit, or generation
+changes before delivery.
+
+Discovery and exploration require an artifact v2 generation with its discovery
+projection. Missing or stale data returns `graph_not_ready`; an empty ready
+result is never used to hide unavailable data. Capabilities report the selected
+generation and producer coverage separately from server workflows. Public graph
+upload remains v1 only: there is no public v2 upload endpoint in this milestone.
+Session history, entity selectors, and qualified wildcard methods are not part
+of these public requests.
