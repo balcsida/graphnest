@@ -76,19 +76,38 @@ func (client *Client) Search(ctx context.Context, request search.BackendRequest)
 		ctx, cancel = context.WithTimeout(ctx, request.Timeout)
 		defer cancel()
 	}
+	// MaxDocDisplayCount only bounds files; a common term in a few large files
+	// still returns hundreds of line matches, and that payload overruns the
+	// response cap and fails the whole search. The service keeps at most Limit
+	// matches anyway, so ask Zoekt for that many plus one sentinel: the extra
+	// match proves more exist and flags truncation before being dropped.
+	//
+	// The sentinel alone is not enough. MaxMatchDisplayCount spends its budget
+	// on sub-line fragments, and a line with several hits can consume the
+	// sentinel's share while still fitting within Limit lines. Zoekt's
+	// MatchCount counts every matching line found before the display cap, so
+	// any excess over the lines that came back also means the page is short.
 	result, err := client.call(ctx, wireRequest{
 		Q:       request.Query,
 		RepoIDs: append([]uint32{}, request.RepositoryIDs...),
 		Opts: wireOptions{
-			NumContextLines:    request.ContextLines,
-			MaxDocDisplayCount: request.Limit,
-			MaxWallTime:        int64(request.Timeout),
+			NumContextLines:      request.ContextLines,
+			MaxDocDisplayCount:   request.Limit,
+			MaxMatchDisplayCount: sentinelLimit(request.Limit),
+			MaxWallTime:          int64(request.Timeout),
 		},
 	}, client.maxBytes)
 	if err != nil {
 		return api.SearchResponse{}, err
 	}
 	response := normalize(result.Files, client.maxBytes)
+	if request.Limit > 0 && len(response.Matches) > request.Limit {
+		response.Matches = response.Matches[:request.Limit]
+		response.Truncated = true
+	}
+	if result.MatchCount > len(response.Matches) {
+		response.Truncated = true
+	}
 	needsMetadata := false
 	for _, match := range response.Matches {
 		if match.SHA == "" && len(match.Branches) == 0 {
@@ -144,6 +163,15 @@ func (client *Client) List(ctx context.Context, repositoryID uint32) ([]IndexedR
 		return nil, fmt.Errorf("%w: invalid repository ID", ErrUnavailable)
 	}
 	return client.list(ctx, []uint32{repositoryID}, "")
+}
+
+// sentinelLimit asks for one match beyond the caller's page so a full page can
+// be told apart from a capped one. Zero keeps Zoekt's own default unbounded.
+func sentinelLimit(limit int) int {
+	if limit <= 0 {
+		return 0
+	}
+	return limit + 1
 }
 
 func scopedMetadataQuery(repositoryIDs []uint32) string {
@@ -301,9 +329,10 @@ type wireRequest struct {
 }
 
 type wireOptions struct {
-	NumContextLines    int   `json:"NumContextLines"`
-	MaxDocDisplayCount int   `json:"MaxDocDisplayCount"`
-	MaxWallTime        int64 `json:"MaxWallTime"`
+	NumContextLines      int   `json:"NumContextLines"`
+	MaxDocDisplayCount   int   `json:"MaxDocDisplayCount"`
+	MaxMatchDisplayCount int   `json:"MaxMatchDisplayCount"`
+	MaxWallTime          int64 `json:"MaxWallTime"`
 }
 
 type wireResponse struct {
@@ -312,7 +341,10 @@ type wireResponse struct {
 }
 
 type wireResult struct {
-	Files []wireFile `json:"Files"`
+	// MatchCount is Zoekt's Stats.MatchCount: matches found across all
+	// evaluated files, counted before MaxMatchDisplayCount trims the output.
+	MatchCount int        `json:"MatchCount"`
+	Files      []wireFile `json:"Files"`
 }
 
 type wireFile struct {

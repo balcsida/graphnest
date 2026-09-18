@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/balcsida/graphnest/internal/scipgraph"
+	"github.com/scip-code/scip/bindings/go/scip"
 )
 
 type Manifest struct {
@@ -31,10 +32,16 @@ func FromSCIP(repository SCIPRepository, occurrences []scipgraph.Occurrence, rel
 	}
 	repositoryUID := fmt.Sprintf("repository:%d", repository.ID)
 	addNode(Node{UID: repositoryUID, Kind: NodeRepository})
-	addSymbol := func(symbol, path string, r Range) string {
+	// A symbol node sits at its definition. Occurrences arrive in document
+	// order, so the first sighting is usually a reference in some other file;
+	// the definition-role occurrence replaces it whenever one exists.
+	defined := map[string]bool{}
+	addSymbol := func(symbol, path string, r Range, definition bool) string {
 		uid := "symbol:" + symbol
-		if _, ok := nodes[uid]; !ok {
-			addNode(Node{UID: uid, Kind: NodeSymbol, Path: path, QualifiedName: symbol, SCIPSymbol: symbol, Range: r})
+		if _, ok := nodes[uid]; !ok || definition && !defined[uid] {
+			name, kind := symbolNameAndKind(symbol)
+			addNode(Node{UID: uid, Kind: NodeSymbol, Path: path, SymbolKind: kind, QualifiedName: name, SCIPSymbol: symbol, Range: r})
+			defined[uid] = defined[uid] || definition
 		}
 		return uid
 	}
@@ -48,12 +55,12 @@ func FromSCIP(repository SCIPRepository, occurrences []scipgraph.Occurrence, rel
 	}
 	for _, occurrence := range occurrences {
 		fileUID := addFile(occurrence.Path)
-		symbolUID := addSymbol(occurrence.Symbol, occurrence.Path, Range{occurrence.StartLine, occurrence.StartCharacter, occurrence.EndLine, occurrence.EndCharacter})
+		symbolUID := addSymbol(occurrence.Symbol, occurrence.Path, Range{occurrence.StartLine, occurrence.StartCharacter, occurrence.EndLine, occurrence.EndCharacter}, occurrence.Roles&int32(scip.SymbolRole_Definition) != 0)
 		addEdge(Edge{SourceUID: fileUID, TargetUID: symbolUID, Kind: EdgeContains, Path: occurrence.Path, Range: Range{occurrence.StartLine, occurrence.StartCharacter, occurrence.EndLine, occurrence.EndCharacter}, Confidence: 1})
 	}
 	for _, relationship := range relationships {
-		sourceUID := addSymbol(relationship.Source, relationship.Path, Range{})
-		targetUID := addSymbol(relationship.Target, relationship.Path, Range{})
+		sourceUID := addSymbol(relationship.Source, relationship.Path, Range{}, false)
+		targetUID := addSymbol(relationship.Target, relationship.Path, Range{}, false)
 		for _, kind := range []struct {
 			enabled bool
 			kind    EdgeKind
@@ -73,6 +80,51 @@ func FromSCIP(repository SCIPRepository, occurrences []scipgraph.Occurrence, rel
 	sort.Slice(artifact.Edges, func(i, j int) bool { return fallbackEdgeKey(artifact.Edges[i]) < fallbackEdgeKey(artifact.Edges[j]) })
 	artifact.ContentHash = fallbackHash(artifact)
 	return artifact, Validate(artifact, Limits{})
+}
+
+// symbolNameAndKind exposes what a caller can actually name: the innermost SCIP
+// descriptor and the kind its suffix encodes. Context, impact and trace match
+// symbols by exact name, and nobody has the full SCIP symbol string in hand.
+// Local and unparsable symbols keep the raw string so they stay addressable.
+func symbolNameAndKind(symbol string) (string, string) {
+	parsed, err := scip.ParseSymbol(symbol)
+	if err != nil || len(parsed.Descriptors) == 0 {
+		return symbol, ""
+	}
+	descriptor := parsed.Descriptors[len(parsed.Descriptors)-1]
+	kind := ""
+	switch descriptor.Suffix {
+	case scip.Descriptor_Namespace:
+		kind = "namespace"
+	case scip.Descriptor_Type:
+		kind = "type"
+	case scip.Descriptor_Term:
+		// SCIP folds fields, variables and constants into one suffix; a term
+		// nested in a type is a field, a top-level term a variable.
+		kind = "variable"
+		if len(parsed.Descriptors) > 1 && parsed.Descriptors[len(parsed.Descriptors)-2].Suffix == scip.Descriptor_Type {
+			kind = "field"
+		}
+	case scip.Descriptor_Method:
+		kind = "function"
+		if len(parsed.Descriptors) > 1 && parsed.Descriptors[len(parsed.Descriptors)-2].Suffix == scip.Descriptor_Type {
+			kind = "method"
+		}
+	case scip.Descriptor_TypeParameter:
+		kind = "type_parameter"
+	case scip.Descriptor_Parameter:
+		kind = "parameter"
+	case scip.Descriptor_Meta:
+		kind = "meta"
+	case scip.Descriptor_Macro:
+		kind = "macro"
+	case scip.Descriptor_Local:
+		kind = "local"
+	}
+	if descriptor.Name == "" {
+		return symbol, kind
+	}
+	return descriptor.Name, kind
 }
 
 func fallbackEdgeKey(edge Edge) string {

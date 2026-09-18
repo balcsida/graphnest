@@ -90,6 +90,14 @@ using name overrides). Correct the database or migration problem before retrying
 `className`, `hosts`, and optional existing TLS Secret references. Keep the
 Zoekt Service internal: it is deliberately ClusterIP-only and has no Ingress.
 
+SCIP uploads are ingested synchronously inside the request, so a large index
+can hold the connection open for minutes. Raise the ingress controller's
+response timeout above its default (often 30 or 60 seconds) with a
+controller-specific annotation in `ingress.annotations`, for example
+`nginx.ingress.kubernetes.io/proxy-read-timeout: "600"` or
+`haproxy.router.openshift.io/timeout: 10m`. Otherwise the proxy answers 504
+while the server keeps ingesting and later commits the upload.
+
 The indexer and Zoekt share only the durable shard PVC at
 `node.paths.indexes`. Archive extraction uses a separate bounded `emptyDir` at
 `node.paths.workspace`; size it with `node.indexer.workspaceSizeLimit`. The

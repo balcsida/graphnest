@@ -432,6 +432,9 @@ const allRepositoriesQuery = `select ` + repositoryColumns + ` from repositories
 
 const repositoryByIDQuery = `select ` + repositoryColumns + ` from repositories join installations on installations.id = repositories.installation_id where repositories.id = $1`
 
+// graphRepositoriesQuery mirrors repositoryQuery: a zero installation means the
+// principal is not installation-scoped (sessions, API tokens, OAuth grants),
+// so only the repository grants bound what it can see.
 const graphRepositoriesQuery = `select ` + repositoryColumns + ` from repositories join installations on installations.id = repositories.installation_id
 	where installations.status = 'active' and repositories.enabled and not repositories.archived
 	and ($1 or (coalesce(cardinality($3::bigint[]), 0) > 0 and ($2 = 0 or installations.github_id = $2) and repositories.github_id = any($3)))
