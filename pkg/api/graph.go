@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strconv"
 )
 
 var errInvalidGraphRepositorySelector = errors.New("repo must be a positive integer or non-empty string")
@@ -33,12 +34,35 @@ func (selector *GraphRepositorySelector) UnmarshalJSON(data []byte) error {
 			return nil
 		}
 	case string:
+		// Several MCP clients serialise every argument as a string, so "101"
+		// arrives for the integer ID 101. A repository name is always
+		// owner/name and never digit-only, so the string form is unambiguous.
+		if digitsOnly(value) {
+			id, err := strconv.ParseInt(value, 10, 64)
+			if err == nil && id > 0 {
+				selector.ID = id
+				return nil
+			}
+			return errInvalidGraphRepositorySelector
+		}
 		if value != "" {
 			selector.Name = value
 			return nil
 		}
 	}
 	return errInvalidGraphRepositorySelector
+}
+
+func digitsOnly(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func (selector GraphRepositorySelector) IsZero() bool {

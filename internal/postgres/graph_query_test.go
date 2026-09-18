@@ -61,6 +61,11 @@ func TestPostgresGraphQueryStoreSupportsSCIPFallback(t *testing.T) {
 	if err != nil || contextResult.Status != graphprotocol.StatusFound || len(contextResult.Incoming["references"]) != 1 || len(contextResult.Outgoing["references"]) != 1 {
 		t.Fatalf("Context()=%#v err=%v", contextResult, err)
 	}
+	// Callers name symbols the way they read in source, not by SCIP string.
+	byName, err := service.Context(t.Context(), graphprotocol.ContextRequest{Scope: scope, Name: "Next", Kind: "function", FilePath: "next.go", Relations: []string{"references"}})
+	if err != nil || byName.Status != graphprotocol.StatusFound || byName.Symbol == nil || byName.Symbol.UID != "symbol:"+next || byName.Symbol.Name != "Next" || byName.Symbol.Kind != "function" {
+		t.Fatalf("Context(name)=%#v err=%v", byName, err)
+	}
 	impact, err := service.Impact(t.Context(), graphprotocol.ImpactRequest{Scope: scope, TargetUID: "symbol:" + root, Direction: "downstream", Relations: []string{"references"}, MaxDepth: 3, IncludeTests: true})
 	if err != nil || impact.Status != graphprotocol.StatusFound || len(impact.ByDepth[1]) != 1 || len(impact.ByDepth[2]) != 1 {
 		t.Fatalf("Impact()=%#v err=%v", impact, err)
