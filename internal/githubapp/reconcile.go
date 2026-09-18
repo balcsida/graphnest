@@ -2,6 +2,7 @@ package githubapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -49,20 +50,21 @@ func (r *Reconciler) All(ctx context.Context) error {
 		return err
 	}
 	upstream := make(map[int64]struct{}, len(installations))
+	var errs []error
 	for _, installation := range installations {
 		upstream[installation.ID] = struct{}{}
 		if err := r.reconcile(ctx, installation); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
 	for _, installationID := range local {
 		if _, ok := upstream[installationID]; !ok {
 			if err := r.store.DisableInstallation(ctx, installationID, "deleted"); err != nil {
-				return err
+				errs = append(errs, err)
 			}
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func (r *Reconciler) reconcile(ctx context.Context, installation Installation) error {
@@ -73,6 +75,7 @@ func (r *Reconciler) reconcile(ctx context.Context, installation Installation) e
 	if err != nil {
 		return err
 	}
+	var shaErrs []error
 	for index := range repositories {
 		repository := &repositories[index]
 		if repository.Archived || repository.Disabled {
@@ -80,8 +83,30 @@ func (r *Reconciler) reconcile(ctx context.Context, installation Installation) e
 		}
 		repository.DefaultSHA, err = r.github.DefaultBranchSHA(ctx, installation.ID, repository.Owner, repository.Name, repository.DefaultBranch)
 		if err != nil {
-			return fmt.Errorf("read %s default branch: %w", repository.FullName, err)
+			repository.DefaultSHA = ""
+			repository.ErrorCode = "default_branch"
+			name := repository.FullName
+			if name == "" {
+				name = repository.Owner + "/" + repository.Name
+			}
+			if status := httpStatus(err); status != 0 {
+				shaErrs = append(shaErrs, fmt.Errorf("installation %d repository %s HTTP %d: read default branch: %w", installation.ID, name, status, err))
+			} else {
+				shaErrs = append(shaErrs, fmt.Errorf("installation %d repository %s: read default branch: %w", installation.ID, name, err))
+			}
+			continue
 		}
 	}
-	return r.store.ReconcileInstallation(ctx, installation, repositories)
+	if err := r.store.ReconcileInstallation(ctx, installation, repositories); err != nil {
+		return err
+	}
+	return errors.Join(shaErrs...)
+}
+
+func httpStatus(err error) int {
+	var status HTTPStatusError
+	if errors.As(err, &status) {
+		return status.StatusCode
+	}
+	return 0
 }

@@ -384,14 +384,14 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 		}
 		_, _, _, err := store.DeleteExpiredOAuth(ctx, time.Now())
 		return err
-	}, func(error) { logger.Error("durable background refresh failed") })
+	}, func(err error) { logger.Error("durable background refresh failed", "error", err) })
 	if err != nil {
 		cancel()
 		return fail(err)
 	}
 	reconcileRequests := make(chan int64, 64)
-	reconcileDone := startReconcileRequests(loopCtx, reconcileRequests, reconciler.Installation, func(error) {
-		logger.Error("webhook reconciliation failed")
+	reconcileDone := startReconcileRequests(loopCtx, reconcileRequests, reconciler.Installation, func(err error) {
+		logger.Error("webhook reconciliation failed", "error", err)
 	})
 	var backend search.SearchBackend
 	if settings.SearchBackend == "github" {
