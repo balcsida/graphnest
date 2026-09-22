@@ -52,7 +52,17 @@ func Assess(componentID, snapshotID int64, declaredRaw, concludedRaw *string, re
 		case OutcomeResolved:
 			switch evidence.ParseStatus {
 			case spdxexpr.StatusParsed, spdxexpr.StatusUnknownTerms:
-				candidates = append(candidates, candidate{label: string(evidence.Source) + "@" + evidence.Route, expression: evidence.ExpressionTree, normalized: evidence.NormalizedExpression, status: evidence.ParseStatus})
+				tree := evidence.ExpressionTree
+				if tree == nil {
+					// Re-derive the tree from the stored normalized expression so a
+					// row written without one is never mistaken for a refusal.
+					if parsed := spdxexpr.Parse(evidence.NormalizedExpression); parsed.Expression != nil {
+						tree = parsed.Expression
+					} else {
+						continue
+					}
+				}
+				candidates = append(candidates, candidate{label: string(evidence.Source) + "@" + evidence.Route, expression: tree, normalized: evidence.NormalizedExpression, status: evidence.ParseStatus})
 			case spdxexpr.StatusNone, spdxexpr.StatusUnlicensed:
 				candidates = append(candidates, candidate{label: string(evidence.Source) + "@" + evidence.Route, status: evidence.ParseStatus})
 			}

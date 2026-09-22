@@ -395,3 +395,267 @@ func TestSupplyChainLicenseEnrichment(t *testing.T) {
 		t.Fatalf("registry calls after unchanged republish = %d", registryCalls.Load())
 	}
 }
+
+// TestSupplyChainPortfolioAuthorization proves that overview counts, facets,
+// component pages, coordinate lookups, CSV exports, and snapshot comparisons
+// are computed strictly inside the caller's authorized repository scope, that
+// pagination is stable, and that CSV cells cannot inject formulas.
+func TestSupplyChainPortfolioAuthorization(t *testing.T) {
+	h := newPostgresHarness(t)
+	widgets := h.seedRepository(t, 10, 101)
+	gadgets := h.seedRepository(t, 10, 102)
+	if err := h.store.UpsertInstallation(t.Context(), postgres.InstallationUpdate{GitHubID: 20, AccountLogin: "other", AccountType: "Organization", Status: "active"}); err != nil {
+		t.Fatal(err)
+	}
+	secretRepository, err := h.store.UpsertRepository(t.Context(), postgres.RepositoryUpdate{GitHubID: 201, InstallationID: 20, Owner: "other", Name: "secret", CloneURL: "https://example.invalid/s.git", WebURL: "https://example.invalid/s", DefaultBranch: "main", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret := secretRepository.ID
+	github, client := newFakeSBOMGitHub(t)
+	envelope := sbomEnvelope(t)
+	// gadgets shares left-pad with widgets and adds a formula-shaped package name; secret has a private package.
+	gadgetsDocument := `{"sbom":{"spdxVersion":"SPDX-2.3","SPDXID":"SPDXRef-DOCUMENT","name":"acme/gadgets","creationInfo":{"created":"2026-09-20T09:00:00Z","creators":["Tool: GitHub.com-Dependency-Graph"]},
+		"documentDescribes":["SPDXRef-root"],
+		"packages":[{"SPDXID":"SPDXRef-root","name":"com.github.acme/gadgets","externalRefs":[{"referenceType":"purl","referenceLocator":"pkg:github/acme/gadgets"}]},
+			{"SPDXID":"SPDXRef-lp","name":"npm:@scope/left-pad","versionInfo":"1.3.0","licenseDeclared":"NOASSERTION","externalRefs":[{"referenceType":"purl","referenceLocator":"pkg:npm/%40scope/left-pad@1.3.0"}]},
+			{"SPDXID":"SPDXRef-evil","name":"=HYPERLINK(\"http://evil\")","versionInfo":"-1","licenseDeclared":"+MIT","externalRefs":[{"referenceType":"purl","referenceLocator":"pkg:npm/evil@1.0.0"}]}],
+		"relationships":[{"spdxElementId":"SPDXRef-root","relationshipType":"DEPENDS_ON","relatedSpdxElement":"SPDXRef-lp"},{"spdxElementId":"SPDXRef-root","relationshipType":"DEPENDS_ON","relatedSpdxElement":"SPDXRef-evil"}]}}`
+	secretDocument := `{"sbom":{"spdxVersion":"SPDX-2.3","SPDXID":"SPDXRef-DOCUMENT","name":"other/secret","creationInfo":{"created":"2026-09-20T09:00:00Z","creators":["Tool: GitHub.com-Dependency-Graph"]},
+		"documentDescribes":["SPDXRef-root"],
+		"packages":[{"SPDXID":"SPDXRef-root","name":"other/secret"},{"SPDXID":"SPDXRef-p","name":"npm:@other/private-thing","versionInfo":"9.9.9","externalRefs":[{"referenceType":"purl","referenceLocator":"pkg:npm/%40other/private-thing@9.9.9"}]},
+			{"SPDXID":"SPDXRef-lp","name":"npm:@scope/left-pad","versionInfo":"1.3.0","externalRefs":[{"referenceType":"purl","referenceLocator":"pkg:npm/%40scope/left-pad@1.3.0"}]}],
+		"relationships":[{"spdxElementId":"SPDXRef-root","relationshipType":"DEPENDS_ON","relatedSpdxElement":"SPDXRef-p"}]}}`
+	github.responses["acme/repo-101"] = func(writer http.ResponseWriter) { fmt.Fprint(writer, envelope) }
+	github.responses["acme/repo-102"] = func(writer http.ResponseWriter) { fmt.Fprint(writer, gadgetsDocument) }
+	github.responses["other/secret"] = func(writer http.ResponseWriter) { fmt.Fprint(writer, secretDocument) }
+	collector := &supplychain.Collector{Store: h.store, GitHub: client, Owner: "collect", MaxDocumentBytes: 1 << 20}
+	for _, id := range []int64{widgets, gadgets, secret} {
+		if _, _, err := h.store.EnqueueSupplyChainJob(t.Context(), id, supplychain.StreamGitHubSource, "manual", "t", 10, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		if processed, err := collector.RunOnce(t.Context()); err != nil || !processed {
+			t.Fatalf("collection processed=%v err=%v", processed, err)
+		}
+		collections, err := h.store.SupplyChainCollections(t.Context(), id, supplychain.StreamGitHubSource, 0, 1)
+		if err != nil || len(collections) != 1 || collections[0].Outcome != supplychain.OutcomePublished {
+			t.Fatalf("repository %d collection = %+v %v", id, collections, err)
+		}
+	}
+	// Assess left-pad in the widgets snapshot only, to make the "mixed" aggregation observable.
+	leftPad := license.Coordinates{Ecosystem: "npm", Namespace: "@scope", Name: "left-pad", Version: "1.3.0"}
+	if _, _, err := h.store.InsertLicenseEvidence(t.Context(), license.Evidence{Source: license.SourceRegistryNPM, Route: "npm:test", Coordinates: leftPad, Outcome: license.OutcomeResolved, FetchedAt: time.Now(), RawValue: "MIT", RawKind: license.RawExpression,
+		ParseStatus: "parsed", NormalizedExpression: "MIT", ResolverVersion: 1, LicenseListVersion: "3.27.0", ContentSHA256: make([]byte, 32)}); err != nil {
+		t.Fatal(err)
+	}
+	occurrences, err := h.store.ComponentsForCoordinates(t.Context(), leftPad, 10)
+	if err != nil || len(occurrences) != 3 {
+		t.Fatalf("left-pad occurrences = %v %v", occurrences, err)
+	}
+	evidence, _ := h.store.LatestLicenseEvidence(t.Context(), leftPad)
+	for _, occurrence := range occurrences {
+		declared, concluded, _ := h.store.ComponentDeclarations(t.Context(), occurrence[0])
+		if err := h.store.UpsertAssessment(t.Context(), license.Assess(occurrence[0], occurrence[1], declared, concluded, evidence, time.Now())); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	portfolio := &supplychain.Portfolio{Store: h.store, Snapshots: h.store, Authorizer: authz.NewPostgres(h.store), Interval: time.Hour, MaxResults: 100}
+	authenticator := authn.RequestAuthenticator{Bearer: authn.NewStatic(map[string]authn.Principal{
+		"acme":  {Subject: "acme", Method: "api_token", InstallationID: 10, RepositoryIDs: []int64{101, 102}},
+		"one":   {Subject: "one", Method: "api_token", InstallationID: 10, RepositoryIDs: []int64{101}},
+		"other": {Subject: "other", Method: "api_token", InstallationID: 20, RepositoryIDs: []int64{201}},
+		"admin": {Subject: "admin", Method: "session", Administrator: true},
+	})}
+	mux := http.NewServeMux()
+	httpapi.RegisterSupplyChainPortfolio(mux, authenticator, portfolio, 100, 256<<10)
+	get := func(token, path string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.Header.Set("Authorization", "Bearer "+token)
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, request)
+		return recorder
+	}
+	decode := func(t *testing.T, recorder *httptest.ResponseRecorder, target any) {
+		t.Helper()
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status %d: %s", recorder.Code, recorder.Body.String())
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), target); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Overview denominators follow the principal's scope.
+	var overview api.SupplyChainOverview
+	decode(t, get("acme", "/v1/supply-chain/overview"), &overview)
+	if overview.Repositories.Authorized != 2 || overview.Repositories.WithInventory != 2 || overview.Components.Occurrences != 10 || overview.Components.UniqueCoordinates != 9 || overview.Components.Assessments["resolved"] != 2 || overview.Components.Unassessed != 8 {
+		t.Fatalf("acme overview = %+v", overview)
+	}
+	decode(t, get("one", "/v1/supply-chain/overview"), &overview)
+	if overview.Repositories.Authorized != 1 || overview.Components.Occurrences != 7 {
+		t.Fatalf("one overview = %+v", overview)
+	}
+	decode(t, get("admin", "/v1/supply-chain/overview"), &overview)
+	if overview.Repositories.Authorized != 3 || overview.Components.Occurrences != 13 || overview.Components.Assessments["resolved"] != 3 {
+		t.Fatalf("admin overview = %+v", overview)
+	}
+	// Requesting another installation's repository is silently dropped, not revealed.
+	decode(t, get("acme", "/v1/supply-chain/overview?repository_id=201&repository_id=101"), &overview)
+	if overview.Repositories.Authorized != 1 || overview.Components.Occurrences != 7 {
+		t.Fatalf("acme scoped overview = %+v", overview)
+	}
+	if len(overview.Denominators) < 4 {
+		t.Fatalf("denominators = %v", overview.Denominators)
+	}
+
+	// Facets and component pages: the private package never appears for acme.
+	var facets api.SupplyChainFacets
+	decode(t, get("acme", "/v1/supply-chain/facets"), &facets)
+	for _, facet := range facets.Ecosystems {
+		// widgets' left-pad, gadgets' left-pad, gadgets' evil; never the private package.
+		if facet.Value == "npm" && facet.Count != 3 {
+			t.Fatalf("npm facet = %+v", facet)
+		}
+	}
+	var page api.SupplyChainPortfolioComponentList
+	decode(t, get("acme", "/v1/supply-chain/components?limit=4"), &page)
+	if len(page.Components) != 4 || !page.Truncated || page.NextCursor == "" || page.RepositoriesInScope != 2 {
+		t.Fatalf("page 1 = %+v", page)
+	}
+	seen := map[string]bool{}
+	for _, component := range page.Components {
+		seen[component.Key] = true
+	}
+	var second api.SupplyChainPortfolioComponentList
+	decode(t, get("acme", "/v1/supply-chain/components?limit=4&cursor="+page.NextCursor), &second)
+	var third api.SupplyChainPortfolioComponentList
+	decode(t, get("acme", "/v1/supply-chain/components?limit=4&cursor="+second.NextCursor), &third)
+	all := append(append(page.Components, second.Components...), third.Components...)
+	if len(all) != 9 || third.Truncated {
+		t.Fatalf("paged total = %d truncated=%v", len(all), third.Truncated)
+	}
+	for _, component := range all {
+		if strings.Contains(component.Name, "private-thing") {
+			t.Fatalf("private package leaked into acme's portfolio: %+v", component)
+		}
+		if component.Name == "left-pad" && (component.RepositoryCount != 2 || component.OccurrenceCount != 2 || component.Assessment != "resolved" || component.Expression != "MIT" || len(component.Repositories) != 2) {
+			t.Fatalf("left-pad = %+v", component)
+		}
+	}
+	// A cursor is bound to its filter set.
+	if response := get("acme", "/v1/supply-chain/components?limit=4&ecosystem=npm&cursor="+page.NextCursor); response.Code != http.StatusBadRequest {
+		t.Fatalf("cursor reuse across filters = %d", response.Code)
+	}
+	// Filters: ecosystem, license expression, assessment status, search.
+	decode(t, get("acme", "/v1/supply-chain/components?ecosystem=npm"), &page)
+	if len(page.Components) != 2 {
+		t.Fatalf("npm unique coordinates for acme = %+v", page.Components)
+	}
+	decode(t, get("acme", "/v1/supply-chain/components?license=mit"), &page)
+	if len(page.Components) != 1 || page.Components[0].Name != "left-pad" {
+		t.Fatalf("license filter = %+v", page.Components)
+	}
+	decode(t, get("acme", "/v1/supply-chain/components?assessment=unassessed"), &page)
+	if len(page.Components) != 8 {
+		t.Fatalf("unassessed filter = %d", len(page.Components))
+	}
+	decode(t, get("acme", "/v1/supply-chain/components?q=%25"), &page)
+	if len(page.Components) != 1 || page.Components[0].Name != "left-pad" {
+		t.Fatalf("literal percent search = %+v", page.Components)
+	}
+	// Coordinate detail: authorized occurrences only; the private coordinate is 404 for acme and 200 for other.
+	var leftPadKey, privateKey string
+	var adminPage api.SupplyChainPortfolioComponentList
+	decode(t, get("admin", "/v1/supply-chain/components"), &adminPage)
+	for _, component := range adminPage.Components {
+		switch component.Name {
+		case "left-pad":
+			leftPadKey = component.Key
+			if component.RepositoryCount != 3 || component.Assessment != "resolved" {
+				t.Fatalf("admin left-pad = %+v", component)
+			}
+		case "private-thing":
+			privateKey = component.Key
+		}
+	}
+	var detail api.SupplyChainPortfolioComponentDetail
+	decode(t, get("acme", "/v1/supply-chain/components/"+leftPadKey), &detail)
+	if len(detail.Occurrences) != 2 || detail.Occurrences[0].Repository != "acme/repo-101" || detail.Occurrences[1].Repository != "acme/repo-102" || !strings.HasPrefix(detail.Occurrences[0].DetailPath, "/v1/supply-chain/repositories/101/component?element=") {
+		t.Fatalf("acme left-pad detail = %+v", detail)
+	}
+	decode(t, get("admin", "/v1/supply-chain/components/"+leftPadKey), &detail)
+	if len(detail.Occurrences) != 3 {
+		t.Fatalf("admin left-pad detail = %+v", detail)
+	}
+	if response := get("acme", "/v1/supply-chain/components/"+privateKey); response.Code != http.StatusNotFound {
+		t.Fatalf("acme reached the private coordinate: %d", response.Code)
+	}
+	if response := get("other", "/v1/supply-chain/components/"+privateKey); response.Code != http.StatusOK {
+		t.Fatalf("other cannot see its own coordinate: %d", response.Code)
+	}
+	if response := get("acme", "/v1/supply-chain/components/zz"); response.Code != http.StatusBadRequest {
+		t.Fatalf("bad key = %d", response.Code)
+	}
+
+	// CSV export: authorized only, formula cells neutralized, provenance columns present.
+	response := get("acme", "/v1/supply-chain/exports/102/components.csv")
+	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "text/csv; charset=utf-8" || !strings.HasPrefix(response.Header().Get("Content-Disposition"), "attachment;") {
+		t.Fatalf("export = %d %v", response.Code, response.Header())
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `"'=HYPERLINK(""http://evil"")"`) || !strings.Contains(body, ",'-1,") || !strings.Contains(body, ",'+MIT,") || strings.Contains(body, "\n=HYPERLINK") {
+		t.Fatalf("csv did not neutralize formulas:\n%s", body)
+	}
+	if !strings.HasPrefix(body, "repository,snapshot_id,stream,producer,collected_at,document_sha256,element_id,name,version,purl,ecosystem,is_root,license_declared_raw,license_concluded_raw,assessment_status,assessed_expression\n") || !strings.Contains(body, "acme/repo-102,") {
+		t.Fatalf("csv header/provenance:\n%s", body)
+	}
+	if response := get("one", "/v1/supply-chain/exports/102/components.csv"); response.Code != http.StatusNotFound {
+		t.Fatalf("unauthorized export = %d", response.Code)
+	}
+	if response := get("acme", "/v1/supply-chain/exports/201/components.csv"); response.Code != http.StatusNotFound {
+		t.Fatalf("cross-installation export = %d", response.Code)
+	}
+
+	// Comparison: a second widgets snapshot with one added package and a changed declared license.
+	changed := strings.Replace(strings.Replace(envelope, `"name": "vendored:legacy-widget-lib",`, `"name": "vendored:legacy-widget-lib","versionInfo":"2.0",`, 1),
+		`"SPDXID": "SPDXRef-nuget-Newtonsoft.Json-13.0.3",
+      "versionInfo": "13.0.3",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",`, `"SPDXID": "SPDXRef-nuget-Newtonsoft.Json-13.0.3",
+      "versionInfo": "13.0.3",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",`, 1)
+	if changed == envelope {
+		t.Fatal("fixture edit did not apply")
+	}
+	github.responses["acme/repo-101"] = func(writer http.ResponseWriter) { fmt.Fprint(writer, changed) }
+	if _, _, err := h.store.EnqueueSupplyChainJob(t.Context(), widgets, supplychain.StreamGitHubSource, "manual", "t", 10, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := collector.RunOnce(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	snapshots, err := h.store.SupplyChainSnapshots(t.Context(), widgets, supplychain.StreamGitHubSource, 0, 10)
+	if err != nil || len(snapshots) != 2 {
+		t.Fatalf("widgets snapshots = %d %v", len(snapshots), err)
+	}
+	var comparison api.SupplyChainSnapshotComparison
+	decode(t, get("acme", fmt.Sprintf("/v1/supply-chain/compare?repository_id=101&base=%d&head=%d", snapshots[1].ID, snapshots[0].ID)), &comparison)
+	if len(comparison.AddedComponents) != 1 || comparison.AddedComponents[0] != "vendored:legacy-widget-lib@2.0" || len(comparison.RemovedComponents) != 1 || comparison.RemovedComponents[0] != "vendored:legacy-widget-lib" ||
+		len(comparison.LicenseChanges) != 1 || comparison.LicenseChanges[0].From != "NOASSERTION" || comparison.LicenseChanges[0].To != "MIT" || comparison.EdgesAdded != 0 || comparison.EdgesRemoved != 0 {
+		t.Fatalf("comparison = %+v", comparison)
+	}
+	if response := get("one", fmt.Sprintf("/v1/supply-chain/compare?repository_id=102&base=%d&head=%d", snapshots[1].ID, snapshots[0].ID)); response.Code != http.StatusNotFound {
+		t.Fatalf("compare across unauthorized repository = %d", response.Code)
+	}
+	// Snapshot IDs from another repository cannot be compared through an authorized one.
+	otherSnapshots, _ := h.store.SupplyChainSnapshots(t.Context(), secret, supplychain.StreamGitHubSource, 0, 1)
+	if response := get("acme", fmt.Sprintf("/v1/supply-chain/compare?repository_id=101&base=%d&head=%d", snapshots[0].ID, otherSnapshots[0].ID)); response.Code != http.StatusNotFound {
+		t.Fatalf("compare with foreign snapshot = %d", response.Code)
+	}
+}
