@@ -85,6 +85,18 @@ type Config struct {
 	Limits                                                   Limits
 	SSO                                                      SSO
 	SCIM                                                     SCIM
+	SupplyChain                                              SupplyChain
+}
+
+// SupplyChain configures the Dependencies & Licenses module (ADR-0017). It is
+// disabled by default and requires durable mode: collection needs the GitHub
+// App and the PostgreSQL queue.
+type SupplyChain struct {
+	Enabled          bool
+	Interval         time.Duration
+	Workers          int
+	MaxDocumentBytes int64
+	MaxComponents    int
 }
 
 type SCIM struct {
@@ -157,7 +169,41 @@ func Load() (Config, error) {
 	if config.SCIM, err = loadSCIM(config.DatabaseURL); err != nil {
 		return Config{}, err
 	}
+	if config.SupplyChain, err = loadSupplyChain(config.DatabaseURL); err != nil {
+		return Config{}, err
+	}
 	return config, nil
+}
+
+func loadSupplyChain(databaseURL string) (SupplyChain, error) {
+	settings := SupplyChain{Interval: 24 * time.Hour, Workers: 1, MaxDocumentBytes: 16 << 20, MaxComponents: 50000}
+	switch os.Getenv("GRAPHNEST_SUPPLY_CHAIN") {
+	case "", "false":
+		return settings, nil
+	case "true":
+	default:
+		return SupplyChain{}, invalid("GRAPHNEST_SUPPLY_CHAIN must be true or false")
+	}
+	if databaseURL == "" {
+		return SupplyChain{}, invalid("GRAPHNEST_SUPPLY_CHAIN requires GRAPHNEST_DATABASE_URL")
+	}
+	settings.Enabled = true
+	if err := durationValue("GRAPHNEST_SUPPLY_CHAIN_INTERVAL", &settings.Interval); err != nil {
+		return SupplyChain{}, err
+	}
+	if err := intValue("GRAPHNEST_SUPPLY_CHAIN_WORKERS", &settings.Workers); err != nil {
+		return SupplyChain{}, err
+	}
+	if err := int64Value("GRAPHNEST_SUPPLY_CHAIN_MAX_DOCUMENT_BYTES", &settings.MaxDocumentBytes); err != nil {
+		return SupplyChain{}, err
+	}
+	if err := intValue("GRAPHNEST_SUPPLY_CHAIN_MAX_COMPONENTS", &settings.MaxComponents); err != nil {
+		return SupplyChain{}, err
+	}
+	if settings.Interval < time.Minute || settings.Workers > 8 || settings.MaxDocumentBytes > 256<<20 || settings.MaxComponents > 500000 {
+		return SupplyChain{}, invalid("supply chain settings exceed server safety caps")
+	}
+	return settings, nil
 }
 
 func loadSCIM(databaseURL string) (SCIM, error) {

@@ -48,7 +48,51 @@ var (
 	ErrMalformed          = errors.New("malformed_document")
 	ErrUnsupportedVersion = errors.New("unsupported_version")
 	ErrTooLarge           = errors.New("too_large")
+	// ErrNoJob: no runnable job is queued.
+	ErrNoJob = errors.New("no supply chain job available")
+	// ErrFenced: a publication or completion lost its lease; another worker
+	// holds a newer lease or the job was cancelled. Nothing was written.
+	ErrFenced = errors.New("supply chain job lease lost")
 )
+
+// Publication is the atomic input of a successful collection: the original
+// document bytes, the normalized content, and the attempt metadata.
+type Publication struct {
+	RepositoryID     int64
+	JobID            *int64
+	JobOwner         string
+	JobFence         int64
+	Producer         Producer
+	Subject          Subject
+	StreamKey        string
+	Format           Format
+	MediaType        string
+	Document         []byte
+	Normalized       Normalized
+	CollectedAt      time.Time
+	StartedAt        time.Time
+	HTTPStatus       *int
+	SubjectRevision  string
+	SubjectAssurance Assurance
+}
+
+// Failure records an attempt that produced no new snapshot.
+type Failure struct {
+	RepositoryID      int64
+	JobID             *int64
+	JobOwner          string
+	JobFence          int64
+	Producer          Producer
+	Subject           Subject
+	StreamKey         string
+	StartedAt         time.Time
+	FinishedAt        time.Time
+	Outcome           Outcome
+	HTTPStatus        *int
+	RetryAfterSeconds *int
+	ErrorCode         string
+	Message           string
+}
 
 type Snapshot struct {
 	ID, RepositoryID, DocumentID int64

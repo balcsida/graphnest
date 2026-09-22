@@ -190,7 +190,7 @@ func TestSupplyChainFailureRetainsLastInventory(t *testing.T) {
 	if err != nil || requeued.State != supplychain.JobQueued || requeued.ErrorCode != "rate_limited" || requeued.RunAfter.Before(time.Now().Add(110*time.Second)) {
 		t.Fatalf("job after rate limit = %+v, %v", requeued, err)
 	}
-	if _, err := store.ClaimSupplyChainJob(t.Context(), "b"); !errors.Is(err, ErrNoJob) {
+	if _, err := store.ClaimSupplyChainJob(t.Context(), "b"); !errors.Is(err, supplychain.ErrNoJob) {
 		t.Fatalf("job ran before its Retry-After: %v", err)
 	}
 	// A permanent failure is not retried.
@@ -279,7 +279,7 @@ func TestSupplyChainJobsDeduplicateAndClaimOnce(t *testing.T) {
 		switch {
 		case err == nil:
 			claimed++
-		case errors.Is(err, ErrNoJob):
+		case errors.Is(err, supplychain.ErrNoJob):
 		default:
 			t.Fatal(err)
 		}
@@ -291,7 +291,7 @@ func TestSupplyChainJobsDeduplicateAndClaimOnce(t *testing.T) {
 	if _, created, err := store.EnqueueSupplyChainJob(t.Context(), repositoryID, supplychain.StreamGitHubSource, "manual", "admin", 10, time.Now()); err != nil || !created {
 		t.Fatalf("enqueue while running = %v, %v", created, err)
 	}
-	if _, err := store.ClaimSupplyChainJob(t.Context(), "worker"); !errors.Is(err, ErrNoJob) {
+	if _, err := store.ClaimSupplyChainJob(t.Context(), "worker"); !errors.Is(err, supplychain.ErrNoJob) {
 		t.Fatalf("second running job claimed: %v", err)
 	}
 	depths, err := store.SupplyChainQueueDepths(t.Context())
@@ -316,7 +316,7 @@ func TestSupplyChainCancellationAndOptOut(t *testing.T) {
 	if _, _, err := store.EnqueueSupplyChainJob(t.Context(), repositoryID, supplychain.StreamGitHubSource, "scheduled", "", 0, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ClaimSupplyChainJob(t.Context(), "worker"); !errors.Is(err, ErrNoJob) {
+	if _, err := store.ClaimSupplyChainJob(t.Context(), "worker"); !errors.Is(err, supplychain.ErrNoJob) {
 		t.Fatalf("opted-out repository job claimed: %v", err)
 	}
 	if due, err := store.DueSupplyChainStreams(t.Context(), supplychain.StreamGitHubSource, time.Now(), 10); err != nil || len(due) != 0 {
