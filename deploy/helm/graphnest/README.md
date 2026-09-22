@@ -159,6 +159,16 @@ rendered into a ConfigMap or environment value. Replace the Secret and restart
 the server pods to rotate it. See the repository README for supported filters,
 PATCH paths, limits, unsupported features, and the OIDC link-claim requirement.
 
+Enable the Dependencies & Licenses inventory with
+`server.supplyChain.enabled=true`. The server then schedules GitHub
+dependency-graph SBOM collection every `server.supplyChain.interval` (default
+`24h`) with `server.supplyChain.workers` leased workers and bounds each export
+by `maxDocumentBytes` and `maxComponents`. It needs no additional Secret: the
+GitHub App's existing `Contents: read` permission and private key are used, and
+the only outbound call is the configured GitHub API endpoint. Snapshots live in
+PostgreSQL (`supply_chain_*` tables, created by the normal migration Job); see
+the repository operations guide for lifecycle, recovery, and metrics.
+
 `breakGlass.enabled=true` exposes only the disabled-by-default local recovery
 routes. It provisions no user name, password, hash, salt, or Secret and never
 activates because OIDC is unavailable. Provision and rotate the operator

@@ -52,6 +52,8 @@ server:
     # OAuth 2.1 authorization server for MCP clients (dynamic registration, PKCE, consent). Needs oidc or githubOAuth.
     mcpOAuth: {enabled: false}
   scim: {enabled: false}
+  # Dependencies & Licenses inventory (ADR-0017). Disabled by default; enabling it needs no repository changes.
+  supplyChain: {enabled: false, interval: 24h, workers: 1, maxDocumentBytes: 16777216, maxComponents: 50000}
   resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
   nodeSelector: {}
   affinity: {}
