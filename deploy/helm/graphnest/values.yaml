@@ -61,6 +61,8 @@ server:
     workers: 1
     maxDocumentBytes: 16777216
     maxComponents: 50000
+    # Snapshots kept per repository stream beyond those referenced by reviews; 0 disables pruning.
+    retainSnapshots: 10
     # License enrichment routes; an ecosystem without a url produces no registry traffic.
     registries:
       npm: {url: "", namespaces: [], allowPrivate: false, token: false}

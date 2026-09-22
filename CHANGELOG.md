@@ -45,6 +45,20 @@ the compatibility and migration notes before upgrading.
   (`GET /v1/supply-chain/exports/{id}/derived.spdx.json`) names GraphNest as
   creator, links the preserved original, and carries assessments as comments
   only. Migration 035 adds imports and upload grants.
+- Review workflows: a queue of occurrences needing review, human license
+  conclusions recorded as immutable evidence, scoped approve/reject/exception
+  decisions with optimistic concurrency on the evidence fingerprint
+  (`409 stale_basis`), versioned policies evaluated over the SPDX expression
+  tree with a clearly labelled example fixture and no auto-approval of
+  unknowns, repository-scoped review grants, and an append-only audit trail
+  under `/v1/supply-chain/review/*` and `/v1/supply-chain/policies`.
+  Migration 036 adds the review tables.
+- Read-only MCP tools `search_dependency_inventory`,
+  `find_component_repositories`, and `inspect_component_license` over the
+  same authorized services as REST.
+- Retention for inventory snapshots (`GRAPHNEST_SUPPLY_CHAIN_RETAIN_SNAPSHOTS`)
+  that always preserves the current snapshot and any snapshot referenced by
+  a review record, plus bounded collection and job history.
 
 ## [0.5.0] - 2026-09-18
 

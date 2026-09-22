@@ -97,6 +97,9 @@ type SupplyChain struct {
 	Workers          int
 	MaxDocumentBytes int64
 	MaxComponents    int
+	// RetainSnapshots is how many snapshots per repository stream are kept
+	// beyond those referenced by reviews; 0 disables pruning.
+	RetainSnapshots int
 }
 
 type SCIM struct {
@@ -176,7 +179,7 @@ func Load() (Config, error) {
 }
 
 func loadSupplyChain(databaseURL string) (SupplyChain, error) {
-	settings := SupplyChain{Interval: 24 * time.Hour, Workers: 1, MaxDocumentBytes: 16 << 20, MaxComponents: 50000}
+	settings := SupplyChain{Interval: 24 * time.Hour, Workers: 1, MaxDocumentBytes: 16 << 20, MaxComponents: 50000, RetainSnapshots: 10}
 	switch os.Getenv("GRAPHNEST_SUPPLY_CHAIN") {
 	case "", "false":
 		return settings, nil
@@ -200,7 +203,16 @@ func loadSupplyChain(databaseURL string) (SupplyChain, error) {
 	if err := intValue("GRAPHNEST_SUPPLY_CHAIN_MAX_COMPONENTS", &settings.MaxComponents); err != nil {
 		return SupplyChain{}, err
 	}
-	if settings.Interval < time.Minute || settings.Workers > 8 || settings.MaxDocumentBytes > 256<<20 || settings.MaxComponents > 500000 {
+	switch value := os.Getenv("GRAPHNEST_SUPPLY_CHAIN_RETAIN_SNAPSHOTS"); value {
+	case "":
+	case "0":
+		settings.RetainSnapshots = 0
+	default:
+		if err := intValue("GRAPHNEST_SUPPLY_CHAIN_RETAIN_SNAPSHOTS", &settings.RetainSnapshots); err != nil {
+			return SupplyChain{}, err
+		}
+	}
+	if settings.Interval < time.Minute || settings.Workers > 8 || settings.MaxDocumentBytes > 256<<20 || settings.MaxComponents > 500000 || settings.RetainSnapshots > 1000 {
 		return SupplyChain{}, invalid("supply chain settings exceed server safety caps")
 	}
 	return settings, nil
