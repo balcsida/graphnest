@@ -28,6 +28,23 @@ the compatibility and migration notes before upgrading.
   view (`GET /v1/supply-chain/repositories/{id}/component`). No route means no
   outbound license traffic. Migration 034 adds the evidence, enrichment-job,
   and assessment tables.
+- Portfolio read APIs over the caller's authorized repositories: an overview
+  whose every count names its denominator, keyset-paginated unique
+  coordinates with ecosystem, search, license, and assessment filters,
+  bounded facets, a coordinate detail listing authorized occurrences, a CSV
+  export with provenance columns and formula-safe cells, and a snapshot
+  comparison that separates component, declared-license, and edge changes
+  from document metadata changes.
+- Standards-based imports of SPDX 2.3 JSON and CycloneDX 1.6 JSON into
+  declared `import:<subject>:<label>` streams (`POST /v1/supply-chain/imports`),
+  with format detection from the document, explicit rejection of other
+  formats and versions, byte-preserving storage, uploader identity recorded
+  apart from the claimed producer, producer-asserted subject binding,
+  idempotency, per-repository quotas, and administrator-managed upload grants
+  (`PUT /v1/supply-chain/upload-grants`). A derived SPDX export
+  (`GET /v1/supply-chain/exports/{id}/derived.spdx.json`) names GraphNest as
+  creator, links the preserved original, and carries assessments as comments
+  only. Migration 035 adds imports and upload grants.
 
 ## [0.5.0] - 2026-09-18
 
