@@ -25,3 +25,4 @@ topology is not rendered.
 | [0014](0014-postgresql-graph-queries.md) | PostgreSQL graph queries | Accepted |
 | [0015](0015-isolate-optional-enrichment.md) | Optional enrichment boundaries | Accepted |
 | [0016](0016-mcp-oauth-authorization-server.md) | MCP OAuth authorization server | Accepted |
+| [0017](0017-supply-chain-inventory.md) | Supply-chain inventory from preserved SBOM observations | Accepted |
