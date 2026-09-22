@@ -44,6 +44,7 @@ import (
 	"github.com/balcsida/graphnest/internal/sso/oidc"
 	"github.com/balcsida/graphnest/internal/supplychain"
 	"github.com/balcsida/graphnest/internal/supplychain/license"
+	"github.com/balcsida/graphnest/internal/supplychain/review"
 	"github.com/balcsida/graphnest/internal/webhook"
 	"github.com/balcsida/graphnest/internal/webui"
 	"github.com/balcsida/graphnest/internal/zoekt"
@@ -483,10 +484,13 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 			}
 			return repo.ID, err
 		}}
+		reviews := &review.Service{Store: store, Authorizer: authorizer, MaxResults: settings.Limits.MaxResults}
+		supplyChainDone = append(supplyChainDone, startPolicyEvaluation(loopCtx, reviews, logger))
 		extras = append(extras, func(mux *http.ServeMux) {
 			httpapi.RegisterSupplyChain(mux, auth.requestAuth, supplyChainService, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
 			httpapi.RegisterSupplyChainPortfolio(mux, auth.requestAuth, portfolio, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes, &httpapi.DerivedExport{Service: supplyChainService, PublicOrigin: auth.requestAuth.PublicOrigin})
 			httpapi.RegisterSupplyChainImports(mux, auth.requestAuth, importer, grants, settings.SupplyChain.MaxDocumentBytes, settings.Limits.MaxResponseBytes)
+			httpapi.RegisterSupplyChainReview(mux, auth.requestAuth, reviews, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
 		})
 	}
 	handler := newAPIHandler(settings, metrics, auth.requestAuth, searchService, repositoryService, scipService, graphService, graphQueries, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend}, auth.providers, auth.sessions, provisioning, scimService, auth.mcpOAuth, extras...)
@@ -505,6 +509,35 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 		}
 		pool.Close()
 	}, nil
+}
+
+// startPolicyEvaluation periodically applies the active policy to components
+// whose evidence changed or that were never evaluated. Historical results are
+// retained as non-current rows.
+func startPolicyEvaluation(ctx context.Context, reviews *review.Service, logger *slog.Logger) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			for {
+				evaluated, err := reviews.EvaluatePending(ctx, 500)
+				if err != nil && ctx.Err() == nil {
+					logger.Error("supply chain policy evaluation failed", "error", err)
+				}
+				if evaluated < 500 || err != nil {
+					break
+				}
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	return done
 }
 
 // startSupplyChain runs the inventory scheduler and collection workers inside
