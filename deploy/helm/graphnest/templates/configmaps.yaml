@@ -73,6 +73,27 @@ data:
   GRAPHNEST_SUPPLY_CHAIN_WORKERS: {{ .Values.server.supplyChain.workers | quote }}
   GRAPHNEST_SUPPLY_CHAIN_MAX_DOCUMENT_BYTES: {{ printf "%d" (int64 .Values.server.supplyChain.maxDocumentBytes) | quote }}
   GRAPHNEST_SUPPLY_CHAIN_MAX_COMPONENTS: {{ .Values.server.supplyChain.maxComponents | quote }}
+  {{- range $ecosystem, $route := (pick .Values.server.supplyChain.registries "npm" "nuget" "maven") }}
+  {{- if $route.url }}
+  {{- $prefix := printf "GRAPHNEST_SUPPLY_CHAIN_REGISTRY_%s_" (upper $ecosystem) }}
+  {{ $prefix }}URL: {{ $route.url | quote }}
+  {{- if $route.namespaces }}
+  {{ $prefix }}NAMESPACES: {{ join "," $route.namespaces | quote }}
+  {{- end }}
+  {{- if $route.allowPrivate }}
+  {{ $prefix }}ALLOW_PRIVATE: "true"
+  {{- end }}
+  {{- if $route.token }}
+  {{ $prefix }}TOKEN_FILE: /var/run/secrets/graphnest/registries/{{ $ecosystem }}-token
+  {{- end }}
+  {{- if $route.basic }}
+  {{ $prefix }}BASIC_FILE: /var/run/secrets/graphnest/registries/{{ $ecosystem }}-basic
+  {{- end }}
+  {{- if $.Values.server.supplyChain.registries.ca }}
+  {{ $prefix }}CA_FILE: /var/run/secrets/graphnest/registries/ca.crt
+  {{- end }}
+  {{- end }}
+  {{- end }}
   {{- end }}
 ---
 apiVersion: v1

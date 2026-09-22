@@ -18,6 +18,16 @@ the compatibility and migration notes before upgrading.
   (`subject_assurance: unknown`) and license fields are preserved verbatim.
   Migration 033 adds the `supply_chain_*` tables; with the module disabled
   nothing else changes. See ADR-0017 and `docs/execplans/supply-chain.md`.
+- Exact-version license evidence for npm, NuGet, and Maven components from
+  explicitly configured registry routes (`GRAPHNEST_SUPPLY_CHAIN_REGISTRY_*`),
+  parsed with a bounded SPDX 2.3 expression parser against the pinned SPDX
+  License List 3.27.0. Evidence rows are immutable and carry raw values,
+  parse status, resolver and list versions, content hashes, and outcomes;
+  per-occurrence assessments report resolved, declared, conflict, unlicensed,
+  or unknown and are shown in the component table and a new evidence detail
+  view (`GET /v1/supply-chain/repositories/{id}/component`). No route means no
+  outbound license traffic. Migration 034 adds the evidence, enrichment-job,
+  and assessment tables.
 
 ## [0.5.0] - 2026-09-18
 
