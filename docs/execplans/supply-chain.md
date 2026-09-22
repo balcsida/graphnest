@@ -274,14 +274,167 @@ Detailed task lists are appended when each milestone starts.
 
 ## Progress
 
-- 2026-09-22: Baseline recorded; ADR-0017 and this plan created. Next task:
-  M1 storage layer (`033_supply_chain.sql`, `internal/supplychain/spdx.go`,
-  `internal/postgres/supply_chain.go`, raw GitHub SBOM reader).
+- 2026-09-22: Baseline recorded; ADR-0017 and this plan created.
+- 2026-09-22: **M1 complete** as four local stack layers on top of M0:
+  - `feat/supply-chain/m1-storage` (`76dcf7c`): migration 033; SPDX 2.3 JSON
+    normalizer with root detection through `documentDescribes` and
+    `DESCRIBES`/`DESCRIBED_BY`, bounded warnings, PURL-less/version-less
+    occurrences, unresolved edges kept as diagnostics; lossless
+    `githubapp.DependencySBOMDocument` (verbatim SPDX member, status,
+    rate-limit headers, bounded `Retry-After`); PostgreSQL store with leased
+    and fenced jobs, atomic publication, unchanged-document detection, failure
+    recording that never moves the latest snapshot, reaping, cancellation,
+    opt-out, scoped reads, and the `repository_packages` projection. Legacy
+    `DependencySBOM` and SCIP callers keep their contracts.
+  - `feat/supply-chain/m1-service` (`6b25c6a`): authorized service (status
+    with independent collection/freshness/coverage/enrichment states,
+    paginated components with derived scope, snapshots, collections, document
+    download re-authorized at retrieval, manual refresh that only enqueues,
+    job status), collector with typed outcome classification and projection,
+    jittered scheduler, `GRAPHNEST_SUPPLY_CHAIN*` config, bounded metrics,
+    `/v1/supply-chain` routes designed in OpenAPI, gated server wiring.
+  - `docs(supply-chain)` (`8d59897`): README, operations, architecture, threat
+    model, Compose durable env, Helm values/schema/ConfigMap/render tests,
+    CHANGELOG.
+  - `feat(webui)` (`ca1a930`, implemented by a delegated worker and reviewed):
+    embedded `/supply-chain` page with the console shell, hash-based CSP,
+    session-then-bearer auth, text-node rendering, Go byte-contract and Node
+    DOM tests; navigation links in `index.html`/`admin.html`.
+  - `test(supply-chain)` (`e0620d5`): fake GHES → scheduler → collector →
+    PostgreSQL → REST vertical slice, including no-indexed-SHA proof,
+    rate-limit/403 outcomes, retained inventory behind a failed refresh,
+    cross-installation isolation, and projection.
+  - `docs(supply-chain)` (`90a1413`): light/dark screenshots of the real page
+    rendered in Chromium against a stubbed API (`docs/images/supply-chain-*.png`).
+- 2026-09-22: **M2 complete** (`feat/supply-chain/m2-license-core`): bounded
+  SPDX expression parser over the embedded SPDX License List 3.27.0 (fuzzed);
+  npm/NuGet/Maven resolvers behind explicitly configured routes with pinned
+  origin/base path, private-address denial, decompression bounds, credential
+  isolation, and no public fallback; immutable evidence rows (duplicates are
+  new observations; outages keep earlier resolved evidence); deterministic
+  per-occurrence assessments with conflict detection; enrichment worker
+  queued from publication; evidence detail route; UI license column and
+  evidence panel; Helm route values/secrets; docs.
+- 2026-09-22: **M3 complete** (`feat/supply-chain/m3-portfolio`): overview
+  with named denominators, keyset-paginated unique coordinates with
+  filter-bound cursors, facets, coordinate detail, CSV export with provenance
+  and formula-safe cells, snapshot comparison separating component/license/
+  edge changes from metadata; Overview/Components/comparison UI views with
+  screenshots in both themes.
+- 2026-09-22: **M4 complete** (`feat/supply-chain/m4-imports`): SPDX 2.3 JSON
+  and CycloneDX 1.6 JSON imports into `import:<subject>:<label>` streams with
+  content-based format detection, explicit rejection of other versions,
+  byte-preserving storage, uploader recorded apart from the claimed producer,
+  producer-asserted subject binding, idempotency, quotas, upload grants;
+  derived SPDX export naming GraphNest as creator and linking the original.
+- 2026-09-22: **M5 complete** (`feat/supply-chain/m5-review`): tree-walking
+  policy evaluator with a truth table (AND/OR/WITH/unknown/or-later), labelled
+  example policy, admin-only versioned policies that refuse auto-approval of
+  unknowns, review queue, human conclusions as immutable evidence,
+  approve/reject/exception decisions with optimistic concurrency on the
+  evidence fingerprint, expiry and stale detection, repository-scoped review
+  grants, append-only audit trail, background re-evaluation retaining history.
+- 2026-09-22: **M6 complete** (`feat/supply-chain/m6-mcp`): read-only MCP tools
+  `search_dependency_inventory`, `find_component_repositories`,
+  `inspect_component_license` over the same services as REST, with an
+  integration test proving scope agreement and no cross-installation leaks.
+- 2026-09-22: **M7 partially complete** (`feat/supply-chain/m7-operations`):
+  review-preserving snapshot retention and history pruning on the scheduler
+  tick, enrichment queue-depth metrics, retention configuration in
+  config/Compose/Helm, operations/README/CHANGELOG coverage, pilot comparison
+  checklist (`docs/supply-chain-pilot-checklist.md`), and recorded query plans
+  on a 50,000-occurrence synthetic dataset (`docs/supply-chain-query-plans.md`).
+  Remaining M7 items are listed under gaps.
+- Next task: see "Remaining gaps and next task".
 
 ## Validation results
 
-Recorded per layer as gates run; "not run" is stated explicitly.
+Final worktree head `b15bed4` (before this note) (`feat/supply-chain/m7-operations`), 2026-09-22,
+macOS arm64, Go 1.27.1, PostgreSQL 18.6 via Compose (reached at the OrbStack
+container address because `docker compose port` reports `invalid IP:0` here),
+Helm 4.x, Node 26, Playwright 1.62.1 with locally installed Chromium.
+
+| Gate | Result |
+| --- | --- |
+| `make build` | pass |
+| `make fmt lint` | pass |
+| `make staticcheck` | pass |
+| `make govulncheck` | pass (same as `main`: 0 called vulnerabilities, 1 uncalled module-level finding pre-existing) |
+| `CGO_ENABLED=0 go test ./...` | pass (2318 tests, 48 packages) |
+| `make test-race` | pass |
+| `make postgres-test` (all six integration packages, including every new `TestSupplyChain*`) | pass |
+| `make e2e-test` (Go e2e with real Zoekt binaries and PostgreSQL, plus scanner e2e) | pass (run twice) |
+| `make openapi-check` | pass with Homebrew Ruby 4.0.7 (`/opt/homebrew/opt/ruby/bin/ruby scripts/check_openapi.rb`); the system Ruby 2.6 lacks `filter_map` and fails identically on `main` |
+| `make compose-test` | pass |
+| `make helm-lint helm-test` | pass |
+| `make brand-check` | pass |
+| `make makefile-test abi-test tools-check` | pass |
+| `make scanner-build scanner-test` | pass |
+| `make parity-reference` | pass |
+| `test/smoke/public_ui.sh` (existing Playwright smoke) | pass |
+| `test/smoke/supply-chain-screenshots.mjs` (renders repository, overview, components views; 6 PNGs) | pass |
+| Fuzz: `FuzzParse` (45s), `FuzzNormalizeSPDX23` (20s), `FuzzNormalizeCycloneDX16` (20s) | pass, no crashers |
+| Per-layer `go build`/`go vet`/`go test` at every stack boundary | pass |
+| `make image image-test`, `make ui-smoke` via Make (needs `make tools` rebuild) | **not run** (image build not attempted in this pass; the smoke script itself passed) |
+| Live GHES / live registries | **not run**; all GitHub and registry behavior is exercised against fixtures and fake servers |
+
+Commit signing: `277730e`, `76dcf7c`, `6b25c6a` are SSH-signed. The 1Password
+SSH agent began refusing sign operations mid-session ("agent refused
+operation"), so every later commit is unsigned. Before publication, re-sign
+with `git rebase --exec 'git commit --amend --no-edit -S' 331fa42` (from the
+worktree, once the agent accepts operations) and re-point the stack branches.
 
 ## Remaining gaps and next task
 
-See Progress. Nothing is published; no PR exists for this work.
+Not implemented (honest scope boundaries):
+
+- M7: no bounded fuzz target yet for the registry URL/redirect path beyond
+  the unit cases; no hostile-archive test because no archive is ever
+  unpacked (NuGet reads the nuspec, never the nupkg); `make image` was not
+  built; the Compose durable profile documents but does not template the
+  `GRAPHNEST_SUPPLY_CHAIN_REGISTRY_*` variables (they pass through the
+  environment); no webhook-driven refresh (`reason='webhook'` reserved;
+  periodic reconciliation covers late dependency-graph updates); no
+  Prometheus counter for unknown/conflicting assessments (available through
+  the overview API instead).
+- M3/M5 UI: the review queue, conclusion/decision forms, and policy
+  administration have REST routes and tests but no browser view yet; the
+  component detail view does not yet show review history inline.
+- M6: exact code-usage joins from an occurrence to indexed references are not
+  offered; the UI and MCP state that a dependency path is not a call graph and
+  GHES snapshots are unbound observations. A later layer may add clearly
+  labelled exploratory search links when a matching indexed revision exists.
+- M2: Go, PyPI, Cargo, and other ecosystems have no resolver; their
+  components stay at producer declarations or imported evidence, as designed.
+
+Exact next task: add the review UI (queue table, conclusion and decision
+forms echoing the `basis` fingerprint, history panel, policy list) to
+`internal/webui/supply-chain.html` with DOM/contract tests and screenshots,
+on a new layer above `feat/supply-chain/m7-operations`; then run
+`make image image-test` and record results here.
+
+## Native stack and pull requests
+
+Published 2026-09-22 with `gh stack submit --auto --remote origin` as ten
+draft pull requests linked into native GitHub stack **#114**, rooted at
+`main`; bases, heads, membership, and per-layer deltas were verified after
+submission (remote heads equal local heads; every head commit signature is
+`VALID` on GitHub). Hosted CI (`CI` workflow) passed on all ten branches.
+The repository's "Code scanning AI findings" workflow failed on every PR with
+`CAPIError: 400 The requested model is not supported`; that is a hosted
+Copilot configuration issue unrelated to this change.
+
+| Layer | PR | Base |
+| --- | --- | --- |
+| m0-design | [#104](https://github.com/balcsida/graphnest/pull/104) | `main` |
+| m1-storage | [#105](https://github.com/balcsida/graphnest/pull/105) | #104 |
+| m1-service | [#106](https://github.com/balcsida/graphnest/pull/106) | #105 |
+| m1-ui | [#107](https://github.com/balcsida/graphnest/pull/107) | #106 |
+| m2-license-core | [#108](https://github.com/balcsida/graphnest/pull/108) | #107 |
+| m3-portfolio | [#109](https://github.com/balcsida/graphnest/pull/109) | #108 |
+| m4-imports | [#110](https://github.com/balcsida/graphnest/pull/110) | #109 |
+| m5-review | [#111](https://github.com/balcsida/graphnest/pull/111) | #110 |
+| m6-mcp | [#112](https://github.com/balcsida/graphnest/pull/112) | #111 |
+| m7-operations | [#113](https://github.com/balcsida/graphnest/pull/113) | #112 |
+
+Merging remains a separate owner decision; the PRs are drafts.

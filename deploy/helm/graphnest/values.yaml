@@ -14,6 +14,8 @@ secrets:
   mcpOAuth: {name: "", keyKey: sealing-key}
   oidcCA: {name: "", key: ca.crt}
   scim: {name: "", tokenKey: token}
+  # Optional per-ecosystem registry credentials for license enrichment. Keys are mounted read-only; a missing key is simply not mounted.
+  supplyChainRegistries: {name: "", npmTokenKey: npm-token, nugetTokenKey: nuget-token, mavenBasicKey: maven-basic, caKey: ca.crt}
 breakGlass: {enabled: false}
 server:
   replicas: 2
@@ -52,6 +54,21 @@ server:
     # OAuth 2.1 authorization server for MCP clients (dynamic registration, PKCE, consent). Needs oidc or githubOAuth.
     mcpOAuth: {enabled: false}
   scim: {enabled: false}
+  # Dependencies & Licenses inventory (ADR-0017). Disabled by default; enabling it needs no repository changes.
+  supplyChain:
+    enabled: false
+    interval: 24h
+    workers: 1
+    maxDocumentBytes: 16777216
+    maxComponents: 50000
+    # Snapshots kept per repository stream beyond those referenced by reviews; 0 disables pruning.
+    retainSnapshots: 10
+    # License enrichment routes; an ecosystem without a url produces no registry traffic.
+    registries:
+      npm: {url: "", namespaces: [], allowPrivate: false, token: false}
+      nuget: {url: "", namespaces: [], allowPrivate: false, token: false}
+      maven: {url: "", namespaces: [], allowPrivate: false, basic: false}
+      ca: false
   resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
   nodeSelector: {}
   affinity: {}

@@ -222,11 +222,11 @@ func insertSupplyChainSnapshot(ctx context.Context, tx pgx.Tx, publication Suppl
 	var snapshotID int64
 	if err := tx.QueryRow(ctx, `insert into supply_chain_snapshots (repository_id, document_id, producer, subject, stream_key, collected_at, created_at_claimed,
 			producer_tool, document_namespace, document_name, spdx_version, data_license, subject_revision, subject_assurance, root_element_ids,
-			parser_version, component_count, edge_count, warning_count, warnings)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) returning id`,
+			parser_version, component_count, edge_count, warning_count, warnings, uploaded_by, upload_label)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22) returning id`,
 		publication.RepositoryID, documentID, string(publication.Producer), string(publication.Subject), publication.StreamKey, publication.CollectedAt.UTC(), normalized.CreatedAtClaimed,
 		normalized.ProducerTool, normalized.DocumentNamespace, normalized.DocumentName, normalized.SPDXVersion, normalized.DataLicense, revision, string(assurance), roots,
-		supplychain.ParserVersion, len(normalized.Components), len(normalized.Relationships), normalized.WarningCount, warnings).Scan(&snapshotID); err != nil {
+		supplychain.ParserVersion, len(normalized.Components), len(normalized.Relationships), normalized.WarningCount, warnings, publication.UploadedBy, publication.UploadLabel).Scan(&snapshotID); err != nil {
 		return 0, err
 	}
 	if _, err := tx.CopyFrom(ctx, pgx.Identifier{"supply_chain_components"},
@@ -396,7 +396,8 @@ func (s *Store) SupplyChainStream(ctx context.Context, repositoryID int64, strea
 
 const supplyChainSnapshotColumns = `snap.id, snap.repository_id, snap.document_id, snap.producer, snap.subject, snap.stream_key, snap.collected_at, snap.created_at_claimed,
 	snap.producer_tool, snap.document_namespace, snap.document_name, snap.spdx_version, snap.data_license, coalesce(snap.subject_revision, ''), snap.subject_assurance,
-	snap.root_element_ids, snap.parser_version, snap.component_count, snap.edge_count, snap.warning_count, snap.warnings, snap.published_at, doc.sha256, doc.format, doc.byte_size`
+	snap.root_element_ids, snap.parser_version, snap.component_count, snap.edge_count, snap.warning_count, snap.warnings, snap.published_at, doc.sha256, doc.format, doc.byte_size,
+	snap.uploaded_by, snap.upload_label`
 
 func scanSupplyChainSnapshot(row interface{ Scan(...any) error }) (supplychain.Snapshot, error) {
 	var snapshot supplychain.Snapshot
@@ -405,7 +406,7 @@ func scanSupplyChainSnapshot(row interface{ Scan(...any) error }) (supplychain.S
 	err := row.Scan(&snapshot.ID, &snapshot.RepositoryID, &snapshot.DocumentID, &producer, &subject, &snapshot.StreamKey, &snapshot.CollectedAt, &snapshot.CreatedAtClaimed,
 		&snapshot.ProducerTool, &snapshot.DocumentNamespace, &snapshot.DocumentName, &snapshot.SPDXVersion, &snapshot.DataLicense, &snapshot.SubjectRevision, &assurance,
 		&snapshot.RootElementIDs, &snapshot.ParserVersion, &snapshot.ComponentCount, &snapshot.EdgeCount, &snapshot.WarningCount, &warnings, &snapshot.PublishedAt,
-		&snapshot.DocumentSHA256, &format, &snapshot.DocumentBytes)
+		&snapshot.DocumentSHA256, &format, &snapshot.DocumentBytes, &snapshot.UploadedBy, &snapshot.UploadLabel)
 	if err != nil {
 		return supplychain.Snapshot{}, err
 	}
@@ -667,4 +668,57 @@ func escapeLike(value string) string {
 		out = append(out, value[index])
 	}
 	return string(out)
+}
+
+// PruneSupplyChainSnapshots deletes, per repository stream, snapshots beyond
+// the newest keep count, except the stream's latest snapshot and any snapshot
+// referenced by a review record (a policy result, a decision's occurrence, or
+// a conclusion basis through its components). Documents unreferenced by any
+// remaining snapshot are removed afterwards. Returns snapshots and documents
+// deleted. Bounded per call.
+func (s *Store) PruneSupplyChainSnapshots(ctx context.Context, keep int, limit int) (int64, int64, error) {
+	if keep < 1 {
+		keep = 1
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback(ctx)
+	result, err := tx.Exec(ctx, `delete from supply_chain_snapshots where id in (
+			select snap.id from (
+				select id, repository_id, stream_key, row_number() over (partition by repository_id, stream_key order by id desc) as position from supply_chain_snapshots
+			) snap
+			where snap.position > $1
+			and not exists (select 1 from supply_chain_streams st where st.latest_snapshot_id=snap.id)
+			and not exists (select 1 from supply_chain_policy_results pr where pr.snapshot_id=snap.id)
+			and not exists (select 1 from supply_chain_components c join supply_chain_decisions d on d.repository_id=snap.repository_id and d.ecosystem=coalesce(c.ecosystem, '') and d.namespace=coalesce(c.purl_namespace, '') and d.name=coalesce(c.purl_name, '') and d.version=coalesce(c.purl_version, c.version, '') where c.snapshot_id=snap.id)
+			and not exists (select 1 from supply_chain_components c join supply_chain_conclusions k on k.ecosystem=coalesce(c.ecosystem, '') and k.namespace=coalesce(c.purl_namespace, '') and k.name=coalesce(c.purl_name, '') and k.version=coalesce(c.purl_version, c.version, '') where c.snapshot_id=snap.id)
+			order by snap.id limit $2)`, keep, limit)
+	if err != nil {
+		return 0, 0, err
+	}
+	snapshots := result.RowsAffected()
+	documents, err := tx.Exec(ctx, `delete from supply_chain_documents doc where not exists (select 1 from supply_chain_snapshots snap where snap.document_id=doc.id)
+		and not exists (select 1 from supply_chain_collections col where col.document_id=doc.id and col.snapshot_id is not null)`)
+	if err != nil {
+		return 0, 0, err
+	}
+	return snapshots, documents.RowsAffected(), tx.Commit(ctx)
+}
+
+// PruneSupplyChainHistory bounds collection attempts and finished jobs per
+// stream so operational tables do not grow without limit.
+func (s *Store) PruneSupplyChainHistory(ctx context.Context, keepCollections int, finishedJobsOlderThan time.Duration) (int64, int64, error) {
+	collections, err := s.pool.Exec(ctx, `delete from supply_chain_collections where id in (
+			select id from (select id, row_number() over (partition by repository_id, stream_key order by id desc) as position from supply_chain_collections) ranked
+			where ranked.position > $1) and snapshot_id is null`, keepCollections)
+	if err != nil {
+		return 0, 0, err
+	}
+	jobs, err := s.pool.Exec(ctx, `delete from supply_chain_jobs where state in ('succeeded','failed','cancelled','superseded') and updated_at < now() - $1::interval`, finishedJobsOlderThan)
+	if err != nil {
+		return 0, 0, err
+	}
+	return collections.RowsAffected(), jobs.RowsAffected(), nil
 }

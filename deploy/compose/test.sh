@@ -134,7 +134,7 @@ printf '%s' "$config" | jq -e '
     "GRAPHNEST_BREAK_GLASS_ENABLED", "GRAPHNEST_DATABASE_URL", "GRAPHNEST_GITHUB_API_URL", "GRAPHNEST_GITHUB_APP_ID",
     "GRAPHNEST_GITHUB_CA_FILE", "GRAPHNEST_GITHUB_GIT_URL", "GRAPHNEST_GITHUB_PRIVATE_KEY_FILE", "GRAPHNEST_GITHUB_UPLOAD_URL",
     "GRAPHNEST_GITHUB_WEBHOOK_SECRET_FILE", "GRAPHNEST_GITHUB_WEB_URL", "GRAPHNEST_OAUTH_GITHUB_CLIENT_ID", "GRAPHNEST_OAUTH_GITHUB_CLIENT_SECRET_FILE", "GRAPHNEST_OIDC_CA_FILE", "GRAPHNEST_OIDC_CLIENT_ID", "GRAPHNEST_OIDC_CLIENT_SECRET_FILE", "GRAPHNEST_OIDC_DISPLAY_NAME_CLAIM", "GRAPHNEST_OIDC_ISSUER_URL", "GRAPHNEST_OIDC_LINK_CLAIM", "GRAPHNEST_OIDC_SCOPES", "GRAPHNEST_PUBLIC_URL", "GRAPHNEST_SCIM_TOKEN_FILE", "GRAPHNEST_SCIP_MAX_UPLOAD_BYTES", "GRAPHNEST_SSO_LOGIN_FLOW_TTL", "GRAPHNEST_SSO_SESSION_IDLE", "GRAPHNEST_SSO_SESSION_TTL",
-    "GRAPHNEST_ZOEKT_URL"
+    "GRAPHNEST_SUPPLY_CHAIN", "GRAPHNEST_SUPPLY_CHAIN_INTERVAL", "GRAPHNEST_ZOEKT_URL"
   ]
   and ($server.ports | any(.host_ip == "127.0.0.1" and .target == 8080 and .published == "8080"))
   and ($server.networks | keys | sort) == ["internal", "loopback"]
@@ -142,6 +142,8 @@ printf '%s' "$config" | jq -e '
   and ([ $server.volumes[].bind.create_host_path ] | all((. // false) == false))
   and $server.environment.GRAPHNEST_GITHUB_CA_FILE == "/run/secrets/graphnest/github-ca.pem"
   and ($server.volumes | any(.source == "/tmp/github-ca.pem" and .target == "/run/secrets/graphnest/github-ca.pem" and .read_only))
+  and $server.environment.GRAPHNEST_SUPPLY_CHAIN == "false"
+  and $server.environment.GRAPHNEST_SUPPLY_CHAIN_INTERVAL == "24h"
   and $server.environment.GRAPHNEST_OIDC_CLIENT_SECRET_FILE == "/run/secrets/graphnest/oidc-client-secret"
   and $server.environment.GRAPHNEST_OIDC_CA_FILE == "/run/secrets/graphnest/oidc-ca.pem"
   and ($server.volumes | any(.source == "/tmp/oidc-client-secret" and .target == "/run/secrets/graphnest/oidc-client-secret" and .read_only))

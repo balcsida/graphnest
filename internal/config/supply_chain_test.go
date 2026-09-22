@@ -18,7 +18,7 @@ func TestLoadSupplyChainDisabledByDefault(t *testing.T) {
 		t.Fatalf("supply chain enabled without GRAPHNEST_SUPPLY_CHAIN: %#v", got.SupplyChain)
 	}
 	// Defaults are populated even while disabled so documentation and wiring can rely on them.
-	if got.SupplyChain.Interval != 24*time.Hour || got.SupplyChain.Workers != 1 || got.SupplyChain.MaxDocumentBytes != 16<<20 || got.SupplyChain.MaxComponents != 50000 {
+	if got.SupplyChain.Interval != 24*time.Hour || got.SupplyChain.Workers != 1 || got.SupplyChain.MaxDocumentBytes != 16<<20 || got.SupplyChain.MaxComponents != 50000 || got.SupplyChain.RetainSnapshots != 10 {
 		t.Fatalf("defaults = %#v", got.SupplyChain)
 	}
 }
@@ -31,11 +31,12 @@ func TestLoadSupplyChainEnabledWithOverrides(t *testing.T) {
 	t.Setenv("GRAPHNEST_SUPPLY_CHAIN_WORKERS", "2")
 	t.Setenv("GRAPHNEST_SUPPLY_CHAIN_MAX_DOCUMENT_BYTES", "1048576")
 	t.Setenv("GRAPHNEST_SUPPLY_CHAIN_MAX_COMPONENTS", "1000")
+	t.Setenv("GRAPHNEST_SUPPLY_CHAIN_RETAIN_SNAPSHOTS", "0")
 	got, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := SupplyChain{Enabled: true, Interval: 6 * time.Hour, Workers: 2, MaxDocumentBytes: 1 << 20, MaxComponents: 1000}
+	want := SupplyChain{Enabled: true, Interval: 6 * time.Hour, Workers: 2, MaxDocumentBytes: 1 << 20, MaxComponents: 1000, RetainSnapshots: 0}
 	if got.SupplyChain != want {
 		t.Fatalf("supply chain = %#v, want %#v", got.SupplyChain, want)
 	}

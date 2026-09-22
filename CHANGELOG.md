@@ -3,6 +3,63 @@
 Notable changes are recorded here. GraphNest is pre-1.0 pilot software; review
 the compatibility and migration notes before upgrading.
 
+## [Unreleased]
+
+### Added
+
+- Opt-in Dependencies & Licenses inventory (`GRAPHNEST_SUPPLY_CHAIN=true`,
+  durable mode only). `graphnest-server` collects each managed repository's
+  GitHub dependency-graph SBOM export on a jittered schedule, preserves the
+  original SPDX 2.3 JSON byte-for-byte with its SHA-256, publishes an immutable
+  snapshot of component occurrences and relationships in one fenced
+  transaction, and serves it under `/v1/supply-chain/...` and the embedded
+  `/supply-chain` page. Failed refreshes are recorded and never remove the last
+  successful inventory; a GitHub export is reported as an unbound observation
+  (`subject_assurance: unknown`) and license fields are preserved verbatim.
+  Migration 033 adds the `supply_chain_*` tables; with the module disabled
+  nothing else changes. See ADR-0017 and `docs/execplans/supply-chain.md`.
+- Exact-version license evidence for npm, NuGet, and Maven components from
+  explicitly configured registry routes (`GRAPHNEST_SUPPLY_CHAIN_REGISTRY_*`),
+  parsed with a bounded SPDX 2.3 expression parser against the pinned SPDX
+  License List 3.27.0. Evidence rows are immutable and carry raw values,
+  parse status, resolver and list versions, content hashes, and outcomes;
+  per-occurrence assessments report resolved, declared, conflict, unlicensed,
+  or unknown and are shown in the component table and a new evidence detail
+  view (`GET /v1/supply-chain/repositories/{id}/component`). No route means no
+  outbound license traffic. Migration 034 adds the evidence, enrichment-job,
+  and assessment tables.
+- Portfolio read APIs over the caller's authorized repositories: an overview
+  whose every count names its denominator, keyset-paginated unique
+  coordinates with ecosystem, search, license, and assessment filters,
+  bounded facets, a coordinate detail listing authorized occurrences, a CSV
+  export with provenance columns and formula-safe cells, and a snapshot
+  comparison that separates component, declared-license, and edge changes
+  from document metadata changes.
+- Standards-based imports of SPDX 2.3 JSON and CycloneDX 1.6 JSON into
+  declared `import:<subject>:<label>` streams (`POST /v1/supply-chain/imports`),
+  with format detection from the document, explicit rejection of other
+  formats and versions, byte-preserving storage, uploader identity recorded
+  apart from the claimed producer, producer-asserted subject binding,
+  idempotency, per-repository quotas, and administrator-managed upload grants
+  (`PUT /v1/supply-chain/upload-grants`). A derived SPDX export
+  (`GET /v1/supply-chain/exports/{id}/derived.spdx.json`) names GraphNest as
+  creator, links the preserved original, and carries assessments as comments
+  only. Migration 035 adds imports and upload grants.
+- Review workflows: a queue of occurrences needing review, human license
+  conclusions recorded as immutable evidence, scoped approve/reject/exception
+  decisions with optimistic concurrency on the evidence fingerprint
+  (`409 stale_basis`), versioned policies evaluated over the SPDX expression
+  tree with a clearly labelled example fixture and no auto-approval of
+  unknowns, repository-scoped review grants, and an append-only audit trail
+  under `/v1/supply-chain/review/*` and `/v1/supply-chain/policies`.
+  Migration 036 adds the review tables.
+- Read-only MCP tools `search_dependency_inventory`,
+  `find_component_repositories`, and `inspect_component_license` over the
+  same authorized services as REST.
+- Retention for inventory snapshots (`GRAPHNEST_SUPPLY_CHAIN_RETAIN_SNAPSHOTS`)
+  that always preserves the current snapshot and any snapshot referenced by
+  a review record, plus bounded collection and job history.
+
 ## [0.5.0] - 2026-09-18
 
 This release adds repository-scoped graph discovery and exploration, introduces
@@ -224,6 +281,7 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
+[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.5.0...HEAD
 [0.5.0]: https://github.com/balcsida/graphnest/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/balcsida/graphnest/compare/v0.4.1...v0.4.3
 [0.4.2]: https://github.com/balcsida/graphnest/compare/v0.4.1...v0.4.2
