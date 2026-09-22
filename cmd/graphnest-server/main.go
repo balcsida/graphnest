@@ -43,6 +43,7 @@ import (
 	"github.com/balcsida/graphnest/internal/sso/githuboauth"
 	"github.com/balcsida/graphnest/internal/sso/oidc"
 	"github.com/balcsida/graphnest/internal/supplychain"
+	"github.com/balcsida/graphnest/internal/supplychain/license"
 	"github.com/balcsida/graphnest/internal/webhook"
 	"github.com/balcsida/graphnest/internal/webui"
 	"github.com/balcsida/graphnest/internal/zoekt"
@@ -451,8 +452,23 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	var extras []func(*http.ServeMux)
 	var supplyChainDone []<-chan struct{}
 	if settings.SupplyChain.Enabled {
-		supplyChainService := &supplychain.Service{Store: store, Authorizer: authz.NewPostgres(store), Interval: settings.SupplyChain.Interval, MaxResults: settings.Limits.MaxResults}
-		supplyChainDone = startSupplyChain(loopCtx, settings.SupplyChain, store, githubClient, metrics, logger)
+		routes, err := license.RoutesFromEnv(os.Getenv, license.ReadSecretFile)
+		if err != nil {
+			cancel()
+			<-done
+			<-reconcileDone
+			return fail(fmt.Errorf("supply chain registry routes: %w", err))
+		}
+		registry, err := license.NewRegistry(routes)
+		if err != nil {
+			cancel()
+			<-done
+			<-reconcileDone
+			return fail(fmt.Errorf("supply chain registry routes: %w", err))
+		}
+		supplyChainService := &supplychain.Service{Store: store, Authorizer: authz.NewPostgres(store), Interval: settings.SupplyChain.Interval, MaxResults: settings.Limits.MaxResults,
+			License: store, EnrichmentEcosystems: registry.Ecosystems()}
+		supplyChainDone = startSupplyChain(loopCtx, settings.SupplyChain, store, githubClient, registry, metrics, logger)
 		extras = append(extras, func(mux *http.ServeMux) {
 			httpapi.RegisterSupplyChain(mux, auth.requestAuth, supplyChainService, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
 		})
@@ -478,8 +494,21 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 // startSupplyChain runs the inventory scheduler and collection workers inside
 // the server process. They share nothing with the indexer, so inventory work
 // can neither block nor be blocked by lexical indexing (ADR-0017).
-func startSupplyChain(ctx context.Context, settings config.SupplyChain, store *postgres.Store, client *githubapp.Client, metrics *observability.Metrics, logger *slog.Logger) []<-chan struct{} {
+func startSupplyChain(ctx context.Context, settings config.SupplyChain, store *postgres.Store, client *githubapp.Client, registry *license.Registry, metrics *observability.Metrics, logger *slog.Logger) []<-chan struct{} {
 	var done []<-chan struct{}
+	hostname, _ := os.Hostname()
+	var enricher *license.Worker
+	if len(registry.Ecosystems()) > 0 {
+		enricher = &license.Worker{Store: store, Registry: registry, Owner: fmt.Sprintf("%s-%d-enrich", hostname, os.Getpid()), Logger: logger, Observer: metrics}
+		enrichDone := make(chan struct{})
+		done = append(done, enrichDone)
+		go func() {
+			defer close(enrichDone)
+			if err := enricher.Run(ctx); err != nil && ctx.Err() == nil {
+				logger.Error("supply chain enrichment worker stopped", "error", err)
+			}
+		}()
+	}
 	scheduler := &supplychain.Scheduler{Store: store, Interval: settings.Interval}
 	schedulerDone := make(chan struct{})
 	done = append(done, schedulerDone)
@@ -502,11 +531,13 @@ func startSupplyChain(ctx context.Context, settings config.SupplyChain, store *p
 			}
 		}
 	}()
-	hostname, _ := os.Hostname()
 	for worker := range settings.Workers {
 		collector := &supplychain.Collector{
 			Store: store, GitHub: client, Owner: fmt.Sprintf("%s-%d-%d", hostname, os.Getpid(), worker), MaxDocumentBytes: settings.MaxDocumentBytes,
 			Limits: supplychain.Limits{MaxComponents: settings.MaxComponents}, Logger: logger, Observer: metrics,
+		}
+		if enricher != nil {
+			collector.Enricher = enricher
 		}
 		workerDone := make(chan struct{})
 		done = append(done, workerDone)

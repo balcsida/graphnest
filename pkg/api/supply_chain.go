@@ -17,14 +17,19 @@ type SupplyChainRepositoryStatus struct {
 	Collection string `json:"collection"`
 	// Freshness is the age of the latest successful observation in seconds, or
 	// null when there is none.
-	FreshnessSeconds *int64                   `json:"freshness_seconds"`
-	LatestSnapshot   *SupplyChainSnapshot     `json:"latest_snapshot"`
-	LastCollection   *SupplyChainCollection   `json:"last_collection"`
-	ActiveJob        *SupplyChainJob          `json:"active_job"`
-	Enrichment       string                   `json:"enrichment"`
-	OptOut           bool                     `json:"opt_out"`
-	Notes            []string                 `json:"notes"`
-	Documents        []SupplyChainDocumentRef `json:"documents"`
+	FreshnessSeconds *int64                 `json:"freshness_seconds"`
+	LatestSnapshot   *SupplyChainSnapshot   `json:"latest_snapshot"`
+	LastCollection   *SupplyChainCollection `json:"last_collection"`
+	ActiveJob        *SupplyChainJob        `json:"active_job"`
+	// Enrichment is "not_configured" (no registry routes), or "configured".
+	Enrichment string `json:"enrichment"`
+	// EnrichmentEcosystems lists ecosystems with a configured registry route.
+	EnrichmentEcosystems []string `json:"enrichment_ecosystems"`
+	// LicenseSummary counts the latest snapshot's assessments by status.
+	LicenseSummary map[string]int           `json:"license_summary"`
+	OptOut         bool                     `json:"opt_out"`
+	Notes          []string                 `json:"notes"`
+	Documents      []SupplyChainDocumentRef `json:"documents"`
 }
 
 // SupplyChainDocumentRef points at a downloadable original document.
@@ -88,6 +93,65 @@ type SupplyChainComponent struct {
 	// Scope is "root", "direct", "transitive", or "unknown" and is derived only
 	// from resolved DEPENDS_ON edges from a root; a flattened list yields unknown.
 	Scope string `json:"scope"`
+	// License is the derived assessment for this occurrence; nil until an
+	// assessment exists (enrichment disabled or pending).
+	License *SupplyChainLicenseAssessment `json:"license"`
+}
+
+// SupplyChainLicenseAssessment is the derived view over declarations and
+// registry evidence for one occurrence. It is not an approval.
+type SupplyChainLicenseAssessment struct {
+	// Status is unknown, declared, resolved, conflict, unlicensed, not_applicable, or pending.
+	Status string `json:"status"`
+	// Expression is the normalized SPDX expression when status is declared or resolved.
+	Expression string `json:"expression,omitempty"`
+	// ConflictDetail lists the disagreeing sources when status is conflict.
+	ConflictDetail string    `json:"conflict_detail,omitempty"`
+	EvidenceCount  int       `json:"evidence_count"`
+	AssessedAt     time.Time `json:"assessed_at"`
+	// EvidenceFingerprint (hex) changes when any considered evidence changes;
+	// reviews record it to detect stale bases.
+	EvidenceFingerprint string `json:"evidence_fingerprint"`
+}
+
+// SupplyChainLicenseEvidence is one immutable evidence row as shown in the
+// evidence detail view. Raw values are verbatim; nothing is mapped.
+type SupplyChainLicenseEvidence struct {
+	ID                 int64          `json:"id"`
+	Source             string         `json:"source"`
+	Route              string         `json:"route,omitempty"`
+	Ecosystem          string         `json:"ecosystem"`
+	Namespace          string         `json:"namespace,omitempty"`
+	Name               string         `json:"name"`
+	Version            string         `json:"version"`
+	ArtifactSHA256     string         `json:"artifact_sha256,omitempty"`
+	RawValue           string         `json:"raw_value"`
+	RawKind            string         `json:"raw_kind"`
+	ParseStatus        string         `json:"parse_status"`
+	Expression         string         `json:"expression,omitempty"`
+	UnknownTerms       []string       `json:"unknown_terms,omitempty"`
+	LicenseURL         string         `json:"license_url,omitempty"`
+	LicenseFileName    string         `json:"license_file_name,omitempty"`
+	Detail             map[string]any `json:"detail,omitempty"`
+	ResolverVersion    int            `json:"resolver_version"`
+	LicenseListVersion string         `json:"license_list_version"`
+	ContentSHA256      string         `json:"content_sha256,omitempty"`
+	FetchedAt          time.Time      `json:"fetched_at"`
+	ExpiresAt          *time.Time     `json:"expires_at,omitempty"`
+	Outcome            string         `json:"outcome"`
+	HTTPStatus         *int           `json:"http_status,omitempty"`
+	Message            string         `json:"message,omitempty"`
+}
+
+// SupplyChainComponentDetail is the evidence detail view for one occurrence.
+type SupplyChainComponentDetail struct {
+	Component     SupplyChainComponent         `json:"component"`
+	Snapshot      SupplyChainSnapshot          `json:"snapshot"`
+	Declarations  []SupplyChainLicenseEvidence `json:"declarations"`
+	Evidence      []SupplyChainLicenseEvidence `json:"evidence"`
+	Relationships []SupplyChainRelationship    `json:"relationships"`
+	Notes         []string                     `json:"notes"`
+	Truncated     bool                         `json:"truncated"`
 }
 
 type SupplyChainChecksum struct {
