@@ -30,6 +30,16 @@ type SupplyChainRepositoryStatus struct {
 	OptOut         bool                     `json:"opt_out"`
 	Notes          []string                 `json:"notes"`
 	Documents      []SupplyChainDocumentRef `json:"documents"`
+	// Streams lists every stream known for the repository (GitHub and imports).
+	Streams []SupplyChainStreamRef `json:"streams"`
+}
+
+type SupplyChainStreamRef struct {
+	Key          string `json:"key"`
+	Producer     string `json:"producer"`
+	Subject      string `json:"subject"`
+	HasInventory bool   `json:"has_inventory"`
+	LastOutcome  string `json:"last_outcome,omitempty"`
 }
 
 // SupplyChainDocumentRef points at a downloadable original document.
@@ -66,6 +76,10 @@ type SupplyChainSnapshot struct {
 	DocumentSHA256   string               `json:"document_sha256"`
 	DocumentFormat   string               `json:"document_format"`
 	DocumentBytes    int64                `json:"document_bytes"`
+	// UploadedBy is the authenticated uploader of an imported document,
+	// recorded separately from the producer the document claims.
+	UploadedBy  string `json:"uploaded_by,omitempty"`
+	UploadLabel string `json:"upload_label,omitempty"`
 }
 
 type SupplyChainWarning struct {
@@ -334,4 +348,20 @@ type SupplyChainLicenseChange struct {
 	Component string `json:"component"`
 	From      string `json:"from"`
 	To        string `json:"to"`
+}
+
+// SupplyChainImportResponse reports an accepted upload.
+type SupplyChainImportResponse struct {
+	ImportID         int64                `json:"import_id"`
+	Outcome          string               `json:"outcome"`
+	Repeated         bool                 `json:"repeated"`
+	SnapshotID       *int64               `json:"snapshot_id"`
+	Stream           string               `json:"stream"`
+	Format           string               `json:"format"`
+	ComponentCount   int                  `json:"component_count"`
+	EdgeCount        int                  `json:"edge_count"`
+	WarningCount     int                  `json:"warning_count"`
+	Warnings         []SupplyChainWarning `json:"warnings"`
+	SubjectAssurance string               `json:"subject_assurance,omitempty"`
+	Notes            []string             `json:"notes"`
 }

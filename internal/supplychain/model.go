@@ -74,6 +74,10 @@ type Publication struct {
 	HTTPStatus       *int
 	SubjectRevision  string
 	SubjectAssurance Assurance
+	// UploadedBy and UploadLabel identify an import's uploader separately
+	// from the document's claimed producer.
+	UploadedBy  string
+	UploadLabel string
 }
 
 // Failure records an attempt that produced no new snapshot.
@@ -118,6 +122,8 @@ type Snapshot struct {
 	DocumentSHA256               []byte
 	DocumentFormat               Format
 	DocumentBytes                int64
+	UploadedBy                   string
+	UploadLabel                  string
 }
 
 // Component is one occurrence in one snapshot. Identity is document-scoped:

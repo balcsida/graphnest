@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -657,5 +658,310 @@ func TestSupplyChainPortfolioAuthorization(t *testing.T) {
 	otherSnapshots, _ := h.store.SupplyChainSnapshots(t.Context(), secret, supplychain.StreamGitHubSource, 0, 1)
 	if response := get("acme", fmt.Sprintf("/v1/supply-chain/compare?repository_id=101&base=%d&head=%d", snapshots[0].ID, otherSnapshots[0].ID)); response.Code != http.StatusNotFound {
 		t.Fatalf("compare with foreign snapshot = %d", response.Code)
+	}
+}
+
+// TestSupplyChainImports proves standards-based uploads: real-format round
+// trips for SPDX 2.3 and CycloneDX 1.6, stream separation from the GitHub
+// observation, uploader identity separate from the claimed producer,
+// producer-asserted subject binding, idempotency, quota, repository-scoped
+// permission, and explicit rejection of unsupported versions.
+func TestSupplyChainImports(t *testing.T) {
+	h := newPostgresHarness(t)
+	widgets := h.seedRepository(t, 10, 101)
+	h.seedRepository(t, 10, 102)
+	github, client := newFakeSBOMGitHub(t)
+	envelope := sbomEnvelope(t)
+	github.responses["acme/repo-101"] = func(writer http.ResponseWriter) { fmt.Fprint(writer, envelope) }
+	collector := &supplychain.Collector{Store: h.store, GitHub: client, Owner: "collect", MaxDocumentBytes: 1 << 20}
+	if _, _, err := h.store.EnqueueSupplyChainJob(t.Context(), widgets, supplychain.StreamGitHubSource, "manual", "t", 10, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := collector.RunOnce(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	importer := &supplychain.Importer{Store: h.store, Authorizer: authz.NewPostgres(h.store), MaxDocumentBytes: 1 << 20, QuotaPerRepository: 12, QuotaWindow: time.Hour}
+	service := &supplychain.Service{Store: h.store, Authorizer: authz.NewPostgres(h.store), Interval: time.Hour, MaxResults: 100, License: h.store}
+	authorizer := authz.NewPostgres(h.store)
+	grants := &httpapi.UploadGrants{Set: h.store.SetSupplyChainUploadGrant, Resolve: func(ctx context.Context, principal authn.Principal, githubID int64) (int64, error) {
+		repo, err := authorizer.AuthorizedRepository(ctx, principal, githubID)
+		return repo.ID, err
+	}}
+	authenticator := authn.RequestAuthenticator{Bearer: authn.NewStatic(map[string]authn.Principal{
+		"admin":  {Subject: "admin@acme", Method: "session", Administrator: true},
+		"dev":    {Subject: "dev@acme", Method: "api_token", InstallationID: 10, RepositoryIDs: []int64{101, 102}},
+		"reader": {Subject: "reader@acme", Method: "api_token", InstallationID: 10, RepositoryIDs: []int64{101}},
+	})}
+	mux := http.NewServeMux()
+	httpapi.RegisterSupplyChain(mux, authenticator, service, 100, 256<<10)
+	httpapi.RegisterSupplyChainImports(mux, authenticator, importer, grants, 1<<20, 256<<10)
+	post := func(token, path, contentType string, body []byte) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(string(body)))
+		request.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("Content-Type", contentType)
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, request)
+		return recorder
+	}
+	get := func(token, path string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.Header.Set("Authorization", "Bearer "+token)
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, request)
+		return recorder
+	}
+	cyclonedx, err := os.ReadFile("../fixtures/supplychain/syft-cyclonedx-1.6.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	spdxMember, _ := os.ReadFile("../fixtures/supplychain/ghes-spdx-2.3.json")
+	// An ORT-style SPDX document claiming a different tool and a known commit.
+	ortDocument := strings.Replace(string(spdxMember), `"Tool: GitHub.com-Dependency-Graph"`, `"Tool: ORT-45.0.0"`, 1)
+	sha := strings.Repeat("c", 40)
+
+	// Without a grant, a non-administrator cannot import; administrators can.
+	if response := post("dev", "/v1/supply-chain/imports?repository_id=101&subject=artifact&label=syft-image", "application/vnd.cyclonedx+json", cyclonedx); response.Code != http.StatusForbidden {
+		t.Fatalf("ungranted import = %d %s", response.Code, response.Body.String())
+	}
+	response := post("admin", "/v1/supply-chain/imports?repository_id=101&subject=artifact&label=syft-image", "application/vnd.cyclonedx+json", cyclonedx)
+	var imported api.SupplyChainImportResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &imported); err != nil || response.Code != http.StatusCreated {
+		t.Fatalf("cyclonedx import = %d %s", response.Code, response.Body.String())
+	}
+	if imported.Outcome != "published" || imported.Format != "cyclonedx-1.6-json" || imported.ComponentCount != 8 || imported.Stream != "import:artifact:syft-image" || imported.SubjectAssurance != "unknown" || imported.SnapshotID == nil {
+		t.Fatalf("cyclonedx import = %+v", imported)
+	}
+	// Idempotent: the same bytes return the earlier result without a new snapshot.
+	response = post("admin", "/v1/supply-chain/imports?repository_id=101&subject=artifact&label=syft-image", "application/vnd.cyclonedx+json", cyclonedx)
+	var repeated api.SupplyChainImportResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &repeated); err != nil || response.Code != http.StatusCreated || !repeated.Repeated || repeated.Outcome != "unchanged" || *repeated.SnapshotID != *imported.SnapshotID {
+		t.Fatalf("repeated import = %d %+v", response.Code, repeated)
+	}
+	// The GitHub stream is untouched by the artifact import.
+	response = get("dev", "/v1/supply-chain/repositories/101")
+	var status api.SupplyChainRepositoryStatus
+	if err := json.Unmarshal(response.Body.Bytes(), &status); err != nil || status.Producer != "github" || status.LatestSnapshot == nil || status.LatestSnapshot.ComponentCount != 7 || len(status.Streams) != 2 {
+		t.Fatalf("github stream after import = %d %+v", response.Code, status)
+	}
+	response = get("dev", "/v1/supply-chain/repositories/101?stream=import:artifact:syft-image")
+	if err := json.Unmarshal(response.Body.Bytes(), &status); err != nil || status.Producer != "import" || status.Subject != "artifact" || status.LatestSnapshot == nil || status.LatestSnapshot.ProducerTool != "syft 1.20.0" || status.LatestSnapshot.UploadedBy != "admin@acme" || status.LatestSnapshot.UploadLabel != "syft-image" {
+		t.Fatalf("import stream status = %d %+v", response.Code, status)
+	}
+	found := false
+	for _, note := range status.Notes {
+		found = found || strings.Contains(note, "uploaded by admin@acme")
+	}
+	if !found {
+		t.Fatalf("notes must name the uploader separately from the claimed producer: %v", status.Notes)
+	}
+	response = get("dev", "/v1/supply-chain/repositories/101/components?stream=import:artifact:syft-image&q=libssl")
+	var page api.SupplyChainComponentList
+	if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil || len(page.Components) != 1 || *page.Components[0].LicenseDeclaredRaw != "OpenSSL; Apache-2.0" || page.Components[0].Scope != "direct" || page.Components[0].Qualifiers["distro"] != "debian-12" {
+		t.Fatalf("libssl occurrence = %d %s", response.Code, response.Body.String())
+	}
+	if response := get("dev", *documentPath(&status)); response.Code != http.StatusOK || response.Body.String() != string(cyclonedx) {
+		t.Fatalf("original CycloneDX bytes were not preserved: %d", response.Code)
+	}
+
+	// Grant dev upload rights to 101 only; an SPDX source import with a subject revision is producer_asserted.
+	grantRequest := httptest.NewRequest(http.MethodPut, "/v1/supply-chain/upload-grants", strings.NewReader(`{"repository_id":101,"subject":"dev@acme","allow":true}`))
+	grantRequest.Header.Set("Authorization", "Bearer admin")
+	grantRequest.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, grantRequest)
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("grant = %d %s", recorder.Code, recorder.Body.String())
+	}
+	response = post("dev", "/v1/supply-chain/imports?repository_id=101&subject=source&label=ort&subject_revision="+sha, "application/spdx+json", []byte(ortDocument))
+	if err := json.Unmarshal(response.Body.Bytes(), &imported); err != nil || response.Code != http.StatusCreated || imported.Format != "spdx-2.3-json" || imported.SubjectAssurance != "producer_asserted" || imported.ComponentCount != 7 {
+		t.Fatalf("spdx import = %d %s", response.Code, response.Body.String())
+	}
+	response = get("reader", "/v1/supply-chain/repositories/101?stream=import:source:ort")
+	if err := json.Unmarshal(response.Body.Bytes(), &status); err != nil || status.LatestSnapshot.SubjectRevision != sha || status.LatestSnapshot.SubjectAssurance != "producer_asserted" || status.LatestSnapshot.ProducerTool != "ORT-45.0.0" || status.LatestSnapshot.UploadedBy != "dev@acme" {
+		t.Fatalf("ort stream = %d %+v", response.Code, status.LatestSnapshot)
+	}
+	// A spoofed "Tool: GitHub.com-Dependency-Graph" upload never lands in the GitHub stream and is still labelled as an import.
+	response = post("dev", "/v1/supply-chain/imports?repository_id=101&subject=source&label=spoof", "application/json", spdxMember)
+	if err := json.Unmarshal(response.Body.Bytes(), &imported); err != nil || response.Code != http.StatusCreated || imported.Stream != "import:source:spoof" {
+		t.Fatalf("spoof import = %d %s", response.Code, response.Body.String())
+	}
+	response = get("dev", "/v1/supply-chain/repositories/101?stream=import:source:spoof")
+	if err := json.Unmarshal(response.Body.Bytes(), &status); err != nil || status.Producer != "import" || status.LatestSnapshot.ProducerTool != "GitHub.com-Dependency-Graph" || status.LatestSnapshot.UploadedBy != "dev@acme" {
+		t.Fatalf("spoof stream = %+v", status)
+	}
+	// dev has no grant on 102; the reader has no grant at all; an unknown repository is not found.
+	if response := post("dev", "/v1/supply-chain/imports?repository_id=102&subject=source&label=ort", "application/spdx+json", []byte(ortDocument)); response.Code != http.StatusForbidden {
+		t.Fatalf("import to ungranted repository = %d", response.Code)
+	}
+	if response := post("reader", "/v1/supply-chain/imports?repository_id=101&subject=source&label=ort", "application/spdx+json", []byte(ortDocument)); response.Code != http.StatusForbidden {
+		t.Fatalf("reader import = %d", response.Code)
+	}
+	if response := post("dev", "/v1/supply-chain/imports?repository_id=999&subject=source&label=ort", "application/spdx+json", []byte(ortDocument)); response.Code != http.StatusNotFound {
+		t.Fatalf("unknown repository import = %d", response.Code)
+	}
+	// Explicit rejections: unsupported version, wrong format claim, bad label, bad revision, wrong media type, malformed.
+	for name, target := range map[string]struct {
+		path, contentType, body string
+		status                  int
+	}{
+		"old spdx":         {"/v1/supply-chain/imports?repository_id=101&subject=source&label=x", "application/spdx+json", strings.Replace(string(spdxMember), "SPDX-2.3", "SPDX-2.2", 1), http.StatusUnsupportedMediaType},
+		"old cyclonedx":    {"/v1/supply-chain/imports?repository_id=101&subject=source&label=x", "application/json", strings.Replace(string(cyclonedx), `"specVersion": "1.6"`, `"specVersion": "1.5"`, 1), http.StatusUnsupportedMediaType},
+		"mismatched claim": {"/v1/supply-chain/imports?repository_id=101&subject=source&label=x", "application/spdx+json", string(cyclonedx), http.StatusUnsupportedMediaType},
+		"unknown format":   {"/v1/supply-chain/imports?repository_id=101&subject=source&label=x", "application/json", `{"hello":"world"}`, http.StatusUnsupportedMediaType},
+		"malformed":        {"/v1/supply-chain/imports?repository_id=101&subject=source&label=x", "application/json", `{"spdxVersion":"SPDX-2.3","packages":"x"}`, http.StatusBadRequest},
+		"bad label":        {"/v1/supply-chain/imports?repository_id=101&subject=source&label=Bad%20Label", "application/json", string(spdxMember), http.StatusBadRequest},
+		"bad subject":      {"/v1/supply-chain/imports?repository_id=101&subject=release&label=x", "application/json", string(spdxMember), http.StatusBadRequest},
+		"bad revision":     {"/v1/supply-chain/imports?repository_id=101&subject=source&label=x&subject_revision=HEAD", "application/json", string(spdxMember), http.StatusBadRequest},
+		"wrong media type": {"/v1/supply-chain/imports?repository_id=101&subject=source&label=x", "text/plain", string(spdxMember), http.StatusUnsupportedMediaType},
+	} {
+		response := post("admin", target.path, target.contentType, []byte(target.body))
+		if response.Code != target.status {
+			t.Fatalf("%s = %d, want %d: %s", name, response.Code, target.status, response.Body.String())
+		}
+	}
+	// Quota counts accepted and rejected attempts per repository per window.
+	count, err := h.store.SupplyChainImportCount(t.Context(), widgets, time.Now().Add(-time.Hour))
+	if err != nil || count < 8 {
+		t.Fatalf("import count = %d %v", count, err)
+	}
+	importer.QuotaPerRepository = count
+	if response := post("admin", "/v1/supply-chain/imports?repository_id=101&subject=source&label=quota", "application/json", []byte(strings.Replace(string(spdxMember), `"name": "com.github.acme/widgets"`, `"name": "quota"`, 1))); response.Code != http.StatusTooManyRequests {
+		t.Fatalf("over quota = %d %s", response.Code, response.Body.String())
+	}
+	// Another repository has its own quota.
+	if response := post("admin", "/v1/supply-chain/imports?repository_id=102&subject=source&label=ort", "application/spdx+json", []byte(ortDocument)); response.Code != http.StatusCreated {
+		t.Fatalf("other repository import = %d %s", response.Code, response.Body.String())
+	}
+	// Idempotent replay of an accepted document is still answered when over quota (it does no new work).
+	if response := post("admin", "/v1/supply-chain/imports?repository_id=101&subject=artifact&label=syft-image", "application/vnd.cyclonedx+json", cyclonedx); response.Code != http.StatusCreated {
+		t.Fatalf("replay over quota = %d", response.Code)
+	}
+}
+
+func documentPath(status *api.SupplyChainRepositoryStatus) *string {
+	if len(status.Documents) == 0 {
+		empty := ""
+		return &empty
+	}
+	return &status.Documents[0].Path
+}
+
+// TestSupplyChainDerivedSPDXExport proves the derived document names
+// GraphNest as creator, links the preserved original by URL and hash, carries
+// assessments only as comments, validates with the SPDX reader, and never
+// alters the original download.
+func TestSupplyChainDerivedSPDXExport(t *testing.T) {
+	h := newPostgresHarness(t)
+	widgets := h.seedRepository(t, 10, 101)
+	github, client := newFakeSBOMGitHub(t)
+	envelope := sbomEnvelope(t)
+	github.responses["acme/repo-101"] = func(writer http.ResponseWriter) { fmt.Fprint(writer, envelope) }
+	collector := &supplychain.Collector{Store: h.store, GitHub: client, Owner: "collect", MaxDocumentBytes: 1 << 20}
+	if _, _, err := h.store.EnqueueSupplyChainJob(t.Context(), widgets, supplychain.StreamGitHubSource, "manual", "t", 10, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := collector.RunOnce(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	leftPad := license.Coordinates{Ecosystem: "npm", Namespace: "@scope", Name: "left-pad", Version: "1.3.0"}
+	if _, _, err := h.store.InsertLicenseEvidence(t.Context(), license.Evidence{Source: license.SourceRegistryNPM, Route: "npm:test", Coordinates: leftPad, Outcome: license.OutcomeResolved, FetchedAt: time.Now(), RawValue: "MIT", RawKind: license.RawExpression,
+		ParseStatus: "parsed", NormalizedExpression: "MIT", ResolverVersion: 1, LicenseListVersion: "3.27.0", ContentSHA256: make([]byte, 32)}); err != nil {
+		t.Fatal(err)
+	}
+	occurrences, _ := h.store.ComponentsForCoordinates(t.Context(), leftPad, 10)
+	evidence, _ := h.store.LatestLicenseEvidence(t.Context(), leftPad)
+	declared, concluded, _ := h.store.ComponentDeclarations(t.Context(), occurrences[0][0])
+	if err := h.store.UpsertAssessment(t.Context(), license.Assess(occurrences[0][0], occurrences[0][1], declared, concluded, evidence, time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	service := &supplychain.Service{Store: h.store, Authorizer: authz.NewPostgres(h.store), Interval: time.Hour, MaxResults: 100, License: h.store}
+	portfolio := &supplychain.Portfolio{Store: h.store, Snapshots: h.store, Authorizer: authz.NewPostgres(h.store), Interval: time.Hour, MaxResults: 100}
+	authenticator := authn.RequestAuthenticator{Bearer: authn.NewStatic(map[string]authn.Principal{
+		"acme":  {Subject: "acme", Method: "api_token", InstallationID: 10, RepositoryIDs: []int64{101}},
+		"other": {Subject: "other", Method: "api_token", InstallationID: 20, RepositoryIDs: []int64{999}},
+	})}
+	mux := http.NewServeMux()
+	httpapi.RegisterSupplyChain(mux, authenticator, service, 100, 256<<10)
+	httpapi.RegisterSupplyChainPortfolio(mux, authenticator, portfolio, 100, 256<<10, &httpapi.DerivedExport{Service: service, PublicOrigin: "https://graphnest.example"})
+	get := func(token, path string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.Header.Set("Authorization", "Bearer "+token)
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, request)
+		return recorder
+	}
+	response := get("acme", "/v1/supply-chain/exports/101/derived.spdx.json")
+	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "application/spdx+json" || response.Header().Get("X-GraphNest-Derived") != "true" {
+		t.Fatalf("derived export = %d %v %s", response.Code, response.Header(), response.Body.String())
+	}
+	var derived struct {
+		SPDXVersion  string `json:"spdxVersion"`
+		Name         string `json:"name"`
+		CreationInfo struct {
+			Creators []string `json:"creators"`
+			Comment  string   `json:"comment"`
+		} `json:"creationInfo"`
+		ExternalDocumentRefs []struct {
+			ExternalDocumentID string `json:"externalDocumentId"`
+			SPDXDocument       string `json:"spdxDocument"`
+			Checksum           struct {
+				Algorithm string `json:"algorithm"`
+				Value     string `json:"checksumValue"`
+			} `json:"checksum"`
+		} `json:"externalDocumentRefs"`
+		DocumentDescribes []string `json:"documentDescribes"`
+		Packages          []struct {
+			SPDXID           string `json:"SPDXID"`
+			Name             string `json:"name"`
+			LicenseDeclared  string `json:"licenseDeclared"`
+			LicenseConcluded string `json:"licenseConcluded"`
+			LicenseComments  string `json:"licenseComments"`
+		} `json:"packages"`
+		Relationships []struct {
+			Type string `json:"relationshipType"`
+		} `json:"relationships"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &derived); err != nil {
+		t.Fatal(err)
+	}
+	if derived.SPDXVersion != "SPDX-2.3" || len(derived.CreationInfo.Creators) != 2 || !strings.HasPrefix(derived.CreationInfo.Creators[0], "Tool: GraphNest-supply-chain-") || !strings.Contains(derived.CreationInfo.Comment, "preserved unchanged") {
+		t.Fatalf("creation info = %+v", derived.CreationInfo)
+	}
+	original := get("acme", "/v1/supply-chain/snapshots/1/document")
+	if len(derived.ExternalDocumentRefs) != 1 || derived.ExternalDocumentRefs[0].SPDXDocument != "https://graphnest.example/v1/supply-chain/snapshots/1/document" || derived.ExternalDocumentRefs[0].Checksum.Value != original.Header().Get("X-Content-SHA256") {
+		t.Fatalf("external refs = %+v (original sha %s)", derived.ExternalDocumentRefs, original.Header().Get("X-Content-SHA256"))
+	}
+	if len(derived.Packages) != 7 || len(derived.DocumentDescribes) != 1 || derived.DocumentDescribes[0] != "SPDXRef-com.github.acme-widgets" {
+		t.Fatalf("packages = %d describes = %v", len(derived.Packages), derived.DocumentDescribes)
+	}
+	for _, pkg := range derived.Packages {
+		if pkg.LicenseConcluded != "NOASSERTION" {
+			t.Fatalf("derived export must not conclude licenses: %+v", pkg)
+		}
+		if pkg.LicenseDeclared != "NOASSERTION" {
+			t.Fatalf("GHES NOASSERTION must stay NOASSERTION: %+v", pkg)
+		}
+		if pkg.Name == "npm:@scope/left-pad" && !strings.Contains(pkg.LicenseComments, "GraphNest assessment: resolved (MIT)") {
+			t.Fatalf("assessment must appear as a comment only: %+v", pkg)
+		}
+	}
+	describes, dependsOn := 0, 0
+	for _, relationship := range derived.Relationships {
+		switch relationship.Type {
+		case "DESCRIBES":
+			describes++
+		case "DEPENDS_ON":
+			dependsOn++
+		}
+	}
+	if describes != 1 || dependsOn != 6 {
+		t.Fatalf("relationships = %d DESCRIBES, %d DEPENDS_ON (the unresolved edge must be dropped)", describes, dependsOn)
+	}
+	// The original is still served byte-for-byte and is a different document.
+	if original.Code != http.StatusOK || original.Body.String() != strings.TrimSpace(envelope[len(`{"sbom":`):len(envelope)-1]) {
+		t.Fatalf("original changed: %d", original.Code)
+	}
+	if response := get("other", "/v1/supply-chain/exports/101/derived.spdx.json"); response.Code != http.StatusNotFound {
+		t.Fatalf("unauthorized derived export = %d", response.Code)
 	}
 }

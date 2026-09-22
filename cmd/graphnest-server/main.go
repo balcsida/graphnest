@@ -47,6 +47,7 @@ import (
 	"github.com/balcsida/graphnest/internal/webhook"
 	"github.com/balcsida/graphnest/internal/webui"
 	"github.com/balcsida/graphnest/internal/zoekt"
+	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/net/idna"
 )
@@ -470,9 +471,22 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 			License: store, EnrichmentEcosystems: registry.Ecosystems()}
 		supplyChainDone = startSupplyChain(loopCtx, settings.SupplyChain, store, githubClient, registry, metrics, logger)
 		portfolio := &supplychain.Portfolio{Store: store, Snapshots: store, Authorizer: authz.NewPostgres(store), Interval: settings.SupplyChain.Interval, MaxResults: settings.Limits.MaxResults}
+		importer := &supplychain.Importer{Store: store, Authorizer: authz.NewPostgres(store), MaxDocumentBytes: settings.SupplyChain.MaxDocumentBytes, Limits: supplychain.Limits{MaxComponents: settings.SupplyChain.MaxComponents}}
+		if len(registry.Ecosystems()) > 0 {
+			importer.Enricher = &license.Worker{Store: store, Registry: registry}
+		}
+		authorizer := authz.NewPostgres(store)
+		grants := &httpapi.UploadGrants{Set: store.SetSupplyChainUploadGrant, Resolve: func(ctx context.Context, principal authn.Principal, githubID int64) (int64, error) {
+			repo, err := authorizer.AuthorizedRepository(ctx, principal, githubID)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return 0, supplychain.ErrNotFound
+			}
+			return repo.ID, err
+		}}
 		extras = append(extras, func(mux *http.ServeMux) {
 			httpapi.RegisterSupplyChain(mux, auth.requestAuth, supplyChainService, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
-			httpapi.RegisterSupplyChainPortfolio(mux, auth.requestAuth, portfolio, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
+			httpapi.RegisterSupplyChainPortfolio(mux, auth.requestAuth, portfolio, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes, &httpapi.DerivedExport{Service: supplyChainService, PublicOrigin: auth.requestAuth.PublicOrigin})
+			httpapi.RegisterSupplyChainImports(mux, auth.requestAuth, importer, grants, settings.SupplyChain.MaxDocumentBytes, settings.Limits.MaxResponseBytes)
 		})
 	}
 	handler := newAPIHandler(settings, metrics, auth.requestAuth, searchService, repositoryService, scipService, graphService, graphQueries, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend}, auth.providers, auth.sessions, provisioning, scimService, auth.mcpOAuth, extras...)

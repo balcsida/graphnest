@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -126,10 +127,24 @@ func (service *Service) AuthorizedRepositoryIDs(ctx context.Context, principal a
 	return ids, nil
 }
 
-// ValidStream reports whether a stream selector is one the service serves.
-// Milestone 1 serves the GitHub source stream only.
+var importStreamPattern = regexp.MustCompile(`^import:(source|artifact):[a-z0-9][a-z0-9._-]{0,63}$`)
+
+// ValidStream reports whether a stream selector is one the service serves:
+// the GitHub source stream or an import stream (import:<subject>:<label>).
 func ValidStream(stream string) bool {
-	return stream == "" || stream == StreamGitHubSource
+	return stream == "" || stream == StreamGitHubSource || importStreamPattern.MatchString(stream)
+}
+
+// StreamProducer returns the producer and subject encoded in a stream key.
+func StreamProducer(stream string) (Producer, Subject) {
+	if stream == StreamGitHubSource {
+		return ProducerGitHub, SubjectSource
+	}
+	parts := strings.SplitN(stream, ":", 3)
+	if len(parts) == 3 && parts[0] == "import" {
+		return ProducerImport, Subject(parts[1])
+	}
+	return "", ""
 }
 
 func normalizeStream(stream string) (string, error) {
@@ -151,8 +166,20 @@ func (service *Service) Status(ctx context.Context, principal authn.Principal, g
 	if err != nil {
 		return api.SupplyChainRepositoryStatus{}, err
 	}
-	status := api.SupplyChainRepositoryStatus{RepositoryID: repo.GitHubID, Repository: repo.Name, Stream: streamKey, Producer: string(ProducerGitHub), Subject: string(SubjectSource),
-		Collection: "never", Enrichment: "not_configured", EnrichmentEcosystems: []string{}, LicenseSummary: map[string]int{}, Notes: []string{}, Documents: []api.SupplyChainDocumentRef{}}
+	producer, subject := StreamProducer(streamKey)
+	status := api.SupplyChainRepositoryStatus{RepositoryID: repo.GitHubID, Repository: repo.Name, Stream: streamKey, Producer: string(producer), Subject: string(subject),
+		Collection: "never", Enrichment: "not_configured", EnrichmentEcosystems: []string{}, LicenseSummary: map[string]int{}, Notes: []string{}, Documents: []api.SupplyChainDocumentRef{}, Streams: []api.SupplyChainStreamRef{}}
+	if streams, ok := service.Store.(interface {
+		SupplyChainStreams(context.Context, int64) ([]Stream, error)
+	}); ok {
+		known, err := streams.SupplyChainStreams(ctx, repo.ID)
+		if err != nil {
+			return api.SupplyChainRepositoryStatus{}, err
+		}
+		for _, stream := range known {
+			status.Streams = append(status.Streams, api.SupplyChainStreamRef{Key: stream.StreamKey, Producer: string(stream.Producer), Subject: string(stream.Subject), HasInventory: stream.LatestSnapshotID != nil, LastOutcome: string(stream.LastOutcome)})
+		}
+	}
 	if len(service.EnrichmentEcosystems) > 0 {
 		status.Enrichment = "configured"
 		status.EnrichmentEcosystems = append(status.EnrichmentEcosystems, service.EnrichmentEcosystems...)
@@ -203,8 +230,13 @@ func (service *Service) Status(ctx context.Context, principal authn.Principal, g
 			}
 		}
 	}
-	if status.LatestSnapshot != nil {
+	if status.LatestSnapshot != nil && producer == ProducerGitHub {
 		status.Notes = append(status.Notes, "GitHub dependency-graph exports are timestamped observations of the default branch; they are not bound to a commit and carry no license data.")
+	}
+	if status.LatestSnapshot != nil && producer == ProducerImport {
+		status.Notes = append(status.Notes, "This inventory was uploaded by "+status.LatestSnapshot.UploadedBy+"; the producer named inside the document is its own claim. Subject binding: "+status.LatestSnapshot.SubjectAssurance+".")
+	}
+	if status.LatestSnapshot != nil {
 		if status.LatestSnapshot.WarningCount > 0 {
 			status.Notes = append(status.Notes, fmt.Sprintf("Normalization reported %d coverage warning(s).", status.LatestSnapshot.WarningCount))
 		}
@@ -595,6 +627,7 @@ func (service *Service) Refresh(ctx context.Context, principal authn.Principal, 
 		return api.SupplyChainRefreshResponse{}, err
 	}
 	if streamKey != StreamGitHubSource {
+		// Import streams are refreshed by uploading a new document, not by collection.
 		return api.SupplyChainRefreshResponse{}, ErrInvalidRequest
 	}
 	repo, err := service.authorizedRepository(ctx, principal, githubID)
@@ -648,6 +681,7 @@ func snapshotSummary(snapshot Snapshot) api.SupplyChainSnapshot {
 		SubjectAssurance: string(snapshot.SubjectAssurance), RootElementIDs: roots, ParserVersion: snapshot.ParserVersion, ComponentCount: snapshot.ComponentCount,
 		EdgeCount: snapshot.EdgeCount, WarningCount: snapshot.WarningCount, Warnings: warnings, PublishedAt: snapshot.PublishedAt,
 		DocumentSHA256: hex.EncodeToString(snapshot.DocumentSHA256), DocumentFormat: string(snapshot.DocumentFormat), DocumentBytes: snapshot.DocumentBytes,
+		UploadedBy: snapshot.UploadedBy, UploadLabel: snapshot.UploadLabel,
 	}
 }
 

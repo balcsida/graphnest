@@ -198,3 +198,28 @@ func TestParsePURL(t *testing.T) {
 		}
 	}
 }
+
+func FuzzNormalizeSPDX23(f *testing.F) {
+	data, err := os.ReadFile("../../test/fixtures/supplychain/ghes-spdx-2.3.json")
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(string(data))
+	f.Add(`{"spdxVersion":"SPDX-2.3","packages":[]}`)
+	f.Fuzz(func(t *testing.T, document string) {
+		got, err := NormalizeSPDX23([]byte(document), Limits{MaxComponents: 200, MaxRelationships: 2000, MaxWarnings: 50})
+		if err != nil {
+			return
+		}
+		if len(got.Components) > 200 || len(got.Warnings) > 50 {
+			t.Fatalf("limits exceeded: %d components, %d warnings", len(got.Components), len(got.Warnings))
+		}
+		seen := map[string]bool{}
+		for _, component := range got.Components {
+			if seen[component.ElementID] {
+				t.Fatalf("duplicate element id %q", component.ElementID)
+			}
+			seen[component.ElementID] = true
+		}
+	})
+}
