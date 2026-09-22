@@ -1,0 +1,701 @@
+# SPDX License List 3.27.0 (https://github.com/spdx/license-list-data/tree/v3.27.0)
+# id<TAB>flags: D=deprecated O=OSI approved F=FSF libre
+0BSD	O
+3D-Slicer-1.0	
+AAL	O
+Abstyles	
+AdaCore-doc	
+Adobe-2006	
+Adobe-Display-PostScript	
+Adobe-Glyph	
+Adobe-Utopia	
+ADSL	
+AFL-1.1	OF
+AFL-1.2	OF
+AFL-2.0	OF
+AFL-2.1	OF
+AFL-3.0	OF
+Afmparse	
+AGPL-1.0	DF
+AGPL-1.0-only	
+AGPL-1.0-or-later	
+AGPL-3.0	DOF
+AGPL-3.0-only	OF
+AGPL-3.0-or-later	OF
+Aladdin	
+AMD-newlib	
+AMDPLPA	
+AML	
+AML-glslang	
+AMPAS	
+ANTLR-PD	
+ANTLR-PD-fallback	
+any-OSI	
+any-OSI-perl-modules	
+Apache-1.0	F
+Apache-1.1	OF
+Apache-2.0	OF
+APAFML	
+APL-1.0	O
+App-s2p	
+APSL-1.0	O
+APSL-1.1	O
+APSL-1.2	O
+APSL-2.0	OF
+Arphic-1999	
+Artistic-1.0	O
+Artistic-1.0-cl8	O
+Artistic-1.0-Perl	O
+Artistic-2.0	OF
+Artistic-dist	
+Aspell-RU	
+ASWF-Digital-Assets-1.0	
+ASWF-Digital-Assets-1.1	
+Baekmuk	
+Bahyph	
+Barr	
+bcrypt-Solar-Designer	
+Beerware	
+Bitstream-Charter	
+Bitstream-Vera	
+BitTorrent-1.0	
+BitTorrent-1.1	F
+blessing	
+BlueOak-1.0.0	O
+Boehm-GC	
+Boehm-GC-without-fee	
+Borceux	
+Brian-Gladman-2-Clause	
+Brian-Gladman-3-Clause	
+BSD-1-Clause	O
+BSD-2-Clause	OF
+BSD-2-Clause-Darwin	
+BSD-2-Clause-first-lines	
+BSD-2-Clause-FreeBSD	DF
+BSD-2-Clause-NetBSD	DF
+BSD-2-Clause-Patent	O
+BSD-2-Clause-pkgconf-disclaimer	
+BSD-2-Clause-Views	
+BSD-3-Clause	OF
+BSD-3-Clause-acpica	
+BSD-3-Clause-Attribution	
+BSD-3-Clause-Clear	F
+BSD-3-Clause-flex	
+BSD-3-Clause-HP	
+BSD-3-Clause-LBNL	O
+BSD-3-Clause-Modification	
+BSD-3-Clause-No-Military-License	
+BSD-3-Clause-No-Nuclear-License	
+BSD-3-Clause-No-Nuclear-License-2014	
+BSD-3-Clause-No-Nuclear-Warranty	
+BSD-3-Clause-Open-MPI	
+BSD-3-Clause-Sun	
+BSD-4-Clause	F
+BSD-4-Clause-Shortened	
+BSD-4-Clause-UC	
+BSD-4.3RENO	
+BSD-4.3TAHOE	
+BSD-Advertising-Acknowledgement	
+BSD-Attribution-HPND-disclaimer	
+BSD-Inferno-Nettverk	
+BSD-Protection	
+BSD-Source-beginning-file	
+BSD-Source-Code	
+BSD-Systemics	
+BSD-Systemics-W3Works	
+BSL-1.0	OF
+BUSL-1.1	
+bzip2-1.0.5	D
+bzip2-1.0.6	
+C-UDA-1.0	
+CAL-1.0	O
+CAL-1.0-Combined-Work-Exception	O
+Caldera	
+Caldera-no-preamble	
+Catharon	
+CATOSL-1.1	O
+CC-BY-1.0	
+CC-BY-2.0	
+CC-BY-2.5	
+CC-BY-2.5-AU	
+CC-BY-3.0	
+CC-BY-3.0-AT	
+CC-BY-3.0-AU	
+CC-BY-3.0-DE	
+CC-BY-3.0-IGO	
+CC-BY-3.0-NL	
+CC-BY-3.0-US	
+CC-BY-4.0	F
+CC-BY-NC-1.0	
+CC-BY-NC-2.0	
+CC-BY-NC-2.5	
+CC-BY-NC-3.0	
+CC-BY-NC-3.0-DE	
+CC-BY-NC-4.0	
+CC-BY-NC-ND-1.0	
+CC-BY-NC-ND-2.0	
+CC-BY-NC-ND-2.5	
+CC-BY-NC-ND-3.0	
+CC-BY-NC-ND-3.0-DE	
+CC-BY-NC-ND-3.0-IGO	
+CC-BY-NC-ND-4.0	
+CC-BY-NC-SA-1.0	
+CC-BY-NC-SA-2.0	
+CC-BY-NC-SA-2.0-DE	
+CC-BY-NC-SA-2.0-FR	
+CC-BY-NC-SA-2.0-UK	
+CC-BY-NC-SA-2.5	
+CC-BY-NC-SA-3.0	
+CC-BY-NC-SA-3.0-DE	
+CC-BY-NC-SA-3.0-IGO	
+CC-BY-NC-SA-4.0	
+CC-BY-ND-1.0	
+CC-BY-ND-2.0	
+CC-BY-ND-2.5	
+CC-BY-ND-3.0	
+CC-BY-ND-3.0-DE	
+CC-BY-ND-4.0	
+CC-BY-SA-1.0	
+CC-BY-SA-2.0	
+CC-BY-SA-2.0-UK	
+CC-BY-SA-2.1-JP	
+CC-BY-SA-2.5	
+CC-BY-SA-3.0	
+CC-BY-SA-3.0-AT	
+CC-BY-SA-3.0-DE	
+CC-BY-SA-3.0-IGO	
+CC-BY-SA-4.0	F
+CC-PDDC	
+CC-PDM-1.0	
+CC-SA-1.0	
+CC0-1.0	F
+CDDL-1.0	OF
+CDDL-1.1	
+CDL-1.0	
+CDLA-Permissive-1.0	
+CDLA-Permissive-2.0	
+CDLA-Sharing-1.0	
+CECILL-1.0	
+CECILL-1.1	
+CECILL-2.0	F
+CECILL-2.1	O
+CECILL-B	F
+CECILL-C	F
+CERN-OHL-1.1	
+CERN-OHL-1.2	
+CERN-OHL-P-2.0	O
+CERN-OHL-S-2.0	O
+CERN-OHL-W-2.0	O
+CFITSIO	
+check-cvs	
+checkmk	
+ClArtistic	F
+Clips	
+CMU-Mach	
+CMU-Mach-nodoc	
+CNRI-Jython	
+CNRI-Python	O
+CNRI-Python-GPL-Compatible	
+COIL-1.0	
+Community-Spec-1.0	
+Condor-1.1	F
+copyleft-next-0.3.0	
+copyleft-next-0.3.1	
+Cornell-Lossless-JPEG	
+CPAL-1.0	OF
+CPL-1.0	OF
+CPOL-1.02	
+Cronyx	
+Crossword	
+CryptoSwift	
+CrystalStacker	
+CUA-OPL-1.0	O
+Cube	
+curl	
+cve-tou	
+D-FSL-1.0	
+DEC-3-Clause	
+diffmark	
+DL-DE-BY-2.0	
+DL-DE-ZERO-2.0	
+DOC	
+DocBook-DTD	
+DocBook-Schema	
+DocBook-Stylesheet	
+DocBook-XML	
+Dotseqn	
+DRL-1.0	
+DRL-1.1	
+DSDP	
+dtoa	
+dvipdfm	
+ECL-1.0	O
+ECL-2.0	OF
+eCos-2.0	DF
+EFL-1.0	O
+EFL-2.0	OF
+eGenix	
+Elastic-2.0	
+Entessa	O
+EPICS	
+EPL-1.0	OF
+EPL-2.0	OF
+ErlPL-1.1	
+etalab-2.0	
+EUDatagrid	OF
+EUPL-1.0	
+EUPL-1.1	OF
+EUPL-1.2	OF
+Eurosym	
+Fair	O
+FBM	
+FDK-AAC	
+Ferguson-Twofish	
+Frameworx-1.0	O
+FreeBSD-DOC	
+FreeImage	
+FSFAP	F
+FSFAP-no-warranty-disclaimer	
+FSFUL	
+FSFULLR	
+FSFULLRSD	
+FSFULLRWD	
+FSL-1.1-ALv2	
+FSL-1.1-MIT	
+FTL	F
+Furuseth	
+fwlw	
+Game-Programming-Gems	
+GCR-docs	
+GD	
+generic-xts	
+GFDL-1.1	DF
+GFDL-1.1-invariants-only	
+GFDL-1.1-invariants-or-later	
+GFDL-1.1-no-invariants-only	
+GFDL-1.1-no-invariants-or-later	
+GFDL-1.1-only	F
+GFDL-1.1-or-later	F
+GFDL-1.2	DF
+GFDL-1.2-invariants-only	
+GFDL-1.2-invariants-or-later	
+GFDL-1.2-no-invariants-only	
+GFDL-1.2-no-invariants-or-later	
+GFDL-1.2-only	F
+GFDL-1.2-or-later	F
+GFDL-1.3	DF
+GFDL-1.3-invariants-only	
+GFDL-1.3-invariants-or-later	
+GFDL-1.3-no-invariants-only	
+GFDL-1.3-no-invariants-or-later	
+GFDL-1.3-only	F
+GFDL-1.3-or-later	F
+Giftware	
+GL2PS	
+Glide	
+Glulxe	
+GLWTPL	
+gnuplot	F
+GPL-1.0	D
+GPL-1.0+	D
+GPL-1.0-only	
+GPL-1.0-or-later	
+GPL-2.0	DOF
+GPL-2.0+	DOF
+GPL-2.0-only	OF
+GPL-2.0-or-later	OF
+GPL-2.0-with-autoconf-exception	D
+GPL-2.0-with-bison-exception	D
+GPL-2.0-with-classpath-exception	D
+GPL-2.0-with-font-exception	D
+GPL-2.0-with-GCC-exception	D
+GPL-3.0	DOF
+GPL-3.0+	DOF
+GPL-3.0-only	OF
+GPL-3.0-or-later	OF
+GPL-3.0-with-autoconf-exception	D
+GPL-3.0-with-GCC-exception	DO
+Graphics-Gems	
+gSOAP-1.3b	
+gtkbook	
+Gutmann	
+HaskellReport	
+HDF5	
+hdparm	
+HIDAPI	
+Hippocratic-2.1	
+HP-1986	
+HP-1989	
+HPND	OF
+HPND-DEC	
+HPND-doc	
+HPND-doc-sell	
+HPND-export-US	
+HPND-export-US-acknowledgement	
+HPND-export-US-modify	
+HPND-export2-US	
+HPND-Fenneberg-Livingston	
+HPND-INRIA-IMAG	
+HPND-Intel	
+HPND-Kevlin-Henney	
+HPND-Markus-Kuhn	
+HPND-merchantability-variant	
+HPND-MIT-disclaimer	
+HPND-Netrek	
+HPND-Pbmplus	
+HPND-sell-MIT-disclaimer-xserver	
+HPND-sell-regexpr	
+HPND-sell-variant	
+HPND-sell-variant-MIT-disclaimer	
+HPND-sell-variant-MIT-disclaimer-rev	
+HPND-UC	
+HPND-UC-export-US	
+HTMLTIDY	
+IBM-pibs	
+ICU	O
+IEC-Code-Components-EULA	
+IJG	F
+IJG-short	
+ImageMagick	
+iMatix	F
+Imlib2	F
+Info-ZIP	
+Inner-Net-2.0	
+InnoSetup	
+Intel	OF
+Intel-ACPI	
+Interbase-1.0	
+IPA	OF
+IPL-1.0	OF
+ISC	OF
+ISC-Veillard	
+Jam	O
+JasPer-2.0	
+jove	
+JPL-image	
+JPNIC	
+JSON	
+Kastrup	
+Kazlib	
+Knuth-CTAN	
+LAL-1.2	
+LAL-1.3	
+Latex2e	
+Latex2e-translated-notice	
+Leptonica	
+LGPL-2.0	DO
+LGPL-2.0+	DO
+LGPL-2.0-only	O
+LGPL-2.0-or-later	O
+LGPL-2.1	DOF
+LGPL-2.1+	DOF
+LGPL-2.1-only	OF
+LGPL-2.1-or-later	OF
+LGPL-3.0	DOF
+LGPL-3.0+	DOF
+LGPL-3.0-only	OF
+LGPL-3.0-or-later	OF
+LGPLLR	
+Libpng	
+libpng-1.6.35	
+libpng-2.0	
+libselinux-1.0	
+libtiff	
+libutil-David-Nugent	
+LiLiQ-P-1.1	O
+LiLiQ-R-1.1	O
+LiLiQ-Rplus-1.1	O
+Linux-man-pages-1-para	
+Linux-man-pages-copyleft	
+Linux-man-pages-copyleft-2-para	
+Linux-man-pages-copyleft-var	
+Linux-OpenIB	
+LOOP	
+LPD-document	
+LPL-1.0	O
+LPL-1.02	OF
+LPPL-1.0	
+LPPL-1.1	
+LPPL-1.2	F
+LPPL-1.3a	F
+LPPL-1.3c	O
+lsof	
+Lucida-Bitmap-Fonts	
+LZMA-SDK-9.11-to-9.20	
+LZMA-SDK-9.22	
+Mackerras-3-Clause	
+Mackerras-3-Clause-acknowledgment	
+magaz	
+mailprio	
+MakeIndex	
+man2html	
+Martin-Birgmeier	
+McPhee-slideshow	
+metamail	
+Minpack	
+MIPS	
+MirOS	O
+MIT	OF
+MIT-0	O
+MIT-advertising	
+MIT-Click	
+MIT-CMU	
+MIT-enna	
+MIT-feh	
+MIT-Festival	
+MIT-Khronos-old	
+MIT-Modern-Variant	O
+MIT-open-group	
+MIT-testregex	
+MIT-Wu	
+MITNFA	
+MMIXware	
+Motosoto	O
+MPEG-SSG	
+mpi-permissive	
+mpich2	
+MPL-1.0	O
+MPL-1.1	OF
+MPL-2.0	OF
+MPL-2.0-no-copyleft-exception	O
+mplus	
+MS-LPL	
+MS-PL	OF
+MS-RL	OF
+MTLL	
+MulanPSL-1.0	
+MulanPSL-2.0	O
+Multics	O
+Mup	
+NAIST-2003	
+NASA-1.3	O
+Naumen	O
+NBPL-1.0	
+NCBI-PD	
+NCGL-UK-2.0	
+NCL	
+NCSA	OF
+Net-SNMP	D
+NetCDF	
+Newsletr	
+NGPL	O
+ngrep	
+NICTA-1.0	
+NIST-PD	
+NIST-PD-fallback	
+NIST-Software	
+NLOD-1.0	
+NLOD-2.0	
+NLPL	
+Nokia	OF
+NOSL	F
+Noweb	
+NPL-1.0	F
+NPL-1.1	F
+NPOSL-3.0	O
+NRL	
+NTIA-PD	
+NTP	O
+NTP-0	
+Nunit	DF
+O-UDA-1.0	
+OAR	
+OCCT-PL	
+OCLC-2.0	O
+ODbL-1.0	F
+ODC-By-1.0	
+OFFIS	
+OFL-1.0	F
+OFL-1.0-no-RFN	
+OFL-1.0-RFN	
+OFL-1.1	OF
+OFL-1.1-no-RFN	O
+OFL-1.1-RFN	O
+OGC-1.0	
+OGDL-Taiwan-1.0	
+OGL-Canada-2.0	
+OGL-UK-1.0	
+OGL-UK-2.0	
+OGL-UK-3.0	
+OGTSL	O
+OLDAP-1.1	
+OLDAP-1.2	
+OLDAP-1.3	
+OLDAP-1.4	
+OLDAP-2.0	
+OLDAP-2.0.1	
+OLDAP-2.1	
+OLDAP-2.2	
+OLDAP-2.2.1	
+OLDAP-2.2.2	
+OLDAP-2.3	F
+OLDAP-2.4	
+OLDAP-2.5	
+OLDAP-2.6	
+OLDAP-2.7	F
+OLDAP-2.8	O
+OLFL-1.3	O
+OML	
+OpenPBS-2.3	
+OpenSSL	F
+OpenSSL-standalone	
+OpenVision	
+OPL-1.0	
+OPL-UK-3.0	
+OPUBL-1.0	
+OSET-PL-2.1	O
+OSL-1.0	OF
+OSL-1.1	F
+OSL-2.0	OF
+OSL-2.1	OF
+OSL-3.0	OF
+PADL	
+Parity-6.0.0	
+Parity-7.0.0	
+PDDL-1.0	
+PHP-3.0	O
+PHP-3.01	OF
+Pixar	
+pkgconf	
+Plexus	
+pnmstitch	
+PolyForm-Noncommercial-1.0.0	
+PolyForm-Small-Business-1.0.0	
+PostgreSQL	O
+PPL	
+PSF-2.0	
+psfrag	
+psutils	
+Python-2.0	OF
+Python-2.0.1	
+python-ldap	
+Qhull	
+QPL-1.0	OF
+QPL-1.0-INRIA-2004	
+radvd	
+Rdisc	
+RHeCos-1.1	
+RPL-1.1	O
+RPL-1.5	O
+RPSL-1.0	OF
+RSA-MD	
+RSCPL	O
+Ruby	F
+Ruby-pty	
+SAX-PD	
+SAX-PD-2.0	
+Saxpath	
+SCEA	
+SchemeReport	
+Sendmail	
+Sendmail-8.23	
+Sendmail-Open-Source-1.1	
+SGI-B-1.0	
+SGI-B-1.1	
+SGI-B-2.0	F
+SGI-OpenGL	
+SGP4	
+SHL-0.5	
+SHL-0.51	
+SimPL-2.0	O
+SISSL	OF
+SISSL-1.2	
+SL	
+Sleepycat	OF
+SMAIL-GPL	
+SMLNJ	F
+SMPPL	
+SNIA	
+snprintf	
+SOFA	
+softSurfer	
+Soundex	
+Spencer-86	
+Spencer-94	
+Spencer-99	
+SPL-1.0	OF
+ssh-keyscan	
+SSH-OpenSSH	
+SSH-short	
+SSLeay-standalone	
+SSPL-1.0	
+StandardML-NJ	DF
+SugarCRM-1.1.3	
+SUL-1.0	
+Sun-PPP	
+Sun-PPP-2000	
+SunPro	
+SWL	
+swrule	
+Symlinks	
+TAPR-OHL-1.0	
+TCL	
+TCP-wrappers	
+TermReadKey	
+TGPPL-1.0	
+ThirdEye	
+threeparttable	
+TMate	
+TORQUE-1.1	
+TOSL	
+TPDL	
+TPL-1.0	
+TrustedQSL	
+TTWL	
+TTYP0	
+TU-Berlin-1.0	
+TU-Berlin-2.0	
+Ubuntu-font-1.0	
+UCAR	
+UCL-1.0	O
+ulem	
+UMich-Merit	
+Unicode-3.0	O
+Unicode-DFS-2015	
+Unicode-DFS-2016	O
+Unicode-TOU	
+UnixCrypt	
+Unlicense	OF
+Unlicense-libtelnet	
+Unlicense-libwhirlpool	
+UPL-1.0	OF
+URT-RLE	
+Vim	F
+VOSTROM	
+VSL-1.0	O
+W3C	OF
+W3C-19980720	
+W3C-20150513	O
+w3m	
+Watcom-1.0	O
+Widget-Workshop	
+Wsuipa	
+WTFPL	F
+wwl	
+wxWindows	DO
+X11	F
+X11-distribute-modifications-variant	
+X11-swapped	
+Xdebug-1.03	
+Xerox	
+Xfig	
+XFree86-1.1	F
+xinetd	F
+xkeyboard-config-Zinoviev	
+xlock	
+Xnet	O
+xpp	
+XSkat	
+xzoom	
+YPL-1.0	
+YPL-1.1	F
+Zed	
+Zeeff	
+Zend-2.0	F
+Zimbra-1.3	F
+Zimbra-1.4	
+Zlib	OF
+zlib-acknowledgement	
+ZPL-1.1	
+ZPL-2.0	OF
+ZPL-2.1	OF
