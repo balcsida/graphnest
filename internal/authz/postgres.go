@@ -33,3 +33,9 @@ func (authorizer *Postgres) AuthorizedRepository(ctx context.Context, principal 
 	}
 	return authorizer.store.AuthorizedRepository(ctx, principal.InstallationID, principal.RepositoryIDs, repositoryID)
 }
+
+// AllAuthorizedRepositories returns every repository the principal may read,
+// without a name selection. It satisfies supplychain.Authorizer.
+func (authorizer *Postgres) AllAuthorizedRepositories(ctx context.Context, principal authn.Principal) ([]repository.Repository, error) {
+	return authorizer.AuthorizedRepositories(ctx, principal, RepositorySelection{})
+}
