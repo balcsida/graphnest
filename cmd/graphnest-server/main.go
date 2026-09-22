@@ -42,6 +42,7 @@ import (
 	"github.com/balcsida/graphnest/internal/sso/browserflow"
 	"github.com/balcsida/graphnest/internal/sso/githuboauth"
 	"github.com/balcsida/graphnest/internal/sso/oidc"
+	"github.com/balcsida/graphnest/internal/supplychain"
 	"github.com/balcsida/graphnest/internal/webhook"
 	"github.com/balcsida/graphnest/internal/webui"
 	"github.com/balcsida/graphnest/internal/zoekt"
@@ -447,7 +448,16 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 			CAConfigured: settings.GitHub.CAFile != "",
 		},
 	}
-	handler := newAPIHandler(settings, metrics, auth.requestAuth, searchService, repositoryService, scipService, graphService, graphQueries, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend}, auth.providers, auth.sessions, provisioning, scimService, auth.mcpOAuth)
+	var extras []func(*http.ServeMux)
+	var supplyChainDone []<-chan struct{}
+	if settings.SupplyChain.Enabled {
+		supplyChainService := &supplychain.Service{Store: store, Authorizer: authz.NewPostgres(store), Interval: settings.SupplyChain.Interval, MaxResults: settings.Limits.MaxResults}
+		supplyChainDone = startSupplyChain(loopCtx, settings.SupplyChain, store, githubClient, metrics, logger)
+		extras = append(extras, func(mux *http.ServeMux) {
+			httpapi.RegisterSupplyChain(mux, auth.requestAuth, supplyChainService, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
+		})
+	}
+	handler := newAPIHandler(settings, metrics, auth.requestAuth, searchService, repositoryService, scipService, graphService, graphQueries, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend}, auth.providers, auth.sessions, provisioning, scimService, auth.mcpOAuth, extras...)
 	if localAuth != nil {
 		mux := http.NewServeMux()
 		httpapi.RegisterLocalAuth(mux, auth.requestAuth.PublicOrigin, localAuth, store)
@@ -458,8 +468,56 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 		cancel()
 		<-done
 		<-reconcileDone
+		for _, finished := range supplyChainDone {
+			<-finished
+		}
 		pool.Close()
 	}, nil
+}
+
+// startSupplyChain runs the inventory scheduler and collection workers inside
+// the server process. They share nothing with the indexer, so inventory work
+// can neither block nor be blocked by lexical indexing (ADR-0017).
+func startSupplyChain(ctx context.Context, settings config.SupplyChain, store *postgres.Store, client *githubapp.Client, metrics *observability.Metrics, logger *slog.Logger) []<-chan struct{} {
+	var done []<-chan struct{}
+	scheduler := &supplychain.Scheduler{Store: store, Interval: settings.Interval}
+	schedulerDone := make(chan struct{})
+	done = append(done, schedulerDone)
+	go func() {
+		defer close(schedulerDone)
+		tick := func() {
+			if _, err := scheduler.Tick(ctx); err != nil && ctx.Err() == nil {
+				logger.Error("supply chain scheduling failed", "error", err)
+			}
+		}
+		tick()
+		ticker := time.NewTicker(reconcileInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				tick()
+			}
+		}
+	}()
+	hostname, _ := os.Hostname()
+	for worker := range settings.Workers {
+		collector := &supplychain.Collector{
+			Store: store, GitHub: client, Owner: fmt.Sprintf("%s-%d-%d", hostname, os.Getpid(), worker), MaxDocumentBytes: settings.MaxDocumentBytes,
+			Limits: supplychain.Limits{MaxComponents: settings.MaxComponents}, Logger: logger, Observer: metrics,
+		}
+		workerDone := make(chan struct{})
+		done = append(done, workerDone)
+		go func() {
+			defer close(workerDone)
+			if err := collector.Run(ctx); err != nil && ctx.Err() == nil {
+				logger.Error("supply chain worker stopped", "error", err)
+			}
+		}()
+	}
+	return done
 }
 
 func durableAuthenticator(store authn.APITokenStore) authn.Authenticator {
@@ -470,7 +528,7 @@ func durableAuthenticator(store authn.APITokenStore) authn.Authenticator {
 	return manager
 }
 
-func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scipGraph *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker, providers []sso.Provider, sessions *authn.SessionManager, provisioning *authn.ProvisioningAuthenticator, scimService *scim.Service, mcpOAuth *oauthas.Server) http.Handler {
+func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scipGraph *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker, providers []sso.Provider, sessions *authn.SessionManager, provisioning *authn.ProvisioningAuthenticator, scimService *scim.Service, mcpOAuth *oauthas.Server, extras ...func(*http.ServeMux)) http.Handler {
 	mux := http.NewServeMux()
 	var challenge httpapi.BearerChallenge
 	mcpBearer := authenticator.Bearer
@@ -506,6 +564,11 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 	}
 	if adminService != nil {
 		httpapi.RegisterAdmin(mux, authenticator, adminService, settings.Limits.MaxResults, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
+	}
+	// extras register optional modules (supply-chain inventory) without
+	// widening the positional signature every test site shares.
+	for _, register := range extras {
+		register(mux)
 	}
 	if processor != nil {
 		httpapi.RegisterGitHubWebhook(mux, webhookSecret, 1<<20, processor)

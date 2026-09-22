@@ -12,51 +12,17 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// ErrSupplyChainFenced reports that a publication or completion lost its
-// lease: another worker holds a newer lease on the job, or the job was
-// cancelled. Nothing was written.
-var ErrSupplyChainFenced = errors.New("supply chain job lease lost")
+// ErrSupplyChainFenced is supplychain.ErrFenced: a publication or completion
+// lost its lease and nothing was written.
+var ErrSupplyChainFenced = supplychain.ErrFenced
 
 const supplyChainLease = 2 * time.Minute
 
-// SupplyChainPublication is the atomic input of a successful collection: the
-// original document bytes, the normalized content, and the attempt metadata.
-type SupplyChainPublication struct {
-	RepositoryID     int64
-	JobID            *int64
-	JobOwner         string
-	JobFence         int64
-	Producer         supplychain.Producer
-	Subject          supplychain.Subject
-	StreamKey        string
-	Format           supplychain.Format
-	MediaType        string
-	Document         []byte
-	Normalized       supplychain.Normalized
-	CollectedAt      time.Time
-	StartedAt        time.Time
-	HTTPStatus       *int
-	SubjectRevision  string
-	SubjectAssurance supplychain.Assurance
-}
-
-// SupplyChainFailure records an attempt that produced no new snapshot.
-type SupplyChainFailure struct {
-	RepositoryID      int64
-	JobID             *int64
-	JobOwner          string
-	JobFence          int64
-	Producer          supplychain.Producer
-	Subject           supplychain.Subject
-	StreamKey         string
-	StartedAt         time.Time
-	FinishedAt        time.Time
-	Outcome           supplychain.Outcome
-	HTTPStatus        *int
-	RetryAfterSeconds *int
-	ErrorCode         string
-	Message           string
-}
+// SupplyChainPublication and SupplyChainFailure are the supplychain types.
+type (
+	SupplyChainPublication = supplychain.Publication
+	SupplyChainFailure     = supplychain.Failure
+)
 
 // EnqueueSupplyChainJob queues one refresh for a repository stream. A queued
 // job already covering the stream is returned unchanged (created=false); a
@@ -120,7 +86,7 @@ func (s *Store) ClaimSupplyChainJob(ctx context.Context, owner string) (supplych
 			lease_expires_at=now()+$2::interval, updated_at=now()
 		where id=(select id from next) returning `+supplyChainJobColumns, owner, supplyChainLease).Scan(supplyChainJobFields(&job)...)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return supplychain.Job{}, ErrNoJob
+		return supplychain.Job{}, supplychain.ErrNoJob
 	}
 	if err != nil {
 		return supplychain.Job{}, err

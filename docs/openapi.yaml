@@ -633,6 +633,116 @@ paths:
         '415': {$ref: '#/components/responses/InvalidRequest'}
         '500': {description: Response exceeded the configured byte limit}
         '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/repositories/{id}:
+    get:
+      description: Dependencies & Licenses inventory status for one authorized repository stream. Available only when GRAPHNEST_SUPPLY_CHAIN=true. Collection, freshness, parsing coverage, and enrichment are independent states; a retained older inventory behind a failed refresh is reported as collection=failed with latest_snapshot still present. GitHub dependency-graph exports are timestamped observations, never bound to a commit (subject_assurance=unknown).
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, description: GitHub repository ID, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: stream, in: query, required: false, description: 'Stream key; only github:source is served in this milestone', schema: {type: string, enum: ['github:source']}}
+      responses:
+        '200': {description: Repository inventory status, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainRepositoryStatus'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/repositories/{id}/components:
+    get:
+      description: Server-paginated component occurrences of the latest (or a specific authorized) snapshot, in document order. Scope is derived only from resolved DEPENDS_ON edges leaving a described root; without roots every scope is unknown.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: snapshot_id, in: query, required: false, description: A specific snapshot of this repository (defaults to the stream's latest), schema: {type: integer, format: int64, minimum: 1}}
+        - {name: cursor, in: query, required: false, description: next_cursor from a previous truncated response (bound to the snapshot and search term), schema: {type: string, minLength: 1}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100}}
+        - {name: q, in: query, required: false, description: Case-insensitive substring of the component name or purl, schema: {type: string, maxLength: 200}}
+      responses:
+        '200': {description: Component page, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainComponentList'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/repositories/{id}/snapshots:
+    get:
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200': {description: Snapshot history, newest first, content: {application/json: {schema: {type: object, additionalProperties: false, required: [snapshots], properties: {snapshots: {type: array, items: {$ref: '#/components/schemas/SupplyChainSnapshot'}}}}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/repositories/{id}/collections:
+    get:
+      description: Collection attempts (successes and failures), newest first.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: cursor, in: query, required: false, schema: {type: string, minLength: 1}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200': {description: Collection attempts, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainCollectionList'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/repositories/{id}/refresh:
+    post:
+      description: Enqueue a bounded background refresh of the GitHub source stream. Collection never runs inside the request. Administrator access is the bootstrap write permission. An already-queued job is returned with created=false.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+      responses:
+        '202': {description: Refresh job queued or already queued, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainRefreshResponse'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/snapshots/{snapshot_id}/document:
+    get:
+      description: Download the original document bytes of a snapshot exactly as the producer sent them (for GitHub, the SPDX JSON member). Authorization is re-evaluated at retrieval time against the live principal's repository scope; an unauthorized snapshot is indistinguishable from a missing one.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: snapshot_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200':
+          description: Original document with Content-Disposition attachment, X-Content-SHA256 (hex), and X-GraphNest-Snapshot-ID headers
+          content: {application/json: {schema: {type: object}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/jobs/{id}:
+    get:
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Refresh job status for an authorized repository, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainJob'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
   /v1/auth/config:
     get:
       responses:
@@ -818,6 +928,7 @@ components:
     BackendError: {description: Search backend failed, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     Unavailable: {description: Service unavailable, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     Timeout: {description: Search timed out, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+    SupplyChainNotFound: {description: 'Repository not authorized (not_found) or no inventory collected yet (no_inventory)', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
   schemas:
     APIToken:
       type: object
@@ -2011,6 +2122,152 @@ components:
         branch: {type: string}
         indexed_sha: {type: string}
         web_url: {type: string}
+    SupplyChainRepositoryStatus:
+      type: object
+      additionalProperties: false
+      required: [repository_id, repository, stream, producer, subject, collection, freshness_seconds, latest_snapshot, last_collection, active_job, enrichment, opt_out, notes, documents]
+      properties:
+        repository_id: {type: integer, format: int64}
+        repository: {type: string}
+        stream: {type: string}
+        producer: {type: string, enum: [github, import]}
+        subject: {type: string, enum: [source, artifact]}
+        collection: {type: string, enum: [never, current, stale, failed], description: State of collection for the stream. stale means the latest successful observation is older than twice the configured interval; failed means the last attempt did not succeed, whether or not an older snapshot is retained.}
+        freshness_seconds: {oneOf: [{type: integer}, {type: 'null'}], description: Age of the latest successful observation}
+        latest_snapshot: {oneOf: [{$ref: '#/components/schemas/SupplyChainSnapshot'}, {type: 'null'}]}
+        last_collection: {oneOf: [{$ref: '#/components/schemas/SupplyChainCollection'}, {type: 'null'}]}
+        active_job: {oneOf: [{$ref: '#/components/schemas/SupplyChainJob'}, {type: 'null'}]}
+        enrichment: {type: string, enum: [not_configured], description: License enrichment state; a later milestone adds resolver states}
+        opt_out: {type: boolean}
+        notes: {type: array, items: {type: string}}
+        documents: {type: array, items: {$ref: '#/components/schemas/SupplyChainDocumentRef'}}
+    SupplyChainDocumentRef:
+      type: object
+      additionalProperties: false
+      required: [snapshot_id, sha256, format, bytes, path]
+      properties:
+        snapshot_id: {type: integer, format: int64}
+        sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        format: {type: string, enum: [spdx-2.3-json, cyclonedx-1.6-json]}
+        bytes: {type: integer, format: int64, minimum: 0}
+        path: {type: string}
+    SupplyChainSnapshot:
+      type: object
+      additionalProperties: false
+      required: [id, repository_id, stream, producer, subject, collected_at, created_at_claimed, producer_tool, document_name, document_namespace, spdx_version, data_license, subject_assurance, root_element_ids, parser_version, component_count, edge_count, warning_count, warnings, published_at, document_sha256, document_format, document_bytes]
+      properties:
+        id: {type: integer, format: int64}
+        repository_id: {type: integer, format: int64, description: Internal repository row ID, not the GitHub ID}
+        stream: {type: string}
+        producer: {type: string, enum: [github, import]}
+        subject: {type: string, enum: [source, artifact]}
+        collected_at: {type: string, format: date-time, description: GraphNest's fetch time}
+        created_at_claimed: {oneOf: [{type: string, format: date-time}, {type: 'null'}], description: The producer's own creationInfo.created, displayed as a claim}
+        producer_tool: {type: string}
+        document_name: {type: string}
+        document_namespace: {type: string}
+        spdx_version: {type: string}
+        data_license: {type: string, description: License of the document itself, not of its components}
+        subject_revision: {type: string, pattern: '^[0-9a-f]{40}$'}
+        subject_assurance: {type: string, enum: [unknown, producer_asserted, verified]}
+        root_element_ids: {type: array, items: {type: string}}
+        parser_version: {type: integer, minimum: 1}
+        component_count: {type: integer, minimum: 0}
+        edge_count: {type: integer, minimum: 0}
+        warning_count: {type: integer, minimum: 0}
+        warnings: {type: array, items: {$ref: '#/components/schemas/SupplyChainWarning'}}
+        published_at: {type: string, format: date-time}
+        document_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        document_format: {type: string, enum: [spdx-2.3-json, cyclonedx-1.6-json]}
+        document_bytes: {type: integer, format: int64, minimum: 0}
+    SupplyChainWarning:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code: {type: string}
+        element: {type: string}
+        detail: {type: string}
+    SupplyChainComponent:
+      type: object
+      additionalProperties: false
+      required: [element_id, ordinal, name, version, purl, license_declared_raw, license_concluded_raw, is_root, scope]
+      properties:
+        element_id: {type: string, description: Document-scoped identifier (SPDXID or bom-ref)}
+        ordinal: {type: integer, minimum: 0}
+        name: {type: string}
+        version: {oneOf: [{type: string}, {type: 'null'}]}
+        purl: {oneOf: [{type: string}, {type: 'null'}]}
+        ecosystem: {type: string, description: Lowercase purl type}
+        namespace: {type: string}
+        package_name: {type: string}
+        qualifiers: {type: object, additionalProperties: {type: string}}
+        license_declared_raw: {oneOf: [{type: string}, {type: 'null'}], description: Verbatim producer value; NOASSERTION/NONE are preserved, never mapped}
+        license_concluded_raw: {oneOf: [{type: string}, {type: 'null'}]}
+        download_location: {type: string}
+        supplier: {type: string}
+        checksums: {type: array, items: {type: object, additionalProperties: false, required: [algorithm, value], properties: {algorithm: {type: string}, value: {type: string}}}}
+        is_root: {type: boolean}
+        scope: {type: string, enum: [root, direct, transitive, unknown]}
+    SupplyChainComponentList:
+      type: object
+      additionalProperties: false
+      required: [snapshot_id, components, truncated]
+      properties:
+        snapshot_id: {type: integer, format: int64}
+        components: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/SupplyChainComponent'}}
+        truncated: {type: boolean}
+        next_cursor: {type: string, minLength: 1}
+    SupplyChainCollection:
+      type: object
+      additionalProperties: false
+      required: [id, job_id, producer, stream, started_at, finished_at, outcome, http_status, snapshot_id]
+      properties:
+        id: {type: integer, format: int64}
+        job_id: {oneOf: [{type: integer, format: int64}, {type: 'null'}]}
+        producer: {type: string, enum: [github, import]}
+        stream: {type: string}
+        started_at: {type: string, format: date-time}
+        finished_at: {type: string, format: date-time}
+        outcome: {type: string, enum: [published, unchanged, unavailable, forbidden, rate_limited, not_found, malformed, too_large, transient, cancelled, error]}
+        http_status: {oneOf: [{type: integer}, {type: 'null'}]}
+        retry_after_seconds: {type: integer, minimum: 0}
+        snapshot_id: {oneOf: [{type: integer, format: int64}, {type: 'null'}]}
+        error_code: {type: string}
+        message: {type: string, description: Operator-safe explanation; never echoes GitHub response bodies}
+        projection_error: {type: string, description: Set when the snapshot published but the SCIP package-mapping projection failed}
+    SupplyChainCollectionList:
+      type: object
+      additionalProperties: false
+      required: [collections, truncated]
+      properties:
+        collections: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/SupplyChainCollection'}}
+        truncated: {type: boolean}
+        next_cursor: {type: string, minLength: 1}
+    SupplyChainJob:
+      type: object
+      additionalProperties: false
+      required: [id, repository_id, stream, reason, state, attempt, max_attempts, run_after, created_at, updated_at]
+      properties:
+        id: {type: integer, format: int64}
+        repository_id: {type: integer, format: int64, description: GitHub repository ID}
+        stream: {type: string}
+        reason: {type: string, enum: [scheduled, manual, webhook]}
+        state: {type: string, enum: [queued, running, succeeded, failed, cancelled, superseded]}
+        attempt: {type: integer, minimum: 0}
+        max_attempts: {type: integer, minimum: 1}
+        run_after: {type: string, format: date-time}
+        error_code: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        lease_expires_at: {type: string, format: date-time}
+    SupplyChainRefreshResponse:
+      type: object
+      additionalProperties: false
+      required: [job, created]
+      properties:
+        job: {$ref: '#/components/schemas/SupplyChainJob'}
+        created: {type: boolean}
     ErrorResponse:
       type: object
       additionalProperties: false
