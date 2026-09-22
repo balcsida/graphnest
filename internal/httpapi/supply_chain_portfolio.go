@@ -13,7 +13,18 @@ import (
 // RegisterSupplyChainPortfolio mounts the cross-repository inventory routes.
 // Authorization scope is resolved from the live principal on every request
 // before any aggregate is computed.
-func RegisterSupplyChainPortfolio(mux *http.ServeMux, authenticator authn.RequestAuthenticator, portfolio *supplychain.Portfolio, maxResults int, maxResponseBytes int64) {
+// DerivedExport is the optional derived SPDX exporter mounted next to the CSV
+// export under /v1/supply-chain/exports/{id}/derived.spdx.json.
+type DerivedExport struct {
+	Service      *supplychain.Service
+	PublicOrigin string
+}
+
+func RegisterSupplyChainPortfolio(mux *http.ServeMux, authenticator authn.RequestAuthenticator, portfolio *supplychain.Portfolio, maxResults int, maxResponseBytes int64, derived ...*DerivedExport) {
+	var spdxExport *DerivedExport
+	if len(derived) > 0 {
+		spdxExport = derived[0]
+	}
 	authenticated := func(method string, handle func(http.ResponseWriter, *http.Request)) http.Handler {
 		return exactMethod(method, AuthenticateRequest(authenticator, http.HandlerFunc(handle)))
 	}
@@ -91,13 +102,21 @@ func RegisterSupplyChainPortfolio(mux *http.ServeMux, authenticator authn.Reques
 		githubID, err := strconv.ParseInt(id, 10, 64)
 		query := request.URL.Query()
 		var snapshotID int64
-		ok := err == nil && githubID > 0 && suffix == "components.csv" && supplychain.ValidStream(query.Get("stream"))
+		ok := err == nil && githubID > 0 && (suffix == "components.csv" || suffix == "derived.spdx.json") && supplychain.ValidStream(query.Get("stream"))
 		if value := query.Get("snapshot_id"); value != "" && ok {
 			snapshotID, err = strconv.ParseInt(value, 10, 64)
 			ok = err == nil && snapshotID > 0
 		}
 		if !ok {
 			writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
+			return
+		}
+		if suffix == "derived.spdx.json" {
+			if spdxExport == nil || spdxExport.Service == nil {
+				writeError(writer, http.StatusNotFound, "not_found", "route not found", false)
+				return
+			}
+			serveDerivedSPDX(writer, request, spdxExport.Service, spdxExport.PublicOrigin, githubID, snapshotID, query.Get("stream"), maxResponseBytes)
 			return
 		}
 		var buffer bytes.Buffer
@@ -151,4 +170,30 @@ func repositoryIDsFrom(values []string) ([]int64, bool) {
 		ids = append(ids, id)
 	}
 	return ids, true
+}
+
+// serveDerivedSPDX writes the derived SPDX export for one authorized snapshot.
+func serveDerivedSPDX(writer http.ResponseWriter, request *http.Request, service *supplychain.Service, publicOrigin string, githubID, snapshotID int64, stream string, maxResponseBytes int64) {
+	origin := publicOrigin
+	if origin == "" {
+		origin = "https://graphnest.invalid"
+	}
+	document, snapshot, err := service.ExportSPDX(request.Context(), PrincipalFromContext(request.Context()), githubID, stream, snapshotID, origin)
+	if err != nil {
+		writeSupplyChainError(writer, err)
+		return
+	}
+	if int64(len(document)) > maxResponseBytes*64 {
+		writeError(writer, http.StatusRequestEntityTooLarge, "too_large", "export exceeds the response limit", false)
+		return
+	}
+	writer.Header().Set("Content-Type", "application/spdx+json")
+	writer.Header().Set("X-Content-Type-Options", "nosniff")
+	writer.Header().Set("Cache-Control", "private, no-store")
+	writer.Header().Set("Content-Disposition", `attachment; filename="graphnest-derived-repo`+strconv.FormatInt(snapshot.RepositoryID, 10)+`-snapshot`+strconv.FormatInt(snapshot.ID, 10)+`.spdx.json"`)
+	writer.Header().Set("X-GraphNest-Snapshot-ID", strconv.FormatInt(snapshot.ID, 10))
+	writer.Header().Set("X-GraphNest-Derived", "true")
+	writer.Header().Set("Content-Length", strconv.Itoa(len(document)))
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(document)
 }

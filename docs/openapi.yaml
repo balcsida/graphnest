@@ -639,7 +639,7 @@ paths:
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: id, in: path, required: true, description: GitHub repository ID, schema: {type: integer, format: int64, minimum: 1}}
-        - {name: stream, in: query, required: false, description: 'Stream key; only github:source is served in this milestone', schema: {type: string, enum: ['github:source']}}
+        - {name: stream, in: query, required: false, description: 'Stream key: github:source (default) or import:<subject>:<label>', schema: {type: string}}
       responses:
         '200': {description: Repository inventory status, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainRepositoryStatus'}}}}
         '400': {$ref: '#/components/responses/InvalidRequest'}
@@ -654,7 +654,7 @@ paths:
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
-        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
         - {name: snapshot_id, in: query, required: false, description: A specific snapshot of this repository (defaults to the stream's latest), schema: {type: integer, format: int64, minimum: 1}}
         - {name: cursor, in: query, required: false, description: next_cursor from a previous truncated response (bound to the snapshot and search term), schema: {type: string, minLength: 1}}
         - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100}}
@@ -674,7 +674,7 @@ paths:
       parameters:
         - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
         - {name: element, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 512}}
-        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
         - {name: snapshot_id, in: query, required: false, schema: {type: integer, format: int64, minimum: 1}}
       responses:
         '200': {description: Component evidence detail, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainComponentDetail'}}}}
@@ -689,7 +689,7 @@ paths:
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
-        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
         - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100}}
       responses:
         '200': {description: Snapshot history, newest first, content: {application/json: {schema: {type: object, additionalProperties: false, required: [snapshots], properties: {snapshots: {type: array, items: {$ref: '#/components/schemas/SupplyChainSnapshot'}}}}}}}
@@ -705,7 +705,7 @@ paths:
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
-        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
         - {name: cursor, in: query, required: false, schema: {type: string, minLength: 1}}
         - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100}}
       responses:
@@ -722,7 +722,7 @@ paths:
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
-        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
       responses:
         '202': {description: Refresh job queued or already queued, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainRefreshResponse'}}}}
         '400': {$ref: '#/components/responses/InvalidRequest'}
@@ -765,7 +765,7 @@ paths:
       description: Portfolio summary across the caller's authorized repositories for one stream. Every count names its denominator in `denominators`; assessments describe evidence, never compliance. Requested repository_id values outside the caller's scope are silently dropped.
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
-        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
         - {name: repository_id, in: query, required: false, description: Repeatable GitHub repository IDs to narrow the scope (at most 200), schema: {type: integer, format: int64, minimum: 1}}
       responses:
         '200': {description: Portfolio overview, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainOverview'}}}}
@@ -779,7 +779,7 @@ paths:
       description: Bounded filter facets (ecosystems, assessment statuses, normalized license expressions) computed inside the caller's scope.
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
-        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
         - {name: repository_id, in: query, required: false, schema: {type: integer, format: int64, minimum: 1}}
       responses:
         '200': {description: Facets, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainFacets'}}}}
@@ -793,7 +793,7 @@ paths:
       description: Unique coordinates (ecosystem, namespace, name, version) across the latest snapshots of the caller's authorized repositories, with repository and occurrence counts, keyset-paginated in stable key order. The cursor is bound to the filter set. Filters never reveal repositories outside the scope.
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
-        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
         - {name: repository_id, in: query, required: false, schema: {type: integer, format: int64, minimum: 1}}
         - {name: ecosystem, in: query, required: false, schema: {type: string, maxLength: 64}}
         - {name: q, in: query, required: false, description: Case-insensitive substring of name or purl, schema: {type: string, maxLength: 200}}
@@ -814,7 +814,7 @@ paths:
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: key, in: path, required: true, description: Component key from the component list, schema: {type: string, minLength: 1, maxLength: 4096}}
-        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
         - {name: repository_id, in: query, required: false, schema: {type: integer, format: int64, minimum: 1}}
       responses:
         '200': {description: Coordinate detail, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainPortfolioComponentDetail'}}}}
@@ -830,7 +830,7 @@ paths:
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
-        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
         - {name: snapshot_id, in: query, required: false, schema: {type: integer, format: int64, minimum: 1}}
       responses:
         '200': {description: CSV attachment with X-GraphNest-Snapshot-ID, content: {text/csv: {schema: {type: string}}}}
@@ -855,6 +855,64 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '405': {$ref: '#/components/responses/InvalidRequest'}
         '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/imports:
+    post:
+      description: Import an SBOM produced elsewhere into a declared stream (import:<subject>:<label>) of an authorized repository. Accepts SPDX 2.3 JSON and CycloneDX 1.6 JSON only; the format is detected from the document, and a Content-Type that contradicts it is rejected. The original bytes are preserved and downloadable unchanged. The authenticated uploader is recorded separately from the producer the document claims; an optional subject_revision is recorded as producer_asserted, never verified. Identical bytes into the same stream return the earlier result (repeated=true). Administrators may import anywhere; other principals need a repository-scoped upload grant. Per-repository quotas apply to accepted and rejected attempts. External URLs inside documents are never dereferenced.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: repository_id, in: query, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: subject, in: query, required: true, schema: {type: string, enum: [source, artifact]}}
+        - {name: label, in: query, required: true, description: Stream label such as ort or syft-image, schema: {type: string, pattern: '^[a-z0-9][a-z0-9._-]{0,63}$'}}
+        - {name: subject_revision, in: query, required: false, schema: {type: string, pattern: '^[0-9a-f]{40}$'}}
+      requestBody:
+        required: true
+        content:
+          application/spdx+json: {schema: {type: object}}
+          application/vnd.cyclonedx+json: {schema: {type: object}}
+          application/json: {schema: {type: object}}
+      responses:
+        '201': {description: Import accepted (published, or unchanged when the stream already serves this document), content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainImportResponse'}}}}
+        '400': {description: Invalid parameters or a document that could not be parsed (malformed_document), content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {description: No upload grant for this repository, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '413': {description: Document exceeds the configured size or component limits, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '415': {description: Unsupported media type, format, or schema version (unsupported_format), content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '429': {description: Import quota exhausted for this repository (quota_exceeded), content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/upload-grants:
+    put:
+      description: Administrator-only. Grant or revoke a principal's (by subject) permission to import into one repository. Grants never widen read access.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false, required: [repository_id, subject, allow], properties: {repository_id: {type: integer, format: int64, minimum: 1}, subject: {type: string, minLength: 1, maxLength: 256}, allow: {type: boolean}}}}}}
+      responses:
+        '204': {description: Grant updated}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/exports/{id}/derived.spdx.json:
+    get:
+      description: Derived SPDX 2.3 JSON document for one authorized snapshot with GraphNest as creator. It links the preserved original by URL and SHA-256 (externalDocumentRefs) and carries GraphNest assessments only as licenseComments; licenseConcluded is always NOASSERTION and licenseDeclared holds only values that are valid SPDX expressions or sentinels. Review decisions are not part of the document. The original download is never altered.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: stream, in: query, required: false, schema: {type: string}}
+        - {name: snapshot_id, in: query, required: false, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Derived SPDX document (attachment) with X-GraphNest-Derived and X-GraphNest-Snapshot-ID, content: {application/spdx+json: {schema: {type: object}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '413': {description: Export exceeds the response limit}
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/auth/config:
     get:
@@ -2238,7 +2296,7 @@ components:
     SupplyChainRepositoryStatus:
       type: object
       additionalProperties: false
-      required: [repository_id, repository, stream, producer, subject, collection, freshness_seconds, latest_snapshot, last_collection, active_job, enrichment, enrichment_ecosystems, license_summary, opt_out, notes, documents]
+      required: [repository_id, repository, stream, producer, subject, collection, freshness_seconds, latest_snapshot, last_collection, active_job, enrichment, enrichment_ecosystems, license_summary, opt_out, notes, documents, streams]
       properties:
         repository_id: {type: integer, format: int64}
         repository: {type: string}
@@ -2256,6 +2314,7 @@ components:
         opt_out: {type: boolean}
         notes: {type: array, items: {type: string}}
         documents: {type: array, items: {$ref: '#/components/schemas/SupplyChainDocumentRef'}}
+        streams: {type: array, items: {$ref: '#/components/schemas/SupplyChainStreamRef'}, description: Every stream known for the repository (GitHub observation and imports)}
     SupplyChainDocumentRef:
       type: object
       additionalProperties: false
@@ -2295,6 +2354,8 @@ components:
         document_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
         document_format: {type: string, enum: [spdx-2.3-json, cyclonedx-1.6-json]}
         document_bytes: {type: integer, format: int64, minimum: 0}
+        uploaded_by: {type: string, description: Authenticated uploader of an imported document, distinct from the producer the document claims}
+        upload_label: {type: string}
     SupplyChainWarning:
       type: object
       additionalProperties: false
@@ -2513,6 +2574,33 @@ components:
         edges_removed: {type: integer, minimum: 0}
         metadata_changes: {type: array, items: {type: string}}
         notes: {type: array, items: {type: string}}
+    SupplyChainImportResponse:
+      type: object
+      additionalProperties: false
+      required: [import_id, outcome, repeated, snapshot_id, stream, format, component_count, edge_count, warning_count, warnings, notes]
+      properties:
+        import_id: {type: integer, format: int64}
+        outcome: {type: string, enum: [published, unchanged]}
+        repeated: {type: boolean, description: True when identical bytes were already imported into this stream}
+        snapshot_id: {oneOf: [{type: integer, format: int64}, {type: 'null'}]}
+        stream: {type: string}
+        format: {type: string, enum: [spdx-2.3-json, cyclonedx-1.6-json]}
+        component_count: {type: integer, minimum: 0}
+        edge_count: {type: integer, minimum: 0}
+        warning_count: {type: integer, minimum: 0}
+        warnings: {type: array, items: {$ref: '#/components/schemas/SupplyChainWarning'}}
+        subject_assurance: {type: string, enum: [unknown, producer_asserted, verified]}
+        notes: {type: array, items: {type: string}}
+    SupplyChainStreamRef:
+      type: object
+      additionalProperties: false
+      required: [key, producer, subject, has_inventory]
+      properties:
+        key: {type: string}
+        producer: {type: string, enum: [github, import]}
+        subject: {type: string, enum: [source, artifact]}
+        has_inventory: {type: boolean}
+        last_outcome: {type: string}
     SupplyChainComponentList:
       type: object
       additionalProperties: false

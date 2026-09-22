@@ -215,3 +215,21 @@ func ListVersion() string { return spdxexpr.ListVersion }
 var Now = time.Now
 
 func now() time.Time { return Now().UTC() }
+
+// ParseForExport returns the canonical SPDX rendering of a raw value that a
+// derived SPDX document may carry in licenseDeclared: a parsed expression
+// (known or LicenseRef terms), or the NOASSERTION/NONE sentinels. Anything
+// else (unknown identifiers, free text, UNLICENSED, files, URLs) returns ""
+// so callers describe it in comments instead of asserting it.
+func ParseForExport(raw string) string {
+	parsed := spdxexpr.Parse(raw)
+	switch parsed.Status {
+	case spdxexpr.StatusParsed:
+		return parsed.Normalized
+	case spdxexpr.StatusNoAssertion:
+		return "NOASSERTION"
+	case spdxexpr.StatusNone:
+		return "NONE"
+	}
+	return ""
+}

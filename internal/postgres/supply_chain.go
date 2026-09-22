@@ -222,11 +222,11 @@ func insertSupplyChainSnapshot(ctx context.Context, tx pgx.Tx, publication Suppl
 	var snapshotID int64
 	if err := tx.QueryRow(ctx, `insert into supply_chain_snapshots (repository_id, document_id, producer, subject, stream_key, collected_at, created_at_claimed,
 			producer_tool, document_namespace, document_name, spdx_version, data_license, subject_revision, subject_assurance, root_element_ids,
-			parser_version, component_count, edge_count, warning_count, warnings)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) returning id`,
+			parser_version, component_count, edge_count, warning_count, warnings, uploaded_by, upload_label)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22) returning id`,
 		publication.RepositoryID, documentID, string(publication.Producer), string(publication.Subject), publication.StreamKey, publication.CollectedAt.UTC(), normalized.CreatedAtClaimed,
 		normalized.ProducerTool, normalized.DocumentNamespace, normalized.DocumentName, normalized.SPDXVersion, normalized.DataLicense, revision, string(assurance), roots,
-		supplychain.ParserVersion, len(normalized.Components), len(normalized.Relationships), normalized.WarningCount, warnings).Scan(&snapshotID); err != nil {
+		supplychain.ParserVersion, len(normalized.Components), len(normalized.Relationships), normalized.WarningCount, warnings, publication.UploadedBy, publication.UploadLabel).Scan(&snapshotID); err != nil {
 		return 0, err
 	}
 	if _, err := tx.CopyFrom(ctx, pgx.Identifier{"supply_chain_components"},
@@ -396,7 +396,8 @@ func (s *Store) SupplyChainStream(ctx context.Context, repositoryID int64, strea
 
 const supplyChainSnapshotColumns = `snap.id, snap.repository_id, snap.document_id, snap.producer, snap.subject, snap.stream_key, snap.collected_at, snap.created_at_claimed,
 	snap.producer_tool, snap.document_namespace, snap.document_name, snap.spdx_version, snap.data_license, coalesce(snap.subject_revision, ''), snap.subject_assurance,
-	snap.root_element_ids, snap.parser_version, snap.component_count, snap.edge_count, snap.warning_count, snap.warnings, snap.published_at, doc.sha256, doc.format, doc.byte_size`
+	snap.root_element_ids, snap.parser_version, snap.component_count, snap.edge_count, snap.warning_count, snap.warnings, snap.published_at, doc.sha256, doc.format, doc.byte_size,
+	snap.uploaded_by, snap.upload_label`
 
 func scanSupplyChainSnapshot(row interface{ Scan(...any) error }) (supplychain.Snapshot, error) {
 	var snapshot supplychain.Snapshot
@@ -405,7 +406,7 @@ func scanSupplyChainSnapshot(row interface{ Scan(...any) error }) (supplychain.S
 	err := row.Scan(&snapshot.ID, &snapshot.RepositoryID, &snapshot.DocumentID, &producer, &subject, &snapshot.StreamKey, &snapshot.CollectedAt, &snapshot.CreatedAtClaimed,
 		&snapshot.ProducerTool, &snapshot.DocumentNamespace, &snapshot.DocumentName, &snapshot.SPDXVersion, &snapshot.DataLicense, &snapshot.SubjectRevision, &assurance,
 		&snapshot.RootElementIDs, &snapshot.ParserVersion, &snapshot.ComponentCount, &snapshot.EdgeCount, &snapshot.WarningCount, &warnings, &snapshot.PublishedAt,
-		&snapshot.DocumentSHA256, &format, &snapshot.DocumentBytes)
+		&snapshot.DocumentSHA256, &format, &snapshot.DocumentBytes, &snapshot.UploadedBy, &snapshot.UploadLabel)
 	if err != nil {
 		return supplychain.Snapshot{}, err
 	}
