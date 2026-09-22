@@ -21,6 +21,7 @@ secrets:
   scim: {name: graphnest-scim, tokenKey: token}
 server:
   scim: {enabled: true}
+  supplyChain: {enabled: true, interval: 12h, workers: 2, maxDocumentBytes: 33554432, maxComponents: 60000}
   sso:
     publicURL: https://graphnest.example.invalid
     oidc: {enabled: true, issuerURL: https://id.example.invalid, clientID: graphnest, scopes: [openid, profile, email], linkClaim: sub, displayNameClaim: name}

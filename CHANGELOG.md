@@ -3,6 +3,22 @@
 Notable changes are recorded here. GraphNest is pre-1.0 pilot software; review
 the compatibility and migration notes before upgrading.
 
+## [Unreleased]
+
+### Added
+
+- Opt-in Dependencies & Licenses inventory (`GRAPHNEST_SUPPLY_CHAIN=true`,
+  durable mode only). `graphnest-server` collects each managed repository's
+  GitHub dependency-graph SBOM export on a jittered schedule, preserves the
+  original SPDX 2.3 JSON byte-for-byte with its SHA-256, publishes an immutable
+  snapshot of component occurrences and relationships in one fenced
+  transaction, and serves it under `/v1/supply-chain/...` and the embedded
+  `/supply-chain` page. Failed refreshes are recorded and never remove the last
+  successful inventory; a GitHub export is reported as an unbound observation
+  (`subject_assurance: unknown`) and license fields are preserved verbatim.
+  Migration 033 adds the `supply_chain_*` tables; with the module disabled
+  nothing else changes. See ADR-0017 and `docs/execplans/supply-chain.md`.
+
 ## [0.5.0] - 2026-09-18
 
 This release adds repository-scoped graph discovery and exploration, introduces
@@ -224,6 +240,7 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
+[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.5.0...HEAD
 [0.5.0]: https://github.com/balcsida/graphnest/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/balcsida/graphnest/compare/v0.4.1...v0.4.3
 [0.4.2]: https://github.com/balcsida/graphnest/compare/v0.4.1...v0.4.2

@@ -91,3 +91,24 @@ into a native scanner. PostgreSQL remains internal-only behind GraphNest's
 authenticated REST and MCP services. See
 [ADR-0014](adr/0014-postgresql-graph-queries.md) for the current query-store
 decision. The ADR index records the superseded topology.
+
+## Dependencies & Licenses inventory
+
+When `GRAPHNEST_SUPPLY_CHAIN=true`, `graphnest-server` also runs a jittered
+scheduler and leased collection workers that fetch each managed repository's
+GitHub dependency-graph SBOM export, preserve the SPDX JSON member byte-for-byte
+with its SHA-256, and publish an immutable snapshot of component occurrences
+and relationships in one fenced transaction. Failed refreshes record a
+collection attempt and never move the stream's latest snapshot. Inventory
+eligibility is repository authorization alone: it does not depend on Zoekt, an
+indexed SHA, SCIP, or graph enrichment, and it shares nothing with the indexer.
+
+`/v1/supply-chain/...` and the embedded `/supply-chain` page read through one
+service that resolves the live principal's repository scope before touching
+inventory rows; snapshots and jobs outside that scope are indistinguishable
+from missing ones, and original-document downloads are re-authorized at
+retrieval time. A published snapshot is projected into the existing
+GitHub-sourced `repository_packages` rows so SCIP cross-repository navigation
+keeps working; manual mappings are untouched and the projection is never read
+back as inventory. See [ADR-0017](adr/0017-supply-chain-inventory.md) and the
+[execution plan](execplans/supply-chain.md).

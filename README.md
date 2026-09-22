@@ -28,6 +28,7 @@ Under the hood, GraphNest combines fast [Zoekt](https://github.com/sourcegraph/z
 | **Exact indexed revisions** | Open files at the precise indexed commit. Search results are suppressed when Zoekt and PostgreSQL disagree about the current indexed SHA. |
 | **Cross-repository code navigation** | Upload pre-generated SCIP indexes to navigate definitions, references, and implementations without running language indexers inside GraphNest. |
 | **Relationship-aware graph analysis** | Explore bounded context, impact, and dependency paths directly from PostgreSQL. |
+| **Dependencies & Licenses inventory** (opt-in) | Collect GitHub dependency-graph SBOMs on a schedule, preserve every original document byte-for-byte as an immutable snapshot, and browse or download the authorized repository inventory without depending on Zoekt, SCIP, or an indexed commit. |
 | **Human and agent interfaces** | Use the embedded browser console, REST API, hosted Streamable HTTP MCP endpoint, or the `graphnest-mcp` stdio proxy. |
 | **GitHub-native repository management** | Reconcile GitHub App installations, verify webhook signatures, queue default-branch indexing, support private CAs, and retain numeric GitHub repository identity across renames. |
 | **Durable identity and access** | Use OIDC or GitHub OAuth browser sign-in, SCIM 2.0 provisioning, revocable API tokens, user and group repository assignments, administrative controls, and security audit events. |
@@ -199,6 +200,20 @@ curl --fail-with-body -X POST "https://graphnest.example/v1/admin/api-tokens" \
   -H 'Content-Type: application/json' \
   -d '{"repository_ids":[101],"expires_at":"2026-08-01T00:15:00Z"}'
 ```
+
+## Dependencies & Licenses (opt-in)
+
+With `GRAPHNEST_SUPPLY_CHAIN=true` in durable mode, `graphnest-server` collects each managed repository's dependency-graph SBOM export from GitHub on a jittered schedule (`GRAPHNEST_SUPPLY_CHAIN_INTERVAL`, default `24h`), preserves the original SPDX 2.3 JSON document and its SHA-256, normalizes component occurrences and relationships into an immutable snapshot, and serves them under `/v1/supply-chain/...` and the embedded page at `/supply-chain`. The module is disabled by default; enabling it centrally requires no change to any repository.
+
+What the inventory is and is not:
+
+- A GitHub dependency-graph export is a **timestamped observation of the default branch**. The endpoint has no ref selector, so snapshots report `subject_assurance: unknown`; GraphNest never copies the indexed or current HEAD into a snapshot.
+- GitHub Enterprise Server does not populate dependency license fields; `license_declared_raw`/`license_concluded_raw` are preserved verbatim (typically `NOASSERTION`) and are never mapped to a license. Exact-version license evidence is a separate, later enrichment layer.
+- Components without a purl or version stay visible. Dependency scope (`root`/`direct`/`transitive`) is derived only from resolved `DEPENDS_ON` edges leaving a described root; a flattened list yields `unknown`, never `direct`.
+- A failed refresh (403, 404, rate limit, malformed or oversized document, outage) records a collection attempt and leaves the last successful snapshot in place; the status reports `collection: failed` alongside the retained inventory.
+- Inventory eligibility is repository authorization alone. It works for repositories with no Zoekt index, no SCIP upload, and no graph enrichment, and inventory work never blocks lexical indexing.
+
+Every read resolves the live principal's repository scope before any inventory row is touched; snapshot and job identifiers outside that scope are indistinguishable from missing ones. Manual refresh (`POST /v1/supply-chain/repositories/{id}/refresh`) only enqueues a bounded background job and requires administrator access. The published snapshot is also projected into the existing GitHub-sourced SCIP package mappings; manual mappings are never touched. See [Operations](docs/operations.md#dependencies--licenses-inventory) and [ADR-0017](docs/adr/0017-supply-chain-inventory.md).
 
 ## Durable mode
 

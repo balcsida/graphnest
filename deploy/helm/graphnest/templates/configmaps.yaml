@@ -67,6 +67,13 @@ data:
   {{- if .Values.server.scim.enabled }}
   GRAPHNEST_SCIM_TOKEN_FILE: /var/run/secrets/graphnest/scim/token
   {{- end }}
+  {{- if .Values.server.supplyChain.enabled }}
+  GRAPHNEST_SUPPLY_CHAIN: "true"
+  GRAPHNEST_SUPPLY_CHAIN_INTERVAL: {{ .Values.server.supplyChain.interval | quote }}
+  GRAPHNEST_SUPPLY_CHAIN_WORKERS: {{ .Values.server.supplyChain.workers | quote }}
+  GRAPHNEST_SUPPLY_CHAIN_MAX_DOCUMENT_BYTES: {{ printf "%d" (int64 .Values.server.supplyChain.maxDocumentBytes) | quote }}
+  GRAPHNEST_SUPPLY_CHAIN_MAX_COMPONENTS: {{ .Values.server.supplyChain.maxComponents | quote }}
+  {{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap

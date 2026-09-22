@@ -99,6 +99,67 @@ request-byte, and response-byte caps. PostgreSQL queries are parameterized,
 repository/upload/commit scoped, stable-ordered, and batch each relation
 frontier.
 
+## Dependencies & Licenses inventory
+
+The supply-chain inventory ([ADR-0017](adr/0017-supply-chain-inventory.md))
+is disabled by default. Enable it centrally on `graphnest-server` in durable
+mode; ordinary repositories need no workflow or configuration file.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `GRAPHNEST_SUPPLY_CHAIN` | `false` | Enable routes, the `/supply-chain` page, the scheduler, and collection workers. Requires `GRAPHNEST_DATABASE_URL`. |
+| `GRAPHNEST_SUPPLY_CHAIN_INTERVAL` | `24h` | Scheduled refresh interval per repository stream (minimum `1m`). A stream is due when its last attempt is older than this; new jobs receive up to 10% jitter. `collection: stale` is reported after twice this interval. |
+| `GRAPHNEST_SUPPLY_CHAIN_WORKERS` | `1` | Collection workers per server process (maximum 8). Each leases one job at a time. |
+| `GRAPHNEST_SUPPLY_CHAIN_MAX_DOCUMENT_BYTES` | `16777216` | Maximum SBOM export size (whole HTTP body, maximum 256 MiB). Larger exports record `too_large`. |
+| `GRAPHNEST_SUPPLY_CHAIN_MAX_COMPONENTS` | `50000` | Maximum packages per document (maximum 500000). |
+
+GitHub permissions: the GitHub App needs `Contents: read` on the repository,
+the same permission indexing already requires. The collector calls only
+`GET /repos/{owner}/{repo}/dependency-graph/sbom` on the configured API
+endpoint with the installation token; no other outbound traffic is produced,
+and no registry, license, or SBOM URL from a document is ever dereferenced.
+Custom CAs and secret files are the existing `GRAPHNEST_GITHUB_*` settings.
+
+Job lifecycle: the scheduler runs on the reconciliation tick and enqueues at
+most one queued job per repository stream. A manual refresh
+(`POST /v1/supply-chain/repositories/{id}/refresh`, administrator) raises that
+job's priority or creates one and returns `202` immediately. Workers lease
+jobs for two minutes with `for update skip locked`, renew the lease during the
+fetch, and publish in one transaction fenced by the lease owner and a
+monotonic fence, so a worker that lost its lease cannot overwrite a newer
+publication. Retryable outcomes (`rate_limited`, `transient`, `error`) back off
+exponentially (1m, 4m, 16m, ... up to 1h, or `Retry-After` when longer) for at
+most five attempts; `forbidden`, `not_found`, `malformed`, `too_large`, and
+`unavailable` fail the job immediately. Leases expired by a crash are reaped to
+`queued` or `failed` on worker start and each idle loop. Every attempt is a
+row in `supply_chain_collections`; a failure never changes the stream's latest
+snapshot.
+
+Interpreting outcomes: a `403` is `rate_limited` only when GitHub's
+`X-RateLimit-Remaining: 0`, `Retry-After`, or a `429` says so; otherwise it is
+`forbidden`, and a `404` is `not_found`. Neither proves the dependency graph is
+disabled; the operator message lists the possible causes (dependency graph
+disabled, no installation access, unsupported GitHub version).
+
+Recovering a failed collection: fix the cause (enable the dependency graph,
+grant the installation access, raise the size limit), then request a manual
+refresh. A `projection_error` on a collection means the snapshot published but
+the compatibility projection into SCIP package mappings failed; the inventory
+is intact and the projection is rebuilt by the next successful collection.
+
+Disabling: set `GRAPHNEST_SUPPLY_CHAIN=false` (or unset it) and restart the
+server. Routes and the page disappear, workers stop, and existing
+`supply_chain_*` tables are left in place. Backup and restore follow the
+PostgreSQL policy for other durable state; documents are stored inline
+(`supply_chain_documents.body`), so database size grows with the number of
+distinct SBOM exports retained. Retention pruning is not implemented in this
+milestone.
+
+Metrics: `graphnest_supply_chain_collections_total{outcome}`,
+`graphnest_supply_chain_collection_duration_seconds{outcome}`, and
+`graphnest_supply_chain_queue_depth{state}`. Labels use fixed vocabularies;
+no repository or component identity is exported.
+
 ## Break-glass administrator recovery
 
 SSO remains the primary sign-in method. Use the offline command only when an
