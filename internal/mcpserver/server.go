@@ -38,6 +38,7 @@ type Services struct {
 	Repositories *repository.Service
 	SCIP         *scipgraph.Service
 	Graph        *graphservice.Service
+	SupplyChain  SupplyChainServices
 }
 
 type searchInput struct {
@@ -139,6 +140,7 @@ func NewWithLimits(services Services, limits Limits) *mcp.Server {
 		})
 	}
 	registerGraphTools(server, services.Graph, limits.GraphMaxOutputBytes)
+	registerSupplyChainTools(server, services.SupplyChain, limits.MaxOutputBytes)
 	repositories := services.Repositories
 	if repositories == nil {
 		return server

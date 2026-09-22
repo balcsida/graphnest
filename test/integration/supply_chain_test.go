@@ -23,11 +23,13 @@ import (
 	"github.com/balcsida/graphnest/internal/authz"
 	"github.com/balcsida/graphnest/internal/githubapp"
 	"github.com/balcsida/graphnest/internal/httpapi"
+	"github.com/balcsida/graphnest/internal/mcpserver"
 	"github.com/balcsida/graphnest/internal/postgres"
 	"github.com/balcsida/graphnest/internal/supplychain"
 	"github.com/balcsida/graphnest/internal/supplychain/license"
 	"github.com/balcsida/graphnest/internal/supplychain/review"
 	"github.com/balcsida/graphnest/pkg/api"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // fakeSBOMGitHub is a GHES stand-in that mints installation tokens and serves
@@ -1212,4 +1214,166 @@ func TestSupplyChainReviewWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = gadgets
+}
+
+// TestSupplyChainMCPAgreesWithREST proves the read-only MCP tools use the same
+// services and scope as REST: an unauthorized principal sees nothing, tool
+// errors do not reveal existence, outputs carry provenance, and truncation
+// is honored.
+func TestSupplyChainMCPAgreesWithREST(t *testing.T) {
+	h := newPostgresHarness(t)
+	widgets := h.seedRepository(t, 10, 101)
+	if err := h.store.UpsertInstallation(t.Context(), postgres.InstallationUpdate{GitHubID: 20, AccountLogin: "other", AccountType: "Organization", Status: "active"}); err != nil {
+		t.Fatal(err)
+	}
+	secretRepository, err := h.store.UpsertRepository(t.Context(), postgres.RepositoryUpdate{GitHubID: 201, InstallationID: 20, Owner: "other", Name: "secret", CloneURL: "https://example.invalid/s.git", WebURL: "https://example.invalid/s", DefaultBranch: "main", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	github, client := newFakeSBOMGitHub(t)
+	envelope := sbomEnvelope(t)
+	github.responses["acme/repo-101"] = func(writer http.ResponseWriter) { fmt.Fprint(writer, envelope) }
+	github.responses["other/secret"] = func(writer http.ResponseWriter) { fmt.Fprint(writer, envelope) }
+	collector := &supplychain.Collector{Store: h.store, GitHub: client, Owner: "collect", MaxDocumentBytes: 1 << 20}
+	for _, id := range []int64{widgets, secretRepository.ID} {
+		if _, _, err := h.store.EnqueueSupplyChainJob(t.Context(), id, supplychain.StreamGitHubSource, "manual", "t", 10, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := collector.RunOnce(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	authorizer := authz.NewPostgres(h.store)
+	inventory := &supplychain.Service{Store: h.store, Authorizer: authorizer, Interval: time.Hour, MaxResults: 100, License: h.store}
+	portfolio := &supplychain.Portfolio{Store: h.store, Snapshots: h.store, Authorizer: authorizer, Interval: time.Hour, MaxResults: 100}
+	server := mcpserver.NewWithLimits(mcpserver.Services{SupplyChain: mcpserver.SupplyChainServices{Inventory: inventory, Portfolio: portfolio}}, mcpserver.Limits{MaxOutputBytes: 256 << 10})
+	authenticator := authn.NewStatic(map[string]authn.Principal{
+		"acme":  {Subject: "acme", Method: "api_token", InstallationID: 10, RepositoryIDs: []int64{101}},
+		"other": {Subject: "other", Method: "api_token", InstallationID: 20, RepositoryIDs: []int64{201}},
+	})
+	httpServer := httptest.NewServer(httpapi.AuthenticateBearer(authenticator, mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)))
+	defer httpServer.Close()
+	connect := func(token string) *mcp.ClientSession {
+		httpClient := *httpServer.Client()
+		httpClient.Transport = bearerRoundTripper{token: token, base: http.DefaultTransport}
+		session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: httpServer.URL, HTTPClient: &httpClient, DisableStandaloneSSE: true}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return session
+	}
+	acme := connect("acme")
+	defer acme.Close()
+	tools, err := acme.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, tool := range tools.Tools {
+		names[tool.Name] = true
+	}
+	for _, name := range []string{"search_dependency_inventory", "find_component_repositories", "inspect_component_license"} {
+		if !names[name] {
+			t.Fatalf("tool %s missing from %v", name, names)
+		}
+	}
+	for name := range names {
+		if strings.Contains(name, "decide") || strings.Contains(name, "approve") || strings.Contains(name, "import") || strings.Contains(name, "refresh") {
+			t.Fatalf("write tool exposed over MCP: %s", name)
+		}
+	}
+	call := func(session *mcp.ClientSession, name string, arguments map[string]any) (map[string]any, string) {
+		result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: name, Arguments: arguments})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.IsError {
+			var text string
+			for _, content := range result.Content {
+				if textContent, ok := content.(*mcp.TextContent); ok {
+					text += textContent.Text
+				}
+			}
+			return nil, text
+		}
+		data, err := json.Marshal(result.StructuredContent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var output map[string]any
+		if err := json.Unmarshal(data, &output); err != nil {
+			t.Fatal(err)
+		}
+		return output, ""
+	}
+	// Search: acme sees 7 unique coordinates from one repository; REST agrees.
+	output, errText := call(acme, "search_dependency_inventory", map[string]any{"query": ""})
+	if errText != "" {
+		t.Fatal(errText)
+	}
+	components := output["components"].([]any)
+	if len(components) != 7 || output["repositories_in_scope"].(float64) != 1 || output["scope"] == nil || len(output["provenance"].([]any)) != 3 {
+		t.Fatalf("mcp search = %v", output)
+	}
+	restList, err := portfolio.Components(t.Context(), authn.Principal{Subject: "acme", Method: "api_token", InstallationID: 10, RepositoryIDs: []int64{101}}, supplychain.ComponentsRequest{})
+	if err != nil || len(restList.Components) != len(components) {
+		t.Fatalf("rest = %d components, mcp = %d", len(restList.Components), len(components))
+	}
+	var leftPadKey string
+	for _, component := range components {
+		item := component.(map[string]any)
+		if item["name"] == "left-pad" {
+			leftPadKey = item["key"].(string)
+			if len(item["repositories"].([]any)) != 1 {
+				t.Fatalf("left-pad repositories leaked across installations: %v", item["repositories"])
+			}
+		}
+	}
+	// Filter and truncation: limit=2 truncates and the cursor continues.
+	output, _ = call(acme, "search_dependency_inventory", map[string]any{"limit": 2})
+	if output["truncated"] != true || output["next_cursor"] == "" {
+		t.Fatalf("truncation = %v", output)
+	}
+	// Component repositories: only acme's occurrence, though the other installation has the same package.
+	output, errText = call(acme, "find_component_repositories", map[string]any{"key": leftPadKey})
+	if errText != "" || len(output["occurrences"].([]any)) != 1 || output["occurrences"].([]any)[0].(map[string]any)["repository"] != "acme/repo-101" {
+		t.Fatalf("component repositories = %v %s", output, errText)
+	}
+	// Evidence: reachable for acme; not found for other; error text never names the repository or component.
+	output, errText = call(acme, "inspect_component_license", map[string]any{"repository_id": 101, "element": "SPDXRef-npm-scope-left-pad-1.3.0"})
+	if errText != "" || output["component"].(map[string]any)["name"] != "npm:@scope/left-pad" || len(output["provenance"].([]any)) != 3 || len(output["declarations"].([]any)) != 2 {
+		t.Fatalf("evidence = %v %s", output, errText)
+	}
+	other := connect("other")
+	defer other.Close()
+	_, errText = call(other, "inspect_component_license", map[string]any{"repository_id": 101, "element": "SPDXRef-npm-scope-left-pad-1.3.0"})
+	if errText != "not found" {
+		t.Fatalf("other inspect = %q", errText)
+	}
+	_, errText = call(other, "find_component_repositories", map[string]any{"key": leftPadKey})
+	if errText != "not found" && errText != "" {
+		t.Fatalf("other component = %q", errText)
+	}
+	output, errText = call(other, "find_component_repositories", map[string]any{"key": leftPadKey})
+	if errText == "" && len(output["occurrences"].([]any)) != 1 || errText == "" && output["occurrences"].([]any)[0].(map[string]any)["repository"] != "other/secret" {
+		t.Fatalf("other sees acme's occurrence: %v", output)
+	}
+	// A bogus key is a plain invalid request; a stale-looking snapshot id fails safely.
+	if _, errText = call(acme, "find_component_repositories", map[string]any{"key": "zz"}); errText != "request is invalid" {
+		t.Fatalf("bad key = %q", errText)
+	}
+	if _, errText = call(acme, "inspect_component_license", map[string]any{"repository_id": 101, "element": "SPDXRef-npm-scope-left-pad-1.3.0", "snapshot_id": 9999}); errText != "not found" {
+		t.Fatalf("foreign snapshot = %q", errText)
+	}
+}
+
+type bearerRoundTripper struct {
+	token string
+	base  http.RoundTripper
+}
+
+func (transport bearerRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	cloned := request.Clone(request.Context())
+	cloned.Header.Set("Authorization", "Bearer "+transport.token)
+	return transport.base.RoundTrip(cloned)
 }

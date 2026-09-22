@@ -453,6 +453,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	}
 	var extras []func(*http.ServeMux)
 	var supplyChainDone []<-chan struct{}
+	var supplyChainMCP mcpserver.SupplyChainServices
 	if settings.SupplyChain.Enabled {
 		routes, err := license.RoutesFromEnv(os.Getenv, license.ReadSecretFile)
 		if err != nil {
@@ -485,6 +486,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 			return repo.ID, err
 		}}
 		reviews := &review.Service{Store: store, Authorizer: authorizer, MaxResults: settings.Limits.MaxResults}
+		supplyChainMCP = mcpserver.SupplyChainServices{Inventory: supplyChainService, Portfolio: portfolio}
 		supplyChainDone = append(supplyChainDone, startPolicyEvaluation(loopCtx, reviews, logger))
 		extras = append(extras, func(mux *http.ServeMux) {
 			httpapi.RegisterSupplyChain(mux, auth.requestAuth, supplyChainService, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
@@ -493,7 +495,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 			httpapi.RegisterSupplyChainReview(mux, auth.requestAuth, reviews, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
 		})
 	}
-	handler := newAPIHandler(settings, metrics, auth.requestAuth, searchService, repositoryService, scipService, graphService, graphQueries, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend}, auth.providers, auth.sessions, provisioning, scimService, auth.mcpOAuth, extras...)
+	handler := newAPIHandlerWithMCP(settings, metrics, auth.requestAuth, searchService, repositoryService, scipService, graphService, graphQueries, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend}, auth.providers, auth.sessions, provisioning, scimService, auth.mcpOAuth, supplyChainMCP, extras...)
 	if localAuth != nil {
 		mux := http.NewServeMux()
 		httpapi.RegisterLocalAuth(mux, auth.requestAuth.PublicOrigin, localAuth, store)
@@ -609,6 +611,10 @@ func durableAuthenticator(store authn.APITokenStore) authn.Authenticator {
 }
 
 func newAPIHandler(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scipGraph *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker, providers []sso.Provider, sessions *authn.SessionManager, provisioning *authn.ProvisioningAuthenticator, scimService *scim.Service, mcpOAuth *oauthas.Server, extras ...func(*http.ServeMux)) http.Handler {
+	return newAPIHandlerWithMCP(settings, metrics, authenticator, service, repositories, scipGraph, graph, graphQueries, webhookSecret, processor, adminService, checker, providers, sessions, provisioning, scimService, mcpOAuth, mcpserver.SupplyChainServices{}, extras...)
+}
+
+func newAPIHandlerWithMCP(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scipGraph *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker, providers []sso.Provider, sessions *authn.SessionManager, provisioning *authn.ProvisioningAuthenticator, scimService *scim.Service, mcpOAuth *oauthas.Server, supplyChainMCP mcpserver.SupplyChainServices, extras ...func(*http.ServeMux)) http.Handler {
 	mux := http.NewServeMux()
 	var challenge httpapi.BearerChallenge
 	mcpBearer := authenticator.Bearer
@@ -653,7 +659,7 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 	if processor != nil {
 		httpapi.RegisterGitHubWebhook(mux, webhookSecret, 1<<20, processor)
 	}
-	mcpServer := mcpserver.NewWithLimits(mcpserver.Services{Search: service, Repositories: repositories, SCIP: scipGraph, Graph: graphQueries}, mcpserver.Limits{
+	mcpServer := mcpserver.NewWithLimits(mcpserver.Services{Search: service, Repositories: repositories, SCIP: scipGraph, Graph: graphQueries, SupplyChain: supplyChainMCP}, mcpserver.Limits{
 		MaxItems: settings.Limits.MaxResults, MaxOutputBytes: settings.Limits.MaxResponseBytes, GraphMaxOutputBytes: settings.Graph.MaxResponseBytes,
 	})
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer }, nil)
