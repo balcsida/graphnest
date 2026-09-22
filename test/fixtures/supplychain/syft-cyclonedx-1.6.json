@@ -1,0 +1,84 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-09-21T14:03:11Z",
+    "tools": {
+      "components": [
+        {"type": "application", "author": "anchore", "name": "syft", "version": "1.20.0"}
+      ]
+    },
+    "component": {
+      "bom-ref": "graphnest-fixture-root",
+      "type": "container",
+      "name": "registry.example.internal/acme/widgets",
+      "version": "sha256:8d1a3d4c5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809"
+    }
+  },
+  "components": [
+    {
+      "bom-ref": "pkg:npm/%40scope/left-pad@1.3.0?package-id=1a2b3c",
+      "type": "library",
+      "group": "@scope",
+      "name": "left-pad",
+      "version": "1.3.0",
+      "purl": "pkg:npm/%40scope/left-pad@1.3.0",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "hashes": [{"alg": "SHA-512", "content": "9a2c6b1d4e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f"}]
+    },
+    {
+      "bom-ref": "pkg:npm/dual@2.0.0?package-id=2b3c4d",
+      "type": "library",
+      "name": "dual",
+      "version": "2.0.0",
+      "purl": "pkg:npm/dual@2.0.0",
+      "licenses": [{"expression": "(MIT OR Apache-2.0)", "acknowledgement": "declared"}]
+    },
+    {
+      "bom-ref": "pkg:deb/debian/libssl3@3.0.11-1~deb12u2?arch=amd64&distro=debian-12&package-id=3c4d5e",
+      "type": "library",
+      "name": "libssl3",
+      "version": "3.0.11-1~deb12u2",
+      "purl": "pkg:deb/debian/libssl3@3.0.11-1~deb12u2?arch=amd64&distro=debian-12",
+      "supplier": {"name": "Debian OpenSSL Team <pkg-openssl-devel@lists.alioth.debian.org>"},
+      "licenses": [{"license": {"name": "OpenSSL"}}, {"license": {"id": "Apache-2.0"}}]
+    },
+    {
+      "bom-ref": "pkg:golang/golang.org/x/text@v0.14.0?package-id=4d5e6f",
+      "type": "library",
+      "name": "golang.org/x/text",
+      "version": "v0.14.0",
+      "purl": "pkg:golang/golang.org/x/text@v0.14.0",
+      "licenses": [{"license": {"id": "BSD-3-Clause", "url": "https://go.dev/LICENSE"}}],
+      "evidence": {"licenses": [{"license": {"id": "BSD-3-Clause"}}], "occurrences": [{"location": "/app/vendor/golang.org/x/text/LICENSE"}]}
+    },
+    {
+      "bom-ref": "bundle-1",
+      "type": "application",
+      "name": "widgets-bundle",
+      "version": "4.2.0",
+      "components": [
+        {
+          "bom-ref": "pkg:npm/nested-helper@0.1.0?package-id=5e6f7a",
+          "type": "library",
+          "name": "nested-helper",
+          "version": "0.1.0",
+          "purl": "pkg:npm/nested-helper@0.1.0",
+          "licenses": [{"license": {"name": "Custom Acme License", "url": "https://acme.example.internal/license"}}]
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "/app/config/settings.yaml"
+    }
+  ],
+  "dependencies": [
+    {"ref": "graphnest-fixture-root", "dependsOn": ["pkg:npm/%40scope/left-pad@1.3.0?package-id=1a2b3c", "pkg:npm/dual@2.0.0?package-id=2b3c4d", "pkg:deb/debian/libssl3@3.0.11-1~deb12u2?arch=amd64&distro=debian-12&package-id=3c4d5e", "bundle-1"]},
+    {"ref": "pkg:npm/dual@2.0.0?package-id=2b3c4d", "dependsOn": ["pkg:npm/%40scope/left-pad@1.3.0?package-id=1a2b3c"]},
+    {"ref": "bundle-1", "dependsOn": ["pkg:npm/nested-helper@0.1.0?package-id=5e6f7a", "pkg:npm/missing@9.9.9"]}
+  ]
+}

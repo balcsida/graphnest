@@ -116,6 +116,43 @@ all clients appear as one source.
   intersects them with the authenticated principal's numeric authorization
   scope.
 
+## Dependencies & Licenses inventory controls
+
+- Every inventory read resolves the live principal's repository scope through
+  the existing authorizer before any `supply_chain_*` row is queried; snapshot,
+  document, and job identifiers are joined back to that scope, so an
+  unauthorized identifier returns the same `404` as a missing one, and revoked
+  access takes effect on the next request without a cache.
+- Original documents are stored byte-for-byte and served with
+  `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, and
+  `Cache-Control: private, no-store`; the filename is built only from numeric
+  IDs and enum values, never from document content.
+- Document content (names, purls, licenses, warnings) is untrusted: it is
+  bounded by size and count limits, rendered through DOM text nodes in the UI,
+  and never echoed into error diagnostics (GitHub response bodies are dropped;
+  JSON decoder offsets and quoted input are stripped).
+- The collector calls only the configured GitHub API endpoint with the
+  installation token; download locations, license URLs, and external
+  references inside documents are never dereferenced.
+- Manual refresh only enqueues bounded background work and requires
+  administrator access; collection never runs inside a request handler.
+  Workers are fenced by lease owner and a monotonic fence, so a stale worker
+  cannot publish over a newer lease, and a failed attempt never deletes the
+  last successful snapshot.
+- Telemetry labels use fixed outcome and state vocabularies; no repository or
+  component identity is exported.
+- License enrichment produces no outbound traffic unless a registry route is
+  configured. A route is pinned to one HTTPS origin and base path: redirects
+  elsewhere are rejected, private/loopback/link-local/metadata destinations
+  are refused unless the route explicitly allows private hosts, hostile path
+  segments are rejected before any request, bodies are bounded after
+  decompression, and credentials from secret files are attached only to that
+  origin. A package unknown to a private route is never retried against a
+  public registry, so private package names do not leak. Registry metadata is
+  untrusted content: SPDX expressions are parsed with a bounded grammar
+  (input size, token count, nesting depth), XML is decoded without external
+  entities, and free text or unknown identifiers never become a license.
+
 ## Known limits
 
 SCIM is optional, durable-only, and isolated at `/scim/v2` behind a dedicated

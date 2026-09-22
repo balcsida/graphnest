@@ -99,6 +99,249 @@ request-byte, and response-byte caps. PostgreSQL queries are parameterized,
 repository/upload/commit scoped, stable-ordered, and batch each relation
 frontier.
 
+## Dependencies & Licenses inventory
+
+The supply-chain inventory ([ADR-0017](adr/0017-supply-chain-inventory.md))
+is disabled by default. Enable it centrally on `graphnest-server` in durable
+mode; ordinary repositories need no workflow or configuration file.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `GRAPHNEST_SUPPLY_CHAIN` | `false` | Enable routes, the `/supply-chain` page, the scheduler, and collection workers. Requires `GRAPHNEST_DATABASE_URL`. |
+| `GRAPHNEST_SUPPLY_CHAIN_INTERVAL` | `24h` | Scheduled refresh interval per repository stream (minimum `1m`). A stream is due when its last attempt is older than this; new jobs receive up to 10% jitter. `collection: stale` is reported after twice this interval. |
+| `GRAPHNEST_SUPPLY_CHAIN_WORKERS` | `1` | Collection workers per server process (maximum 8). Each leases one job at a time. |
+| `GRAPHNEST_SUPPLY_CHAIN_MAX_DOCUMENT_BYTES` | `16777216` | Maximum SBOM export size (whole HTTP body, maximum 256 MiB). Larger exports record `too_large`. |
+| `GRAPHNEST_SUPPLY_CHAIN_MAX_COMPONENTS` | `50000` | Maximum packages per document (maximum 500000). |
+| `GRAPHNEST_SUPPLY_CHAIN_RETAIN_SNAPSHOTS` | `10` | Snapshots kept per repository stream in addition to the current one and any snapshot referenced by a policy result, decision, or conclusion; `0` disables pruning. Unreferenced documents are removed with their last snapshot. |
+
+GitHub permissions: the GitHub App needs `Contents: read` on the repository,
+the same permission indexing already requires. The collector calls only
+`GET /repos/{owner}/{repo}/dependency-graph/sbom` on the configured API
+endpoint with the installation token; no other outbound traffic is produced,
+and no registry, license, or SBOM URL from a document is ever dereferenced.
+Custom CAs and secret files are the existing `GRAPHNEST_GITHUB_*` settings.
+
+Job lifecycle: the scheduler runs on the reconciliation tick and enqueues at
+most one queued job per repository stream. A manual refresh
+(`POST /v1/supply-chain/repositories/{id}/refresh`, administrator) raises that
+job's priority or creates one and returns `202` immediately. Workers lease
+jobs for two minutes with `for update skip locked`, renew the lease during the
+fetch, and publish in one transaction fenced by the lease owner and a
+monotonic fence, so a worker that lost its lease cannot overwrite a newer
+publication. Retryable outcomes (`rate_limited`, `transient`, `error`) back off
+exponentially (1m, 4m, 16m, ... up to 1h, or `Retry-After` when longer) for at
+most five attempts; `forbidden`, `not_found`, `malformed`, `too_large`, and
+`unavailable` fail the job immediately. Leases expired by a crash are reaped to
+`queued` or `failed` on worker start and each idle loop. Every attempt is a
+row in `supply_chain_collections`; a failure never changes the stream's latest
+snapshot.
+
+Interpreting outcomes: a `403` is `rate_limited` only when GitHub's
+`X-RateLimit-Remaining: 0`, `Retry-After`, or a `429` says so; otherwise it is
+`forbidden`, and a `404` is `not_found`. Neither proves the dependency graph is
+disabled; the operator message lists the possible causes (dependency graph
+disabled, no installation access, unsupported GitHub version).
+
+Recovering a failed collection: fix the cause (enable the dependency graph,
+grant the installation access, raise the size limit), then request a manual
+refresh. A `projection_error` on a collection means the snapshot published but
+the compatibility projection into SCIP package mappings failed; the inventory
+is intact and the projection is rebuilt by the next successful collection.
+
+Disabling: set `GRAPHNEST_SUPPLY_CHAIN=false` (or unset it) and restart the
+server. Routes and the page disappear, workers stop, and existing
+`supply_chain_*` tables are left in place. Backup and restore follow the
+PostgreSQL policy for other durable state; documents are stored inline
+(`supply_chain_documents.body`), so database size grows with the number of
+distinct SBOM exports retained. Retention runs on the scheduler tick: it
+keeps the newest `GRAPHNEST_SUPPLY_CHAIN_RETAIN_SNAPSHOTS` snapshots per
+stream plus every snapshot a review record refers to, trims failed collection
+attempts beyond the newest 50 per stream, and removes finished jobs after 30
+days. Repository removal or a revoked installation removes inventory
+visibility immediately through the authorization queries and cascades the
+rows; shared registry evidence (which is not repository data) is retained.
+
+Metrics: `graphnest_supply_chain_collections_total{outcome}`,
+`graphnest_supply_chain_collection_duration_seconds{outcome}`,
+`graphnest_supply_chain_queue_depth{state}`,
+`graphnest_supply_chain_enrichment_total{outcome}`, and
+`graphnest_supply_chain_enrichment_duration_seconds{outcome}`. Labels use
+fixed vocabularies; no repository or component identity is exported.
+
+### License enrichment routes
+
+GitHub exports carry no license data. Exact-version license evidence comes
+only from registry routes you configure; with none configured, GraphNest
+produces no license traffic at all and components show only the producer's
+(usually `NOASSERTION`) declaration.
+
+| Variable (per ecosystem `NPM`, `NUGET`, `MAVEN`) | Meaning |
+| --- | --- |
+| `GRAPHNEST_SUPPLY_CHAIN_REGISTRY_<ECO>_URL` | HTTPS registry root, without credentials, query, or fragment. npm: the registry root (`https://npm.example/`); NuGet: the V3 flat container (`https://nuget.example/v3-flatcontainer/`); Maven: the repository root (`https://maven.example/repository/public/`). |
+| `..._TOKEN_FILE` | Optional bearer token secret file (regular file, at most 64 KiB). |
+| `..._BASIC_FILE` | Optional `user:password` secret file; mutually exclusive with the token file. |
+| `..._CA_FILE` | Optional PEM bundle appended to the system roots for this route. |
+| `..._ALLOW_PRIVATE` | `true` to permit a registry that resolves to a private, loopback, or link-local address (internal mirrors). Default `false`; cloud metadata ranges stay blocked regardless. |
+| `..._NAMESPACES` | Optional comma-separated npm scopes / Maven groupId prefixes / NuGet id prefixes this route may answer for; anything else is rejected without a request. |
+
+One route per ecosystem. A package the route does not know is recorded as
+`not_found` at that route; GraphNest never retries it against a public
+registry, so a private-registry deployment cannot leak package names. Requests
+are pinned to the route's origin and base path (redirects elsewhere are
+rejected), bodies are bounded after decompression (4 MiB), and credentials are
+attached only to the route's own origin.
+
+What each resolver reads and how it records it:
+
+- **npm**: `GET {root}/{name}/{version}` for the exact version only, never
+  dist-tags or the packument's `latest`. A string `license` is parsed as an
+  SPDX expression; `SEE LICENSE IN <file>` is recorded as a license-file
+  reference; legacy `{type,url}` objects and `licenses` arrays are kept as
+  legacy metadata (an array of names has no SPDX AND/OR meaning and stays
+  unparsed); `UNLICENSED` stays `unlicensed`. A document naming a different
+  version is rejected.
+- **NuGet**: the exact-version `.nuspec` from the flat container; the
+  `.nupkg` is never downloaded. `<license type="expression">` is parsed,
+  `<license type="file">` is a file reference, and a legacy `<licenseUrl>`
+  alone is recorded as a URL, not a concluded license.
+- **Maven**: the exact-version POM. `<licenses>` are names and URLs, not SPDX
+  expressions; only unambiguous names (Apache 2.0, MIT, BSD, EPL, LGPL, MPL,
+  ISC, CDDL, Unlicense, CC0, GPL-2.0 with Classpath) are normalized, and a
+  name that is already a valid SPDX expression parses as such. Several
+  `<license>` elements are kept as a list without invented structure. Missing
+  `<licenses>` are inherited through `<parent>` on the same route only, at
+  most eight levels, with cycle detection and bounded `${property}`
+  expansion; anything unresolved stays `no_license_metadata`. Repository
+  declarations inside POMs are never followed.
+
+Evidence rows are immutable and carry the raw value, parse status, normalized
+expression, unknown terms, resolver version, SPDX License List version
+(3.27.0), content hash, fetch time, and outcome. A re-fetch that yields the
+same facts is a new observation flagged as a duplicate; a change is a new
+row. Negative results (`not_found`, `no_license_metadata`, `unavailable`)
+expire after 24 hours and are retried; an outage keeps the earlier resolved
+evidence visible with its age rather than replacing it with "no license".
+
+Assessments are derived per occurrence from the producer's declaration and
+the latest evidence per route: `resolved` (registry expression, consistent),
+`declared` (only the producer's expression parsed), `conflict` (structurally
+different expressions, or an expression against `UNLICENSED`/`NONE`),
+`unlicensed`, `unknown` (nothing parseable), `pending`, or `not_applicable`.
+An assessment is evidence, not approval; the review workflow records
+conclusions and decisions separately.
+
+### Standards-based imports
+
+`POST /v1/supply-chain/imports?repository_id=<github id>&subject=<source|artifact>&label=<stream label>`
+accepts SPDX 2.3 JSON (`application/spdx+json`) and CycloneDX 1.6 JSON
+(`application/vnd.cyclonedx+json`); `application/json` is accepted and the
+format is detected from the document itself. Other formats and schema
+versions (SPDX 2.2, CycloneDX 1.5, XML, tag-value) are rejected with
+`415 unsupported_format`; GraphNest does not claim universal SBOM
+compatibility. Each `(subject, label)` pair is its own stream
+(`import:source:ort`, `import:artifact:syft-image`), separate from the GitHub
+observation, so a container SBOM never replaces the repository's GitHub
+snapshot and an older artifact upload never becomes the current source
+inventory.
+
+Permission: administrators may import into any authorized repository. Other
+principals need a repository-scoped upload grant
+(`PUT /v1/supply-chain/upload-grants` by an administrator, keyed by the
+principal's subject). A grant never widens read access. Quota: 100 imports
+per repository per 24 hours, counting rejected attempts. Identical bytes into
+the same stream are idempotent (`repeated: true`). Documents are bounded by
+`GRAPHNEST_SUPPLY_CHAIN_MAX_DOCUMENT_BYTES` and `..._MAX_COMPONENTS`.
+
+Trust boundaries: the authenticated uploader is recorded on the snapshot
+(`uploaded_by`) separately from the tool the document names, which is only
+the document's own claim; a `Tool: ORT` string grants nothing. An optional
+`subject_revision` (40-hex commit) is recorded as `producer_asserted`, never
+`verified`. Download locations, license URLs, and external document
+references inside uploads are never dereferenced.
+
+What is and is not carried: original bytes are always preserved and
+downloadable. From SPDX, GraphNest normalizes packages, versions, purls,
+checksums, suppliers, declared/concluded license values (verbatim), and every
+relationship with its direction. From CycloneDX, it flattens nested
+components (with `CONTAINS` edges), keeps `dependencies` as `DEPENDS_ON`,
+hashes, suppliers, purl qualifiers, and license choices as the format carries
+them: one `expression` or SPDX `id` verbatim; a `name`/`url` as a name or
+URL; several license objects as a semicolon list (CycloneDX defines no
+AND/OR meaning for them, so none is invented). CycloneDX component
+`evidence` (license findings, copyright, file occurrences), inline license
+text, ORT's per-file scan results and curations, and Syft's file catalog stay
+only in the stored original and are flagged by coverage warnings
+(`evidence_not_carried`, `license_text_inline`). GraphNest has no native
+ScanCode or Code Insight adapter; it imports what those tools export in the
+two supported formats.
+
+Producer examples (each writes a supported format; the fixtures under
+`test/fixtures/supplychain/` are sanitized shapes of these outputs):
+
+```sh
+# Syft: CycloneDX 1.6 JSON of a built image (artifact subject)
+syft registry.example.internal/acme/widgets:1.4.2 -o cyclonedx-json@1.6 > widgets-image.cdx.json
+curl --fail-with-body -X POST "https://graphnest.example/v1/supply-chain/imports?repository_id=101&subject=artifact&label=syft-image" \
+  -H "Authorization: Bearer $GRAPHNEST_TOKEN" -H 'Content-Type: application/vnd.cyclonedx+json' --data-binary @widgets-image.cdx.json
+
+# ORT: SPDX 2.3 JSON report of the analyzed source tree (source subject)
+ort report -i analyzer-result.yml -o reports -f SpdxDocument -O SpdxDocument=outputFileFormats=JSON
+curl --fail-with-body -X POST "https://graphnest.example/v1/supply-chain/imports?repository_id=101&subject=source&label=ort&subject_revision=$GITHUB_SHA" \
+  -H "Authorization: Bearer $GRAPHNEST_TOKEN" -H 'Content-Type: application/spdx+json' --data-binary @reports/bom.spdx.json
+```
+
+### Review workflows and policies
+
+Three record kinds stay separate: a **conclusion** corrects license evidence
+(stored as immutable `human` evidence that overrides, but never deletes,
+automated evidence; disagreement stays visible in the assessment's conflict
+detail); a **policy result** applies one versioned policy to one occurrence;
+a **decision** approves or rejects usage of exact coordinates in one
+repository, or grants an exception with an expiry within a year. Every
+decision records the reviewer, reason, usage context, policy version and
+verdict, and the assessment evidence fingerprint it was made against. A newer
+record supersedes the previous one; nothing is edited, and
+`supply_chain_review_events` is append-only.
+
+Optimistic concurrency: the review queue (`GET /v1/supply-chain/review/queue`)
+hands out each occurrence's `basis` fingerprint, and conclusions/decisions
+must echo it back; a changed basis is refused with `409 stale_basis`, so a
+reviewer cannot approve evidence they have not seen. When evidence changes
+after a decision, or an exception expires, the occurrence returns to the queue
+with the reason and history reports `current_stale`. Re-evaluation runs in the
+background every minute and retains historical results.
+
+Permissions: reading the queue and history needs only repository read access;
+recording conclusions and decisions needs a repository-scoped review grant
+(`PUT /v1/supply-chain/review/grants`, administrator-only; reviewers cannot
+grant themselves) in addition to read access; creating or activating policies
+(`POST /v1/supply-chain/policies`) is administrator-only. No pretend legal
+policy ships: the embedded policy is labelled `kind: example` and is installed
+only on request; `unknown_handling` must be `review_required` or
+`prohibited`, never approve. Policies are evaluated over the SPDX expression
+tree (AND takes the worst operand, OR the best, `WITH` pairs are their own
+terms and are never approved by their base license); an acceptable OR branch
+is reported, but choosing it is a separate recorded decision. Verdicts are
+`approved`, `prohibited`, `review_required`, or `unknown` and are not legal
+advice or release gates.
+
+### MCP tools
+
+With the module enabled, `/mcp` exposes three read-only tools through the
+same authorized services as REST: `search_dependency_inventory`,
+`find_component_repositories`, and `inspect_component_license`. Responses
+include snapshot IDs, provenance, scope, and truncation, and state that
+package, license, and evidence content is untrusted data. There are no
+approval, import, or refresh tools over MCP.
+
+Derived export: `GET /v1/supply-chain/exports/{id}/derived.spdx.json` returns
+an SPDX 2.3 JSON document created by GraphNest that links the preserved
+original by URL and SHA-256 and adds assessments as `licenseComments` only
+(`licenseConcluded` is always `NOASSERTION`). It is validated with
+GraphNest's own reader before it is served and is never presented as the
+producer's document. `GET /v1/supply-chain/exports/{id}/components.csv` is
+the tabular equivalent with provenance columns and formula-safe cells.
+
 ## Break-glass administrator recovery
 
 SSO remains the primary sign-in method. Use the offline command only when an

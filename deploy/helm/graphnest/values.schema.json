@@ -55,7 +55,8 @@
         "githubOAuth",
         "mcpOAuth",
         "oidcCA",
-        "scim"
+        "scim",
+        "supplyChainRegistries"
       ],
       "properties": {
         "runtime": {
@@ -81,6 +82,18 @@
         },
         "scim": {
           "$ref": "#/definitions/scimSecret"
+        },
+        "supplyChainRegistries": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "npmTokenKey", "nugetTokenKey", "mavenBasicKey", "caKey"],
+          "properties": {
+            "name": {"$ref": "#/definitions/optionalKubernetesObjectName"},
+            "npmTokenKey": {"$ref": "#/definitions/secretKey"},
+            "nugetTokenKey": {"$ref": "#/definitions/secretKey"},
+            "mavenBasicKey": {"$ref": "#/definitions/secretKey"},
+            "caKey": {"$ref": "#/definitions/secretKey"}
+          }
         }
       }
     },
@@ -104,6 +117,7 @@
         "config",
         "sso",
         "scim",
+        "supplyChain",
         "resources",
         "nodeSelector",
         "affinity",
@@ -260,6 +274,30 @@
           "required": ["enabled"],
           "properties": {
             "enabled": {"type": "boolean"}
+          }
+        },
+        "supplyChain": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "interval", "workers", "maxDocumentBytes", "maxComponents", "retainSnapshots", "registries"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "interval": {"$ref": "#/definitions/duration"},
+            "workers": {"type": "integer", "minimum": 1, "maximum": 8},
+            "maxDocumentBytes": {"type": "integer", "minimum": 1, "maximum": 268435456},
+            "maxComponents": {"type": "integer", "minimum": 1, "maximum": 500000},
+            "retainSnapshots": {"type": "integer", "minimum": 0, "maximum": 1000},
+            "registries": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["npm", "nuget", "maven", "ca"],
+              "properties": {
+                "npm": {"$ref": "#/definitions/registryRoute"},
+                "nuget": {"$ref": "#/definitions/registryRoute"},
+                "maven": {"$ref": "#/definitions/registryRoute"},
+                "ca": {"type": "boolean", "description": "Mount secrets.supplyChainRegistries[caKey] as the route CA for every configured registry"}
+              }
+            }
           }
         },
         "resources": {
@@ -1015,6 +1053,18 @@
       "type": "object",
       "additionalProperties": {
         "type": "string"
+      }
+    },
+    "registryRoute": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "namespaces", "allowPrivate"],
+      "properties": {
+        "url": {"type": "string", "pattern": "^(|https://.+)$"},
+        "namespaces": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "allowPrivate": {"type": "boolean"},
+        "token": {"type": "boolean", "description": "Mount the ecosystem token key from secrets.supplyChainRegistries as a bearer token"},
+        "basic": {"type": "boolean", "description": "Mount the ecosystem basic key from secrets.supplyChainRegistries as user:password"}
       }
     },
     "scimSecret": {

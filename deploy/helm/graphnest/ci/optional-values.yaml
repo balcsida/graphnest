@@ -19,8 +19,21 @@ secrets:
   githubOAuth: {name: graphnest-github-oauth, clientSecretKey: client-secret}
   oidcCA: {name: graphnest-oidc-ca, key: ca.crt}
   scim: {name: graphnest-scim, tokenKey: token}
+  supplyChainRegistries: {name: graphnest-registries, npmTokenKey: npm-token, nugetTokenKey: nuget-token, mavenBasicKey: maven-basic, caKey: ca.crt}
 server:
   scim: {enabled: true}
+  supplyChain:
+    enabled: true
+    interval: 12h
+    workers: 2
+    maxDocumentBytes: 33554432
+    maxComponents: 60000
+    retainSnapshots: 5
+    registries:
+      npm: {url: https://npm.example.invalid/, namespaces: ["@acme", "@internal"], allowPrivate: false, token: true}
+      nuget: {url: "", namespaces: [], allowPrivate: false}
+      maven: {url: https://maven.example.invalid/repository/public/, namespaces: [com.acme], allowPrivate: true, basic: true}
+      ca: true
   sso:
     publicURL: https://graphnest.example.invalid
     oidc: {enabled: true, issuerURL: https://id.example.invalid, clientID: graphnest, scopes: [openid, profile, email], linkClaim: sub, displayNameClaim: name}

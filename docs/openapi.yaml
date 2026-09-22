@@ -639,7 +639,7 @@ paths:
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: id, in: path, required: true, description: GitHub repository ID, schema: {type: integer, format: int64, minimum: 1}}
-        - {name: stream, in: query, required: false, description: 'Stream key; only github:source is served in this milestone', schema: {type: string, enum: ['github:source']}}
+        - {name: stream, in: query, required: false, description: 'Stream key: github:source (default) or import:<subject>:<label>', schema: {type: string}}
       responses:
         '200': {description: Repository inventory status, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainRepositoryStatus'}}}}
         '400': {$ref: '#/components/responses/InvalidRequest'}
@@ -654,7 +654,7 @@ paths:
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
-        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
         - {name: snapshot_id, in: query, required: false, description: A specific snapshot of this repository (defaults to the stream's latest), schema: {type: integer, format: int64, minimum: 1}}
         - {name: cursor, in: query, required: false, description: next_cursor from a previous truncated response (bound to the snapshot and search term), schema: {type: string, minLength: 1}}
         - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100}}
@@ -667,12 +667,29 @@ paths:
         '405': {$ref: '#/components/responses/InvalidRequest'}
         '500': {description: Response exceeded the configured byte limit}
         '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/repositories/{id}/component:
+    get:
+      description: Evidence detail for one occurrence identified by its document element ID (SPDXID). Returns the producer's declarations as evidence rows, the immutable registry evidence history for the exact coordinates (only reachable through an authorized occurrence), bounded relationships, and the derived assessment. Evidence is not approval.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: element, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 512}}
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
+        - {name: snapshot_id, in: query, required: false, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Component evidence detail, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainComponentDetail'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
   /v1/supply-chain/repositories/{id}/snapshots:
     get:
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
-        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
         - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100}}
       responses:
         '200': {description: Snapshot history, newest first, content: {application/json: {schema: {type: object, additionalProperties: false, required: [snapshots], properties: {snapshots: {type: array, items: {$ref: '#/components/schemas/SupplyChainSnapshot'}}}}}}}
@@ -688,7 +705,7 @@ paths:
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
-        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
         - {name: cursor, in: query, required: false, schema: {type: string, minLength: 1}}
         - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100}}
       responses:
@@ -705,7 +722,7 @@ paths:
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
-        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
       responses:
         '202': {description: Refresh job queued or already queued, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainRefreshResponse'}}}}
         '400': {$ref: '#/components/responses/InvalidRequest'}
@@ -742,6 +759,273 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '405': {$ref: '#/components/responses/InvalidRequest'}
         '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/overview:
+    get:
+      description: Portfolio summary across the caller's authorized repositories for one stream. Every count names its denominator in `denominators`; assessments describe evidence, never compliance. Requested repository_id values outside the caller's scope are silently dropped.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
+        - {name: repository_id, in: query, required: false, description: Repeatable GitHub repository IDs to narrow the scope (at most 200), schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Portfolio overview, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainOverview'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/facets:
+    get:
+      description: Bounded filter facets (ecosystems, assessment statuses, normalized license expressions) computed inside the caller's scope.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
+        - {name: repository_id, in: query, required: false, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Facets, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainFacets'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/components:
+    get:
+      description: Unique coordinates (ecosystem, namespace, name, version) across the latest snapshots of the caller's authorized repositories, with repository and occurrence counts, keyset-paginated in stable key order. The cursor is bound to the filter set. Filters never reveal repositories outside the scope.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
+        - {name: repository_id, in: query, required: false, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: ecosystem, in: query, required: false, schema: {type: string, maxLength: 64}}
+        - {name: q, in: query, required: false, description: Case-insensitive substring of name or purl, schema: {type: string, maxLength: 200}}
+        - {name: license, in: query, required: false, description: Exact normalized SPDX expression (case-insensitive), schema: {type: string, maxLength: 500}}
+        - {name: assessment, in: query, required: false, schema: {type: string, enum: [unknown, declared, resolved, conflict, unlicensed, not_applicable, pending, unassessed]}}
+        - {name: cursor, in: query, required: false, schema: {type: string, minLength: 1}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200': {description: Component page, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainPortfolioComponentList'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/components/{key}:
+    get:
+      description: Where one coordinate occurs within the caller's scope (repositories, snapshots, element IDs, assessments) with links to each occurrence's evidence detail. A coordinate with no authorized occurrence is not found.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: key, in: path, required: true, description: Component key from the component list, schema: {type: string, minLength: 1, maxLength: 4096}}
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
+        - {name: repository_id, in: query, required: false, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Coordinate detail, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainPortfolioComponentDetail'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/exports/{id}/components.csv:
+    get:
+      description: CSV export of exactly one authorized snapshot's components with assessments. Every row carries the repository, snapshot ID, stream, producer, collection time, and document SHA-256. Cells starting with formula characters are prefixed with an apostrophe.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
+        - {name: snapshot_id, in: query, required: false, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: CSV attachment with X-GraphNest-Snapshot-ID, content: {text/csv: {schema: {type: string}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '413': {description: Export exceeds the response limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/compare:
+    get:
+      description: Compare two authorized snapshots of one repository. Component changes are computed by coordinate (a renamed SPDXID for the same package is not a change), declared-license changes per component, resolved dependency-edge counts, and document metadata changes (parser version, namespace, producer-claimed time, tool) are reported separately. Cross-producer comparisons are flagged.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: repository_id, in: query, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: base, in: query, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: head, in: query, required: true, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Snapshot comparison, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainSnapshotComparison'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/imports:
+    post:
+      description: Import an SBOM produced elsewhere into a declared stream (import:<subject>:<label>) of an authorized repository. Accepts SPDX 2.3 JSON and CycloneDX 1.6 JSON only; the format is detected from the document, and a Content-Type that contradicts it is rejected. The original bytes are preserved and downloadable unchanged. The authenticated uploader is recorded separately from the producer the document claims; an optional subject_revision is recorded as producer_asserted, never verified. Identical bytes into the same stream return the earlier result (repeated=true). Administrators may import anywhere; other principals need a repository-scoped upload grant. Per-repository quotas apply to accepted and rejected attempts. External URLs inside documents are never dereferenced.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: repository_id, in: query, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: subject, in: query, required: true, schema: {type: string, enum: [source, artifact]}}
+        - {name: label, in: query, required: true, description: Stream label such as ort or syft-image, schema: {type: string, pattern: '^[a-z0-9][a-z0-9._-]{0,63}$'}}
+        - {name: subject_revision, in: query, required: false, schema: {type: string, pattern: '^[0-9a-f]{40}$'}}
+      requestBody:
+        required: true
+        content:
+          application/spdx+json: {schema: {type: object}}
+          application/vnd.cyclonedx+json: {schema: {type: object}}
+          application/json: {schema: {type: object}}
+      responses:
+        '201': {description: Import accepted (published, or unchanged when the stream already serves this document), content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainImportResponse'}}}}
+        '400': {description: Invalid parameters or a document that could not be parsed (malformed_document), content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {description: No upload grant for this repository, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '413': {description: Document exceeds the configured size or component limits, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '415': {description: Unsupported media type, format, or schema version (unsupported_format), content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '429': {description: Import quota exhausted for this repository (quota_exceeded), content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/upload-grants:
+    put:
+      description: Administrator-only. Grant or revoke a principal's (by subject) permission to import into one repository. Grants never widen read access.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false, required: [repository_id, subject, allow], properties: {repository_id: {type: integer, format: int64, minimum: 1}, subject: {type: string, minLength: 1, maxLength: 256}, allow: {type: boolean}}}}}}
+      responses:
+        '204': {description: Grant updated}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/exports/{id}/derived.spdx.json:
+    get:
+      description: Derived SPDX 2.3 JSON document for one authorized snapshot with GraphNest as creator. It links the preserved original by URL and SHA-256 (externalDocumentRefs) and carries GraphNest assessments only as licenseComments; licenseConcluded is always NOASSERTION and licenseDeclared holds only values that are valid SPDX expressions or sentinels. Review decisions are not part of the document. The original download is never altered.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: stream, in: query, required: false, schema: {type: string}}
+        - {name: snapshot_id, in: query, required: false, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Derived SPDX document (attachment) with X-GraphNest-Derived and X-GraphNest-Snapshot-ID, content: {application/spdx+json: {schema: {type: object}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '413': {description: Export exceeds the response limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/review/queue:
+    get:
+      description: Occurrences in the caller's authorized repositories whose current policy verdict is not approved and that have no current decision, or whose decision is stale (exception expired, or evidence changed since the decision). Each item carries the assessment basis fingerprint a reviewer must echo back.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: stream, in: query, required: false, schema: {type: string}}
+        - {name: cursor, in: query, required: false, schema: {type: string, minLength: 1}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200': {description: Review queue, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainReviewQueue'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/review/conclusions:
+    post:
+      description: Record a human license conclusion for exact coordinates. Requires read access to the repository plus a review grant (administrators need no grant). The expression must be a valid SPDX expression with known identifiers, NONE, or UNLICENSED. The basis must equal the current assessment fingerprint of an occurrence in the repository (409 stale_basis otherwise). The conclusion is stored as 'human' evidence; automated evidence is retained and any disagreement stays visible in the assessment's conflict detail.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainConcludeRequest'}}}}
+      responses:
+        '201': {description: Conclusion recorded, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainConclusion'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {description: Review permission required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '409': {description: Evidence changed since it was viewed (stale_basis), content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/review/decisions:
+    post:
+      description: Record a scoped usage decision (approve, reject, or an exception with an expiry within one year) for exact coordinates in one repository. Same permission and basis rules as conclusions. The decision records the active policy version and current verdict; an exception never erases a prohibited verdict or rewrites the license. A newer decision supersedes the previous one; prior decisions remain in history.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainDecideRequest'}}}}
+      responses:
+        '201': {description: Decision recorded, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainDecision'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {description: Review permission required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '409': {description: Evidence changed since it was viewed (stale_basis), content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/review/history:
+    get:
+      description: Conclusions, decisions (current and superseded), and policy evaluation history for exact coordinates in one authorized repository, plus whether the current decision is stale.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: repository_id, in: query, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: ecosystem, in: query, required: true, schema: {type: string}}
+        - {name: namespace, in: query, required: false, schema: {type: string}}
+        - {name: name, in: query, required: true, schema: {type: string}}
+        - {name: version, in: query, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Review history, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainReviewHistory'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/review/grants:
+    put:
+      description: Administrator-only. Grant or revoke a subject's review capability for one repository. Reviewers still need read access to the repository and cannot grant themselves.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false, required: [repository_id, subject, allow], properties: {repository_id: {type: integer, format: int64, minimum: 1}, subject: {type: string, minLength: 1, maxLength: 256}, allow: {type: boolean}}}}}}
+      responses:
+        '204': {description: Grant updated}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/review/events:
+    get:
+      description: Append-only review audit events (policy changes, grants, conclusions, decisions) for the caller's authorized repositories.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      responses:
+        '200': {description: Audit events, newest first, content: {application/json: {schema: {type: object, additionalProperties: false, required: [events], properties: {events: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/SupplyChainReviewEvent'}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/policies:
+    get:
+      description: List policy versions (newest first). Exactly one organization policy may be active; the shipped example is labelled kind=example.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      responses:
+        '200': {description: Policies, content: {application/json: {schema: {type: object, additionalProperties: false, required: [policies], properties: {policies: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/SupplyChainPolicy'}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+    post:
+      description: Administrator-only. Create a new immutable policy version (or install the labelled example fixture). unknown_handling must be review_required or prohibited; approved is refused so unknown licensing never auto-approves. Activating a policy deactivates the previous one; components are re-evaluated in the background and historical results are retained.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainCreatePolicyRequest'}}}}
+      responses:
+        '201': {description: Policy created, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainPolicy'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/auth/config:
     get:
@@ -2125,7 +2409,7 @@ components:
     SupplyChainRepositoryStatus:
       type: object
       additionalProperties: false
-      required: [repository_id, repository, stream, producer, subject, collection, freshness_seconds, latest_snapshot, last_collection, active_job, enrichment, opt_out, notes, documents]
+      required: [repository_id, repository, stream, producer, subject, collection, freshness_seconds, latest_snapshot, last_collection, active_job, enrichment, enrichment_ecosystems, license_summary, opt_out, notes, documents, streams]
       properties:
         repository_id: {type: integer, format: int64}
         repository: {type: string}
@@ -2137,10 +2421,13 @@ components:
         latest_snapshot: {oneOf: [{$ref: '#/components/schemas/SupplyChainSnapshot'}, {type: 'null'}]}
         last_collection: {oneOf: [{$ref: '#/components/schemas/SupplyChainCollection'}, {type: 'null'}]}
         active_job: {oneOf: [{$ref: '#/components/schemas/SupplyChainJob'}, {type: 'null'}]}
-        enrichment: {type: string, enum: [not_configured], description: License enrichment state; a later milestone adds resolver states}
+        enrichment: {type: string, enum: [not_configured, configured], description: Whether any registry route is configured for license enrichment}
+        enrichment_ecosystems: {type: array, items: {type: string, enum: [npm, nuget, maven]}}
+        license_summary: {type: object, additionalProperties: {type: integer, minimum: 0}, description: Latest snapshot's assessment counts by status (unknown, declared, resolved, conflict, unlicensed, not_applicable, pending)}
         opt_out: {type: boolean}
         notes: {type: array, items: {type: string}}
         documents: {type: array, items: {$ref: '#/components/schemas/SupplyChainDocumentRef'}}
+        streams: {type: array, items: {$ref: '#/components/schemas/SupplyChainStreamRef'}, description: Every stream known for the repository (GitHub observation and imports)}
     SupplyChainDocumentRef:
       type: object
       additionalProperties: false
@@ -2180,6 +2467,8 @@ components:
         document_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
         document_format: {type: string, enum: [spdx-2.3-json, cyclonedx-1.6-json]}
         document_bytes: {type: integer, format: int64, minimum: 0}
+        uploaded_by: {type: string, description: Authenticated uploader of an imported document, distinct from the producer the document claims}
+        upload_label: {type: string}
     SupplyChainWarning:
       type: object
       additionalProperties: false
@@ -2209,6 +2498,375 @@ components:
         checksums: {type: array, items: {type: object, additionalProperties: false, required: [algorithm, value], properties: {algorithm: {type: string}, value: {type: string}}}}
         is_root: {type: boolean}
         scope: {type: string, enum: [root, direct, transitive, unknown]}
+        license: {oneOf: [{$ref: '#/components/schemas/SupplyChainLicenseAssessment'}, {type: 'null'}]}
+    SupplyChainLicenseAssessment:
+      type: object
+      additionalProperties: false
+      required: [status, evidence_count, assessed_at, evidence_fingerprint]
+      description: Derived view over producer declarations and registry evidence for one occurrence. Not an approval.
+      properties:
+        status: {type: string, enum: [unknown, declared, resolved, conflict, unlicensed, not_applicable, pending]}
+        expression: {type: string, description: Normalized SPDX expression when status is declared or resolved}
+        conflict_detail: {type: string}
+        evidence_count: {type: integer, minimum: 0}
+        assessed_at: {type: string, format: date-time}
+        evidence_fingerprint: {type: string, pattern: '^[0-9a-f]{64}$'}
+    SupplyChainLicenseEvidence:
+      type: object
+      additionalProperties: false
+      required: [id, source, ecosystem, name, version, raw_value, raw_kind, parse_status, resolver_version, license_list_version, fetched_at, outcome]
+      properties:
+        id: {type: integer, format: int64, minimum: 0, description: 0 for producer declarations synthesized from the snapshot}
+        source: {type: string, enum: [producer_declared, producer_concluded, registry_npm, registry_nuget, registry_maven, import, human]}
+        route: {type: string}
+        ecosystem: {type: string}
+        namespace: {type: string}
+        name: {type: string}
+        version: {type: string}
+        artifact_sha256: {type: string}
+        raw_value: {type: string, description: Verbatim value as observed}
+        raw_kind: {type: string, enum: [expression, expression_or_file, license_file, license_url, license_name, legacy_object, missing, sentinel]}
+        parse_status: {type: string, enum: [parsed, unknown_terms, no_assertion, none, unlicensed, invalid, not_applicable]}
+        expression: {type: string}
+        unknown_terms: {type: array, items: {type: string}}
+        license_url: {type: string}
+        license_file_name: {type: string}
+        detail: {type: object}
+        resolver_version: {type: integer, minimum: 1}
+        license_list_version: {type: string}
+        content_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        fetched_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time, description: Present on negative outcomes; the lookup is retried after this time}
+        outcome: {type: string, enum: [resolved, not_found, no_license_metadata, unavailable, rejected, too_large, malformed]}
+        http_status: {type: integer}
+        message: {type: string}
+    SupplyChainComponentDetail:
+      type: object
+      additionalProperties: false
+      required: [component, snapshot, declarations, evidence, relationships, notes, truncated]
+      properties:
+        component: {$ref: '#/components/schemas/SupplyChainComponent'}
+        snapshot: {$ref: '#/components/schemas/SupplyChainSnapshot'}
+        declarations: {type: array, items: {$ref: '#/components/schemas/SupplyChainLicenseEvidence'}}
+        evidence: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/SupplyChainLicenseEvidence'}}
+        relationships: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/SupplyChainRelationship'}}
+        notes: {type: array, items: {type: string}}
+        truncated: {type: boolean}
+    SupplyChainRelationship:
+      type: object
+      additionalProperties: false
+      required: [from, type, to, resolved]
+      properties:
+        from: {type: string}
+        type: {type: string}
+        to: {type: string}
+        resolved: {type: boolean}
+    SupplyChainOverview:
+      type: object
+      additionalProperties: false
+      required: [stream, generated_at, repositories, components, warning_total, oldest_collected_at, newest_collected_at, ecosystems, denominators]
+      properties:
+        stream: {type: string}
+        generated_at: {type: string, format: date-time}
+        repositories:
+          type: object
+          additionalProperties: false
+          required: [authorized, with_inventory, never_collected, stale, failed_last_attempt, opted_out]
+          properties:
+            authorized: {type: integer, minimum: 0}
+            with_inventory: {type: integer, minimum: 0}
+            never_collected: {type: integer, minimum: 0}
+            stale: {type: integer, minimum: 0}
+            failed_last_attempt: {type: integer, minimum: 0}
+            opted_out: {type: integer, minimum: 0}
+        components:
+          type: object
+          additionalProperties: false
+          required: [occurrences, unique_coordinates, without_purl, without_version, unassessed, assessments]
+          properties:
+            occurrences: {type: integer, minimum: 0}
+            unique_coordinates: {type: integer, minimum: 0}
+            without_purl: {type: integer, minimum: 0}
+            without_version: {type: integer, minimum: 0}
+            unassessed: {type: integer, minimum: 0}
+            assessments: {type: object, additionalProperties: {type: integer, minimum: 0}}
+        warning_total: {type: integer, minimum: 0}
+        oldest_collected_at: {oneOf: [{type: string, format: date-time}, {type: 'null'}]}
+        newest_collected_at: {oneOf: [{type: string, format: date-time}, {type: 'null'}]}
+        ecosystems: {type: array, items: {$ref: '#/components/schemas/SupplyChainFacet'}}
+        denominators: {type: array, items: {type: string}}
+    SupplyChainFacet:
+      type: object
+      additionalProperties: false
+      required: [value, count]
+      properties:
+        value: {type: string}
+        count: {type: integer, minimum: 0}
+    SupplyChainFacets:
+      type: object
+      additionalProperties: false
+      required: [stream, ecosystems, assessments, licenses]
+      properties:
+        stream: {type: string}
+        ecosystems: {type: array, items: {$ref: '#/components/schemas/SupplyChainFacet'}}
+        assessments: {type: array, items: {$ref: '#/components/schemas/SupplyChainFacet'}}
+        licenses: {type: array, items: {$ref: '#/components/schemas/SupplyChainFacet'}}
+    SupplyChainPortfolioComponent:
+      type: object
+      additionalProperties: false
+      required: [key, ecosystem, name, version, repository_count, occurrence_count, assessment, assessment_statuses, declared_raw, newest_collected_at, oldest_collected_at, repositories]
+      properties:
+        key: {type: string, description: Opaque coordinate key for the detail route}
+        ecosystem: {type: string}
+        namespace: {type: string}
+        name: {type: string}
+        version: {type: string}
+        purl: {type: string}
+        repository_count: {type: integer, minimum: 1}
+        occurrence_count: {type: integer, minimum: 1}
+        assessment: {type: string, description: Single status when all occurrences agree, otherwise mixed or unassessed}
+        assessment_statuses: {type: array, items: {type: string}}
+        expression: {type: string}
+        declared_raw: {type: array, items: {type: string}, description: Distinct verbatim producer declarations across occurrences}
+        newest_collected_at: {type: string, format: date-time}
+        oldest_collected_at: {type: string, format: date-time}
+        repositories: {type: array, items: {type: object, additionalProperties: false, required: [id], properties: {id: {type: integer, format: int64}, name: {type: string}}}}
+    SupplyChainPortfolioComponentList:
+      type: object
+      additionalProperties: false
+      required: [stream, repositories_in_scope, components, truncated]
+      properties:
+        stream: {type: string}
+        repositories_in_scope: {type: integer, minimum: 0}
+        components: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/SupplyChainPortfolioComponent'}}
+        truncated: {type: boolean}
+        next_cursor: {type: string, minLength: 1}
+    SupplyChainPortfolioComponentDetail:
+      type: object
+      additionalProperties: false
+      required: [key, stream, ecosystem, name, version, occurrences, truncated, notes]
+      properties:
+        key: {type: string}
+        stream: {type: string}
+        ecosystem: {type: string}
+        namespace: {type: string}
+        name: {type: string}
+        version: {type: string}
+        occurrences:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [repository_id, repository, snapshot_id, collected_at, element_id, root, declared_raw, detail_path]
+            properties:
+              repository_id: {type: integer, format: int64}
+              repository: {type: string}
+              snapshot_id: {type: integer, format: int64}
+              collected_at: {type: string, format: date-time}
+              element_id: {type: string}
+              root: {type: boolean}
+              declared_raw: {oneOf: [{type: string}, {type: 'null'}]}
+              assessment: {type: string}
+              expression: {type: string}
+              detail_path: {type: string}
+        truncated: {type: boolean}
+        notes: {type: array, items: {type: string}}
+    SupplyChainSnapshotComparison:
+      type: object
+      additionalProperties: false
+      required: [repository_id, base, head, added_components, removed_components, license_changes, edges_added, edges_removed, metadata_changes, notes]
+      properties:
+        repository_id: {type: integer, format: int64}
+        base: {$ref: '#/components/schemas/SupplyChainSnapshot'}
+        head: {$ref: '#/components/schemas/SupplyChainSnapshot'}
+        added_components: {type: array, items: {type: string}}
+        removed_components: {type: array, items: {type: string}}
+        license_changes: {type: array, items: {type: object, additionalProperties: false, required: [component, from, to], properties: {component: {type: string}, from: {type: string}, to: {type: string}}}}
+        edges_added: {type: integer, minimum: 0}
+        edges_removed: {type: integer, minimum: 0}
+        metadata_changes: {type: array, items: {type: string}}
+        notes: {type: array, items: {type: string}}
+    SupplyChainImportResponse:
+      type: object
+      additionalProperties: false
+      required: [import_id, outcome, repeated, snapshot_id, stream, format, component_count, edge_count, warning_count, warnings, notes]
+      properties:
+        import_id: {type: integer, format: int64}
+        outcome: {type: string, enum: [published, unchanged]}
+        repeated: {type: boolean, description: True when identical bytes were already imported into this stream}
+        snapshot_id: {oneOf: [{type: integer, format: int64}, {type: 'null'}]}
+        stream: {type: string}
+        format: {type: string, enum: [spdx-2.3-json, cyclonedx-1.6-json]}
+        component_count: {type: integer, minimum: 0}
+        edge_count: {type: integer, minimum: 0}
+        warning_count: {type: integer, minimum: 0}
+        warnings: {type: array, items: {$ref: '#/components/schemas/SupplyChainWarning'}}
+        subject_assurance: {type: string, enum: [unknown, producer_asserted, verified]}
+        notes: {type: array, items: {type: string}}
+    SupplyChainStreamRef:
+      type: object
+      additionalProperties: false
+      required: [key, producer, subject, has_inventory]
+      properties:
+        key: {type: string}
+        producer: {type: string, enum: [github, import]}
+        subject: {type: string, enum: [source, artifact]}
+        has_inventory: {type: boolean}
+        last_outcome: {type: string}
+    SupplyChainCoordinates:
+      type: object
+      additionalProperties: false
+      required: [ecosystem, name, version]
+      properties:
+        ecosystem: {type: string, minLength: 1}
+        namespace: {type: string}
+        name: {type: string, minLength: 1}
+        version: {type: string, minLength: 1}
+    SupplyChainReviewItem:
+      type: object
+      additionalProperties: false
+      required: [component_id, snapshot_id, repository_id, repository, element_id, name, version, coordinates, assessment, verdict, explanation, policy_id, stale_decision_id, reason]
+      properties:
+        component_id: {type: integer, format: int64}
+        snapshot_id: {type: integer, format: int64}
+        repository_id: {type: integer, format: int64}
+        repository: {type: string}
+        element_id: {type: string}
+        name: {type: string}
+        version: {type: string}
+        purl: {type: string}
+        coordinates: {$ref: '#/components/schemas/SupplyChainCoordinates'}
+        assessment: {type: string}
+        expression: {type: string}
+        basis: {type: string, description: Assessment evidence fingerprint (hex) to echo back in conclusions and decisions}
+        verdict: {type: string, enum: ['', approved, prohibited, review_required, unknown]}
+        explanation: {type: string}
+        policy_id: {oneOf: [{type: integer, format: int64}, {type: 'null'}]}
+        stale_decision_id: {oneOf: [{type: integer, format: int64}, {type: 'null'}]}
+        reason: {type: string, enum: [no decision recorded, not yet evaluated, exception expired, evidence changed since the decision]}
+    SupplyChainReviewQueue:
+      type: object
+      additionalProperties: false
+      required: [items, truncated]
+      properties:
+        items: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/SupplyChainReviewItem'}}
+        truncated: {type: boolean}
+        next_cursor: {type: string, minLength: 1}
+    SupplyChainConcludeRequest:
+      type: object
+      additionalProperties: false
+      required: [repository_id, coordinates, expression, reason, basis]
+      properties:
+        repository_id: {type: integer, format: int64, minimum: 1}
+        coordinates: {$ref: '#/components/schemas/SupplyChainCoordinates'}
+        expression: {type: string, minLength: 1, description: SPDX expression with known identifiers, NONE, or UNLICENSED}
+        reason: {type: string, minLength: 1, maxLength: 4096}
+        basis: {type: string, pattern: '^[0-9a-f]{64}$'}
+    SupplyChainDecideRequest:
+      type: object
+      additionalProperties: false
+      required: [repository_id, coordinates, kind, reason, basis]
+      properties:
+        repository_id: {type: integer, format: int64, minimum: 1}
+        coordinates: {$ref: '#/components/schemas/SupplyChainCoordinates'}
+        kind: {type: string, enum: [approve, reject, exception]}
+        reason: {type: string, minLength: 1, maxLength: 4096}
+        usage_context: {type: string, maxLength: 1024}
+        expires_at: {type: string, format: date-time, description: Required for exception (within one year); forbidden otherwise}
+        basis: {type: string, pattern: '^[0-9a-f]{64}$'}
+    SupplyChainConclusion:
+      type: object
+      additionalProperties: false
+      required: [id, coordinates, evidence_id, basis, reviewer, reason, created_at, superseded_by]
+      properties:
+        id: {type: integer, format: int64}
+        coordinates: {$ref: '#/components/schemas/SupplyChainCoordinates'}
+        evidence_id: {type: integer, format: int64}
+        basis: {type: string}
+        reviewer: {type: string}
+        reason: {type: string}
+        created_at: {type: string, format: date-time}
+        superseded_by: {oneOf: [{type: integer, format: int64}, {type: 'null'}]}
+    SupplyChainDecision:
+      type: object
+      additionalProperties: false
+      required: [id, coordinates, kind, policy_id, basis, reviewer, reason, expires_at, created_at, superseded_by]
+      properties:
+        id: {type: integer, format: int64}
+        coordinates: {$ref: '#/components/schemas/SupplyChainCoordinates'}
+        kind: {type: string, enum: [approve, reject, exception]}
+        policy_id: {oneOf: [{type: integer, format: int64}, {type: 'null'}]}
+        policy_verdict: {type: string}
+        basis: {type: string}
+        reviewer: {type: string}
+        reason: {type: string}
+        usage_context: {type: string}
+        expires_at: {oneOf: [{type: string, format: date-time}, {type: 'null'}]}
+        created_at: {type: string, format: date-time}
+        superseded_by: {oneOf: [{type: integer, format: int64}, {type: 'null'}]}
+    SupplyChainPolicyResult:
+      type: object
+      additionalProperties: false
+      required: [policy_id, verdict, explanation, evaluated_at]
+      properties:
+        policy_id: {type: integer, format: int64}
+        verdict: {type: string, enum: [approved, prohibited, review_required, unknown]}
+        explanation: {type: string}
+        evaluated_at: {type: string, format: date-time}
+        evidence_fingerprint: {type: string}
+    SupplyChainReviewHistory:
+      type: object
+      additionalProperties: false
+      required: [current, current_stale, conclusions, decisions, policy_results]
+      properties:
+        basis: {type: string}
+        current: {oneOf: [{$ref: '#/components/schemas/SupplyChainDecision'}, {type: 'null'}]}
+        current_stale: {type: boolean}
+        stale_reason: {type: string}
+        conclusions: {type: array, items: {$ref: '#/components/schemas/SupplyChainConclusion'}}
+        decisions: {type: array, items: {$ref: '#/components/schemas/SupplyChainDecision'}}
+        policy_results: {type: array, items: {$ref: '#/components/schemas/SupplyChainPolicyResult'}}
+    SupplyChainReviewEvent:
+      type: object
+      additionalProperties: false
+      required: [id, kind, actor, repository_id, target, detail, created_at]
+      properties:
+        id: {type: integer, format: int64}
+        kind: {type: string}
+        actor: {type: string}
+        repository_id: {oneOf: [{type: integer, format: int64}, {type: 'null'}]}
+        target: {type: string}
+        detail: {type: object}
+        created_at: {type: string, format: date-time}
+    SupplyChainPolicy:
+      type: object
+      additionalProperties: false
+      required: [id, name, version, kind, active, unknown_handling, description, created_by, approved, review_required, prohibited, allow_or_later]
+      properties:
+        id: {type: integer, format: int64}
+        name: {type: string}
+        version: {type: integer, minimum: 1}
+        kind: {type: string, enum: [example, organization]}
+        active: {type: boolean}
+        unknown_handling: {type: string, enum: [review_required, prohibited]}
+        description: {type: string}
+        created_by: {type: string}
+        approved: {type: array, items: {type: string}}
+        review_required: {type: array, items: {type: string}}
+        prohibited: {type: array, items: {type: string}}
+        allow_or_later: {type: boolean}
+    SupplyChainCreatePolicyRequest:
+      type: object
+      additionalProperties: false
+      required: [activate]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 128}
+        description: {type: string, maxLength: 4096}
+        rules: {type: object, additionalProperties: false, properties: {approved: {type: array, items: {type: string}}, review_required: {type: array, items: {type: string}}, prohibited: {type: array, items: {type: string}}, allow_or_later: {type: boolean}}}
+        unknown_handling: {type: string, enum: [review_required, prohibited]}
+        activate: {type: boolean}
+        install_example: {type: boolean, description: Install the labelled example fixture instead of authoring rules}
     SupplyChainComponentList:
       type: object
       additionalProperties: false

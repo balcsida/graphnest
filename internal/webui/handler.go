@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-//go:embed index.html admin.html
+//go:embed index.html admin.html supply-chain.html
 var assets embed.FS
 
 var breakGlassDocument = mustReadDocument()
@@ -18,6 +18,8 @@ var document = withoutMarked(withoutMarked(breakGlassDocument, "<!-- break-glass
 var contentSecurityPolicy = policyFor(document)
 var adminDocument = mustRead("admin.html")
 var adminContentSecurityPolicy = policyFor(adminDocument)
+var supplyChainDocument = mustRead("supply-chain.html")
+var supplyChainContentSecurityPolicy = policyFor(supplyChainDocument)
 
 func Register(mux *http.ServeMux) {
 	RegisterWithBreakGlass(mux, false)
@@ -34,6 +36,7 @@ func RegisterWithBreakGlass(mux *http.ServeMux, breakGlass bool) {
 	mux.Handle("GET /index.html", handler(index, policy))
 	mux.Handle("GET /admin", handler(adminDocument, adminContentSecurityPolicy))
 	mux.Handle("GET /account", handler(adminDocument, adminContentSecurityPolicy))
+	mux.Handle("GET /supply-chain", handler(supplyChainDocument, supplyChainContentSecurityPolicy))
 }
 
 func withoutMarked(document []byte, opening, closing string) []byte {

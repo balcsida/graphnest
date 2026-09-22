@@ -75,6 +75,27 @@ func RegisterSupplyChain(mux *http.ServeMux, authenticator authn.RequestAuthenti
 				}
 				writeBoundedJSON(writer, response, maxResponseBytes)
 			}).ServeHTTP(writer, request)
+		case "component":
+			authenticated(http.MethodGet, func(writer http.ResponseWriter, request *http.Request) {
+				var snapshotID int64
+				ok := true
+				if value := query.Get("snapshot_id"); value != "" {
+					var err error
+					snapshotID, err = strconv.ParseInt(value, 10, 64)
+					ok = err == nil && snapshotID > 0
+				}
+				element := query.Get("element")
+				if !ok || element == "" || len(query["element"]) != 1 {
+					writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
+					return
+				}
+				response, err := service.ComponentDetail(request.Context(), PrincipalFromContext(request.Context()), githubID, stream, snapshotID, element)
+				if err != nil {
+					writeSupplyChainError(writer, err)
+					return
+				}
+				writeBoundedJSON(writer, response, maxResponseBytes)
+			}).ServeHTTP(writer, request)
 		case "snapshots":
 			authenticated(http.MethodGet, func(writer http.ResponseWriter, request *http.Request) {
 				limit, ok := limitFrom(query)
