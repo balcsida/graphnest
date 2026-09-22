@@ -36,12 +36,14 @@ class FakeNode {
 
 const all = [];
 const ids = new Map();
+const documentListeners = {};
 const document = {
   activeElement: null,
   documentElement: new FakeNode("html"),
   createElement(tag) { const node = new FakeNode(tag); all.push(node); return node; },
   getElementById(id) { return ids.get(id); },
   querySelectorAll() { return []; },
+  addEventListener(name, listener) { documentListeners[name] = listener; },
 };
 globalThis.document = document;
 globalThis.Node = FakeNode;
@@ -60,9 +62,10 @@ for (const id of [
   "sc-refresh", "sc-download", "sc-notes", "sc-notice", "sc-cards", "sc-details",
   "sc-document", "sc-warnings", "sc-warning-count", "sc-search", "sc-shown",
   "sc-rows", "sc-loading", "sc-empty", "sc-error", "sc-more", "sc-collections",
+  "sc-detail", "sc-detail-title", "sc-detail-body", "sc-detail-close",
 ]) {
   const node = document.createElement(id === "token-form" ? "form" : "div");
-  node.hidden = id === "sc-shell" || id === "sc-notice" || id === "sc-more";
+  node.hidden = id === "sc-shell" || id === "sc-notice" || id === "sc-more" || id === "sc-detail";
   ids.set(id, node);
 }
 
@@ -81,12 +84,36 @@ const component = (ordinal, overrides = {}) => ({
   purl: "pkg:npm/pkg-" + ordinal + "@1." + ordinal + ".0", ecosystem: "npm",
   license_declared_raw: "MIT", is_root: false, scope: "transitive", ...overrides,
 });
+const assessment = (status, overrides = {}) => ({
+  status, evidence_count: 2, assessed_at: "2026-02-01T11:00:00Z",
+  evidence_fingerprint: "a1b2c3d4e5f60718293a4b5c6d7e8f90", ...overrides,
+});
 const firstPage = [
-  component(1, {is_root: true, scope: "root", name: "<b>x</b>"}),
-  component(2, {scope: "direct"}),
-  component(3, {version: null, purl: null, license_declared_raw: "NOASSERTION", scope: "unknown"}),
+  component(1, {is_root: true, scope: "root", name: "<b>x</b>", license: assessment("resolved", {expression: "MIT"})}),
+  component(2, {scope: "direct", license: assessment("conflict", {conflict_detail: "github says MIT, npm says Apache-2.0"})}),
+  component(3, {version: null, purl: null, license_declared_raw: "NOASSERTION", scope: "unknown", license: null}),
   component(4),
 ];
+const evidenceRow = (overrides = {}) => ({
+  id: 1, source: "registry", route: "npm:test", ecosystem: "npm", name: "pkg-1", version: "1.1.0",
+  raw_value: "MIT", raw_kind: "expression", parse_status: "parsed", expression: "MIT",
+  resolver_version: 1, license_list_version: "3.27.0", fetched_at: "2026-02-01T10:30:00Z",
+  outcome: "resolved", ...overrides,
+});
+const componentDetail = {
+  component: firstPage[0], snapshot,
+  declarations: [
+    evidenceRow({id: 10, source: "producer", route: "", raw_value: "MIT", raw_kind: "spdx_declared"}),
+    evidenceRow({id: 11, source: "producer", route: "", raw_value: "<b>MIT</b>", raw_kind: "spdx_declared", parse_status: "unparsed"}),
+  ],
+  evidence: [
+    evidenceRow({id: 20, license_url: "https://registry.test/license"}),
+    evidenceRow({id: 21, outcome: "unavailable", route: "npm:test", raw_value: "", expression: "", parse_status: "absent", message: "registry timed out"}),
+  ],
+  relationships: [{from: "SPDXRef-1", type: "DEPENDS_ON", to: "SPDXRef-2", resolved: false}],
+  notes: ["Registry evidence is cached and may lag the registry.", "Declarations are shown verbatim."],
+  truncated: false,
+};
 const secondPage = [component(5), component(6), component(7)];
 
 const STREAM = "stream=github%3Asource";
@@ -100,12 +127,14 @@ const responses = {
     subject: "repository", collection: "failed", freshness_seconds: 7200,
     latest_snapshot: snapshot,
     last_collection: {id: 5, outcome: "forbidden", http_status: 403, message: "dependency graph is disabled", finished_at: "2026-02-02T10:00:00Z"},
-    active_job: null, enrichment: "not_configured", opt_out: false,
+    active_job: null, enrichment: "configured", enrichment_ecosystems: ["npm", "maven"],
+    license_summary: {resolved: 3, conflict: 1, unknown: 2}, opt_out: false,
     notes: ["GitHub reports the dependency graph for the default branch.", "Subject assurance is unknown on GitHub Enterprise Server."],
     documents: [{snapshot_id: 11, sha256: "ab".repeat(32), format: "spdx-2.3-json", bytes: 1234, path: "/v1/supply-chain/snapshots/11/document"}],
   },
   ["/v1/supply-chain/repositories/101/components?" + STREAM + "&limit=100"]: {snapshot_id: 11, components: firstPage, truncated: true, next_cursor: "c2"},
   ["/v1/supply-chain/repositories/101/components?" + STREAM + "&limit=100&cursor=c2"]: {snapshot_id: 11, components: secondPage, truncated: false},
+  ["/v1/supply-chain/repositories/101/component?element=SPDXRef-1&" + STREAM + "&snapshot_id=11"]: componentDetail,
   ["/v1/supply-chain/repositories/101/collections?" + STREAM]: {collections: [
     {id: 5, outcome: "forbidden", http_status: 403, error_code: "forbidden", message: "dependency graph is disabled", finished_at: "2026-02-02T10:00:00Z"},
     {id: 4, outcome: "published", http_status: 200, snapshot_id: 11, finished_at: "2026-02-01T10:00:00Z"},
@@ -176,6 +205,49 @@ assert.deepEqual(rows[2].slice(1, 4), ["—", "npm", "—"], "missing version an
 assert.equal(rows[2][5], "NOASSERTION", "declared license is shown verbatim");
 assert.equal(rows[0][0], "<b>x</b>", "component names are rendered as literal text");
 assert.equal(all.some(node => node.tagName === "B"), false, "no markup is built from component data");
+
+// Assessed licenses are shown as a status pill plus the normalized expression.
+assert.equal(rows[2][6], "—", "a component without an assessment shows an em dash");
+assert.match(rows[0][6], /resolved/);
+assert.match(rows[0][6], /MIT/, "a resolved assessment shows its expression");
+const conflictPill = all.find(node => node.textContent === "conflict" && node.className.includes("pill"));
+assert.ok(conflictPill.className.includes("err"), "a conflicting assessment uses the error tone");
+
+// Enrichment state and the license summary are reported in the status area.
+assert.match(text(ids.get("sc-details")), /License enrichment/);
+assert.match(text(ids.get("sc-details")), /configured for npm, maven/);
+assert.match(text(ids.get("sc-cards")), /3 resolved · 1 conflict · 2 unknown/);
+
+// The component name opens the evidence detail panel for that element.
+const nameButton = ids.get("sc-rows").children[0].children[0].children[0];
+assert.equal(nameButton.tagName, "BUTTON", "component names open the detail panel");
+await nameButton.dispatch("click");
+await settle();
+const detailRequest = requests.find(({path}) => path.includes("/component?"));
+assert.equal(detailRequest.options.headers.get("Authorization"), "Bearer sc-token", "detail fetch must send Authorization");
+assert.match(detailRequest.path, /snapshot_id=11/);
+assert.equal(ids.get("sc-detail").hidden, false);
+assert.equal(document.activeElement, ids.get("sc-detail-title"), "opening the panel moves focus to its heading");
+const detailText = text(ids.get("sc-detail-body"));
+const evidenceTable = ids.get("sc-detail-body").children.filter(node => node.className === "table-wrap");
+assert.equal(evidenceTable.length, 2, "declarations and registry evidence each render a table");
+assert.equal(evidenceTable[1].children[0].children[1].children.length, 2, "both registry evidence rows are rendered");
+assert.match(detailText, /npm:test/);
+assert.match(detailText, /resolver v1 · SPDX list 3\.27\.0/);
+assert.match(detailText, /a1b2c3d4e5f6/, "the fingerprint is shortened");
+assert.match(detailText, /registry timed out/);
+assert.match(detailText, /Registry evidence is cached/, "detail notes are rendered");
+assert.match(detailText, /\(unresolved\)/);
+assert.ok(detailText.includes("<b>MIT</b>"), "raw declaration values stay literal text");
+assert.equal(all.some(node => node.tagName === "B"), false, "no markup is built from evidence data");
+const unavailablePill = all.find(node => node.textContent === "unavailable" && node.className.includes("pill"));
+assert.ok(unavailablePill.className.includes("warn"), "an unavailable registry fetch uses the warning tone");
+assert.match(location.hash, /element=SPDXRef-1/);
+
+// Escape closes the panel and drops the element from the hash.
+documentListeners.keydown({key: "Escape"});
+assert.equal(ids.get("sc-detail").hidden, true, "Escape closes the evidence panel");
+assert.equal(/element=/.test(location.hash), false);
 
 // Refresh reports the queued job.
 await ids.get("sc-refresh").dispatch("click");

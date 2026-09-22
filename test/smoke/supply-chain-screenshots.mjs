@@ -13,6 +13,26 @@ const html = fs.readFileSync(htmlPath);
 const fixture = fs.readFileSync(path.resolve("test/fixtures/supplychain/ghes-spdx-2.3.json"), "utf8");
 const doc = JSON.parse(fixture);
 const collected = "2026-09-21T10:00:00Z";
+const assessed = "2026-09-21T10:05:00Z";
+// Registry-derived assessments; the fixture declares NOASSERTION everywhere, so
+// nothing here is inferred from the producer's declared value.
+// Only ecosystems with a configured route (npm here) can be resolved; the
+// root has no version, maven/nuget/golang/actions have no route, and the
+// vendored component has no coordinates at all.
+const ASSESSMENTS = [
+  null,
+  {status: "resolved", expression: "MIT", evidence_count: 1},
+  {status: "conflict", conflict_detail: "producer_declared: Apache-2.0 | registry_maven@maven:internal: MIT", evidence_count: 1},
+  null,
+  null,
+  null,
+  {status: "not_applicable", evidence_count: 0},
+];
+function licenseFor(ordinal) {
+  const assessment = ASSESSMENTS[ordinal];
+  if (!assessment) return null;
+  return {...assessment, assessed_at: assessed, evidence_fingerprint: "c3" + String(ordinal) + "9f41ad7b2e5c81d4a6027f3b9e5148dc6a0b7739ce21845f0db3c6a1e9f472"};
+}
 const components = doc.packages.map((pkg, ordinal) => {
   const purl = pkg.externalRefs?.find(ref => ref.referenceType === "purl")?.referenceLocator ?? null;
   const ecosystem = purl ? purl.slice(4, purl.indexOf("/")) : "";
@@ -20,8 +40,12 @@ const components = doc.packages.map((pkg, ordinal) => {
     element_id: pkg.SPDXID, ordinal, name: pkg.name, version: pkg.versionInfo || null, purl,
     ecosystem, license_declared_raw: pkg.licenseDeclared ?? null, license_concluded_raw: pkg.licenseConcluded ?? null,
     is_root: ordinal === 0, scope: ordinal === 0 ? "root" : "direct",
+    license: licenseFor(ordinal),
   };
 });
+const detailComponent = components[1];
+const licenseSummary = {};
+for (const item of components) if (item.license) licenseSummary[item.license.status] = (licenseSummary[item.license.status] || 0) + 1;
 const snapshot = {
   id: 11, repository_id: 1, stream: "github:source", producer: "github", subject: "source", collected_at: collected,
   created_at_claimed: doc.creationInfo.created, producer_tool: "GitHub.com-Dependency-Graph", document_name: doc.name,
@@ -42,11 +66,25 @@ const responses = {
     freshness_seconds: 93600, latest_snapshot: snapshot,
     last_collection: {id: 40, job_id: 9, producer: "github", stream: "github:source", started_at: "2026-09-22T11:59:58Z", finished_at: "2026-09-22T12:00:00Z", outcome: "forbidden", http_status: 403, snapshot_id: null, error_code: "github_forbidden",
       message: "GitHub returned 403 for the SBOM export: the dependency graph may be disabled, the installation may lack Contents read access, or the endpoint may be unsupported on this GitHub version."},
-    active_job: null, enrichment: "not_configured", opt_out: false,
+    active_job: null, enrichment: "configured", enrichment_ecosystems: ["npm"], license_summary: licenseSummary, opt_out: false,
     notes: ["The latest refresh failed; the inventory shown is the last successful observation.", "GitHub dependency-graph exports are timestamped observations of the default branch; they are not bound to a commit and carry no license data.", "Normalization reported 3 coverage warning(s)."],
     documents: [{snapshot_id: 11, sha256: snapshot.document_sha256, format: "spdx-2.3-json", bytes: 4650, path: "/v1/supply-chain/snapshots/11/document"}],
   },
   "/v1/supply-chain/repositories/101/components": {snapshot_id: 11, components, truncated: false},
+  "/v1/supply-chain/repositories/101/component": {
+    component: detailComponent, snapshot,
+    declarations: [
+      {id: 0, source: "producer_concluded", ecosystem: "npm", namespace: "@scope", name: "left-pad", version: "1.3.0", raw_value: "NOASSERTION", raw_kind: "sentinel", parse_status: "no_assertion", resolver_version: 1, license_list_version: "3.27.0", fetched_at: collected, outcome: "resolved"},
+      {id: 0, source: "producer_declared", ecosystem: "npm", namespace: "@scope", name: "left-pad", version: "1.3.0", raw_value: "NOASSERTION", raw_kind: "sentinel", parse_status: "no_assertion", resolver_version: 1, license_list_version: "3.27.0", fetched_at: collected, outcome: "resolved"},
+    ],
+    evidence: [
+      {id: 21, source: "registry_npm", route: "npm:npm.example.internal", ecosystem: "npm", namespace: "@scope", name: "left-pad", version: "1.3.0", raw_value: "", raw_kind: "missing", parse_status: "not_applicable", resolver_version: 1, license_list_version: "3.27.0", fetched_at: "2026-09-22T09:00:00Z", expires_at: "2026-09-23T09:00:00Z", outcome: "unavailable", http_status: 503, message: "registry returned an unexpected status"},
+      {id: 20, source: "registry_npm", route: "npm:npm.example.internal", ecosystem: "npm", namespace: "@scope", name: "left-pad", version: "1.3.0", raw_value: "MIT", raw_kind: "expression", parse_status: "parsed", expression: "MIT", detail: {integrity: "sha512-abc"}, resolver_version: 1, license_list_version: "3.27.0", content_sha256: "9f".repeat(32), fetched_at: assessed, outcome: "resolved"},
+    ],
+    relationships: [{from: doc.packages[0].SPDXID, type: "DEPENDS_ON", to: detailComponent.element_id, resolved: true}],
+    notes: ["Publisher declarations and registry metadata are evidence, not approval; a human conclusion or policy decision is recorded separately."],
+    truncated: false,
+  },
   "/v1/supply-chain/repositories/101/collections": {collections: [
     {id: 40, job_id: 9, producer: "github", stream: "github:source", started_at: "2026-09-22T11:59:58Z", finished_at: "2026-09-22T12:00:00Z", outcome: "forbidden", http_status: 403, snapshot_id: null, error_code: "github_forbidden", message: "GitHub returned 403 for the SBOM export."},
     {id: 39, job_id: 8, producer: "github", stream: "github:source", started_at: "2026-09-21T09:59:57Z", finished_at: collected, outcome: "published", http_status: 200, snapshot_id: 11},
@@ -89,6 +127,9 @@ try {
     await page.getByLabel("Bearer token").fill("demo");
     await page.getByRole("button", {name: "Open inventory"}).click();
     await page.locator("#sc-rows tr").first().waitFor();
+    await page.getByRole("button", {name: detailComponent.name, exact: true}).first().click();
+    await page.locator("#sc-detail").waitFor({state: "visible"});
+    await page.getByText("No registry evidence for these coordinates.").waitFor({state: "hidden"}).catch(() => {});
     if (theme === "light") await page.locator("#sc-theme").click();
     await page.waitForTimeout(150);
     await page.screenshot({path: path.join(outDir, `supply-chain-${theme}.png`), fullPage: true});
