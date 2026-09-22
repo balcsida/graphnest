@@ -10,7 +10,7 @@ import (
 )
 
 func TestSupplyChainDocumentContract(t *testing.T) {
-	if len(supplyChainDocument) >= 40<<10 {
+	if len(supplyChainDocument) >= 48<<10 {
 		t.Fatalf("supply chain document bytes=%d", len(supplyChainDocument))
 	}
 	for _, want := range []string{
@@ -33,6 +33,15 @@ func TestSupplyChainDocumentContract(t *testing.T) {
 		`credentials:"same-origin"`, `sessionStorage`, `/v1/auth/config`,
 		`/v1/auth/session`, `/auth/logout`, `response.status!==204`,
 		`textContent`, `@media(max-width:900px)`, `@media(max-width:520px)`,
+		`data-screen="overview"`, `data-screen="components"`, `data-screen="repository"`,
+		`data-nav="overview"`, `data-nav="components"`, `data-nav="repository"`,
+		`aria-current="page"`, `id="pf-ecosystem"`, `id="pf-assessment"`, `id="pf-license"`,
+		`id="pf-search"`, `id="pf-rows"`, `id="pf-detail"`, `id="sc-compare"`,
+		`id="sc-compare-base"`, `id="sc-export"`, `view=`, `pkey=`,
+		`/v1/supply-chain/overview`, `/v1/supply-chain/facets`, `/v1/supply-chain/components`,
+		`/exports/`, `components.csv`, `/v1/supply-chain/compare`, `/snapshots?`,
+		`denominators`, `How these numbers are counted`, `repositories_in_scope`,
+		`repositories in scope`, `Authorized repositories using this component`,
 	} {
 		if !bytes.Contains(supplyChainDocument, []byte(want)) {
 			t.Errorf("supply chain document missing %q", want)

@@ -42,13 +42,21 @@ const document = {
   documentElement: new FakeNode("html"),
   createElement(tag) { const node = new FakeNode(tag); all.push(node); return node; },
   getElementById(id) { return ids.get(id); },
-  querySelectorAll() { return []; },
+  querySelectorAll(selector) {
+    if (selector === "[data-screen]") return all.filter(node => node.dataset.screen);
+    if (selector === "[data-nav]") return all.filter(node => node.dataset.nav);
+    return [];
+  },
   addEventListener(name, listener) { documentListeners[name] = listener; },
 };
 globalThis.document = document;
 globalThis.Node = FakeNode;
 globalThis.location = {hash: "#repo=101&stream=github:source", origin: "https://graphnest.example"};
 globalThis.window = {confirm: () => true};
+globalThis.URL = class extends URL {
+  static createObjectURL() { return "blob:graphnest"; }
+  static revokeObjectURL() {}
+};
 const storage = new Map([["graphnest_admin_token", "sc-token"]]);
 globalThis.sessionStorage = {
   getItem: key => storage.get(key) || null,
@@ -63,10 +71,22 @@ for (const id of [
   "sc-document", "sc-warnings", "sc-warning-count", "sc-search", "sc-shown",
   "sc-rows", "sc-loading", "sc-empty", "sc-error", "sc-more", "sc-collections",
   "sc-detail", "sc-detail-title", "sc-detail-body", "sc-detail-close",
+  "sc-export", "sc-compare", "sc-compare-base", "sc-compare-body",
+  "pf-overview-cards", "pf-component-cards", "pf-assessments", "pf-ecosystems",
+  "pf-window", "pf-denominators", "pf-overview-state", "pf-ecosystem",
+  "pf-assessment", "pf-license", "pf-search", "pf-scope", "pf-rows", "pf-state",
+  "pf-more", "pf-detail", "pf-detail-title", "pf-detail-body", "pf-detail-close",
 ]) {
   const node = document.createElement(id === "token-form" ? "form" : "div");
-  node.hidden = id === "sc-shell" || id === "sc-notice" || id === "sc-more" || id === "sc-detail";
+  node.hidden = ["sc-shell", "sc-notice", "sc-more", "sc-detail", "sc-compare", "pf-more", "pf-detail", "pf-state", "pf-overview-state"].includes(id);
   ids.set(id, node);
+}
+
+// The three screens and their nav buttons mirror the markup's data attributes.
+const screens = new Map(), navs = new Map();
+for (const name of ["overview", "components", "repository"]) {
+  const screen = document.createElement("section"); screen.dataset.screen = name; screens.set(name, screen);
+  const nav = document.createElement("button"); nav.dataset.nav = name; navs.set(name, nav);
 }
 
 const snapshot = {
@@ -117,6 +137,55 @@ const componentDetail = {
 const secondPage = [component(5), component(6), component(7)];
 
 const STREAM = "stream=github%3Asource";
+const overview = {
+  stream: "github:source", generated_at: "2026-02-02T10:00:00Z",
+  repositories: {authorized: 12, with_inventory: 9, never_collected: 2, stale: 3, failed_last_attempt: 1, opted_out: 1},
+  components: {occurrences: 410, unique_coordinates: 260, without_purl: 7, without_version: 4, unassessed: 4, assessments: {resolved: 3, conflict: 1}},
+  warning_total: 5, oldest_collected_at: "2026-01-20T08:00:00Z", newest_collected_at: "2026-02-01T10:00:00Z",
+  ecosystems: [{value: "npm", count: 180}, {value: "maven", count: 80}],
+  denominators: [
+    "Authorized repositories: repositories this token can read.",
+    "With inventory: authorized repositories with at least one snapshot.",
+    "Occurrences: component rows across the latest snapshot of each repository.",
+    "Unique coordinates: distinct ecosystem, namespace, name and version tuples.",
+    "Assessments describe collected evidence; they are not a compliance verdict.",
+  ],
+};
+const facets = {
+  stream: "github:source",
+  ecosystems: [{value: "npm", count: 180}, {value: "maven", count: 80}],
+  assessments: [{value: "resolved", count: 3}, {value: "conflict", count: 1}],
+  licenses: [{value: "MIT", count: 120}, {value: "Apache-2.0 AND MIT", count: 4}],
+};
+const portfolioRow = (ordinal, overrides = {}) => ({
+  key: "npm||pkg-" + ordinal + "|1." + ordinal + ".0", ecosystem: "npm", name: "pkg-" + ordinal,
+  version: "1." + ordinal + ".0", purl: "pkg:npm/pkg-" + ordinal + "@1." + ordinal + ".0",
+  repository_count: 2, occurrence_count: 3, assessment: "resolved", expression: "MIT",
+  declared_raw: ["MIT"], newest_collected_at: "2026-02-01T10:00:00Z", oldest_collected_at: "2026-01-20T08:00:00Z",
+  repositories: [{id: 101, name: "acme/widgets"}], ...overrides,
+});
+const portfolioFirst = [
+  portfolioRow(1, {namespace: "@acme", name: "<i>x</i>", assessment: "mixed", expression: "", declared_raw: ["NOASSERTION", "MIT"]}),
+  portfolioRow(2),
+];
+const portfolioSecond = [portfolioRow(3), portfolioRow(4)];
+const portfolioDetail = {
+  key: portfolioFirst[0].key, stream: "github:source", ecosystem: "npm", namespace: "@acme",
+  name: "<i>x</i>", version: "1.1.0", truncated: true,
+  notes: ["Occurrences are limited to the caller's authorized repositories."],
+  occurrences: [
+    {repository_id: 101, repository: "acme/widgets", snapshot_id: 11, collected_at: "2026-02-01T10:00:00Z", element_id: "SPDXRef-1", root: true, declared_raw: "NOASSERTION", assessment: "conflict", expression: "", detail_path: "/v1/supply-chain/repositories/101/component?element=SPDXRef-1"},
+    {repository_id: 202, repository: "acme/gadgets", snapshot_id: 21, collected_at: "2026-01-30T10:00:00Z", element_id: "SPDXRef-9", root: false, declared_raw: "MIT", assessment: "resolved", expression: "MIT", detail_path: "/v1/supply-chain/repositories/202/component?element=SPDXRef-9"},
+  ],
+};
+const comparison = {
+  repository_id: 101,
+  base: {id: 10, collected_at: "2026-01-25T10:00:00Z"}, head: {id: 11, collected_at: "2026-02-01T10:00:00Z"},
+  added_components: ["npm:pkg-5@1.5.0"], removed_components: ["npm:pkg-0@1.0.0"],
+  license_changes: [{component: "npm:pkg-1@1.1.0", from: "MIT", to: "Apache-2.0"}],
+  edges_added: 4, edges_removed: 2, metadata_changes: ["producer tool changed"],
+  notes: ["Comparison is by coordinate, not by SPDXID."],
+};
 const responses = {
   "/v1/repositories": {repositories: [
     {id: 1, github_id: 101, name: "acme/widgets"},
@@ -139,7 +208,28 @@ const responses = {
     {id: 5, outcome: "forbidden", http_status: 403, error_code: "forbidden", message: "dependency graph is disabled", finished_at: "2026-02-02T10:00:00Z"},
     {id: 4, outcome: "published", http_status: 200, snapshot_id: 11, finished_at: "2026-02-01T10:00:00Z"},
   ], truncated: false},
+  ["/v1/supply-chain/overview?" + STREAM]: overview,
+  ["/v1/supply-chain/facets?" + STREAM]: facets,
+  ["/v1/supply-chain/components?" + STREAM + "&limit=100"]: {stream: "github:source", repositories_in_scope: 9, components: portfolioFirst, truncated: true, next_cursor: "p2"},
+  ["/v1/supply-chain/components?" + STREAM + "&limit=100&cursor=p2"]: {stream: "github:source", repositories_in_scope: 9, components: portfolioSecond, truncated: false},
+  ["/v1/supply-chain/components?" + STREAM + "&limit=100&ecosystem=maven"]: {stream: "github:source", repositories_in_scope: 9, components: [portfolioRow(7)], truncated: false},
+  ["/v1/supply-chain/components/" + encodeURIComponent(portfolioFirst[0].key) + "?" + STREAM]: portfolioDetail,
+  ["/v1/supply-chain/repositories/101/snapshots?" + STREAM + "&limit=20"]: {snapshots: [
+    {id: 11, collected_at: "2026-02-01T10:00:00Z"},
+    {id: 10, collected_at: "2026-01-25T10:00:00Z"},
+  ]},
+  ["/v1/supply-chain/compare?repository_id=101&base=10&head=11"]: comparison,
+  ["/v1/supply-chain/repositories/202/components?" + STREAM + "&limit=100"]: {snapshot_id: 21, components: [component(9)], truncated: false},
+  ["/v1/supply-chain/repositories/202?" + STREAM]: {
+    repository_id: 202, repository: "acme/gadgets", stream: "github:source", producer: "github",
+    collection: "current", freshness_seconds: 60, latest_snapshot: {...snapshot, id: 21, repository_id: 202},
+    enrichment: "not_configured", license_summary: {}, notes: [], documents: [],
+  },
+  ["/v1/supply-chain/repositories/202/component?element=SPDXRef-9&" + STREAM + "&snapshot_id=21"]: componentDetail,
+  ["/v1/supply-chain/repositories/202/snapshots?" + STREAM + "&limit=20"]: {snapshots: [{id: 21, collected_at: "2026-01-30T10:00:00Z"}]},
+  ["/v1/supply-chain/repositories/202/collections?" + STREAM]: {collections: [], truncated: false},
 };
+let cursorRejected = false;
 
 const requests = [];
 let statusDenied = false;
@@ -149,6 +239,17 @@ globalThis.fetch = async (path, options = {}) => {
   if (path === "/v1/auth/config") return {ok: true, status: 200, json: async () => ({token_login: true, providers: []})};
   if (path === "/v1/auth/session") return {ok: false, status: 401};
   if (statusDenied && path.startsWith("/v1/supply-chain/")) return {ok: false, status: 401, json: async () => ({})};
+  if (path.includes("components.csv")) {
+    return {
+      ok: true, status: 200,
+      headers: new Map([["Content-Disposition", 'attachment; filename="graphnest-components-11.csv"']]),
+      blob: async () => ({type: "text/csv", body: "repository,snapshot_id\nacme/widgets,11\n"}),
+    };
+  }
+  // The server rejects a cursor minted under a different filter set.
+  if (cursorRejected && path.includes("/v1/supply-chain/components?") && path.includes("cursor=")) {
+    return {ok: false, status: 400, json: async () => ({error: {code: "invalid_cursor", message: "cursor does not match the filters"}})};
+  }
   if (path === "/v1/supply-chain/repositories/101/refresh?" + STREAM && options.method === "POST") {
     return {ok: true, status: 202, json: async () => ({job: {id: 9, repository_id: 101, state: "queued", attempt: 0, max_attempts: 3}, created: true})};
   }
@@ -262,3 +363,139 @@ await settle();
 assert.equal(ids.get("sc-shell").hidden, true, "a 401 must hide the shell");
 assert.equal(ids.get("access-panel").hidden, false);
 assert.equal(ids.get("sc-rows").children.length, 0);
+
+// Re-enter the shell with the stored token to exercise the portfolio screens.
+statusDenied = false;
+ids.get("token").value = "sc-token";
+await ids.get("token-form").dispatch("submit");
+await settle();
+assert.equal(ids.get("sc-shell").hidden, false);
+assert.match(location.hash, /view=repository/, "the hash carries the selected view");
+
+// The overview screen names every denominator and each assessment count.
+await navs.get("overview").dispatch("click");
+await settle();
+assert.equal(screens.get("overview").hidden, false);
+assert.equal(screens.get("repository").hidden, true);
+assert.equal(navs.get("overview").attributes["aria-current"], "page");
+assert.match(location.hash, /view=overview/);
+const denominators = text(ids.get("pf-denominators"));
+for (const line of overview.denominators) assert.ok(denominators.includes(line), "every denominator is rendered: " + line);
+assert.match(text(ids.get("pf-overview-cards")), /Authorized repositories/);
+assert.match(text(ids.get("pf-overview-cards")), /Failed last attempt/);
+assert.match(text(ids.get("pf-component-cards")), /Unique coordinates/);
+assert.deepEqual(
+  ids.get("pf-assessments").children.map(line => line.children.map(part => part.textContent)),
+  [["resolved", "3"], ["conflict", "1"], ["unassessed", "4"]],
+  "assessment counts keep the stable order and include unassessed",
+);
+assert.match(text(ids.get("pf-ecosystems")), /npm/);
+assert.match(text(ids.get("pf-window")), /Oldest/);
+assert.equal(/%|compliant/i.test(text(ids.get("pf-overview-cards")) + denominators.replace(/[^%]/g, "")), false, "the overview never claims a percentage or compliance");
+
+// The components screen paginates through the portfolio with a server cursor.
+await navs.get("components").dispatch("click");
+await settle();
+assert.equal(screens.get("components").hidden, false);
+assert.equal(ids.get("pf-rows").children.length, 2);
+assert.equal(ids.get("pf-scope").textContent, "9 repositories in scope");
+assert.deepEqual(ids.get("pf-ecosystem").children.map(option => [option.value, option.textContent]), [["", "All ecosystems"], ["npm", "npm (180)"], ["maven", "maven (80)"]]);
+assert.deepEqual(ids.get("pf-license").children.map(option => option.textContent), ["All license expressions", "MIT (120)", "Apache-2.0 AND MIT (4)"]);
+assert.deepEqual(ids.get("pf-assessment").children.map(option => option.value), ["", "resolved", "conflict"]);
+assert.equal(ids.get("pf-more").hidden, false);
+await ids.get("pf-more").dispatch("click");
+await settle();
+assert.equal(ids.get("pf-rows").children.length, 4, "Load more appends the second portfolio page");
+assert.equal(ids.get("pf-more").hidden, true);
+
+const portfolioRows = ids.get("pf-rows").children.map(row => row.children.map(cell => text(cell)));
+assert.equal(portfolioRows[0][0], "@acme/<i>x</i>", "namespace and name stay literal text");
+assert.equal(all.some(node => node.tagName === "I"), false, "no markup is built from portfolio data");
+assert.equal(portfolioRows[0][4], "2", "repository_count is shown");
+assert.equal(portfolioRows[0][5], "3", "occurrence_count is shown");
+assert.equal(portfolioRows[0][6], "NOASSERTION · MIT", "declared values are joined verbatim");
+const mixedPill = all.find(node => node.textContent === "mixed" && node.className.includes("pill"));
+assert.ok(mixedPill.className.includes("warn"), "a mixed assessment uses the warning tone");
+
+// Changing a filter discards the cursor and refetches from the start.
+ids.get("pf-ecosystem").value = "maven";
+await ids.get("pf-ecosystem").dispatch("change");
+await settle();
+const filtered = requests[requests.length - 1].path;
+assert.match(filtered, /ecosystem=maven/);
+assert.equal(/cursor=/.test(filtered), false, "a filter change must drop the cursor");
+assert.equal(ids.get("pf-rows").children.length, 1);
+assert.match(location.hash, /eco=maven/);
+
+// A rejected cursor resets the list instead of surfacing an error.
+ids.get("pf-ecosystem").value = "";
+await ids.get("pf-ecosystem").dispatch("change");
+await settle();
+cursorRejected = true;
+await ids.get("pf-more").dispatch("click");
+await settle();
+assert.equal(ids.get("pf-state").hidden, true, "a rejected cursor must not leave an error message");
+assert.equal(ids.get("pf-rows").children.length, 2, "a rejected cursor restarts from the first page");
+cursorRejected = false;
+
+// The package cell opens the portfolio detail with every authorized occurrence.
+const packageButton = ids.get("pf-rows").children[0].children[0].children[0];
+assert.equal(packageButton.tagName, "BUTTON");
+await packageButton.dispatch("click");
+await settle();
+assert.equal(ids.get("pf-detail").hidden, false);
+assert.equal(document.activeElement, ids.get("pf-detail-title"), "opening the panel moves focus to its heading");
+const occurrenceTable = ids.get("pf-detail-body").children.find(node => node.className === "table-wrap");
+const occurrenceRows = occurrenceTable.children[0].children[1].children;
+assert.equal(occurrenceRows.length, 2, "both occurrences are rendered");
+assert.match(text(ids.get("pf-detail-body")), /acme\/gadgets/);
+assert.match(text(ids.get("pf-detail-body")), /NOASSERTION/);
+assert.match(text(ids.get("pf-detail-body")), /truncated/);
+assert.match(text(ids.get("pf-detail-body")), /Occurrences are limited/);
+assert.match(location.hash, /pkey=/);
+
+// The Evidence button hands the occurrence to the repository inventory view.
+const evidenceButton = occurrenceRows[1].children[7].children[0];
+assert.equal(evidenceButton.textContent, "Evidence");
+await evidenceButton.dispatch("click");
+await settle();
+assert.equal(screens.get("repository").hidden, false, "Evidence switches to the repository inventory");
+assert.match(location.hash, /view=repository/);
+assert.match(location.hash, /repo=202/);
+assert.match(location.hash, /element=SPDXRef-9/);
+assert.ok(requests.some(({path}) => path.includes("/repositories/202/component?element=SPDXRef-9") && path.includes("snapshot_id=21")), "the occurrence snapshot is passed to the evidence fetch");
+
+// The CSV export downloads the snapshot attachment under its server filename.
+ids.get("sc-repository").value = "101";
+await ids.get("sc-repository").dispatch("change");
+await settle();
+await ids.get("sc-export").dispatch("click");
+await settle();
+const exportRequest = requests.find(({path}) => path.includes("/v1/supply-chain/exports/101/components.csv"));
+assert.match(exportRequest.path, /snapshot_id=11/);
+const downloadLink = all.filter(node => node.tagName === "A").pop();
+assert.equal(downloadLink.download, "graphnest-components-11.csv", "the filename comes from Content-Disposition");
+assert.equal(downloadLink.clicked, true);
+
+// Comparing against an older snapshot names each license change literally.
+assert.deepEqual(ids.get("sc-compare-base").children.map(option => option.value), ["", "10"], "only older snapshots are offered as a base");
+ids.get("sc-compare-base").value = "10";
+await ids.get("sc-compare-base").dispatch("change");
+await settle();
+assert.equal(ids.get("sc-compare").hidden, false);
+const compareText = text(ids.get("sc-compare-body"));
+assert.match(compareText, /npm:pkg-1@1\.1\.0: MIT → Apache-2\.0/, "a license change reads from → to");
+assert.match(compareText, /npm:pkg-5@1\.5\.0/);
+assert.match(compareText, /npm:pkg-0@1\.0\.0/);
+assert.match(compareText, /4 added · 2 removed/);
+assert.match(compareText, /producer tool changed/);
+assert.match(compareText, /Comparison is by coordinate/);
+
+// A repository with a single snapshot offers no comparison base.
+ids.get("sc-repository").value = "202";
+await ids.get("sc-repository").dispatch("change");
+await settle();
+assert.deepEqual(ids.get("sc-compare-base").children.map(option => option.textContent), ["Only one snapshot has been collected"]);
+assert.equal(ids.get("sc-compare-base").disabled, true);
+
+
