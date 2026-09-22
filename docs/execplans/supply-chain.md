@@ -306,15 +306,53 @@ Detailed task lists are appended when each milestone starts.
     cross-installation isolation, and projection.
   - `docs(supply-chain)` (`5dc15aa`): light/dark screenshots of the real page
     rendered in Chromium against a stubbed API (`docs/images/supply-chain-*.png`).
-- Next task: M2 license enrichment, starting with the bounded SPDX expression
-  parser (`internal/supplychain/spdxexpr`) and migration
-  `034_supply_chain_license.sql`.
+- 2026-09-22: **M2 complete** (`feat/supply-chain/m2-license-core`): bounded
+  SPDX expression parser over the embedded SPDX License List 3.27.0 (fuzzed);
+  npm/NuGet/Maven resolvers behind explicitly configured routes with pinned
+  origin/base path, private-address denial, decompression bounds, credential
+  isolation, and no public fallback; immutable evidence rows (duplicates are
+  new observations; outages keep earlier resolved evidence); deterministic
+  per-occurrence assessments with conflict detection; enrichment worker
+  queued from publication; evidence detail route; UI license column and
+  evidence panel; Helm route values/secrets; docs.
+- 2026-09-22: **M3 complete** (`feat/supply-chain/m3-portfolio`): overview
+  with named denominators, keyset-paginated unique coordinates with
+  filter-bound cursors, facets, coordinate detail, CSV export with provenance
+  and formula-safe cells, snapshot comparison separating component/license/
+  edge changes from metadata; Overview/Components/comparison UI views with
+  screenshots in both themes.
+- 2026-09-22: **M4 complete** (`feat/supply-chain/m4-imports`): SPDX 2.3 JSON
+  and CycloneDX 1.6 JSON imports into `import:<subject>:<label>` streams with
+  content-based format detection, explicit rejection of other versions,
+  byte-preserving storage, uploader recorded apart from the claimed producer,
+  producer-asserted subject binding, idempotency, quotas, upload grants;
+  derived SPDX export naming GraphNest as creator and linking the original.
+- 2026-09-22: **M5 complete** (`feat/supply-chain/m5-review`): tree-walking
+  policy evaluator with a truth table (AND/OR/WITH/unknown/or-later), labelled
+  example policy, admin-only versioned policies that refuse auto-approval of
+  unknowns, review queue, human conclusions as immutable evidence,
+  approve/reject/exception decisions with optimistic concurrency on the
+  evidence fingerprint, expiry and stale detection, repository-scoped review
+  grants, append-only audit trail, background re-evaluation retaining history.
+- 2026-09-22: **M6 complete** (`feat/supply-chain/m6-mcp`): read-only MCP tools
+  `search_dependency_inventory`, `find_component_repositories`,
+  `inspect_component_license` over the same services as REST, with an
+  integration test proving scope agreement and no cross-installation leaks.
+- 2026-09-22: **M7 partially complete** (`feat/supply-chain/m7-operations`):
+  review-preserving snapshot retention and history pruning on the scheduler
+  tick, enrichment queue-depth metrics, retention configuration in
+  config/Compose/Helm, operations/README/CHANGELOG coverage, pilot comparison
+  checklist (`docs/supply-chain-pilot-checklist.md`), and recorded query plans
+  on a 50,000-occurrence synthetic dataset (`docs/supply-chain-query-plans.md`).
+  Remaining M7 items are listed under gaps.
+- Next task: see "Remaining gaps and next task".
 
 ## Validation results
 
-M1 (worktree head `5dc15aa`, 2026-09-22, macOS arm64, Go 1.27.1, PostgreSQL
-18.6 via Compose reached at the OrbStack container address because
-`docker compose port` reports `invalid IP:0` on this host):
+Final worktree head `d110e93` (`feat/supply-chain/m7-operations`), 2026-09-22,
+macOS arm64, Go 1.27.1, PostgreSQL 18.6 via Compose (reached at the OrbStack
+container address because `docker compose port` reports `invalid IP:0` here),
+Helm 4.x, Node 26, Playwright 1.62.1 with locally installed Chromium.
 
 | Gate | Result |
 | --- | --- |
@@ -322,34 +360,69 @@ M1 (worktree head `5dc15aa`, 2026-09-22, macOS arm64, Go 1.27.1, PostgreSQL
 | `make fmt lint` | pass |
 | `make staticcheck` | pass |
 | `make govulncheck` | pass (same as `main`: 0 called vulnerabilities, 1 uncalled module-level finding pre-existing) |
-| `CGO_ENABLED=0 go test ./...` | pass (2153 tests, 44 packages) |
+| `CGO_ENABLED=0 go test ./...` | pass (2318 tests, 48 packages) |
 | `make test-race` | pass |
-| `make postgres-test` (integration tag, all six packages, includes new `TestSupplyChain*` and `TestSupplyChainVerticalSlice`) | pass |
-| `make openapi-check` (Homebrew Ruby 4.0.7; system Ruby 2.6 lacks `filter_map` and fails on `main` too) | pass |
+| `make postgres-test` (all six integration packages, including every new `TestSupplyChain*`) | pass |
+| `make e2e-test` (Go e2e with real Zoekt binaries and PostgreSQL, plus scanner e2e) | pass (run twice) |
+| `make openapi-check` | pass with Homebrew Ruby 4.0.7 (`/opt/homebrew/opt/ruby/bin/ruby scripts/check_openapi.rb`); the system Ruby 2.6 lacks `filter_map` and fails identically on `main` |
 | `make compose-test` | pass |
 | `make helm-lint helm-test` | pass |
 | `make brand-check` | pass |
-| `test/smoke/public_ui.sh` (existing Playwright smoke; Chromium installed locally) | pass |
-| `test/smoke/supply-chain-screenshots.mjs` (renders the new page, 7 rows, failed-refresh notice, both themes) | pass |
-| `make e2e` | **not run** in this pass (unchanged code paths; Zoekt tools linked from the main checkout but the suite takes >10 minutes; run before publication) |
-| Live GHES | **not run**; all GitHub behavior is exercised against fixtures and fake servers |
+| `make makefile-test abi-test tools-check` | pass |
+| `make scanner-build scanner-test` | pass |
+| `make parity-reference` | pass |
+| `test/smoke/public_ui.sh` (existing Playwright smoke) | pass |
+| `test/smoke/supply-chain-screenshots.mjs` (renders repository, overview, components views; 6 PNGs) | pass |
+| Fuzz: `FuzzParse` (45s), `FuzzNormalizeSPDX23` (20s), `FuzzNormalizeCycloneDX16` (20s) | pass, no crashers |
+| Per-layer `go build`/`go vet`/`go test` at every stack boundary | pass |
+| `make image image-test`, `make ui-smoke` via Make (needs `make tools` rebuild) | **not run** (image build not attempted in this pass; the smoke script itself passed) |
+| Live GHES / live registries | **not run**; all GitHub and registry behavior is exercised against fixtures and fake servers |
 
-Commit signing: the first two M1 commits (`559c51f`, `7a1c864`) and M0
-(`629d041`) are SSH-signed. The 1Password SSH agent began refusing sign
-operations mid-session ("agent refused operation"), so `5262228`, `02d4f20`,
-`0de63e9`, and `5dc15aa` are unsigned local commits. Re-sign with
-`git rebase --exec 'git commit --amend --no-edit -S' 629d041` (or equivalent)
-once the agent accepts operations, before any publication.
+Commit signing: `629d041`, `559c51f`, `7a1c864` are SSH-signed. The 1Password
+SSH agent began refusing sign operations mid-session ("agent refused
+operation"), so every later commit is unsigned. Before publication, re-sign
+with `git rebase --exec 'git commit --amend --no-edit -S' 331fa42` (from the
+worktree, once the agent accepts operations) and re-point the stack branches.
 
 ## Remaining gaps and next task
 
-- M1 gaps (tracked, not blocking): no retention pruning (M7); webhook-driven
-  refresh is not wired (`reason='webhook'` is reserved; periodic reconciliation
-  covers late dependency-graph updates); the UI has no snapshot picker or
-  job polling after refresh; MCP tools arrive in M6.
-- Nothing is published; no PR exists for this work. Suggested PR titles in
-  stack order: `docs(supply-chain): accept ADR-0017 and execution plan` →
-  `feat(supply-chain): preserve GHES SBOM observations as immutable snapshots`
-  → `feat(supply-chain): inventory service, collector, and REST routes` →
-  `feat(webui): Dependencies & Licenses inventory page` (docs, screenshots,
-  and the integration test can fold into their layers or stay separate).
+Not implemented (honest scope boundaries):
+
+- M7: no bounded fuzz target yet for the registry URL/redirect path beyond
+  the unit cases; no hostile-archive test because no archive is ever
+  unpacked (NuGet reads the nuspec, never the nupkg); `make image` was not
+  built; the Compose durable profile documents but does not template the
+  `GRAPHNEST_SUPPLY_CHAIN_REGISTRY_*` variables (they pass through the
+  environment); no webhook-driven refresh (`reason='webhook'` reserved;
+  periodic reconciliation covers late dependency-graph updates); no
+  Prometheus counter for unknown/conflicting assessments (available through
+  the overview API instead).
+- M3/M5 UI: the review queue, conclusion/decision forms, and policy
+  administration have REST routes and tests but no browser view yet; the
+  component detail view does not yet show review history inline.
+- M6: exact code-usage joins from an occurrence to indexed references are not
+  offered; the UI and MCP state that a dependency path is not a call graph and
+  GHES snapshots are unbound observations. A later layer may add clearly
+  labelled exploratory search links when a matching indexed revision exists.
+- M2: Go, PyPI, Cargo, and other ecosystems have no resolver; their
+  components stay at producer declarations or imported evidence, as designed.
+
+Exact next task: add the review UI (queue table, conclusion and decision
+forms echoing the `basis` fingerprint, history panel, policy list) to
+`internal/webui/supply-chain.html` with DOM/contract tests and screenshots,
+on a new layer above `feat/supply-chain/m7-operations`; then run
+`make image image-test` and record results here.
+
+Nothing is published; no PR exists for this work. Suggested PR titles in
+stack order (each layer depends on the one before):
+
+1. `docs(supply-chain): accept ADR-0017 and execution plan` (m0-design)
+2. `feat(supply-chain): preserve GHES SBOM observations as immutable snapshots` (m1-storage)
+3. `feat(supply-chain): inventory service, collector, and REST routes` (m1-service)
+4. `feat(webui): Dependencies & Licenses inventory page` (m1-ui; includes docs, deployment wiring, integration test, screenshots)
+5. `feat(supply-chain): exact-version license evidence and assessments` (m2-license-core)
+6. `feat(supply-chain): portfolio APIs and views` (m3-portfolio)
+7. `feat(supply-chain): SPDX and CycloneDX imports with derived export` (m4-imports)
+8. `feat(supply-chain): policies and review workflow` (m5-review)
+9. `feat(mcp): read-only dependency inventory tools` (m6-mcp)
+10. `feat(supply-chain): retention, operations docs, and query-plan evidence` (m7-operations)
