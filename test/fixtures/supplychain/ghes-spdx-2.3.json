@@ -1,0 +1,105 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "spdxVersion": "SPDX-2.3",
+  "creationInfo": {
+    "created": "2026-09-20T08:15:30Z",
+    "creators": ["Tool: GitHub.com-Dependency-Graph"]
+  },
+  "name": "com.github.acme/widgets",
+  "dataLicense": "CC0-1.0",
+  "documentDescribes": ["SPDXRef-com.github.acme-widgets"],
+  "documentNamespace": "https://ghes.example.com/acme/widgets/dependency_graph/sbom-5a1c2d3e4f",
+  "packages": [
+    {
+      "name": "com.github.acme/widgets",
+      "SPDXID": "SPDXRef-com.github.acme-widgets",
+      "versionInfo": "",
+      "downloadLocation": "git+https://ghes.example.com/acme/widgets",
+      "filesAnalyzed": false,
+      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "externalRefs": [
+        {"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:github/acme/widgets"}
+      ]
+    },
+    {
+      "name": "npm:@scope/left-pad",
+      "SPDXID": "SPDXRef-npm-scope-left-pad-1.3.0",
+      "versionInfo": "1.3.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "supplier": "NOASSERTION",
+      "externalRefs": [
+        {"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:npm/%40scope/left-pad@1.3.0"}
+      ]
+    },
+    {
+      "name": "maven:org.example:core",
+      "SPDXID": "SPDXRef-maven-org.example-core-2.1.0",
+      "versionInfo": "2.1.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:maven/org.example/core@2.1.0?type=jar"}
+      ]
+    },
+    {
+      "name": "nuget:Newtonsoft.Json",
+      "SPDXID": "SPDXRef-nuget-Newtonsoft.Json-13.0.3",
+      "versionInfo": "13.0.3",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:nuget/Newtonsoft.Json@13.0.3"}
+      ]
+    },
+    {
+      "name": "actions:actions/checkout",
+      "SPDXID": "SPDXRef-actions-actions-checkout-4",
+      "versionInfo": "4",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:githubactions/actions/checkout@4"}
+      ]
+    },
+    {
+      "name": "go:golang.org/x/text",
+      "SPDXID": "SPDXRef-go-golang.org-x-text-0.14.0",
+      "versionInfo": "0.14.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:golang/golang.org/x/text@0.14.0"}
+      ]
+    },
+    {
+      "name": "vendored:legacy-widget-lib",
+      "SPDXID": "SPDXRef-vendored-legacy",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION"
+    }
+  ],
+  "relationships": [
+    {"spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-com.github.acme-widgets"},
+    {"spdxElementId": "SPDXRef-com.github.acme-widgets", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-npm-scope-left-pad-1.3.0"},
+    {"spdxElementId": "SPDXRef-com.github.acme-widgets", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-maven-org.example-core-2.1.0"},
+    {"spdxElementId": "SPDXRef-com.github.acme-widgets", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-nuget-Newtonsoft.Json-13.0.3"},
+    {"spdxElementId": "SPDXRef-com.github.acme-widgets", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-actions-actions-checkout-4"},
+    {"spdxElementId": "SPDXRef-com.github.acme-widgets", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-go-golang.org-x-text-0.14.0"},
+    {"spdxElementId": "SPDXRef-com.github.acme-widgets", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-vendored-legacy"},
+    {"spdxElementId": "SPDXRef-maven-org.example-core-2.1.0", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-missing-transitive"}
+  ]
+}
