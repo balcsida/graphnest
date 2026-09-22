@@ -276,7 +276,7 @@ Detailed task lists are appended when each milestone starts.
 
 - 2026-09-22: Baseline recorded; ADR-0017 and this plan created.
 - 2026-09-22: **M1 complete** as four local stack layers on top of M0:
-  - `feat/supply-chain/m1-storage` (`559c51f`): migration 033; SPDX 2.3 JSON
+  - `feat/supply-chain/m1-storage` (`76dcf7c`): migration 033; SPDX 2.3 JSON
     normalizer with root detection through `documentDescribes` and
     `DESCRIBES`/`DESCRIBED_BY`, bounded warnings, PURL-less/version-less
     occurrences, unresolved edges kept as diagnostics; lossless
@@ -286,25 +286,25 @@ Detailed task lists are appended when each milestone starts.
     recording that never moves the latest snapshot, reaping, cancellation,
     opt-out, scoped reads, and the `repository_packages` projection. Legacy
     `DependencySBOM` and SCIP callers keep their contracts.
-  - `feat/supply-chain/m1-service` (`7a1c864`): authorized service (status
+  - `feat/supply-chain/m1-service` (`6b25c6a`): authorized service (status
     with independent collection/freshness/coverage/enrichment states,
     paginated components with derived scope, snapshots, collections, document
     download re-authorized at retrieval, manual refresh that only enqueues,
     job status), collector with typed outcome classification and projection,
     jittered scheduler, `GRAPHNEST_SUPPLY_CHAIN*` config, bounded metrics,
     `/v1/supply-chain` routes designed in OpenAPI, gated server wiring.
-  - `docs(supply-chain)` (`5262228`): README, operations, architecture, threat
+  - `docs(supply-chain)` (`8d59897`): README, operations, architecture, threat
     model, Compose durable env, Helm values/schema/ConfigMap/render tests,
     CHANGELOG.
-  - `feat(webui)` (`02d4f20`, implemented by a delegated worker and reviewed):
+  - `feat(webui)` (`ca1a930`, implemented by a delegated worker and reviewed):
     embedded `/supply-chain` page with the console shell, hash-based CSP,
     session-then-bearer auth, text-node rendering, Go byte-contract and Node
     DOM tests; navigation links in `index.html`/`admin.html`.
-  - `test(supply-chain)` (`0de63e9`): fake GHES → scheduler → collector →
+  - `test(supply-chain)` (`e0620d5`): fake GHES → scheduler → collector →
     PostgreSQL → REST vertical slice, including no-indexed-SHA proof,
     rate-limit/403 outcomes, retained inventory behind a failed refresh,
     cross-installation isolation, and projection.
-  - `docs(supply-chain)` (`5dc15aa`): light/dark screenshots of the real page
+  - `docs(supply-chain)` (`90a1413`): light/dark screenshots of the real page
     rendered in Chromium against a stubbed API (`docs/images/supply-chain-*.png`).
 - 2026-09-22: **M2 complete** (`feat/supply-chain/m2-license-core`): bounded
   SPDX expression parser over the embedded SPDX License List 3.27.0 (fuzzed);
@@ -349,7 +349,7 @@ Detailed task lists are appended when each milestone starts.
 
 ## Validation results
 
-Final worktree head `d110e93` (`feat/supply-chain/m7-operations`), 2026-09-22,
+Final worktree head `b15bed4` (before this note) (`feat/supply-chain/m7-operations`), 2026-09-22,
 macOS arm64, Go 1.27.1, PostgreSQL 18.6 via Compose (reached at the OrbStack
 container address because `docker compose port` reports `invalid IP:0` here),
 Helm 4.x, Node 26, Playwright 1.62.1 with locally installed Chromium.
@@ -378,7 +378,7 @@ Helm 4.x, Node 26, Playwright 1.62.1 with locally installed Chromium.
 | `make image image-test`, `make ui-smoke` via Make (needs `make tools` rebuild) | **not run** (image build not attempted in this pass; the smoke script itself passed) |
 | Live GHES / live registries | **not run**; all GitHub and registry behavior is exercised against fixtures and fake servers |
 
-Commit signing: `629d041`, `559c51f`, `7a1c864` are SSH-signed. The 1Password
+Commit signing: `277730e`, `76dcf7c`, `6b25c6a` are SSH-signed. The 1Password
 SSH agent began refusing sign operations mid-session ("agent refused
 operation"), so every later commit is unsigned. Before publication, re-sign
 with `git rebase --exec 'git commit --amend --no-edit -S' 331fa42` (from the
