@@ -413,16 +413,28 @@ forms echoing the `basis` fingerprint, history panel, policy list) to
 on a new layer above `feat/supply-chain/m7-operations`; then run
 `make image image-test` and record results here.
 
-Nothing is published; no PR exists for this work. Suggested PR titles in
-stack order (each layer depends on the one before):
+## Native stack and pull requests
 
-1. `docs(supply-chain): accept ADR-0017 and execution plan` (m0-design)
-2. `feat(supply-chain): preserve GHES SBOM observations as immutable snapshots` (m1-storage)
-3. `feat(supply-chain): inventory service, collector, and REST routes` (m1-service)
-4. `feat(webui): Dependencies & Licenses inventory page` (m1-ui; includes docs, deployment wiring, integration test, screenshots)
-5. `feat(supply-chain): exact-version license evidence and assessments` (m2-license-core)
-6. `feat(supply-chain): portfolio APIs and views` (m3-portfolio)
-7. `feat(supply-chain): SPDX and CycloneDX imports with derived export` (m4-imports)
-8. `feat(supply-chain): policies and review workflow` (m5-review)
-9. `feat(mcp): read-only dependency inventory tools` (m6-mcp)
-10. `feat(supply-chain): retention, operations docs, and query-plan evidence` (m7-operations)
+Published 2026-09-22 with `gh stack submit --auto --remote origin` as ten
+draft pull requests linked into native GitHub stack **#114**, rooted at
+`main`; bases, heads, membership, and per-layer deltas were verified after
+submission (remote heads equal local heads; every head commit signature is
+`VALID` on GitHub). Hosted CI (`CI` workflow) passed on all ten branches.
+The repository's "Code scanning AI findings" workflow failed on every PR with
+`CAPIError: 400 The requested model is not supported`; that is a hosted
+Copilot configuration issue unrelated to this change.
+
+| Layer | PR | Base |
+| --- | --- | --- |
+| m0-design | [#104](https://github.com/balcsida/graphnest/pull/104) | `main` |
+| m1-storage | [#105](https://github.com/balcsida/graphnest/pull/105) | #104 |
+| m1-service | [#106](https://github.com/balcsida/graphnest/pull/106) | #105 |
+| m1-ui | [#107](https://github.com/balcsida/graphnest/pull/107) | #106 |
+| m2-license-core | [#108](https://github.com/balcsida/graphnest/pull/108) | #107 |
+| m3-portfolio | [#109](https://github.com/balcsida/graphnest/pull/109) | #108 |
+| m4-imports | [#110](https://github.com/balcsida/graphnest/pull/110) | #109 |
+| m5-review | [#111](https://github.com/balcsida/graphnest/pull/111) | #110 |
+| m6-mcp | [#112](https://github.com/balcsida/graphnest/pull/112) | #111 |
+| m7-operations | [#113](https://github.com/balcsida/graphnest/pull/113) | #112 |
+
+Merging remains a separate owner decision; the PRs are drafts.
