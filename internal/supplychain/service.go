@@ -13,6 +13,7 @@ import (
 
 	"github.com/balcsida/graphnest/internal/authn"
 	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/internal/supplychain/license"
 	"github.com/balcsida/graphnest/pkg/api"
 	"github.com/jackc/pgx/v5"
 )
@@ -40,6 +41,16 @@ type Store interface {
 	EnqueueSupplyChainJob(context.Context, int64, string, string, string, int, time.Time) (Job, bool, error)
 }
 
+// LicenseStore is the optional evidence read side. When nil, component pages
+// carry no assessments and the detail view reports enrichment as not
+// configured.
+type LicenseStore interface {
+	SupplyChainAssessments(context.Context, int64, []int64) (map[int64]license.Assessment, error)
+	SupplyChainAssessmentCounts(context.Context, int64) (map[string]int, error)
+	SupplyChainComponentByElement(context.Context, int64, string) (Component, error)
+	LicenseEvidenceHistory(context.Context, license.Coordinates, int) ([]license.Evidence, error)
+}
+
 // Authorizer resolves the live principal's repository scope. *authz.Postgres
 // satisfies it (postgres imports this package for its models, so the authz
 // package cannot be imported here).
@@ -57,6 +68,10 @@ type Service struct {
 	Interval   time.Duration
 	MaxResults int
 	Now        func() time.Time
+	// License is optional evidence storage; EnrichmentEcosystems lists the
+	// ecosystems with configured registry routes.
+	License              LicenseStore
+	EnrichmentEcosystems []string
 }
 
 func (service *Service) now() time.Time {
@@ -137,7 +152,11 @@ func (service *Service) Status(ctx context.Context, principal authn.Principal, g
 		return api.SupplyChainRepositoryStatus{}, err
 	}
 	status := api.SupplyChainRepositoryStatus{RepositoryID: repo.GitHubID, Repository: repo.Name, Stream: streamKey, Producer: string(ProducerGitHub), Subject: string(SubjectSource),
-		Collection: "never", Enrichment: "not_configured", Notes: []string{}, Documents: []api.SupplyChainDocumentRef{}}
+		Collection: "never", Enrichment: "not_configured", EnrichmentEcosystems: []string{}, LicenseSummary: map[string]int{}, Notes: []string{}, Documents: []api.SupplyChainDocumentRef{}}
+	if len(service.EnrichmentEcosystems) > 0 {
+		status.Enrichment = "configured"
+		status.EnrichmentEcosystems = append(status.EnrichmentEcosystems, service.EnrichmentEcosystems...)
+	}
 	stream, err := service.Store.SupplyChainStream(ctx, repo.ID, streamKey)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return api.SupplyChainRepositoryStatus{}, err
@@ -157,6 +176,13 @@ func (service *Service) Status(ctx context.Context, principal authn.Principal, g
 			status.Collection = "current"
 			if service.now().Sub(snapshot.CollectedAt) > 2*service.interval() {
 				status.Collection = "stale"
+			}
+			if service.License != nil {
+				counts, err := service.License.SupplyChainAssessmentCounts(ctx, snapshot.ID)
+				if err != nil {
+					return api.SupplyChainRepositoryStatus{}, err
+				}
+				status.LicenseSummary = counts
 			}
 		}
 		collections, err := service.Store.SupplyChainCollections(ctx, repo.ID, streamKey, 0, 1)
@@ -285,6 +311,10 @@ func (service *Service) Components(ctx context.Context, principal authn.Principa
 	if err != nil {
 		return api.SupplyChainComponentList{}, err
 	}
+	assessments, err := service.assessments(ctx, snapshot.ID, components)
+	if err != nil {
+		return api.SupplyChainComponentList{}, err
+	}
 	result := api.SupplyChainComponentList{SnapshotID: snapshot.ID, Components: make([]api.SupplyChainComponent, 0, len(components))}
 	for index, component := range components {
 		if index == limit {
@@ -292,9 +322,137 @@ func (service *Service) Components(ctx context.Context, principal authn.Principa
 			result.NextCursor = encodeComponentCursor(componentCursor{SnapshotID: snapshot.ID, Ordinal: components[index-1].Ordinal, Search: search})
 			break
 		}
-		result.Components = append(result.Components, componentSummary(component, scopes))
+		summary := componentSummary(component, scopes)
+		if assessment, ok := assessments[component.ID]; ok {
+			summary.License = assessmentSummary(assessment)
+		}
+		result.Components = append(result.Components, summary)
 	}
 	return result, nil
+}
+
+func (service *Service) assessments(ctx context.Context, snapshotID int64, components []Component) (map[int64]license.Assessment, error) {
+	if service.License == nil || len(components) == 0 {
+		return nil, nil
+	}
+	ids := make([]int64, 0, len(components))
+	for _, component := range components {
+		ids = append(ids, component.ID)
+	}
+	return service.License.SupplyChainAssessments(ctx, snapshotID, ids)
+}
+
+// ComponentDetail returns one occurrence with its producer declarations,
+// registry evidence history, relationships, and assessment. Evidence is keyed
+// by coordinates shared across repositories, so it is only reachable through
+// an occurrence in an authorized snapshot.
+func (service *Service) ComponentDetail(ctx context.Context, principal authn.Principal, githubID int64, streamKey string, snapshotID int64, elementID string) (api.SupplyChainComponentDetail, error) {
+	streamKey, err := normalizeStream(streamKey)
+	if err != nil {
+		return api.SupplyChainComponentDetail{}, err
+	}
+	if elementID == "" || len(elementID) > 512 {
+		return api.SupplyChainComponentDetail{}, ErrInvalidRequest
+	}
+	repo, err := service.authorizedRepository(ctx, principal, githubID)
+	if err != nil {
+		return api.SupplyChainComponentDetail{}, err
+	}
+	if snapshotID == 0 {
+		stream, err := service.Store.SupplyChainStream(ctx, repo.ID, streamKey)
+		if errors.Is(err, pgx.ErrNoRows) || err == nil && stream.LatestSnapshotID == nil {
+			return api.SupplyChainComponentDetail{}, ErrNoInventory
+		}
+		if err != nil {
+			return api.SupplyChainComponentDetail{}, err
+		}
+		snapshotID = *stream.LatestSnapshotID
+	}
+	snapshot, err := service.Store.SupplyChainSnapshot(ctx, snapshotID, []int64{repo.ID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return api.SupplyChainComponentDetail{}, ErrNotFound
+	}
+	if err != nil {
+		return api.SupplyChainComponentDetail{}, err
+	}
+	if service.License == nil {
+		return api.SupplyChainComponentDetail{}, ErrNotFound
+	}
+	component, err := service.License.SupplyChainComponentByElement(ctx, snapshot.ID, elementID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return api.SupplyChainComponentDetail{}, ErrNotFound
+	}
+	if err != nil {
+		return api.SupplyChainComponentDetail{}, err
+	}
+	scopes, err := service.scopes(ctx, snapshot)
+	if err != nil {
+		return api.SupplyChainComponentDetail{}, err
+	}
+	detail := api.SupplyChainComponentDetail{Component: componentSummary(component, scopes), Snapshot: snapshotSummary(snapshot), Declarations: []api.SupplyChainLicenseEvidence{},
+		Evidence: []api.SupplyChainLicenseEvidence{}, Relationships: []api.SupplyChainRelationship{}, Notes: []string{}}
+	assessments, err := service.License.SupplyChainAssessments(ctx, snapshot.ID, []int64{component.ID})
+	if err != nil {
+		return api.SupplyChainComponentDetail{}, err
+	}
+	if assessment, ok := assessments[component.ID]; ok {
+		detail.Component.License = assessmentSummary(assessment)
+	}
+	for _, declaration := range []struct {
+		source string
+		value  *string
+	}{{"producer_declared", component.LicenseDeclaredRaw}, {"producer_concluded", component.LicenseConcludedRaw}} {
+		if declaration.value == nil {
+			continue
+		}
+		evidence := license.Evidence{Source: license.Source(declaration.source), Coordinates: license.Coordinates{Ecosystem: component.Ecosystem, Namespace: component.PURLNamespace, Name: component.PURLName, Version: component.PURLVersion},
+			FetchedAt: snapshot.CollectedAt, Outcome: license.OutcomeResolved}
+		license.Classify(&evidence, *declaration.value)
+		detail.Declarations = append(detail.Declarations, evidenceSummary(evidence))
+	}
+	if component.Ecosystem != "" && component.PURLName != "" && component.PURLVersion != "" {
+		history, err := service.License.LicenseEvidenceHistory(ctx, license.Coordinates{Ecosystem: component.Ecosystem, Namespace: component.PURLNamespace, Name: component.PURLName, Version: component.PURLVersion}, service.maxResults()+1)
+		if err != nil {
+			return api.SupplyChainComponentDetail{}, err
+		}
+		if len(history) > service.maxResults() {
+			history, detail.Truncated = history[:service.maxResults()], true
+		}
+		for _, evidence := range history {
+			detail.Evidence = append(detail.Evidence, evidenceSummary(evidence))
+		}
+	} else {
+		detail.Notes = append(detail.Notes, "This occurrence has no exact package coordinates (purl name and version), so no registry lookup applies.")
+	}
+	edges, err := service.Store.SupplyChainRelationships(ctx, snapshot.ID, component.ElementID, service.maxResults())
+	if err != nil {
+		return api.SupplyChainComponentDetail{}, err
+	}
+	for _, edge := range edges {
+		detail.Relationships = append(detail.Relationships, api.SupplyChainRelationship{From: edge.FromElement, Type: edge.Type, To: edge.ToElement, Resolved: edge.Resolved})
+	}
+	detail.Notes = append(detail.Notes, "Publisher declarations and registry metadata are evidence, not approval; a human conclusion or policy decision is recorded separately.")
+	if len(service.EnrichmentEcosystems) == 0 {
+		detail.Notes = append(detail.Notes, "No registry routes are configured; only producer declarations are shown.")
+	}
+	return detail, nil
+}
+
+func assessmentSummary(assessment license.Assessment) *api.SupplyChainLicenseAssessment {
+	return &api.SupplyChainLicenseAssessment{Status: string(assessment.Status), Expression: assessment.NormalizedExpression, ConflictDetail: assessment.ConflictDetail,
+		EvidenceCount: len(assessment.EvidenceIDs), AssessedAt: assessment.AssessedAt, EvidenceFingerprint: hex.EncodeToString(assessment.EvidenceFingerprint)}
+}
+
+func evidenceSummary(evidence license.Evidence) api.SupplyChainLicenseEvidence {
+	summary := api.SupplyChainLicenseEvidence{ID: evidence.ID, Source: string(evidence.Source), Route: evidence.Route, Ecosystem: evidence.Coordinates.Ecosystem, Namespace: evidence.Coordinates.Namespace,
+		Name: evidence.Coordinates.Name, Version: evidence.Coordinates.Version, ArtifactSHA256: evidence.ArtifactSHA256, RawValue: evidence.RawValue, RawKind: string(evidence.RawKind),
+		ParseStatus: string(evidence.ParseStatus), Expression: evidence.NormalizedExpression, UnknownTerms: evidence.UnknownTerms, LicenseURL: evidence.LicenseURL, LicenseFileName: evidence.LicenseFileName,
+		Detail: evidence.Detail, ResolverVersion: evidence.ResolverVersion, LicenseListVersion: evidence.LicenseListVersion, FetchedAt: evidence.FetchedAt, ExpiresAt: evidence.ExpiresAt,
+		Outcome: string(evidence.Outcome), HTTPStatus: evidence.HTTPStatus, Message: evidence.Message}
+	if len(evidence.ContentSHA256) > 0 {
+		summary.ContentSHA256 = hex.EncodeToString(evidence.ContentSHA256)
+	}
+	return summary
 }
 
 // scopes derives root/direct/transitive/unknown per element from resolved

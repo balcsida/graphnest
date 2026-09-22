@@ -667,6 +667,23 @@ paths:
         '405': {$ref: '#/components/responses/InvalidRequest'}
         '500': {description: Response exceeded the configured byte limit}
         '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/repositories/{id}/component:
+    get:
+      description: Evidence detail for one occurrence identified by its document element ID (SPDXID). Returns the producer's declarations as evidence rows, the immutable registry evidence history for the exact coordinates (only reachable through an authorized occurrence), bounded relationships, and the derived assessment. Evidence is not approval.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: element, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 512}}
+        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: snapshot_id, in: query, required: false, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Component evidence detail, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainComponentDetail'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
   /v1/supply-chain/repositories/{id}/snapshots:
     get:
       security: [{bearerAuth: []}, {sessionCookie: []}]
@@ -2125,7 +2142,7 @@ components:
     SupplyChainRepositoryStatus:
       type: object
       additionalProperties: false
-      required: [repository_id, repository, stream, producer, subject, collection, freshness_seconds, latest_snapshot, last_collection, active_job, enrichment, opt_out, notes, documents]
+      required: [repository_id, repository, stream, producer, subject, collection, freshness_seconds, latest_snapshot, last_collection, active_job, enrichment, enrichment_ecosystems, license_summary, opt_out, notes, documents]
       properties:
         repository_id: {type: integer, format: int64}
         repository: {type: string}
@@ -2137,7 +2154,9 @@ components:
         latest_snapshot: {oneOf: [{$ref: '#/components/schemas/SupplyChainSnapshot'}, {type: 'null'}]}
         last_collection: {oneOf: [{$ref: '#/components/schemas/SupplyChainCollection'}, {type: 'null'}]}
         active_job: {oneOf: [{$ref: '#/components/schemas/SupplyChainJob'}, {type: 'null'}]}
-        enrichment: {type: string, enum: [not_configured], description: License enrichment state; a later milestone adds resolver states}
+        enrichment: {type: string, enum: [not_configured, configured], description: Whether any registry route is configured for license enrichment}
+        enrichment_ecosystems: {type: array, items: {type: string, enum: [npm, nuget, maven]}}
+        license_summary: {type: object, additionalProperties: {type: integer, minimum: 0}, description: Latest snapshot's assessment counts by status (unknown, declared, resolved, conflict, unlicensed, not_applicable, pending)}
         opt_out: {type: boolean}
         notes: {type: array, items: {type: string}}
         documents: {type: array, items: {$ref: '#/components/schemas/SupplyChainDocumentRef'}}
@@ -2209,6 +2228,69 @@ components:
         checksums: {type: array, items: {type: object, additionalProperties: false, required: [algorithm, value], properties: {algorithm: {type: string}, value: {type: string}}}}
         is_root: {type: boolean}
         scope: {type: string, enum: [root, direct, transitive, unknown]}
+        license: {oneOf: [{$ref: '#/components/schemas/SupplyChainLicenseAssessment'}, {type: 'null'}]}
+    SupplyChainLicenseAssessment:
+      type: object
+      additionalProperties: false
+      required: [status, evidence_count, assessed_at, evidence_fingerprint]
+      description: Derived view over producer declarations and registry evidence for one occurrence. Not an approval.
+      properties:
+        status: {type: string, enum: [unknown, declared, resolved, conflict, unlicensed, not_applicable, pending]}
+        expression: {type: string, description: Normalized SPDX expression when status is declared or resolved}
+        conflict_detail: {type: string}
+        evidence_count: {type: integer, minimum: 0}
+        assessed_at: {type: string, format: date-time}
+        evidence_fingerprint: {type: string, pattern: '^[0-9a-f]{64}$'}
+    SupplyChainLicenseEvidence:
+      type: object
+      additionalProperties: false
+      required: [id, source, ecosystem, name, version, raw_value, raw_kind, parse_status, resolver_version, license_list_version, fetched_at, outcome]
+      properties:
+        id: {type: integer, format: int64, minimum: 0, description: 0 for producer declarations synthesized from the snapshot}
+        source: {type: string, enum: [producer_declared, producer_concluded, registry_npm, registry_nuget, registry_maven, import, human]}
+        route: {type: string}
+        ecosystem: {type: string}
+        namespace: {type: string}
+        name: {type: string}
+        version: {type: string}
+        artifact_sha256: {type: string}
+        raw_value: {type: string, description: Verbatim value as observed}
+        raw_kind: {type: string, enum: [expression, expression_or_file, license_file, license_url, license_name, legacy_object, missing, sentinel]}
+        parse_status: {type: string, enum: [parsed, unknown_terms, no_assertion, none, unlicensed, invalid, not_applicable]}
+        expression: {type: string}
+        unknown_terms: {type: array, items: {type: string}}
+        license_url: {type: string}
+        license_file_name: {type: string}
+        detail: {type: object}
+        resolver_version: {type: integer, minimum: 1}
+        license_list_version: {type: string}
+        content_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        fetched_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time, description: Present on negative outcomes; the lookup is retried after this time}
+        outcome: {type: string, enum: [resolved, not_found, no_license_metadata, unavailable, rejected, too_large, malformed]}
+        http_status: {type: integer}
+        message: {type: string}
+    SupplyChainComponentDetail:
+      type: object
+      additionalProperties: false
+      required: [component, snapshot, declarations, evidence, relationships, notes, truncated]
+      properties:
+        component: {$ref: '#/components/schemas/SupplyChainComponent'}
+        snapshot: {$ref: '#/components/schemas/SupplyChainSnapshot'}
+        declarations: {type: array, items: {$ref: '#/components/schemas/SupplyChainLicenseEvidence'}}
+        evidence: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/SupplyChainLicenseEvidence'}}
+        relationships: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/SupplyChainRelationship'}}
+        notes: {type: array, items: {type: string}}
+        truncated: {type: boolean}
+    SupplyChainRelationship:
+      type: object
+      additionalProperties: false
+      required: [from, type, to, resolved]
+      properties:
+        from: {type: string}
+        type: {type: string}
+        to: {type: string}
+        resolved: {type: boolean}
     SupplyChainComponentList:
       type: object
       additionalProperties: false

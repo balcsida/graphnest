@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // ListVersion is the pinned SPDX License List release embedded in this
@@ -271,13 +272,14 @@ func isIDByte(character byte) bool {
 }
 
 func sanitizeRune(rest string) string {
-	for _, r := range rest {
-		if unicode.IsPrint(r) {
-			return string(r)
-		}
-		return fmt.Sprintf("U+%04X", r)
+	r, size := utf8.DecodeRuneInString(rest)
+	if size == 0 {
+		return ""
 	}
-	return ""
+	if unicode.IsPrint(r) {
+		return string(r)
+	}
+	return fmt.Sprintf("U+%04X", r)
 }
 
 type parser struct {

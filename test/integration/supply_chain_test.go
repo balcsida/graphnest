@@ -24,6 +24,7 @@ import (
 	"github.com/balcsida/graphnest/internal/httpapi"
 	"github.com/balcsida/graphnest/internal/postgres"
 	"github.com/balcsida/graphnest/internal/supplychain"
+	"github.com/balcsida/graphnest/internal/supplychain/license"
 	"github.com/balcsida/graphnest/pkg/api"
 )
 
@@ -264,4 +265,133 @@ func TestSupplyChainVerticalSlice(t *testing.T) {
 	}
 	_ = gadgets
 	_ = other
+}
+
+// TestSupplyChainLicenseEnrichment proves registry evidence flows from a
+// configured route through the real worker and store into assessments and
+// the REST detail view, that unconfigured ecosystems produce no traffic, and
+// that evidence stays reachable only through authorized occurrences.
+func TestSupplyChainLicenseEnrichment(t *testing.T) {
+	h := newPostgresHarness(t)
+	widgets := h.seedRepository(t, 10, 101)
+	github, client := newFakeSBOMGitHub(t)
+	envelope := sbomEnvelope(t)
+	github.responses["acme/repo-101"] = func(writer http.ResponseWriter) { fmt.Fprint(writer, envelope) }
+
+	var registryCalls atomic.Int32
+	registry := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		registryCalls.Add(1)
+		switch request.URL.EscapedPath() {
+		case "/npm/@scope%2Fleft-pad/1.3.0":
+			fmt.Fprint(writer, `{"name":"@scope/left-pad","version":"1.3.0","license":"MIT"}`)
+		default:
+			writer.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer registry.Close()
+	base, _ := url.Parse(registry.URL + "/npm/")
+	certificate := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: registry.Certificate().Raw})
+	routes, err := license.NewRegistry([]license.Route{{Name: "npm:test", Ecosystem: "npm", BaseURL: base, CAPEM: certificate, AllowPrivateHosts: true, Timeout: 5 * time.Second, MaxResponseBytes: 1 << 20}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enricher := &license.Worker{Store: h.store, Registry: routes, Owner: "enrich"}
+	collector := &supplychain.Collector{Store: h.store, GitHub: client, Owner: "collect", MaxDocumentBytes: 1 << 20, Enricher: enricher}
+	if _, _, err := h.store.EnqueueSupplyChainJob(t.Context(), widgets, supplychain.StreamGitHubSource, "manual", "t", 10, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if processed, err := collector.RunOnce(t.Context()); err != nil || !processed {
+		t.Fatalf("collection processed=%v err=%v", processed, err)
+	}
+	// Only the npm coordinate has a route; maven, nuget, golang, and githubactions stay unqueued.
+	depths, err := h.store.EnrichmentQueueDepths(t.Context())
+	if err != nil || depths["queued"] != 1 {
+		t.Fatalf("enrichment depths = %v %v", depths, err)
+	}
+	if processed, err := enricher.RunOnce(t.Context()); err != nil || !processed {
+		t.Fatalf("enrichment processed=%v err=%v", processed, err)
+	}
+	if processed, err := enricher.RunOnce(t.Context()); err != nil || processed {
+		t.Fatalf("enrichment queue not drained: processed=%v err=%v", processed, err)
+	}
+	if registryCalls.Load() != 1 {
+		t.Fatalf("registry calls = %d, want exactly one exact-version lookup", registryCalls.Load())
+	}
+
+	service := &supplychain.Service{Store: h.store, Authorizer: authz.NewPostgres(h.store), Interval: time.Hour, MaxResults: 100, License: h.store, EnrichmentEcosystems: routes.Ecosystems()}
+	authenticator := authn.RequestAuthenticator{Bearer: authn.NewStatic(map[string]authn.Principal{
+		"acme":  {Subject: "acme", Method: "api_token", InstallationID: 10, RepositoryIDs: []int64{101}},
+		"other": {Subject: "other", Method: "api_token", InstallationID: 20, RepositoryIDs: []int64{999}},
+	})}
+	mux := http.NewServeMux()
+	httpapi.RegisterSupplyChain(mux, authenticator, service, 100, 256<<10)
+	get := func(token, path string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.Header.Set("Authorization", "Bearer "+token)
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, request)
+		return recorder
+	}
+	response := get("acme", "/v1/supply-chain/repositories/101")
+	var status api.SupplyChainRepositoryStatus
+	if err := json.Unmarshal(response.Body.Bytes(), &status); err != nil || response.Code != http.StatusOK {
+		t.Fatalf("status = %d %s", response.Code, response.Body.String())
+	}
+	if status.Enrichment != "configured" || len(status.EnrichmentEcosystems) != 1 || status.EnrichmentEcosystems[0] != "npm" || status.LicenseSummary["resolved"] != 1 {
+		t.Fatalf("status = %+v", status)
+	}
+	response = get("acme", "/v1/supply-chain/repositories/101/components?q=left-pad")
+	var page api.SupplyChainComponentList
+	if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil || response.Code != http.StatusOK || len(page.Components) != 1 {
+		t.Fatalf("components = %d %s", response.Code, response.Body.String())
+	}
+	leftPad := page.Components[0]
+	if leftPad.License == nil || leftPad.License.Status != "resolved" || leftPad.License.Expression != "MIT" || leftPad.License.EvidenceCount != 1 || len(leftPad.License.EvidenceFingerprint) != 64 {
+		t.Fatalf("left-pad assessment = %+v", leftPad.License)
+	}
+	if leftPad.LicenseDeclaredRaw == nil || *leftPad.LicenseDeclaredRaw != "NOASSERTION" {
+		t.Fatalf("declared raw must remain the producer's NOASSERTION: %+v", leftPad)
+	}
+	response = get("acme", "/v1/supply-chain/repositories/101/components?q=core")
+	if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil || len(page.Components) != 1 || page.Components[0].License != nil {
+		t.Fatalf("maven component without a route must have no assessment: %s", response.Body.String())
+	}
+	response = get("acme", "/v1/supply-chain/repositories/101/component?element=SPDXRef-npm-scope-left-pad-1.3.0")
+	var detail api.SupplyChainComponentDetail
+	if err := json.Unmarshal(response.Body.Bytes(), &detail); err != nil || response.Code != http.StatusOK {
+		t.Fatalf("detail = %d %s", response.Code, response.Body.String())
+	}
+	if len(detail.Declarations) != 2 || detail.Declarations[0].ParseStatus != "no_assertion" || detail.Declarations[0].RawKind != "sentinel" {
+		t.Fatalf("declarations = %+v", detail.Declarations)
+	}
+	if len(detail.Evidence) != 1 || detail.Evidence[0].Source != "registry_npm" || detail.Evidence[0].Route != "npm:test" || detail.Evidence[0].Expression != "MIT" || detail.Evidence[0].RawValue != "MIT" ||
+		detail.Evidence[0].LicenseListVersion != "3.27.0" || detail.Evidence[0].ResolverVersion != 1 || len(detail.Evidence[0].ContentSHA256) != 64 || detail.Evidence[0].Outcome != "resolved" {
+		t.Fatalf("evidence = %+v", detail.Evidence)
+	}
+	if len(detail.Relationships) != 1 || detail.Relationships[0].Type != "DEPENDS_ON" || detail.Relationships[0].To != "SPDXRef-npm-scope-left-pad-1.3.0" {
+		t.Fatalf("relationships = %+v", detail.Relationships)
+	}
+	// Evidence is reachable only through an authorized occurrence.
+	if response := get("other", "/v1/supply-chain/repositories/101/component?element=SPDXRef-npm-scope-left-pad-1.3.0"); response.Code != http.StatusNotFound {
+		t.Fatalf("other principal reached evidence: %d", response.Code)
+	}
+	if response := get("acme", "/v1/supply-chain/repositories/101/component?element=SPDXRef-nope"); response.Code != http.StatusNotFound {
+		t.Fatalf("unknown element = %d", response.Code)
+	}
+	if response := get("acme", "/v1/supply-chain/repositories/101/component"); response.Code != http.StatusBadRequest {
+		t.Fatalf("missing element = %d", response.Code)
+	}
+	// A second publication of the same document does not re-enqueue resolved coordinates.
+	if _, _, err := h.store.EnqueueSupplyChainJob(t.Context(), widgets, supplychain.StreamGitHubSource, "manual", "t", 10, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := collector.RunOnce(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if depths, _ := h.store.EnrichmentQueueDepths(t.Context()); depths["queued"] != 0 {
+		t.Fatalf("resolved coordinates were re-queued: %v", depths)
+	}
+	if registryCalls.Load() != 1 {
+		t.Fatalf("registry calls after unchanged republish = %d", registryCalls.Load())
+	}
 }

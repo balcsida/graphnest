@@ -112,6 +112,22 @@ type Resolver interface {
 // (a license file, URL, or a missing field).
 const NotApplicable spdxexpr.Status = "not_applicable"
 
+// Classify records a producer declaration as evidence: sentinels stay
+// sentinels, expressions are parsed, and nothing is mapped.
+func Classify(evidence *Evidence, raw string) {
+	trimmed := strings.TrimSpace(raw)
+	switch strings.ToUpper(trimmed) {
+	case "", "NOASSERTION", "NONE", "UNLICENSED":
+		classify(evidence, raw, RawExpression)
+		evidence.RawKind = RawSentinel
+		if trimmed == "" {
+			evidence.RawKind = RawMissing
+		}
+		return
+	}
+	classify(evidence, raw, RawExpression)
+}
+
 // classify parses a raw expression candidate into evidence fields.
 func classify(evidence *Evidence, raw string, kind RawKind) {
 	evidence.RawValue, evidence.RawKind = raw, kind

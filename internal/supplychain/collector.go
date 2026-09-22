@@ -40,6 +40,12 @@ type Observer interface {
 	SetSupplyChainQueueDepth(state string, depth int64)
 }
 
+// Enricher receives every newly published snapshot so license lookups can
+// be queued. It must not block publication on registry availability.
+type Enricher interface {
+	EnqueueSnapshot(ctx context.Context, snapshotID int64) (int, error)
+}
+
 // Collector leases refresh jobs and turns GHES SBOM exports into published
 // snapshots. It runs in the server process, independent of the indexer.
 type Collector struct {
@@ -53,6 +59,8 @@ type Collector struct {
 	Now              func() time.Time
 	// Poll is how long the worker waits when no job is available.
 	Poll time.Duration
+	// Enricher is optional; nil means no license enrichment is configured.
+	Enricher Enricher
 }
 
 func (collector *Collector) now() time.Time {
@@ -174,6 +182,13 @@ func (collector *Collector) process(ctx context.Context, job Job, started time.T
 			collector.logger().Warn("supply chain projection failed", "repository_id", repo.ID, "error", err)
 			if err := collector.Store.RecordSupplyChainProjectionError(ctx, collection.ID, "projection_failed"); err != nil {
 				return collection.Outcome, err
+			}
+		}
+		if collector.Enricher != nil {
+			if _, err := collector.Enricher.EnqueueSnapshot(ctx, *collection.SnapshotID); err != nil {
+				// Enrichment is best-effort background work; the snapshot is
+				// published regardless and the next publication re-queues.
+				collector.logger().Warn("supply chain enrichment enqueue failed", "repository_id", repo.ID, "error", err)
 			}
 		}
 	}
