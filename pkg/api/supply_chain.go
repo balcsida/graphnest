@@ -214,3 +214,124 @@ type SupplyChainRefreshResponse struct {
 	Job     SupplyChainJob `json:"job"`
 	Created bool           `json:"created"`
 }
+
+// SupplyChainOverview is the portfolio summary across the caller's authorized
+// repositories. Every count names its denominator in Denominators; none is a
+// compliance percentage.
+type SupplyChainOverview struct {
+	Stream            string                      `json:"stream"`
+	GeneratedAt       time.Time                   `json:"generated_at"`
+	Repositories      SupplyChainRepositoryCounts `json:"repositories"`
+	Components        SupplyChainComponentCounts  `json:"components"`
+	WarningTotal      int                         `json:"warning_total"`
+	OldestCollectedAt *time.Time                  `json:"oldest_collected_at"`
+	NewestCollectedAt *time.Time                  `json:"newest_collected_at"`
+	Ecosystems        []SupplyChainFacet          `json:"ecosystems"`
+	Denominators      []string                    `json:"denominators"`
+}
+
+type SupplyChainRepositoryCounts struct {
+	Authorized        int `json:"authorized"`
+	WithInventory     int `json:"with_inventory"`
+	NeverCollected    int `json:"never_collected"`
+	Stale             int `json:"stale"`
+	FailedLastAttempt int `json:"failed_last_attempt"`
+	OptedOut          int `json:"opted_out"`
+}
+
+type SupplyChainComponentCounts struct {
+	Occurrences       int            `json:"occurrences"`
+	UniqueCoordinates int            `json:"unique_coordinates"`
+	WithoutPURL       int            `json:"without_purl"`
+	WithoutVersion    int            `json:"without_version"`
+	Unassessed        int            `json:"unassessed"`
+	Assessments       map[string]int `json:"assessments"`
+}
+
+type SupplyChainFacet struct {
+	Value string `json:"value"`
+	Count int    `json:"count"`
+}
+
+type SupplyChainFacets struct {
+	Stream      string             `json:"stream"`
+	Ecosystems  []SupplyChainFacet `json:"ecosystems"`
+	Assessments []SupplyChainFacet `json:"assessments"`
+	Licenses    []SupplyChainFacet `json:"licenses"`
+}
+
+// SupplyChainPortfolioComponent is one unique coordinate across repositories.
+type SupplyChainPortfolioComponent struct {
+	Key                string                     `json:"key"`
+	Ecosystem          string                     `json:"ecosystem"`
+	Namespace          string                     `json:"namespace,omitempty"`
+	Name               string                     `json:"name"`
+	Version            string                     `json:"version"`
+	PURL               string                     `json:"purl,omitempty"`
+	RepositoryCount    int                        `json:"repository_count"`
+	OccurrenceCount    int                        `json:"occurrence_count"`
+	Assessment         string                     `json:"assessment"`
+	AssessmentStatuses []string                   `json:"assessment_statuses"`
+	Expression         string                     `json:"expression,omitempty"`
+	DeclaredRaw        []string                   `json:"declared_raw"`
+	NewestCollectedAt  time.Time                  `json:"newest_collected_at"`
+	OldestCollectedAt  time.Time                  `json:"oldest_collected_at"`
+	Repositories       []SupplyChainRepositoryRef `json:"repositories"`
+}
+
+type SupplyChainRepositoryRef struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name,omitempty"`
+}
+
+type SupplyChainPortfolioComponentList struct {
+	Stream              string                          `json:"stream"`
+	RepositoriesInScope int                             `json:"repositories_in_scope"`
+	Components          []SupplyChainPortfolioComponent `json:"components"`
+	Truncated           bool                            `json:"truncated"`
+	NextCursor          string                          `json:"next_cursor,omitempty"`
+}
+
+type SupplyChainPortfolioComponentDetail struct {
+	Key         string                           `json:"key"`
+	Stream      string                           `json:"stream"`
+	Ecosystem   string                           `json:"ecosystem"`
+	Namespace   string                           `json:"namespace,omitempty"`
+	Name        string                           `json:"name"`
+	Version     string                           `json:"version"`
+	Occurrences []SupplyChainPortfolioOccurrence `json:"occurrences"`
+	Truncated   bool                             `json:"truncated"`
+	Notes       []string                         `json:"notes"`
+}
+
+type SupplyChainPortfolioOccurrence struct {
+	RepositoryID int64     `json:"repository_id"`
+	Repository   string    `json:"repository"`
+	SnapshotID   int64     `json:"snapshot_id"`
+	CollectedAt  time.Time `json:"collected_at"`
+	ElementID    string    `json:"element_id"`
+	Root         bool      `json:"root"`
+	DeclaredRaw  *string   `json:"declared_raw"`
+	Assessment   string    `json:"assessment,omitempty"`
+	Expression   string    `json:"expression,omitempty"`
+	DetailPath   string    `json:"detail_path"`
+}
+
+type SupplyChainSnapshotComparison struct {
+	RepositoryID      int64                      `json:"repository_id"`
+	Base              SupplyChainSnapshot        `json:"base"`
+	Head              SupplyChainSnapshot        `json:"head"`
+	AddedComponents   []string                   `json:"added_components"`
+	RemovedComponents []string                   `json:"removed_components"`
+	LicenseChanges    []SupplyChainLicenseChange `json:"license_changes"`
+	EdgesAdded        int                        `json:"edges_added"`
+	EdgesRemoved      int                        `json:"edges_removed"`
+	MetadataChanges   []string                   `json:"metadata_changes"`
+	Notes             []string                   `json:"notes"`
+}
+
+type SupplyChainLicenseChange struct {
+	Component string `json:"component"`
+	From      string `json:"from"`
+	To        string `json:"to"`
+}

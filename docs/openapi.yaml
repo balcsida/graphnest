@@ -760,6 +760,102 @@ paths:
         '405': {$ref: '#/components/responses/InvalidRequest'}
         '500': {description: Response exceeded the configured byte limit}
         '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/overview:
+    get:
+      description: Portfolio summary across the caller's authorized repositories for one stream. Every count names its denominator in `denominators`; assessments describe evidence, never compliance. Requested repository_id values outside the caller's scope are silently dropped.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: repository_id, in: query, required: false, description: Repeatable GitHub repository IDs to narrow the scope (at most 200), schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Portfolio overview, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainOverview'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/facets:
+    get:
+      description: Bounded filter facets (ecosystems, assessment statuses, normalized license expressions) computed inside the caller's scope.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: repository_id, in: query, required: false, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Facets, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainFacets'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/components:
+    get:
+      description: Unique coordinates (ecosystem, namespace, name, version) across the latest snapshots of the caller's authorized repositories, with repository and occurrence counts, keyset-paginated in stable key order. The cursor is bound to the filter set. Filters never reveal repositories outside the scope.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: repository_id, in: query, required: false, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: ecosystem, in: query, required: false, schema: {type: string, maxLength: 64}}
+        - {name: q, in: query, required: false, description: Case-insensitive substring of name or purl, schema: {type: string, maxLength: 200}}
+        - {name: license, in: query, required: false, description: Exact normalized SPDX expression (case-insensitive), schema: {type: string, maxLength: 500}}
+        - {name: assessment, in: query, required: false, schema: {type: string, enum: [unknown, declared, resolved, conflict, unlicensed, not_applicable, pending, unassessed]}}
+        - {name: cursor, in: query, required: false, schema: {type: string, minLength: 1}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200': {description: Component page, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainPortfolioComponentList'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/components/{key}:
+    get:
+      description: Where one coordinate occurs within the caller's scope (repositories, snapshots, element IDs, assessments) with links to each occurrence's evidence detail. A coordinate with no authorized occurrence is not found.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: key, in: path, required: true, description: Component key from the component list, schema: {type: string, minLength: 1, maxLength: 4096}}
+        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: repository_id, in: query, required: false, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Coordinate detail, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainPortfolioComponentDetail'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/exports/{id}/components.csv:
+    get:
+      description: CSV export of exactly one authorized snapshot's components with assessments. Every row carries the repository, snapshot ID, stream, producer, collection time, and document SHA-256. Cells starting with formula characters are prefixed with an apostrophe.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: stream, in: query, required: false, schema: {type: string, enum: ['github:source']}}
+        - {name: snapshot_id, in: query, required: false, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: CSV attachment with X-GraphNest-Snapshot-ID, content: {text/csv: {schema: {type: string}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '413': {description: Export exceeds the response limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/compare:
+    get:
+      description: Compare two authorized snapshots of one repository. Component changes are computed by coordinate (a renamed SPDXID for the same package is not a change), declared-license changes per component, resolved dependency-edge counts, and document metadata changes (parser version, namespace, producer-claimed time, tool) are reported separately. Cross-producer comparisons are flagged.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: repository_id, in: query, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: base, in: query, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: head, in: query, required: true, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Snapshot comparison, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainSnapshotComparison'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
   /v1/auth/config:
     get:
       responses:
@@ -2291,6 +2387,132 @@ components:
         type: {type: string}
         to: {type: string}
         resolved: {type: boolean}
+    SupplyChainOverview:
+      type: object
+      additionalProperties: false
+      required: [stream, generated_at, repositories, components, warning_total, oldest_collected_at, newest_collected_at, ecosystems, denominators]
+      properties:
+        stream: {type: string}
+        generated_at: {type: string, format: date-time}
+        repositories:
+          type: object
+          additionalProperties: false
+          required: [authorized, with_inventory, never_collected, stale, failed_last_attempt, opted_out]
+          properties:
+            authorized: {type: integer, minimum: 0}
+            with_inventory: {type: integer, minimum: 0}
+            never_collected: {type: integer, minimum: 0}
+            stale: {type: integer, minimum: 0}
+            failed_last_attempt: {type: integer, minimum: 0}
+            opted_out: {type: integer, minimum: 0}
+        components:
+          type: object
+          additionalProperties: false
+          required: [occurrences, unique_coordinates, without_purl, without_version, unassessed, assessments]
+          properties:
+            occurrences: {type: integer, minimum: 0}
+            unique_coordinates: {type: integer, minimum: 0}
+            without_purl: {type: integer, minimum: 0}
+            without_version: {type: integer, minimum: 0}
+            unassessed: {type: integer, minimum: 0}
+            assessments: {type: object, additionalProperties: {type: integer, minimum: 0}}
+        warning_total: {type: integer, minimum: 0}
+        oldest_collected_at: {oneOf: [{type: string, format: date-time}, {type: 'null'}]}
+        newest_collected_at: {oneOf: [{type: string, format: date-time}, {type: 'null'}]}
+        ecosystems: {type: array, items: {$ref: '#/components/schemas/SupplyChainFacet'}}
+        denominators: {type: array, items: {type: string}}
+    SupplyChainFacet:
+      type: object
+      additionalProperties: false
+      required: [value, count]
+      properties:
+        value: {type: string}
+        count: {type: integer, minimum: 0}
+    SupplyChainFacets:
+      type: object
+      additionalProperties: false
+      required: [stream, ecosystems, assessments, licenses]
+      properties:
+        stream: {type: string}
+        ecosystems: {type: array, items: {$ref: '#/components/schemas/SupplyChainFacet'}}
+        assessments: {type: array, items: {$ref: '#/components/schemas/SupplyChainFacet'}}
+        licenses: {type: array, items: {$ref: '#/components/schemas/SupplyChainFacet'}}
+    SupplyChainPortfolioComponent:
+      type: object
+      additionalProperties: false
+      required: [key, ecosystem, name, version, repository_count, occurrence_count, assessment, assessment_statuses, declared_raw, newest_collected_at, oldest_collected_at, repositories]
+      properties:
+        key: {type: string, description: Opaque coordinate key for the detail route}
+        ecosystem: {type: string}
+        namespace: {type: string}
+        name: {type: string}
+        version: {type: string}
+        purl: {type: string}
+        repository_count: {type: integer, minimum: 1}
+        occurrence_count: {type: integer, minimum: 1}
+        assessment: {type: string, description: Single status when all occurrences agree, otherwise mixed or unassessed}
+        assessment_statuses: {type: array, items: {type: string}}
+        expression: {type: string}
+        declared_raw: {type: array, items: {type: string}, description: Distinct verbatim producer declarations across occurrences}
+        newest_collected_at: {type: string, format: date-time}
+        oldest_collected_at: {type: string, format: date-time}
+        repositories: {type: array, items: {type: object, additionalProperties: false, required: [id], properties: {id: {type: integer, format: int64}, name: {type: string}}}}
+    SupplyChainPortfolioComponentList:
+      type: object
+      additionalProperties: false
+      required: [stream, repositories_in_scope, components, truncated]
+      properties:
+        stream: {type: string}
+        repositories_in_scope: {type: integer, minimum: 0}
+        components: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/SupplyChainPortfolioComponent'}}
+        truncated: {type: boolean}
+        next_cursor: {type: string, minLength: 1}
+    SupplyChainPortfolioComponentDetail:
+      type: object
+      additionalProperties: false
+      required: [key, stream, ecosystem, name, version, occurrences, truncated, notes]
+      properties:
+        key: {type: string}
+        stream: {type: string}
+        ecosystem: {type: string}
+        namespace: {type: string}
+        name: {type: string}
+        version: {type: string}
+        occurrences:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [repository_id, repository, snapshot_id, collected_at, element_id, root, declared_raw, detail_path]
+            properties:
+              repository_id: {type: integer, format: int64}
+              repository: {type: string}
+              snapshot_id: {type: integer, format: int64}
+              collected_at: {type: string, format: date-time}
+              element_id: {type: string}
+              root: {type: boolean}
+              declared_raw: {oneOf: [{type: string}, {type: 'null'}]}
+              assessment: {type: string}
+              expression: {type: string}
+              detail_path: {type: string}
+        truncated: {type: boolean}
+        notes: {type: array, items: {type: string}}
+    SupplyChainSnapshotComparison:
+      type: object
+      additionalProperties: false
+      required: [repository_id, base, head, added_components, removed_components, license_changes, edges_added, edges_removed, metadata_changes, notes]
+      properties:
+        repository_id: {type: integer, format: int64}
+        base: {$ref: '#/components/schemas/SupplyChainSnapshot'}
+        head: {$ref: '#/components/schemas/SupplyChainSnapshot'}
+        added_components: {type: array, items: {type: string}}
+        removed_components: {type: array, items: {type: string}}
+        license_changes: {type: array, items: {type: object, additionalProperties: false, required: [component, from, to], properties: {component: {type: string}, from: {type: string}, to: {type: string}}}}
+        edges_added: {type: integer, minimum: 0}
+        edges_removed: {type: integer, minimum: 0}
+        metadata_changes: {type: array, items: {type: string}}
+        notes: {type: array, items: {type: string}}
     SupplyChainComponentList:
       type: object
       additionalProperties: false
