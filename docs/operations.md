@@ -112,6 +112,7 @@ mode; ordinary repositories need no workflow or configuration file.
 | `GRAPHNEST_SUPPLY_CHAIN_WORKERS` | `1` | Collection workers per server process (maximum 8). Each leases one job at a time. |
 | `GRAPHNEST_SUPPLY_CHAIN_MAX_DOCUMENT_BYTES` | `16777216` | Maximum SBOM export size (whole HTTP body, maximum 256 MiB). Larger exports record `too_large`. |
 | `GRAPHNEST_SUPPLY_CHAIN_MAX_COMPONENTS` | `50000` | Maximum packages per document (maximum 500000). |
+| `GRAPHNEST_SUPPLY_CHAIN_RETAIN_SNAPSHOTS` | `10` | Snapshots kept per repository stream in addition to the current one and any snapshot referenced by a policy result, decision, or conclusion; `0` disables pruning. Unreferenced documents are removed with their last snapshot. |
 
 GitHub permissions: the GitHub App needs `Contents: read` on the repository,
 the same permission indexing already requires. The collector calls only
@@ -152,8 +153,13 @@ server. Routes and the page disappear, workers stop, and existing
 `supply_chain_*` tables are left in place. Backup and restore follow the
 PostgreSQL policy for other durable state; documents are stored inline
 (`supply_chain_documents.body`), so database size grows with the number of
-distinct SBOM exports retained. Retention pruning is not implemented in this
-milestone.
+distinct SBOM exports retained. Retention runs on the scheduler tick: it
+keeps the newest `GRAPHNEST_SUPPLY_CHAIN_RETAIN_SNAPSHOTS` snapshots per
+stream plus every snapshot a review record refers to, trims failed collection
+attempts beyond the newest 50 per stream, and removes finished jobs after 30
+days. Repository removal or a revoked installation removes inventory
+visibility immediately through the authorization queries and cascades the
+rows; shared registry evidence (which is not repository data) is retained.
 
 Metrics: `graphnest_supply_chain_collections_total{outcome}`,
 `graphnest_supply_chain_collection_duration_seconds{outcome}`,
@@ -283,6 +289,50 @@ ort report -i analyzer-result.yml -o reports -f SpdxDocument -O SpdxDocument=out
 curl --fail-with-body -X POST "https://graphnest.example/v1/supply-chain/imports?repository_id=101&subject=source&label=ort&subject_revision=$GITHUB_SHA" \
   -H "Authorization: Bearer $GRAPHNEST_TOKEN" -H 'Content-Type: application/spdx+json' --data-binary @reports/bom.spdx.json
 ```
+
+### Review workflows and policies
+
+Three record kinds stay separate: a **conclusion** corrects license evidence
+(stored as immutable `human` evidence that overrides, but never deletes,
+automated evidence; disagreement stays visible in the assessment's conflict
+detail); a **policy result** applies one versioned policy to one occurrence;
+a **decision** approves or rejects usage of exact coordinates in one
+repository, or grants an exception with an expiry within a year. Every
+decision records the reviewer, reason, usage context, policy version and
+verdict, and the assessment evidence fingerprint it was made against. A newer
+record supersedes the previous one; nothing is edited, and
+`supply_chain_review_events` is append-only.
+
+Optimistic concurrency: the review queue (`GET /v1/supply-chain/review/queue`)
+hands out each occurrence's `basis` fingerprint, and conclusions/decisions
+must echo it back; a changed basis is refused with `409 stale_basis`, so a
+reviewer cannot approve evidence they have not seen. When evidence changes
+after a decision, or an exception expires, the occurrence returns to the queue
+with the reason and history reports `current_stale`. Re-evaluation runs in the
+background every minute and retains historical results.
+
+Permissions: reading the queue and history needs only repository read access;
+recording conclusions and decisions needs a repository-scoped review grant
+(`PUT /v1/supply-chain/review/grants`, administrator-only; reviewers cannot
+grant themselves) in addition to read access; creating or activating policies
+(`POST /v1/supply-chain/policies`) is administrator-only. No pretend legal
+policy ships: the embedded policy is labelled `kind: example` and is installed
+only on request; `unknown_handling` must be `review_required` or
+`prohibited`, never approve. Policies are evaluated over the SPDX expression
+tree (AND takes the worst operand, OR the best, `WITH` pairs are their own
+terms and are never approved by their base license); an acceptable OR branch
+is reported, but choosing it is a separate recorded decision. Verdicts are
+`approved`, `prohibited`, `review_required`, or `unknown` and are not legal
+advice or release gates.
+
+### MCP tools
+
+With the module enabled, `/mcp` exposes three read-only tools through the
+same authorized services as REST: `search_dependency_inventory`,
+`find_component_repositories`, and `inspect_component_license`. Responses
+include snapshot IDs, provenance, scope, and truncation, and state that
+package, license, and evidence content is untrusted data. There are no
+approval, import, or refresh tools over MCP.
 
 Derived export: `GET /v1/supply-chain/exports/{id}/derived.spdx.json` returns
 an SPDX 2.3 JSON document created by GraphNest that links the preserved

@@ -569,6 +569,18 @@ func startSupplyChain(ctx context.Context, settings config.SupplyChain, store *p
 			if _, err := scheduler.Tick(ctx); err != nil && ctx.Err() == nil {
 				logger.Error("supply chain scheduling failed", "error", err)
 			}
+			if settings.RetainSnapshots > 0 {
+				if _, _, err := store.PruneSupplyChainSnapshots(ctx, settings.RetainSnapshots, 200); err != nil && ctx.Err() == nil {
+					logger.Error("supply chain snapshot retention failed", "error", err)
+				}
+			}
+			if _, _, err := store.PruneSupplyChainHistory(ctx, 50, 30*24*time.Hour); err != nil && ctx.Err() == nil {
+				logger.Error("supply chain history retention failed", "error", err)
+			}
+			if depths, err := store.EnrichmentQueueDepths(ctx); err == nil {
+				metrics.SetSupplyChainQueueDepth("enrichment_queued", depths["queued"])
+				metrics.SetSupplyChainQueueDepth("enrichment_running", depths["running"])
+			}
 		}
 		tick()
 		ticker := time.NewTicker(reconcileInterval)

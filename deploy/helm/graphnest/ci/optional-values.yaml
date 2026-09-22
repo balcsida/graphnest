@@ -28,6 +28,7 @@ server:
     workers: 2
     maxDocumentBytes: 33554432
     maxComponents: 60000
+    retainSnapshots: 5
     registries:
       npm: {url: https://npm.example.invalid/, namespaces: ["@acme", "@internal"], allowPrivate: false, token: true}
       nuget: {url: "", namespaces: [], allowPrivate: false}

@@ -669,3 +669,56 @@ func escapeLike(value string) string {
 	}
 	return string(out)
 }
+
+// PruneSupplyChainSnapshots deletes, per repository stream, snapshots beyond
+// the newest keep count, except the stream's latest snapshot and any snapshot
+// referenced by a review record (a policy result, a decision's occurrence, or
+// a conclusion basis through its components). Documents unreferenced by any
+// remaining snapshot are removed afterwards. Returns snapshots and documents
+// deleted. Bounded per call.
+func (s *Store) PruneSupplyChainSnapshots(ctx context.Context, keep int, limit int) (int64, int64, error) {
+	if keep < 1 {
+		keep = 1
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback(ctx)
+	result, err := tx.Exec(ctx, `delete from supply_chain_snapshots where id in (
+			select snap.id from (
+				select id, repository_id, stream_key, row_number() over (partition by repository_id, stream_key order by id desc) as position from supply_chain_snapshots
+			) snap
+			where snap.position > $1
+			and not exists (select 1 from supply_chain_streams st where st.latest_snapshot_id=snap.id)
+			and not exists (select 1 from supply_chain_policy_results pr where pr.snapshot_id=snap.id)
+			and not exists (select 1 from supply_chain_components c join supply_chain_decisions d on d.repository_id=snap.repository_id and d.ecosystem=coalesce(c.ecosystem, '') and d.namespace=coalesce(c.purl_namespace, '') and d.name=coalesce(c.purl_name, '') and d.version=coalesce(c.purl_version, c.version, '') where c.snapshot_id=snap.id)
+			and not exists (select 1 from supply_chain_components c join supply_chain_conclusions k on k.ecosystem=coalesce(c.ecosystem, '') and k.namespace=coalesce(c.purl_namespace, '') and k.name=coalesce(c.purl_name, '') and k.version=coalesce(c.purl_version, c.version, '') where c.snapshot_id=snap.id)
+			order by snap.id limit $2)`, keep, limit)
+	if err != nil {
+		return 0, 0, err
+	}
+	snapshots := result.RowsAffected()
+	documents, err := tx.Exec(ctx, `delete from supply_chain_documents doc where not exists (select 1 from supply_chain_snapshots snap where snap.document_id=doc.id)
+		and not exists (select 1 from supply_chain_collections col where col.document_id=doc.id and col.snapshot_id is not null)`)
+	if err != nil {
+		return 0, 0, err
+	}
+	return snapshots, documents.RowsAffected(), tx.Commit(ctx)
+}
+
+// PruneSupplyChainHistory bounds collection attempts and finished jobs per
+// stream so operational tables do not grow without limit.
+func (s *Store) PruneSupplyChainHistory(ctx context.Context, keepCollections int, finishedJobsOlderThan time.Duration) (int64, int64, error) {
+	collections, err := s.pool.Exec(ctx, `delete from supply_chain_collections where id in (
+			select id from (select id, row_number() over (partition by repository_id, stream_key order by id desc) as position from supply_chain_collections) ranked
+			where ranked.position > $1) and snapshot_id is null`, keepCollections)
+	if err != nil {
+		return 0, 0, err
+	}
+	jobs, err := s.pool.Exec(ctx, `delete from supply_chain_jobs where state in ('succeeded','failed','cancelled','superseded') and updated_at < now() - $1::interval`, finishedJobsOlderThan)
+	if err != nil {
+		return 0, 0, err
+	}
+	return collections.RowsAffected(), jobs.RowsAffected(), nil
+}

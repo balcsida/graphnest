@@ -412,3 +412,67 @@ func TestSupplyChainRepositoryRemovalCascades(t *testing.T) {
 		t.Fatalf("snapshot survived removal: %v", err)
 	}
 }
+
+func TestSupplyChainRetentionPreservesReviewedSnapshots(t *testing.T) {
+	store := migratedStore(t)
+	repositoryID := supplyChainRepository(t, store, 101, "widgets")
+	document := supplyChainFixture(t)
+	var snapshotIDs []int64
+	for index := range 5 {
+		// Each publication must differ so five snapshots exist.
+		variant := append(bytes.TrimRight(document, "\n"), bytes.Repeat([]byte{' '}, index+1)...)
+		collection, err := store.PublishSupplyChainSnapshot(t.Context(), publication(t, repositoryID, claimSupplyChain(t, store, repositoryID, "w"), variant))
+		if err != nil {
+			t.Fatal(err)
+		}
+		snapshotIDs = append(snapshotIDs, *collection.SnapshotID)
+	}
+	// A policy result references the second-oldest snapshot's component.
+	var componentID int64
+	if err := store.pool.QueryRow(t.Context(), `select id from supply_chain_components where snapshot_id=$1 order by ordinal limit 1`, snapshotIDs[1]).Scan(&componentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into supply_chain_policies (name, version, kind, rules, unknown_handling, created_by, active) values ('p', 1, 'example', '{}', 'review_required', 't', false)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into supply_chain_policy_results (component_id, snapshot_id, policy_id, verdict, explanation) values ($1, $2, (select id from supply_chain_policies), 'review_required', 'x')`, componentID, snapshotIDs[1]); err != nil {
+		t.Fatal(err)
+	}
+	snapshots, documents, err := store.PruneSupplyChainSnapshots(t.Context(), 2, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Keep the newest 2 (ids 4,5) plus the reviewed one (id 2); delete 1 and 3.
+	if snapshots != 2 || documents != 2 {
+		t.Fatalf("pruned %d snapshots, %d documents", snapshots, documents)
+	}
+	remaining, err := store.SupplyChainSnapshots(t.Context(), repositoryID, supplychain.StreamGitHubSource, 0, 10)
+	if err != nil || len(remaining) != 3 {
+		t.Fatalf("remaining = %d %v", len(remaining), err)
+	}
+	ids := map[int64]bool{}
+	for _, snapshot := range remaining {
+		ids[snapshot.ID] = true
+	}
+	if !ids[snapshotIDs[1]] || !ids[snapshotIDs[3]] || !ids[snapshotIDs[4]] || ids[snapshotIDs[0]] || ids[snapshotIDs[2]] {
+		t.Fatalf("remaining ids = %v", ids)
+	}
+	// The latest pointer and its document are intact; the reviewed snapshot's document survives.
+	stream, err := store.SupplyChainStream(t.Context(), repositoryID, supplychain.StreamGitHubSource)
+	if err != nil || *stream.LatestSnapshotID != snapshotIDs[4] {
+		t.Fatalf("stream = %+v %v", stream, err)
+	}
+	if _, _, _, err := store.SupplyChainDocument(t.Context(), snapshotIDs[1], []int64{repositoryID}); err != nil {
+		t.Fatalf("reviewed snapshot document lost: %v", err)
+	}
+	// History pruning keeps the newest attempts and removes finished jobs older than the cutoff.
+	if _, err := store.pool.Exec(t.Context(), `update supply_chain_jobs set updated_at=now()-interval '10 days'`); err != nil {
+		t.Fatal(err)
+	}
+	// Five attempts exist; the newest three stay, and of the older two only the one whose
+	// snapshot was pruned (snapshot link nulled by cascade) is removable.
+	collections, jobs, err := store.PruneSupplyChainHistory(t.Context(), 3, 7*24*time.Hour)
+	if err != nil || jobs != 5 || collections != 1 {
+		t.Fatalf("history prune = %d collections, %d jobs, %v", collections, jobs, err)
+	}
+}

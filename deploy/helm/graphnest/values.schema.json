@@ -279,13 +279,14 @@
         "supplyChain": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["enabled", "interval", "workers", "maxDocumentBytes", "maxComponents", "registries"],
+          "required": ["enabled", "interval", "workers", "maxDocumentBytes", "maxComponents", "retainSnapshots", "registries"],
           "properties": {
             "enabled": {"type": "boolean"},
             "interval": {"$ref": "#/definitions/duration"},
             "workers": {"type": "integer", "minimum": 1, "maximum": 8},
             "maxDocumentBytes": {"type": "integer", "minimum": 1, "maximum": 268435456},
             "maxComponents": {"type": "integer", "minimum": 1, "maximum": 500000},
+            "retainSnapshots": {"type": "integer", "minimum": 0, "maximum": 1000},
             "registries": {
               "type": "object",
               "additionalProperties": false,

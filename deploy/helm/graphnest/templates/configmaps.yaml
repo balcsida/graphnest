@@ -73,6 +73,7 @@ data:
   GRAPHNEST_SUPPLY_CHAIN_WORKERS: {{ .Values.server.supplyChain.workers | quote }}
   GRAPHNEST_SUPPLY_CHAIN_MAX_DOCUMENT_BYTES: {{ printf "%d" (int64 .Values.server.supplyChain.maxDocumentBytes) | quote }}
   GRAPHNEST_SUPPLY_CHAIN_MAX_COMPONENTS: {{ .Values.server.supplyChain.maxComponents | quote }}
+  GRAPHNEST_SUPPLY_CHAIN_RETAIN_SNAPSHOTS: {{ .Values.server.supplyChain.retainSnapshots | quote }}
   {{- range $ecosystem, $route := (pick .Values.server.supplyChain.registries "npm" "nuget" "maven") }}
   {{- if $route.url }}
   {{- $prefix := printf "GRAPHNEST_SUPPLY_CHAIN_REGISTRY_%s_" (upper $ecosystem) }}
