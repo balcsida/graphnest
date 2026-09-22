@@ -89,6 +89,57 @@ const responses = {
     {id: 40, job_id: 9, producer: "github", stream: "github:source", started_at: "2026-09-22T11:59:58Z", finished_at: "2026-09-22T12:00:00Z", outcome: "forbidden", http_status: 403, snapshot_id: null, error_code: "github_forbidden", message: "GitHub returned 403 for the SBOM export."},
     {id: 39, job_id: 8, producer: "github", stream: "github:source", started_at: "2026-09-21T09:59:57Z", finished_at: collected, outcome: "published", http_status: 200, snapshot_id: 11},
   ], truncated: false},
+  "/v1/supply-chain/repositories/101/snapshots": {snapshots: [
+    {id: 11, collected_at: collected}, {id: 10, collected_at: "2026-09-14T10:00:00Z"},
+  ]},
+  "/v1/supply-chain/overview": {
+    stream: "github:source", generated_at: collected,
+    repositories: {authorized: 12, with_inventory: 9, never_collected: 2, stale: 3, failed_last_attempt: 1, opted_out: 1},
+    components: {occurrences: 410, unique_coordinates: 260, without_purl: 7, without_version: 4, unassessed: 231, assessments: licenseSummary},
+    warning_total: 3, oldest_collected_at: "2026-09-01T08:00:00Z", newest_collected_at: collected,
+    ecosystems: [{value: "npm", count: 180}, {value: "maven", count: 60}, {value: "nuget", count: 20}],
+    denominators: [
+      "Authorized repositories: repositories this token can read.",
+      "With inventory: authorized repositories with at least one collected snapshot.",
+      "Occurrences: component rows across the latest snapshot of each repository.",
+      "Unique coordinates: distinct ecosystem, namespace, name and version tuples.",
+      "Assessments describe collected evidence; they are not a compliance verdict.",
+    ],
+  },
+  "/v1/supply-chain/facets": {
+    stream: "github:source",
+    ecosystems: [{value: "npm", count: 180}, {value: "maven", count: 60}, {value: "nuget", count: 20}],
+    assessments: [{value: "resolved", count: 1}, {value: "conflict", count: 1}, {value: "not_applicable", count: 1}],
+    licenses: [{value: "MIT", count: 120}, {value: "Apache-2.0", count: 40}, {value: "Apache-2.0 AND MIT", count: 4}],
+  },
+  "/v1/supply-chain/components": {
+    stream: "github:source", repositories_in_scope: 9, truncated: false,
+    components: components.filter(item => item.purl).map((item, ordinal) => ({
+      key: Buffer.from([item.ecosystem, "", item.name, item.version || ""].join("\u0001")).toString("hex"), ecosystem: item.ecosystem, name: item.name,
+      version: item.version || "", purl: item.purl, repository_count: 3 - (ordinal % 3), occurrence_count: 5 - ordinal,
+      assessment: item.license?.status || "unassessed", expression: item.license?.expression || "",
+      declared_raw: [item.license_declared_raw || "NOASSERTION"],
+      newest_collected_at: collected, oldest_collected_at: "2026-09-01T08:00:00Z",
+      repositories: [{id: 101, name: "acme/widgets"}],
+    })),
+  },
+  "/v1/supply-chain/compare": {
+    repository_id: 101, base: {id: 10, collected_at: "2026-09-14T10:00:00Z"}, head: {id: 11, collected_at: collected},
+    added_components: ["npm:@scope/left-pad@1.3.0"], removed_components: ["npm:@scope/right-pad@1.0.0"],
+    license_changes: [{component: "npm:@scope/left-pad@1.3.0", from: "NOASSERTION", to: "MIT"}],
+    edges_added: 2, edges_removed: 1, metadata_changes: ["producer tool changed"],
+    notes: ["Comparison is by coordinate, not by SPDXID."],
+  },
+};
+const portfolioKey = responses["/v1/supply-chain/components"].components[0].key;
+const portfolioDetail = {
+  key: portfolioKey, stream: "github:source", ecosystem: "npm", namespace: "@scope", name: detailComponent.name,
+  version: detailComponent.version || "", truncated: false,
+  notes: ["Occurrences are limited to the caller's authorized repositories."],
+  occurrences: [
+    {repository_id: 101, repository: "acme/widgets", snapshot_id: 11, collected_at: collected, element_id: detailComponent.element_id, root: false, declared_raw: "NOASSERTION", assessment: "resolved", expression: "MIT", detail_path: "/v1/supply-chain/repositories/101/component?element=" + detailComponent.element_id},
+    {repository_id: 102, repository: "acme/gadgets", snapshot_id: 21, collected_at: "2026-09-20T10:00:00Z", element_id: "SPDXRef-npm-left-pad", root: false, declared_raw: "MIT", assessment: "declared", expression: "MIT", detail_path: "/v1/supply-chain/repositories/102/component?element=SPDXRef-npm-left-pad"},
+  ],
 };
 const server = http.createServer((request, response) => {
   const url = new URL(request.url, "http://127.0.0.1");
@@ -108,7 +159,7 @@ const server = http.createServer((request, response) => {
     response.writeHead(401, {"Content-Type": "application/json"});
     return response.end(`{"error":{"code":"unauthenticated","message":"authentication required","request_id":"x","retryable":false}}`);
   }
-  const body = responses[url.pathname];
+  const body = url.pathname.startsWith("/v1/supply-chain/components/") ? portfolioDetail : responses[url.pathname];
   if (!body) {
     response.writeHead(404, {"Content-Type": "application/json"});
     return response.end(`{"error":{"code":"not_found","message":"not found","request_id":"x","retryable":false}}`);
@@ -137,6 +188,23 @@ try {
     const notice = await page.locator("#sc-notice").textContent();
     console.log(`${theme}: ${rows} component rows; notice=${JSON.stringify(notice?.slice(0, 60))}`);
     if (rows !== components.length || !notice) throw new Error("page did not render the fixture inventory");
+
+    await page.getByRole("button", {name: "Overview", exact: true}).click();
+    await page.locator("#pf-denominators p").first().waitFor();
+    await page.screenshot({path: path.join(outDir, `supply-chain-overview-${theme}.png`), fullPage: true});
+    const denominators = await page.locator("#pf-denominators p").count();
+    if (denominators !== responses["/v1/supply-chain/overview"].denominators.length) throw new Error("overview did not render every denominator");
+
+    await page.getByRole("button", {name: "Components", exact: true}).click();
+    await page.locator("#pf-rows tr").first().waitFor();
+    await page.locator("#pf-rows tr").filter({hasText: "left-pad"}).first().getByRole("button").click();
+    await page.locator("#pf-detail").waitFor({state: "visible"});
+    await page.waitForTimeout(150);
+    await page.screenshot({path: path.join(outDir, `supply-chain-components-${theme}.png`), fullPage: true});
+    const portfolioRows = await page.locator("#pf-rows tr").count();
+    const occurrences = await page.locator("#pf-detail tbody tr").count();
+    console.log(`${theme}: ${denominators} denominators; ${portfolioRows} portfolio rows; ${occurrences} occurrences`);
+    if (!portfolioRows || occurrences !== portfolioDetail.occurrences.length) throw new Error("portfolio screens did not render the fixture data");
     await page.close();
   }
 } finally {
