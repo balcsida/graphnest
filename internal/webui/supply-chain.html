@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GraphNest Dependencies &amp; Licenses</title>
+<style>
+:root{color-scheme:dark;--bg:#0a0d15;--surface:#0f1420;--surface2:#161d2f;--hover:#1b2338;--border:#1f2840;--ink:#e7ebf5;--muted:#8a94ac;--faint:#5c6680;--accent:#8b93ff;--soft:rgba(139,147,255,.13);--on-accent:#0a0d15;--ok:#3ecf8e;--warn:#efb04e;--err:#f17878;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;--sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--disp:ui-rounded,"SF Pro Rounded",system-ui,sans-serif}
+:root.light{color-scheme:light;--bg:#f4f6fb;--surface:#fff;--surface2:#eef1f8;--hover:#e7ebf4;--border:#dfe4f0;--ink:#161b2c;--muted:#5b6478;--faint:#97a0b6;--accent:#4c51e0;--soft:rgba(76,81,224,.1);--on-accent:#fff;--ok:#158a5a;--warn:#a66e12;--err:#c13f3c}
+*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}h1,h2{margin:0}h2{font:600 14px var(--disp)}button,input,select{font:inherit;min-height:36px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--ink);padding:0 12px}button{cursor:pointer}input,select{background:var(--surface2)}.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}.primary:hover:not(:disabled){filter:brightness(1.08)}button:disabled{opacity:.5;cursor:not-allowed}button:hover:not(:disabled):not(.primary){background:var(--hover)}a{color:var(--accent);text-decoration:none}a:hover{color:var(--ink)}:focus-visible{outline:3px solid var(--accent);outline-offset:2px}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+#access-panel{min-height:100vh;display:grid;place-items:center;padding:24px;background-image:radial-gradient(640px 400px at 50% 8%,var(--soft),transparent 70%),linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:auto,48px 48px,48px 48px}.access{width:min(380px,100%);background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:28px;display:grid;gap:16px;box-shadow:0 24px 60px #0006}.access .brand{padding:0}.intro{display:grid;gap:4px}.access h1{font:600 20px/1.25 var(--disp)}.access p{margin:0;color:var(--muted)}.access form{display:grid;gap:6px}.access form label{font-size:12px;font-weight:600;color:var(--muted)}.access form .primary{margin-top:6px;min-height:40px}#provider-options{display:grid;gap:8px}#provider-options:empty{display:none}#provider-options .primary{min-height:40px;display:flex;align-items:center;justify-content:center;background:var(--surface2);border-color:var(--border);color:var(--ink)}#token{font:13px var(--mono)}
+#sc-shell{min-height:100vh;display:grid;grid-template-columns:216px minmax(0,1fr)}aside{position:sticky;top:0;height:100vh;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column}.brand{display:flex;gap:9px;align-items:center;padding:14px 16px}.mark{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--accent),#48b8c5);display:grid;place-items:center;color:#0a0d15;font:600 11px var(--mono);flex:none}:root.light .mark{color:#fff}.brand>div{display:flex;align-items:center;gap:8px}.brand strong{font:600 14px var(--disp)}.brand small{height:18px;padding:0 6px;display:inline-flex;align-items:center;border-radius:4px;background:var(--surface2);color:var(--muted);font:600 10px var(--mono);letter-spacing:.06em}.nav{display:grid;gap:1px;padding:4px 8px}.nav a{min-height:32px;display:flex;align-items:center;border-radius:6px;padding:0 10px;color:var(--muted);font-size:13px}.nav a:hover{color:var(--ink)}.nav a[aria-current=page]{background:var(--soft);color:var(--accent);font-weight:500}.nav-group{padding:12px 10px 4px;color:var(--faint);font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.09em}.nav-group:first-child{padding-top:6px}.aside-foot{margin-top:auto;padding:12px 16px;border-top:1px solid var(--border);display:grid;gap:8px;font-size:12px}.aside-foot a{min-height:0;display:flex;align-items:center}
+.page{min-width:0}.top{height:52px;position:sticky;top:0;z-index:2;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 24px}.top h1{font:600 15px var(--disp)}.top p{margin:0;color:var(--faint);font-size:12.5px}.top .right{margin-left:auto;display:flex;gap:6px;align-items:center}.top .right button{min-height:32px;border-radius:7px;color:var(--muted);font-size:13px;padding:0 11px}#sc-theme{width:32px;padding:0}main{padding:20px 24px 60px}.screen{display:grid;gap:14px}.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.card,.panel{margin:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px}.panel{display:grid;gap:10px;align-content:start}.card small,.muted{color:var(--muted)}.card small{font-size:12px}.card strong{display:block;font:600 22px/1.2 var(--disp);margin-top:4px}.card strong.warn{color:var(--warn)}.card strong.err{color:var(--err)}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.toolbar .push{margin-left:auto}#sc-search,#sc-repository,#sc-stream{min-height:34px;border-radius:7px}#sc-search{width:260px}
+.table-wrap{overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:10px}table{border-collapse:collapse;width:100%;min-width:760px}th,td{text-align:left;padding:0 12px;border-bottom:1px solid var(--border);vertical-align:middle}th{height:36px;background:var(--surface2);color:var(--faint);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap}td{height:44px;font-size:12.5px}tr:last-child td{border-bottom:0}.mono{font-family:var(--mono);overflow-wrap:anywhere}.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}.pill:before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}.pill.ok{color:var(--ok)}.pill.warn{color:var(--warn)}.pill.err{color:var(--err)}.empty{padding:32px;color:var(--faint);text-align:center;font-size:13px}
+.split{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,1fr);gap:14px;align-items:start}.stack{display:grid;gap:12px}.panel p{margin:0;font-size:12.5px}.panel p.mono{font-size:12px}#sc-details{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:0;font-size:12.5px}#sc-details dt{color:var(--muted)}#sc-details dd{margin:0}.notice{background:color-mix(in oklab,var(--warn) 10%,transparent);border:1px solid color-mix(in oklab,var(--warn) 35%,transparent);border-radius:8px;color:var(--warn);padding:8px 12px;margin:0;font-size:12.5px;display:grid;gap:4px}#sc-notes p{margin:0;color:var(--muted);font-size:12.5px}.status{position:fixed;right:18px;bottom:18px;max-width:min(420px,calc(100vw - 36px));background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;z-index:5;font-size:12.5px;box-shadow:0 12px 32px #0005}.status:empty{display:none}
+@media(max-width:900px){#sc-shell{grid-template-columns:minmax(0,1fr)}aside{position:static;height:auto;border-right:0;border-bottom:1px solid var(--border)}.nav{display:flex;overflow:auto}.nav-group{display:none}.nav a{white-space:nowrap}.aside-foot{margin-top:0;display:flex;flex-wrap:wrap;align-items:center}.cards{grid-template-columns:repeat(2,1fr)}.split{grid-template-columns:1fr}.top{position:static}}
+@media(max-width:520px){main{padding:16px 12px 48px}.top{padding:0 12px}.top p{display:none}.cards{grid-template-columns:1fr}.toolbar>:not(.sr){width:100%}#sc-search{width:100%}.toolbar .push{margin-left:0}.nav{padding:6px}.brand{padding:10px 14px}}
+@media(pointer:coarse){button,input,select,.nav a,.top .right button{min-height:44px}}
+@media(prefers-reduced-motion: reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+</style>
+</head>
+<body data-graphnest-supply-chain>
+<section id="access-panel">
+ <div class="access">
+  <div class="brand"><span class="mark">{}</span><div><strong>GraphNest</strong><small>CONSOLE</small></div></div>
+  <div class="intro"><h1>Inventory access</h1>
+  <p id="access-message">Enter a bearer token. It stays in this tab and is sent only to this GraphNest origin.</p></div>
+  <div id="provider-options" aria-label="Single sign-on providers"></div>
+  <form id="token-form"><label for="token">Bearer token</label><input id="token" type="password" autocomplete="off" required><button class="primary">Open inventory</button></form>
+ </div>
+</section>
+<div id="sc-shell" hidden>
+ <aside>
+  <div class="brand"><span class="mark">{}</span><div><strong>GraphNest</strong><small>CONSOLE</small></div></div>
+  <nav class="nav" aria-label="Console"><span class="nav-group">Inventory</span><a href="/supply-chain" aria-current="page">Dependencies &amp; Licenses</a><span class="nav-group">Elsewhere</span><a href="/">Search console</a><a href="/admin">Admin console</a></nav>
+  <div class="aside-foot"><a href="/">Open search console →</a></div>
+ </aside>
+ <div class="page">
+  <header class="top"><h1>Dependencies &amp; Licenses</h1><p>observed inventory, exactly as the producer reported it</p><div class="right"><button id="sc-theme" aria-label="Toggle theme">◐</button><button id="sc-logout">Lock</button></div></header>
+  <main>
+   <div class="toolbar">
+    <label class="sr" for="sc-repository">Repository</label><select id="sc-repository"></select>
+    <label class="sr" for="sc-stream">Stream</label><select id="sc-stream"><option value="github:source">GitHub dependency graph (source observation)</option></select>
+    <button id="sc-refresh" class="push">Refresh now</button><button id="sc-download">Download original document</button>
+   </div>
+   <div id="sc-notes" aria-live="polite"></div>
+   <p id="sc-notice" class="notice" hidden></p>
+   <div id="sc-cards" class="cards"></div>
+   <div class="split">
+    <section class="panel"><h2>Observation</h2><dl id="sc-details"></dl><p id="sc-document" class="mono"></p></section>
+    <section class="panel"><h2>Warnings <span id="sc-warning-count" class="muted"></span></h2><div id="sc-warnings"></div></section>
+   </div>
+   <div class="toolbar"><label class="sr" for="sc-search">Search components</label><input id="sc-search" type="search" placeholder="Search components"><span id="sc-shown" class="muted"></span></div>
+   <div class="table-wrap"><table><thead><tr><th scope="col">Name</th><th scope="col">Version</th><th scope="col">Ecosystem</th><th scope="col">PURL</th><th scope="col">Scope</th><th scope="col">Declared license</th><th scope="col">Root</th></tr></thead><tbody id="sc-rows"></tbody></table>
+    <div id="sc-loading" class="empty" hidden>Loading components…</div>
+    <div id="sc-empty" class="empty" hidden>No components in this snapshot</div>
+    <div id="sc-error" class="empty" hidden></div>
+   </div>
+   <div class="toolbar"><button id="sc-more" hidden>Load more</button></div>
+   <section class="panel"><h2>Recent collection attempts</h2><div class="table-wrap"><table><thead><tr><th scope="col">Finished</th><th scope="col">Outcome</th><th scope="col">HTTP status</th><th scope="col">Error code</th><th scope="col">Message</th><th scope="col">Projection error</th></tr></thead><tbody id="sc-collections"></tbody></table></div></section>
+  </main>
+ </div>
+</div>
+<div id="sc-status" class="status" role="status" aria-live="polite"></div>
+<script>
+(()=>{"use strict";
+const $=id=>document.getElementById(id),access=$("access-panel"),shell=$("sc-shell"),status=$("sc-status");
+const el=(tag,text,cls)=>{const node=document.createElement(tag);if(text!==undefined)node.textContent=String(text);if(cls)node.className=cls;return node};
+const clear=node=>{while(node.firstChild)node.removeChild(node.firstChild)};
+const when=value=>value?new Intl.DateTimeFormat(undefined,{dateStyle:"medium",timeStyle:"short"}).format(new Date(value)):"—";
+const text=value=>value===null||value===undefined||value===""?"—":String(value);
+const say=(message,bad=false)=>{status.textContent=message;status.style.borderColor=bad?"var(--err)":"var(--border)"};
+const OK=new Set(["current","published","unchanged","succeeded"]),WARN=new Set(["stale","queued","running","rate_limited","transient"]),BAD=new Set(["failed","forbidden","not_found","malformed","too_large","error","cancelled"]);
+function pill(value,label){const shown=value?String(value):"unknown",node=el("span",shown,"pill"),key=shown.toLowerCase();node.classList.add(OK.has(key)?"ok":WARN.has(key)?"warn":BAD.has(key)?"err":"unknown");if(label)node.setAttribute("aria-label",label+": "+shown);return node}
+function card(label,value){const node=el("div",undefined,"card");node.append(el("small",label));if(value instanceof Node){const strong=el("strong");strong.append(value);node.append(strong)}else node.append(el("strong",value));return node}
+function cells(row,values){for(const value of values){const cell=el("td");if(value instanceof Node)cell.append(value);else cell.textContent=value;row.append(cell)}}
+function humanize(seconds){if(seconds===null||seconds===undefined)return "—";const total=Number(seconds);if(!Number.isFinite(total)||total<0)return "—";for(const [unit,size] of [["day",86400],["hour",3600],["minute",60]]){if(total>=size){const count=Math.floor(total/size);return count+" "+unit+(count===1?"":"s")+" ago"}}return "just now"}
+const STREAM="github:source";
+let mode="anonymous",token="",pending="";try{pending=sessionStorage.getItem("graphnest_admin_token")||""}catch(_){}
+let state={repositories:[],repository:"",stream:STREAM,query:"",status:null,snapshotID:null,components:[],cursor:"",debounce:0};
+async function api(path,options={}){const headers=new Headers(options.headers||{});if(mode==="bearer"&&token)headers.set("Authorization","Bearer "+token);return fetch(path,{...options,headers,cache:"no-store",credentials:"same-origin"})}
+async function request(path,options={}){const response=await api(path,options);if(response.status===401){lockAccess("Token required or expired.");const error=new Error("Token required or expired.");error.access=401;throw error}if(!response.ok){let message="Request failed with HTTP "+response.status+".",code="";try{const body=await response.json();message=body.error?.message||message;code=body.error?.code||""}catch(_){}const error=new Error(message);error.code=code;error.status=response.status;throw error}return response.status===204?null:response.json()}
+function showAccess(message){shell.hidden=true;access.hidden=false;if(message)$("access-message").textContent=message;$("token").focus()}
+function lockAccess(message){mode="anonymous";token="";$("token").value="";try{sessionStorage.removeItem("graphnest_admin_token")}catch(_){}state={...state,status:null,components:[],cursor:"",snapshotID:null};for(const id of ["sc-cards","sc-details","sc-notes","sc-warnings","sc-rows","sc-collections"])clear($(id));showAccess(message)}
+function readHash(){const raw=String(location.hash||"").replace(/^#/,"");for(const part of raw.split("&")){if(!part)continue;const [key,value=""]=part.split("=");const decoded=decodeURIComponent(value);if(key==="repo")state.repository=decoded;else if(key==="stream"&&decoded===STREAM)state.stream=decoded;else if(key==="q")state.query=decoded}}
+function writeHash(){location.hash="repo="+encodeURIComponent(state.repository)+"&stream="+state.stream+(state.query?"&q="+encodeURIComponent(state.query):"")}
+const base=()=>"/v1/supply-chain/repositories/"+encodeURIComponent(state.repository);
+const streamQuery=()=>"stream="+encodeURIComponent(state.stream);
+async function loadRepositories(){const repositories=[];let cursor="";do{const page=await request("/v1/repositories"+(cursor?"?cursor="+encodeURIComponent(cursor):""));repositories.push(...(Array.isArray(page.repositories)?page.repositories:[]));cursor=page.truncated&&page.next_cursor&&repositories.length<1000?page.next_cursor:""}while(cursor);state.repositories=repositories.slice(0,1000);const picker=$("sc-repository");clear(picker);for(const repository of state.repositories){const option=el("option",repository.name||String(repository.github_id));option.value=String(repository.github_id);picker.append(option)}if(!state.repositories.some(repository=>String(repository.github_id)===state.repository))state.repository=state.repositories.length?String(state.repositories[0].github_id):"";picker.value=state.repository}
+function renderStatus(){const report=state.status,cards=$("sc-cards"),details=$("sc-details"),notes=$("sc-notes"),notice=$("sc-notice");clear(cards);clear(details);clear(notes);notice.hidden=true;clear(notice);if(!report)return;const snapshot=report.latest_snapshot;
+cards.append(card("Collection state",pill(report.collection,"Collection state")),card("Freshness",humanize(report.freshness_seconds)),card("Components",snapshot?String(snapshot.component_count||0):"—"),card("Warnings",snapshot?String(snapshot.warning_count||0):"0"));
+const rows=[["Subject assurance","unknown — not bound to a commit"],["Producer",text(report.producer)],["Producer tool",text(snapshot?.producer_tool)],["Observed by GraphNest (collected_at)",when(snapshot?.collected_at)],["Producer-claimed creation time",when(snapshot?.created_at_claimed)],["Enrichment","not configured"],["Snapshot",snapshot?"#"+snapshot.id:"—"]];
+for(const [label,value] of rows){details.append(el("dt",label),el("dd",value))}
+const document0=Array.isArray(report.documents)?report.documents[0]:null;$("sc-document").textContent=document0?"sha256 "+document0.sha256+" · "+document0.format+" · "+document0.bytes+" bytes":"No original document is stored.";$("sc-download").disabled=!document0;
+for(const note of (Array.isArray(report.notes)?report.notes:[]).slice(0,50))notes.append(el("p",note));
+if(report.collection==="failed"&&report.latest_snapshot){notice.hidden=false;notice.append(el("span","The inventory shown is the last successful observation; the most recent refresh failed."));const last=report.last_collection;if(last)notice.append(el("span","Last attempt: "+text(last.outcome)+" · HTTP "+text(last.http_status)+" · "+text(last.message)))}
+renderWarnings(snapshot);}
+function renderWarnings(snapshot){const host=$("sc-warnings");clear(host);const warnings=Array.isArray(snapshot?.warnings)?snapshot.warnings:[];$("sc-warning-count").textContent=warnings.length?"("+warnings.length+")":"(0)";if(!warnings.length){host.append(el("p","No parser warnings were recorded.","muted"));return}for(const warning of warnings)host.append(el("p",text(warning.code)+" · "+text(warning.element)+" · "+text(warning.detail)))}
+function renderComponents(){const body=$("sc-rows");clear(body);for(const component of state.components){const row=el("tr");cells(row,[text(component.name),text(component.version),text(component.ecosystem),el("span",text(component.purl),"mono"),pill(component.scope||"unknown","Scope"),text(component.license_declared_raw),component.is_root?"yes":"no"]);body.append(row)}
+$("sc-shown").textContent=state.components.length?"Showing "+state.components.length+" of snapshot #"+state.snapshotID:"";$("sc-more").hidden=!state.cursor;$("sc-empty").hidden=state.components.length>0}
+function renderCollections(collections){const body=$("sc-collections");clear(body);for(const collection of collections){const row=el("tr");cells(row,[when(collection.finished_at),pill(collection.outcome,"Outcome"),text(collection.http_status),text(collection.error_code),text(collection.message),text(collection.projection_error)]);body.append(row)}}
+async function loadComponents(more){const rows=$("sc-rows"),loading=$("sc-loading"),failure=$("sc-error"),empty=$("sc-empty");failure.hidden=true;empty.hidden=true;loading.hidden=false;if(!more){state.components=[];state.cursor="";clear(rows)}
+try{const query=[streamQuery(),"limit=100"];if(state.query)query.push("q="+encodeURIComponent(state.query));if(more&&state.cursor)query.push("cursor="+encodeURIComponent(state.cursor));const page=await request(base()+"/components?"+query.join("&"));state.snapshotID=page.snapshot_id;state.components=state.components.concat(Array.isArray(page.components)?page.components:[]);state.cursor=page.truncated&&page.next_cursor?page.next_cursor:"";renderComponents()}catch(error){if(error.access===401)return;clear(rows);state.components=[];state.cursor="";renderComponents();if(error.code==="no_inventory"){empty.hidden=false;empty.textContent="No inventory has been collected yet"}else{failure.hidden=false;failure.textContent=error.message}}finally{loading.hidden=true}}
+async function load(){if(!state.repositories.length){try{await loadRepositories()}catch(error){if(error.access!==401)say(error.message,true);return}}
+if(!state.repository){say("No repositories are available.",true);return}
+writeHash();$("sc-search").value=state.query;$("sc-repository").value=state.repository;$("sc-stream").value=state.stream;
+try{state.status=await request(base()+"?"+streamQuery())}catch(error){if(error.access===401)return;state.status=null;renderStatus();say(error.message,true)}
+if(state.status)renderStatus();
+await loadComponents(false);
+try{const page=await request(base()+"/collections?"+streamQuery());renderCollections(Array.isArray(page.collections)?page.collections:[])}catch(error){if(error.access!==401)say(error.message,true)}}
+async function refreshNow(){try{const result=await request(base()+"/refresh?"+streamQuery(),{method:"POST"});say("Refresh job #"+result.job.id+" is "+result.job.state+".")}catch(error){if(error.access===401)return;say(error.status===403?"administrator access required":error.message,true)}}
+async function downloadDocument(){const reference=Array.isArray(state.status?.documents)?state.status.documents[0]:null;if(!reference?.path)return say("No original document is stored.",true);try{const response=await api(reference.path);if(!response.ok)throw new Error("Request failed with HTTP "+response.status+".");const disposition=response.headers?.get?.("Content-Disposition")||"";const match=/filename="?([^";]+)"?/.exec(disposition);const href=URL.createObjectURL(await response.blob()),link=el("a");link.href=href;link.download=match?match[1]:"graphnest-sbom-snapshot"+reference.snapshot_id+".json";link.click();URL.revokeObjectURL(href);say("Original document downloaded.")}catch(error){say(error.message,true)}}
+function renderProviders(providers){const host=$("provider-options");if(!host)return;clear(host);for(const provider of providers){if(!provider||typeof provider.login_url!=="string")continue;let login;try{login=new URL(provider.login_url,location.origin)}catch(_){continue}if(login.origin!==location.origin)continue;const link=el("a",provider.label||"Sign in with SSO","primary");link.href=login.pathname+login.search+login.hash;host.append(link)}}
+async function logout(){const response=await fetch("/auth/logout",{method:"POST",cache:"no-store",credentials:"same-origin"});if(response.status!==204)throw new Error("Unable to sign out.")}
+async function lock(){if(mode==="session")try{await logout()}catch(_){say("Unable to sign out. Try again.",true);return}lockAccess("Inventory locked.")}
+async function enterBearer(next){next??=pending||$("token").value.trim();if(!next)return;try{await logout();mode="bearer";token=next;pending="";try{sessionStorage.setItem("graphnest_admin_token",token)}catch(_){ }access.hidden=true;shell.hidden=false;await load()}catch(_){showAccess("Unable to sign out.")}}
+async function start(){readHash();let config={token_login:true,providers:[]};try{const response=await api("/v1/auth/config");if(response.ok){const body=await response.json();config={token_login:body.token_login===true,providers:Array.isArray(body.providers)?body.providers:[]}}}catch(_){}renderProviders(config.providers);$("token-form").hidden=!config.token_login;
+try{if((await fetch("/v1/auth/session",{cache:"no-store",credentials:"same-origin"})).ok){mode="session";access.hidden=true;shell.hidden=false;await load();return}}catch(_){}
+if(pending){await enterBearer(pending);return}showAccess()}
+$("token-form").addEventListener("submit",event=>{event.preventDefault();void enterBearer()});
+$("sc-logout").addEventListener("click",()=>void lock());
+$("sc-theme").addEventListener("click",()=>document.documentElement.classList.toggle("light"));
+$("sc-repository").addEventListener("change",event=>{state.repository=event.target.value;void load()});
+$("sc-stream").addEventListener("change",event=>{state.stream=event.target.value;void load()});
+$("sc-refresh").addEventListener("click",()=>void refreshNow());
+$("sc-download").addEventListener("click",()=>void downloadDocument());
+$("sc-more").addEventListener("click",()=>void loadComponents(true));
+$("sc-search").addEventListener("input",event=>{state.query=event.target.value;clearTimeout(state.debounce);state.debounce=setTimeout(()=>{writeHash();void loadComponents(false)},250)});
+void start();
+})();
+</script>
+</body>
+</html>
