@@ -169,6 +169,16 @@ the only outbound call is the configured GitHub API endpoint. Snapshots live in
 PostgreSQL (`supply_chain_*` tables, created by the normal migration Job); see
 the repository operations guide for lifecycle, recovery, and metrics.
 
+License enrichment is off until a registry route is set under
+`server.supplyChain.registries.{npm,nuget,maven}.url` (HTTPS). Optional
+`namespaces` restrict what the route may answer for, `allowPrivate` permits an
+internal mirror on a private address, and `token`/`basic` mount the matching
+key of the existing Secret named by `secrets.supplyChainRegistries` at
+`/var/run/secrets/graphnest/registries/` (npm and NuGet: bearer token; Maven:
+`user:password`); `registries.ca: true` mounts its `caKey` as the route CA.
+Credentials never render into a ConfigMap. A private route is never bypassed
+toward a public registry.
+
 `breakGlass.enabled=true` exposes only the disabled-by-default local recovery
 routes. It provisions no user name, password, hash, salt, or Secret and never
 activates because OIDC is unavailable. Provision and rotate the operator

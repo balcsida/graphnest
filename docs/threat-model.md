@@ -141,6 +141,17 @@ all clients appear as one source.
   last successful snapshot.
 - Telemetry labels use fixed outcome and state vocabularies; no repository or
   component identity is exported.
+- License enrichment produces no outbound traffic unless a registry route is
+  configured. A route is pinned to one HTTPS origin and base path: redirects
+  elsewhere are rejected, private/loopback/link-local/metadata destinations
+  are refused unless the route explicitly allows private hosts, hostile path
+  segments are rejected before any request, bodies are bounded after
+  decompression, and credentials from secret files are attached only to that
+  origin. A package unknown to a private route is never retried against a
+  public registry, so private package names do not leak. Registry metadata is
+  untrusted content: SPDX expressions are parsed with a bounded grammar
+  (input size, token count, nesting depth), XML is decoded without external
+  entities, and free text or unknown identifiers never become a license.
 
 ## Known limits
 

@@ -92,6 +92,9 @@ spec:
             {{- if .Values.server.scim.enabled }}
             - {name: scim-token, mountPath: /var/run/secrets/graphnest/scim/token, subPath: token, readOnly: true}
             {{- end }}
+            {{- if and .Values.server.supplyChain.enabled .Values.secrets.supplyChainRegistries.name }}
+            - {name: supply-chain-registries, mountPath: /var/run/secrets/graphnest/registries, readOnly: true}
+            {{- end }}
             {{- if .Values.server.sso.oidc.enabled }}
             - {name: oidc-client-secret, mountPath: /var/run/secrets/graphnest/oidc/client-secret, subPath: client-secret, readOnly: true}
             {{- if .Values.secrets.oidcCA.name }}
@@ -150,6 +153,25 @@ spec:
             secretName: {{ .Values.secrets.scim.name }}
             items:
               - {key: {{ .Values.secrets.scim.tokenKey }}, path: token}
+        {{- end }}
+        {{- if and .Values.server.supplyChain.enabled .Values.secrets.supplyChainRegistries.name }}
+        - name: supply-chain-registries
+          secret:
+            secretName: {{ .Values.secrets.supplyChainRegistries.name }}
+            optional: false
+            items:
+              {{- if .Values.server.supplyChain.registries.npm.token }}
+              - {key: {{ .Values.secrets.supplyChainRegistries.npmTokenKey }}, path: npm-token}
+              {{- end }}
+              {{- if .Values.server.supplyChain.registries.nuget.token }}
+              - {key: {{ .Values.secrets.supplyChainRegistries.nugetTokenKey }}, path: nuget-token}
+              {{- end }}
+              {{- if .Values.server.supplyChain.registries.maven.basic }}
+              - {key: {{ .Values.secrets.supplyChainRegistries.mavenBasicKey }}, path: maven-basic}
+              {{- end }}
+              {{- if .Values.server.supplyChain.registries.ca }}
+              - {key: {{ .Values.secrets.supplyChainRegistries.caKey }}, path: ca.crt}
+              {{- end }}
         {{- end }}
 ---
 apiVersion: v1

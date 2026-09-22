@@ -156,9 +156,73 @@ distinct SBOM exports retained. Retention pruning is not implemented in this
 milestone.
 
 Metrics: `graphnest_supply_chain_collections_total{outcome}`,
-`graphnest_supply_chain_collection_duration_seconds{outcome}`, and
-`graphnest_supply_chain_queue_depth{state}`. Labels use fixed vocabularies;
-no repository or component identity is exported.
+`graphnest_supply_chain_collection_duration_seconds{outcome}`,
+`graphnest_supply_chain_queue_depth{state}`,
+`graphnest_supply_chain_enrichment_total{outcome}`, and
+`graphnest_supply_chain_enrichment_duration_seconds{outcome}`. Labels use
+fixed vocabularies; no repository or component identity is exported.
+
+### License enrichment routes
+
+GitHub exports carry no license data. Exact-version license evidence comes
+only from registry routes you configure; with none configured, GraphNest
+produces no license traffic at all and components show only the producer's
+(usually `NOASSERTION`) declaration.
+
+| Variable (per ecosystem `NPM`, `NUGET`, `MAVEN`) | Meaning |
+| --- | --- |
+| `GRAPHNEST_SUPPLY_CHAIN_REGISTRY_<ECO>_URL` | HTTPS registry root, without credentials, query, or fragment. npm: the registry root (`https://npm.example/`); NuGet: the V3 flat container (`https://nuget.example/v3-flatcontainer/`); Maven: the repository root (`https://maven.example/repository/public/`). |
+| `..._TOKEN_FILE` | Optional bearer token secret file (regular file, at most 64 KiB). |
+| `..._BASIC_FILE` | Optional `user:password` secret file; mutually exclusive with the token file. |
+| `..._CA_FILE` | Optional PEM bundle appended to the system roots for this route. |
+| `..._ALLOW_PRIVATE` | `true` to permit a registry that resolves to a private, loopback, or link-local address (internal mirrors). Default `false`; cloud metadata ranges stay blocked regardless. |
+| `..._NAMESPACES` | Optional comma-separated npm scopes / Maven groupId prefixes / NuGet id prefixes this route may answer for; anything else is rejected without a request. |
+
+One route per ecosystem. A package the route does not know is recorded as
+`not_found` at that route; GraphNest never retries it against a public
+registry, so a private-registry deployment cannot leak package names. Requests
+are pinned to the route's origin and base path (redirects elsewhere are
+rejected), bodies are bounded after decompression (4 MiB), and credentials are
+attached only to the route's own origin.
+
+What each resolver reads and how it records it:
+
+- **npm**: `GET {root}/{name}/{version}` for the exact version only, never
+  dist-tags or the packument's `latest`. A string `license` is parsed as an
+  SPDX expression; `SEE LICENSE IN <file>` is recorded as a license-file
+  reference; legacy `{type,url}` objects and `licenses` arrays are kept as
+  legacy metadata (an array of names has no SPDX AND/OR meaning and stays
+  unparsed); `UNLICENSED` stays `unlicensed`. A document naming a different
+  version is rejected.
+- **NuGet**: the exact-version `.nuspec` from the flat container; the
+  `.nupkg` is never downloaded. `<license type="expression">` is parsed,
+  `<license type="file">` is a file reference, and a legacy `<licenseUrl>`
+  alone is recorded as a URL, not a concluded license.
+- **Maven**: the exact-version POM. `<licenses>` are names and URLs, not SPDX
+  expressions; only unambiguous names (Apache 2.0, MIT, BSD, EPL, LGPL, MPL,
+  ISC, CDDL, Unlicense, CC0, GPL-2.0 with Classpath) are normalized, and a
+  name that is already a valid SPDX expression parses as such. Several
+  `<license>` elements are kept as a list without invented structure. Missing
+  `<licenses>` are inherited through `<parent>` on the same route only, at
+  most eight levels, with cycle detection and bounded `${property}`
+  expansion; anything unresolved stays `no_license_metadata`. Repository
+  declarations inside POMs are never followed.
+
+Evidence rows are immutable and carry the raw value, parse status, normalized
+expression, unknown terms, resolver version, SPDX License List version
+(3.27.0), content hash, fetch time, and outcome. A re-fetch that yields the
+same facts is a new observation flagged as a duplicate; a change is a new
+row. Negative results (`not_found`, `no_license_metadata`, `unavailable`)
+expire after 24 hours and are retried; an outage keeps the earlier resolved
+evidence visible with its age rather than replacing it with "no license".
+
+Assessments are derived per occurrence from the producer's declaration and
+the latest evidence per route: `resolved` (registry expression, consistent),
+`declared` (only the producer's expression parsed), `conflict` (structurally
+different expressions, or an expression against `UNLICENSED`/`NONE`),
+`unlicensed`, `unknown` (nothing parseable), `pending`, or `not_applicable`.
+An assessment is evidence, not approval; the review workflow records
+conclusions and decisions separately.
 
 ## Break-glass administrator recovery
 
