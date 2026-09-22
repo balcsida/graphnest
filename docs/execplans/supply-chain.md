@@ -274,14 +274,82 @@ Detailed task lists are appended when each milestone starts.
 
 ## Progress
 
-- 2026-09-22: Baseline recorded; ADR-0017 and this plan created. Next task:
-  M1 storage layer (`033_supply_chain.sql`, `internal/supplychain/spdx.go`,
-  `internal/postgres/supply_chain.go`, raw GitHub SBOM reader).
+- 2026-09-22: Baseline recorded; ADR-0017 and this plan created.
+- 2026-09-22: **M1 complete** as four local stack layers on top of M0:
+  - `feat/supply-chain/m1-storage` (`559c51f`): migration 033; SPDX 2.3 JSON
+    normalizer with root detection through `documentDescribes` and
+    `DESCRIBES`/`DESCRIBED_BY`, bounded warnings, PURL-less/version-less
+    occurrences, unresolved edges kept as diagnostics; lossless
+    `githubapp.DependencySBOMDocument` (verbatim SPDX member, status,
+    rate-limit headers, bounded `Retry-After`); PostgreSQL store with leased
+    and fenced jobs, atomic publication, unchanged-document detection, failure
+    recording that never moves the latest snapshot, reaping, cancellation,
+    opt-out, scoped reads, and the `repository_packages` projection. Legacy
+    `DependencySBOM` and SCIP callers keep their contracts.
+  - `feat/supply-chain/m1-service` (`7a1c864`): authorized service (status
+    with independent collection/freshness/coverage/enrichment states,
+    paginated components with derived scope, snapshots, collections, document
+    download re-authorized at retrieval, manual refresh that only enqueues,
+    job status), collector with typed outcome classification and projection,
+    jittered scheduler, `GRAPHNEST_SUPPLY_CHAIN*` config, bounded metrics,
+    `/v1/supply-chain` routes designed in OpenAPI, gated server wiring.
+  - `docs(supply-chain)` (`5262228`): README, operations, architecture, threat
+    model, Compose durable env, Helm values/schema/ConfigMap/render tests,
+    CHANGELOG.
+  - `feat(webui)` (`02d4f20`, implemented by a delegated worker and reviewed):
+    embedded `/supply-chain` page with the console shell, hash-based CSP,
+    session-then-bearer auth, text-node rendering, Go byte-contract and Node
+    DOM tests; navigation links in `index.html`/`admin.html`.
+  - `test(supply-chain)` (`0de63e9`): fake GHES → scheduler → collector →
+    PostgreSQL → REST vertical slice, including no-indexed-SHA proof,
+    rate-limit/403 outcomes, retained inventory behind a failed refresh,
+    cross-installation isolation, and projection.
+  - `docs(supply-chain)` (`5dc15aa`): light/dark screenshots of the real page
+    rendered in Chromium against a stubbed API (`docs/images/supply-chain-*.png`).
+- Next task: M2 license enrichment, starting with the bounded SPDX expression
+  parser (`internal/supplychain/spdxexpr`) and migration
+  `034_supply_chain_license.sql`.
 
 ## Validation results
 
-Recorded per layer as gates run; "not run" is stated explicitly.
+M1 (worktree head `5dc15aa`, 2026-09-22, macOS arm64, Go 1.27.1, PostgreSQL
+18.6 via Compose reached at the OrbStack container address because
+`docker compose port` reports `invalid IP:0` on this host):
+
+| Gate | Result |
+| --- | --- |
+| `make build` | pass |
+| `make fmt lint` | pass |
+| `make staticcheck` | pass |
+| `make govulncheck` | pass (same as `main`: 0 called vulnerabilities, 1 uncalled module-level finding pre-existing) |
+| `CGO_ENABLED=0 go test ./...` | pass (2153 tests, 44 packages) |
+| `make test-race` | pass |
+| `make postgres-test` (integration tag, all six packages, includes new `TestSupplyChain*` and `TestSupplyChainVerticalSlice`) | pass |
+| `make openapi-check` (Homebrew Ruby 4.0.7; system Ruby 2.6 lacks `filter_map` and fails on `main` too) | pass |
+| `make compose-test` | pass |
+| `make helm-lint helm-test` | pass |
+| `make brand-check` | pass |
+| `test/smoke/public_ui.sh` (existing Playwright smoke; Chromium installed locally) | pass |
+| `test/smoke/supply-chain-screenshots.mjs` (renders the new page, 7 rows, failed-refresh notice, both themes) | pass |
+| `make e2e` | **not run** in this pass (unchanged code paths; Zoekt tools linked from the main checkout but the suite takes >10 minutes; run before publication) |
+| Live GHES | **not run**; all GitHub behavior is exercised against fixtures and fake servers |
+
+Commit signing: the first two M1 commits (`559c51f`, `7a1c864`) and M0
+(`629d041`) are SSH-signed. The 1Password SSH agent began refusing sign
+operations mid-session ("agent refused operation"), so `5262228`, `02d4f20`,
+`0de63e9`, and `5dc15aa` are unsigned local commits. Re-sign with
+`git rebase --exec 'git commit --amend --no-edit -S' 629d041` (or equivalent)
+once the agent accepts operations, before any publication.
 
 ## Remaining gaps and next task
 
-See Progress. Nothing is published; no PR exists for this work.
+- M1 gaps (tracked, not blocking): no retention pruning (M7); webhook-driven
+  refresh is not wired (`reason='webhook'` is reserved; periodic reconciliation
+  covers late dependency-graph updates); the UI has no snapshot picker or
+  job polling after refresh; MCP tools arrive in M6.
+- Nothing is published; no PR exists for this work. Suggested PR titles in
+  stack order: `docs(supply-chain): accept ADR-0017 and execution plan` →
+  `feat(supply-chain): preserve GHES SBOM observations as immutable snapshots`
+  → `feat(supply-chain): inventory service, collector, and REST routes` →
+  `feat(webui): Dependencies & Licenses inventory page` (docs, screenshots,
+  and the integration test can fold into their layers or stay separate).
