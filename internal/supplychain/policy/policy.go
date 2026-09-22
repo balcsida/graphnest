@@ -48,6 +48,8 @@ type Policy struct {
 	Rules           Rules
 	UnknownHandling Verdict
 	Description     string
+	CreatedBy       string
+	Active          bool
 }
 
 // Result explains a verdict. Branches records, for OR nodes, which branch

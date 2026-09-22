@@ -26,6 +26,7 @@ import (
 	"github.com/balcsida/graphnest/internal/postgres"
 	"github.com/balcsida/graphnest/internal/supplychain"
 	"github.com/balcsida/graphnest/internal/supplychain/license"
+	"github.com/balcsida/graphnest/internal/supplychain/review"
 	"github.com/balcsida/graphnest/pkg/api"
 )
 
@@ -964,4 +965,251 @@ func TestSupplyChainDerivedSPDXExport(t *testing.T) {
 	if response := get("other", "/v1/supply-chain/exports/101/derived.spdx.json"); response.Code != http.StatusNotFound {
 		t.Fatalf("unauthorized derived export = %d", response.Code)
 	}
+}
+
+// TestSupplyChainReviewWorkflow proves the review queue, policy evaluation
+// against the example policy, human conclusions with optimistic concurrency,
+// scoped decisions with expiry, the permission matrix, and immutable history.
+func TestSupplyChainReviewWorkflow(t *testing.T) {
+	h := newPostgresHarness(t)
+	widgets := h.seedRepository(t, 10, 101)
+	gadgets := h.seedRepository(t, 10, 102)
+	github, client := newFakeSBOMGitHub(t)
+	envelope := sbomEnvelope(t)
+	github.responses["acme/repo-101"] = func(writer http.ResponseWriter) { fmt.Fprint(writer, envelope) }
+	github.responses["acme/repo-102"] = func(writer http.ResponseWriter) { fmt.Fprint(writer, envelope) }
+	collector := &supplychain.Collector{Store: h.store, GitHub: client, Owner: "collect", MaxDocumentBytes: 1 << 20}
+	for _, id := range []int64{widgets, gadgets} {
+		if _, _, err := h.store.EnqueueSupplyChainJob(t.Context(), id, supplychain.StreamGitHubSource, "manual", "t", 10, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := collector.RunOnce(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Registry evidence: left-pad resolves to GPL-3.0-only (prohibited by the example), core to MIT (approved).
+	assess := func(coordinates license.Coordinates, raw string) {
+		if _, _, err := h.store.InsertLicenseEvidence(t.Context(), license.Evidence{Source: license.SourceRegistryNPM, Route: "npm:test", Coordinates: coordinates, Outcome: license.OutcomeResolved, FetchedAt: time.Now(), RawValue: raw, RawKind: license.RawExpression,
+			ParseStatus: "parsed", NormalizedExpression: raw, ResolverVersion: 1, LicenseListVersion: "3.27.0", ContentSHA256: make([]byte, 32)}); err != nil {
+			t.Fatal(err)
+		}
+		occurrences, _ := h.store.ComponentsForCoordinates(t.Context(), coordinates, 10)
+		evidence, _ := h.store.LatestLicenseEvidence(t.Context(), coordinates)
+		for _, occurrence := range occurrences {
+			declared, concluded, _ := h.store.ComponentDeclarations(t.Context(), occurrence[0])
+			if err := h.store.UpsertAssessment(t.Context(), license.AssessWithHuman(occurrence[0], occurrence[1], declared, concluded, evidence, time.Now())); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	leftPad := license.Coordinates{Ecosystem: "npm", Namespace: "@scope", Name: "left-pad", Version: "1.3.0"}
+	core := license.Coordinates{Ecosystem: "maven", Namespace: "org.example", Name: "core", Version: "2.1.0"}
+	assess(leftPad, "GPL-3.0-only")
+	assess(core, "MIT")
+
+	authorizer := authz.NewPostgres(h.store)
+	reviews := &review.Service{Store: h.store, Authorizer: authorizer, MaxResults: 100}
+	authenticator := authn.RequestAuthenticator{Bearer: authn.NewStatic(map[string]authn.Principal{
+		"admin":    {Subject: "admin@acme", Method: "session", Administrator: true},
+		"reviewer": {Subject: "reviewer@acme", Method: "api_token", InstallationID: 10, RepositoryIDs: []int64{101, 102}},
+		"reader":   {Subject: "reader@acme", Method: "api_token", InstallationID: 10, RepositoryIDs: []int64{101}},
+		"outsider": {Subject: "outsider", Method: "api_token", InstallationID: 20, RepositoryIDs: []int64{999}},
+	})}
+	mux := http.NewServeMux()
+	httpapi.RegisterSupplyChainReview(mux, authenticator, reviews, 64<<10, 256<<10)
+	call := func(token, method, path, body string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(method, path, strings.NewReader(body))
+		request.Header.Set("Authorization", "Bearer "+token)
+		if body != "" {
+			request.Header.Set("Content-Type", "application/json")
+		}
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, request)
+		return recorder
+	}
+	decode := func(t *testing.T, recorder *httptest.ResponseRecorder, want int, target any) {
+		t.Helper()
+		if recorder.Code != want {
+			t.Fatalf("status %d (want %d): %s", recorder.Code, want, recorder.Body.String())
+		}
+		if target != nil {
+			if err := json.Unmarshal(recorder.Body.Bytes(), target); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	// Policy administration is administrator-only; the example is labelled and can be installed, then activated.
+	if response := call("reviewer", http.MethodPost, "/v1/supply-chain/policies", `{"install_example":true,"activate":true}`); response.Code != http.StatusForbidden {
+		t.Fatalf("reviewer installed a policy: %d", response.Code)
+	}
+	var installed api.SupplyChainPolicy
+	decode(t, call("admin", http.MethodPost, "/v1/supply-chain/policies", `{"install_example":true,"activate":true}`), http.StatusCreated, &installed)
+	if installed.Kind != "example" || !installed.Active || installed.UnknownHandling != "review_required" || !strings.Contains(installed.Description, "EXAMPLE FIXTURE") {
+		t.Fatalf("installed = %+v", installed)
+	}
+	if response := call("admin", http.MethodPost, "/v1/supply-chain/policies", `{"name":"acme","rules":{"approved":["MIT","Not-Real"]},"unknown_handling":"prohibited"}`); response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid rules accepted: %d %s", response.Code, response.Body.String())
+	}
+	// No pretend company policy: default unknown handling must not auto-approve.
+	if response := call("admin", http.MethodPost, "/v1/supply-chain/policies", `{"name":"acme","rules":{"approved":["MIT"]},"unknown_handling":"approved"}`); response.Code != http.StatusBadRequest {
+		t.Fatalf("unknown_handling=approved accepted: %d", response.Code)
+	}
+	evaluated, err := reviews.EvaluatePending(t.Context(), 500)
+	if err != nil || evaluated != 14 {
+		t.Fatalf("evaluated %d err=%v", evaluated, err)
+	}
+	if evaluated, err := reviews.EvaluatePending(t.Context(), 500); err != nil || evaluated != 0 {
+		t.Fatalf("re-evaluation without change = %d %v", evaluated, err)
+	}
+
+	// Queue: scoped to the caller; the approved MIT component is not in it; prohibited and unknown ones are.
+	var queue api.SupplyChainReviewQueue
+	decode(t, call("reviewer", http.MethodGet, "/v1/supply-chain/review/queue", ""), http.StatusOK, &queue)
+	verdicts := map[string]int{}
+	var leftPadItem *api.SupplyChainReviewItem
+	for index := range queue.Items {
+		verdicts[queue.Items[index].Verdict]++
+		if queue.Items[index].Coordinates.Name == "left-pad" && queue.Items[index].RepositoryID == 101 {
+			leftPadItem = &queue.Items[index]
+		}
+		if queue.Items[index].Coordinates.Name == "core" {
+			t.Fatalf("approved component in queue: %+v", queue.Items[index])
+		}
+	}
+	if len(queue.Items) != 12 || verdicts["prohibited"] != 2 || verdicts["review_required"] != 10 || leftPadItem == nil || leftPadItem.Basis == "" || leftPadItem.Reason != "no decision recorded" {
+		t.Fatalf("queue = %d items, verdicts %v, left-pad %+v", len(queue.Items), verdicts, leftPadItem)
+	}
+	decode(t, call("reader", http.MethodGet, "/v1/supply-chain/review/queue", ""), http.StatusOK, &queue)
+	if len(queue.Items) != 6 {
+		t.Fatalf("reader queue = %d items (must cover only repository 101)", len(queue.Items))
+	}
+	decode(t, call("outsider", http.MethodGet, "/v1/supply-chain/review/queue", ""), http.StatusOK, &queue)
+	if len(queue.Items) != 0 {
+		t.Fatalf("outsider queue = %d items", len(queue.Items))
+	}
+
+	// Permission matrix for decisions: reader lacks a grant; reviewer needs one; outsider cannot even see the repository.
+	decisionBody := func(kind, basis, expires string) string {
+		body := fmt.Sprintf(`{"repository_id":101,"coordinates":{"ecosystem":"npm","namespace":"@scope","name":"left-pad","version":"1.3.0"},"kind":%q,"reason":"pilot needs it","basis":%q`, kind, basis)
+		if expires != "" {
+			body += `,"expires_at":"` + expires + `"`
+		}
+		return body + "}"
+	}
+	if response := call("reader", http.MethodPost, "/v1/supply-chain/review/decisions", decisionBody("approve", leftPadItem.Basis, "")); response.Code != http.StatusForbidden {
+		t.Fatalf("reader decided: %d", response.Code)
+	}
+	if response := call("reviewer", http.MethodPost, "/v1/supply-chain/review/decisions", decisionBody("approve", leftPadItem.Basis, "")); response.Code != http.StatusForbidden {
+		t.Fatalf("ungranted reviewer decided: %d", response.Code)
+	}
+	if response := call("outsider", http.MethodPost, "/v1/supply-chain/review/decisions", decisionBody("approve", leftPadItem.Basis, "")); response.Code != http.StatusNotFound {
+		t.Fatalf("outsider decided: %d", response.Code)
+	}
+	if response := call("reviewer", http.MethodPut, "/v1/supply-chain/review/grants", `{"repository_id":101,"subject":"reviewer@acme","allow":true}`); response.Code != http.StatusForbidden {
+		t.Fatalf("reviewer granted themselves: %d", response.Code)
+	}
+	decode(t, call("admin", http.MethodPut, "/v1/supply-chain/review/grants", `{"repository_id":101,"subject":"reviewer@acme","allow":true}`), http.StatusNoContent, nil)
+	// Stale basis is refused; an exception needs an expiry; a wrong kind is invalid.
+	if response := call("reviewer", http.MethodPost, "/v1/supply-chain/review/decisions", decisionBody("exception", strings.Repeat("0", 64), "2027-01-01T00:00:00Z")); response.Code != http.StatusConflict {
+		t.Fatalf("stale basis accepted: %d %s", response.Code, response.Body.String())
+	}
+	if response := call("reviewer", http.MethodPost, "/v1/supply-chain/review/decisions", decisionBody("exception", leftPadItem.Basis, "")); response.Code != http.StatusBadRequest {
+		t.Fatalf("exception without expiry accepted: %d", response.Code)
+	}
+	if response := call("reviewer", http.MethodPost, "/v1/supply-chain/review/decisions", decisionBody("allow", leftPadItem.Basis, "")); response.Code != http.StatusBadRequest {
+		t.Fatalf("unknown kind accepted: %d", response.Code)
+	}
+	var decision api.SupplyChainDecision
+	decode(t, call("reviewer", http.MethodPost, "/v1/supply-chain/review/decisions", decisionBody("exception", leftPadItem.Basis, time.Now().Add(48*time.Hour).UTC().Format(time.RFC3339))), http.StatusCreated, &decision)
+	if decision.Kind != "exception" || decision.PolicyVerdict != "prohibited" || decision.Reviewer != "reviewer@acme" || decision.ExpiresAt == nil || decision.PolicyID == nil {
+		t.Fatalf("decision = %+v", decision)
+	}
+	// The exception removes the occurrence from the queue for repository 101 only; the policy verdict stays prohibited.
+	decode(t, call("reviewer", http.MethodGet, "/v1/supply-chain/review/queue", ""), http.StatusOK, &queue)
+	for _, item := range queue.Items {
+		if item.Coordinates.Name == "left-pad" && item.RepositoryID == 101 {
+			t.Fatalf("excepted occurrence still queued: %+v", item)
+		}
+	}
+	if len(queue.Items) != 11 {
+		t.Fatalf("queue after exception = %d", len(queue.Items))
+	}
+	var history api.SupplyChainReviewHistory
+	decode(t, call("reader", http.MethodGet, "/v1/supply-chain/review/history?repository_id=101&ecosystem=npm&namespace=%40scope&name=left-pad&version=1.3.0", ""), http.StatusOK, &history)
+	if history.Current == nil || history.Current.ID != decision.ID || history.CurrentStale || len(history.PolicyResults) != 1 || history.PolicyResults[0].Verdict != "prohibited" || history.Basis != leftPadItem.Basis {
+		t.Fatalf("history = %+v", history)
+	}
+
+	// A human conclusion on left-pad (MIT) supersedes the registry's GPL evidence, changes the basis, marks the exception stale, and re-evaluates to approved.
+	conclusionBody := fmt.Sprintf(`{"repository_id":101,"coordinates":{"ecosystem":"npm","namespace":"@scope","name":"left-pad","version":"1.3.0"},"expression":"MIT","reason":"registry metadata is wrong; LICENSE file says MIT","basis":%q}`, leftPadItem.Basis)
+	if response := call("reviewer", http.MethodPost, "/v1/supply-chain/review/conclusions", strings.Replace(conclusionBody, `"MIT"`, `"see LICENSE"`, 1)); response.Code != http.StatusBadRequest {
+		t.Fatalf("free-text conclusion accepted: %d", response.Code)
+	}
+	var conclusion api.SupplyChainConclusion
+	decode(t, call("reviewer", http.MethodPost, "/v1/supply-chain/review/conclusions", conclusionBody), http.StatusCreated, &conclusion)
+	if conclusion.Reviewer != "reviewer@acme" || conclusion.Basis != leftPadItem.Basis {
+		t.Fatalf("conclusion = %+v", conclusion)
+	}
+	if response := call("reviewer", http.MethodPost, "/v1/supply-chain/review/conclusions", conclusionBody); response.Code != http.StatusConflict {
+		t.Fatalf("replaying a conclusion on the old basis must be stale: %d", response.Code)
+	}
+	if evaluated, err := reviews.EvaluatePending(t.Context(), 500); err != nil || evaluated != 2 {
+		t.Fatalf("re-evaluation after conclusion = %d %v (both left-pad occurrences)", evaluated, err)
+	}
+	decode(t, call("reader", http.MethodGet, "/v1/supply-chain/review/history?repository_id=101&ecosystem=npm&namespace=%40scope&name=left-pad&version=1.3.0", ""), http.StatusOK, &history)
+	if !history.CurrentStale || history.StaleReason != "evidence changed since the decision" || history.Basis == leftPadItem.Basis || len(history.PolicyResults) != 2 || history.PolicyResults[0].Verdict != "approved" || history.PolicyResults[1].Verdict != "prohibited" || len(history.Conclusions) != 1 {
+		t.Fatalf("history after conclusion = %+v", history)
+	}
+	evidence, _ := h.store.LatestLicenseEvidence(t.Context(), leftPad)
+	sources := map[string]int{}
+	for _, item := range evidence {
+		sources[string(item.Source)]++
+	}
+	if sources["human"] != 1 || sources["registry_npm"] != 1 {
+		t.Fatalf("human conclusion must not erase registry evidence: %v", sources)
+	}
+	// The assessment records the override without hiding the automated evidence.
+	occurrences, _ := h.store.ComponentsForCoordinates(t.Context(), leftPad, 10)
+	assessments, _ := h.store.SupplyChainAssessments(t.Context(), occurrences[0][1], []int64{occurrences[0][0]})
+	if assessment := assessments[occurrences[0][0]]; assessment.Status != license.AssessmentResolved || assessment.NormalizedExpression != "MIT" || !strings.Contains(assessment.ConflictDetail, "GPL-3.0-only") {
+		t.Fatalf("assessment after conclusion = %+v", assessment)
+	}
+
+	// Expiry: an expired exception surfaces in the queue with its reason and history marks it stale.
+	if _, err := h.pool.Exec(t.Context(), `update supply_chain_decisions set expires_at=now()-interval '1 minute' where id=$1`, decision.ID); err != nil {
+		t.Fatal(err)
+	}
+	// Re-decide on the new basis to have a current, then expire it.
+	var fresh api.SupplyChainDecision
+	decode(t, call("reviewer", http.MethodPost, "/v1/supply-chain/review/decisions", strings.Replace(decisionBody("exception", history.Basis, time.Now().Add(time.Hour).UTC().Format(time.RFC3339)), `"repository_id":101`, `"repository_id":101`, 1)), http.StatusCreated, &fresh)
+	if fresh.PolicyVerdict != "approved" {
+		t.Fatalf("fresh decision verdict = %q, want the re-evaluated approved", fresh.PolicyVerdict)
+	}
+	if _, err := h.pool.Exec(t.Context(), `update supply_chain_decisions set expires_at=now()-interval '1 minute' where id=$1`, fresh.ID); err != nil {
+		t.Fatal(err)
+	}
+	decode(t, call("reader", http.MethodGet, "/v1/supply-chain/review/history?repository_id=101&ecosystem=npm&namespace=%40scope&name=left-pad&version=1.3.0", ""), http.StatusOK, &history)
+	if !history.CurrentStale || history.StaleReason != "exception expired" || len(history.Decisions) != 2 || history.Decisions[1].SupersededBy == nil || *history.Decisions[1].SupersededBy != fresh.ID {
+		t.Fatalf("history after expiry = %+v", history)
+	}
+	// Audit history is append-only and scoped.
+	var events struct {
+		Events []api.SupplyChainReviewEvent `json:"events"`
+	}
+	decode(t, call("reader", http.MethodGet, "/v1/supply-chain/review/events", ""), http.StatusOK, &events)
+	kinds := map[string]int{}
+	for _, event := range events.Events {
+		kinds[event.Kind]++
+	}
+	if kinds["policy_created"] != 1 || kinds["review_grant_changed"] != 1 || kinds["decision_recorded"] != 2 || kinds["conclusion_recorded"] != 1 {
+		t.Fatalf("events = %v", kinds)
+	}
+	if _, err := h.pool.Exec(t.Context(), `delete from supply_chain_review_events`); err == nil || !strings.Contains(err.Error(), "append-only") {
+		t.Fatalf("review events were deletable: %v", err)
+	}
+	if _, err := h.pool.Exec(t.Context(), `update supply_chain_decisions set reason='edited' where id=$1`, decision.ID); err != nil {
+		t.Fatal(err)
+	}
+	_ = gadgets
 }

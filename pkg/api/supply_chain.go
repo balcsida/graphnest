@@ -1,6 +1,9 @@
 package api
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // SupplyChainRepositoryStatus describes one repository stream: what GraphNest
 // currently serves, when it was observed, and how the latest attempt went.
@@ -364,4 +367,136 @@ type SupplyChainImportResponse struct {
 	Warnings         []SupplyChainWarning `json:"warnings"`
 	SubjectAssurance string               `json:"subject_assurance,omitempty"`
 	Notes            []string             `json:"notes"`
+}
+
+// Review workflow models. Conclusions correct evidence, policy results apply
+// a policy version, and decisions approve/reject usage in one repository.
+type SupplyChainCoordinates struct {
+	Ecosystem string `json:"ecosystem"`
+	Namespace string `json:"namespace,omitempty"`
+	Name      string `json:"name"`
+	Version   string `json:"version"`
+}
+
+type SupplyChainReviewItem struct {
+	ComponentID     int64                  `json:"component_id"`
+	SnapshotID      int64                  `json:"snapshot_id"`
+	RepositoryID    int64                  `json:"repository_id"`
+	Repository      string                 `json:"repository"`
+	ElementID       string                 `json:"element_id"`
+	Name            string                 `json:"name"`
+	Version         string                 `json:"version"`
+	PURL            string                 `json:"purl,omitempty"`
+	Coordinates     SupplyChainCoordinates `json:"coordinates"`
+	Assessment      string                 `json:"assessment"`
+	Expression      string                 `json:"expression,omitempty"`
+	Basis           string                 `json:"basis,omitempty"`
+	Verdict         string                 `json:"verdict"`
+	Explanation     string                 `json:"explanation"`
+	PolicyID        *int64                 `json:"policy_id"`
+	StaleDecisionID *int64                 `json:"stale_decision_id"`
+	Reason          string                 `json:"reason"`
+}
+
+type SupplyChainReviewQueue struct {
+	Items      []SupplyChainReviewItem `json:"items"`
+	Truncated  bool                    `json:"truncated"`
+	NextCursor string                  `json:"next_cursor,omitempty"`
+}
+
+type SupplyChainConcludeRequest struct {
+	RepositoryID     int64                  `json:"repository_id"`
+	Coordinates      SupplyChainCoordinates `json:"coordinates"`
+	Expression       string                 `json:"expression"`
+	Reason           string                 `json:"reason"`
+	BasisFingerprint string                 `json:"basis"`
+}
+
+type SupplyChainDecideRequest struct {
+	RepositoryID     int64                  `json:"repository_id"`
+	Coordinates      SupplyChainCoordinates `json:"coordinates"`
+	Kind             string                 `json:"kind"`
+	Reason           string                 `json:"reason"`
+	UsageContext     string                 `json:"usage_context,omitempty"`
+	ExpiresAt        *time.Time             `json:"expires_at,omitempty"`
+	BasisFingerprint string                 `json:"basis"`
+}
+
+type SupplyChainConclusion struct {
+	ID           int64                  `json:"id"`
+	Coordinates  SupplyChainCoordinates `json:"coordinates"`
+	EvidenceID   int64                  `json:"evidence_id"`
+	Basis        string                 `json:"basis"`
+	Reviewer     string                 `json:"reviewer"`
+	Reason       string                 `json:"reason"`
+	CreatedAt    time.Time              `json:"created_at"`
+	SupersededBy *int64                 `json:"superseded_by"`
+}
+
+type SupplyChainDecision struct {
+	ID            int64                  `json:"id"`
+	Coordinates   SupplyChainCoordinates `json:"coordinates"`
+	Kind          string                 `json:"kind"`
+	PolicyID      *int64                 `json:"policy_id"`
+	PolicyVerdict string                 `json:"policy_verdict,omitempty"`
+	Basis         string                 `json:"basis"`
+	Reviewer      string                 `json:"reviewer"`
+	Reason        string                 `json:"reason"`
+	UsageContext  string                 `json:"usage_context,omitempty"`
+	ExpiresAt     *time.Time             `json:"expires_at"`
+	CreatedAt     time.Time              `json:"created_at"`
+	SupersededBy  *int64                 `json:"superseded_by"`
+}
+
+type SupplyChainPolicyResult struct {
+	PolicyID            int64     `json:"policy_id"`
+	Verdict             string    `json:"verdict"`
+	Explanation         string    `json:"explanation"`
+	EvaluatedAt         time.Time `json:"evaluated_at"`
+	EvidenceFingerprint string    `json:"evidence_fingerprint,omitempty"`
+}
+
+type SupplyChainReviewHistory struct {
+	Basis         string                    `json:"basis,omitempty"`
+	Current       *SupplyChainDecision      `json:"current"`
+	CurrentStale  bool                      `json:"current_stale"`
+	StaleReason   string                    `json:"stale_reason,omitempty"`
+	Conclusions   []SupplyChainConclusion   `json:"conclusions"`
+	Decisions     []SupplyChainDecision     `json:"decisions"`
+	PolicyResults []SupplyChainPolicyResult `json:"policy_results"`
+}
+
+type SupplyChainReviewEvent struct {
+	ID           int64          `json:"id"`
+	Kind         string         `json:"kind"`
+	Actor        string         `json:"actor"`
+	RepositoryID *int64         `json:"repository_id"`
+	Target       string         `json:"target"`
+	Detail       map[string]any `json:"detail"`
+	CreatedAt    time.Time      `json:"created_at"`
+}
+
+type SupplyChainPolicy struct {
+	ID              int64    `json:"id"`
+	Name            string   `json:"name"`
+	Version         int      `json:"version"`
+	Kind            string   `json:"kind"`
+	Active          bool     `json:"active"`
+	UnknownHandling string   `json:"unknown_handling"`
+	Description     string   `json:"description"`
+	CreatedBy       string   `json:"created_by"`
+	Approved        []string `json:"approved"`
+	ReviewRequired  []string `json:"review_required"`
+	Prohibited      []string `json:"prohibited"`
+	AllowOrLater    bool     `json:"allow_or_later"`
+}
+
+type SupplyChainCreatePolicyRequest struct {
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	// Rules is the JSON policy body (approved/review_required/prohibited lists).
+	Rules           json.RawMessage `json:"rules,omitempty"`
+	UnknownHandling string          `json:"unknown_handling,omitempty"`
+	Activate        bool            `json:"activate"`
+	InstallExample  bool            `json:"install_example,omitempty"`
 }

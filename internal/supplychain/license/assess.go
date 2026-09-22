@@ -141,3 +141,48 @@ func describe(items []candidate) string {
 	}
 	return strings.Join(parts, " | ")
 }
+
+// AssessWithHuman is Assess with human conclusions given precedence: the
+// newest 'human' evidence, when it parsed, becomes the assessment's basis and
+// automated evidence that disagrees is reported in the conflict detail
+// without changing the status. The fingerprint still covers every row, so a
+// later automated change is detectable and can require re-review.
+func AssessWithHuman(componentID, snapshotID int64, declaredRaw, concludedRaw *string, registry []Evidence, now time.Time) Assessment {
+	var human *Evidence
+	for index := range registry {
+		if registry[index].Source == SourceHuman && registry[index].Outcome == OutcomeResolved && (human == nil || registry[index].ID > human.ID) {
+			human = &registry[index]
+		}
+	}
+	if human == nil {
+		return Assess(componentID, snapshotID, declaredRaw, concludedRaw, registry, now)
+	}
+	automated := make([]Evidence, 0, len(registry))
+	for _, evidence := range registry {
+		if evidence.Source != SourceHuman {
+			automated = append(automated, evidence)
+		}
+	}
+	base := Assess(componentID, snapshotID, declaredRaw, concludedRaw, registry, now)
+	assessment := Assessment{ComponentID: componentID, SnapshotID: snapshotID, AssessedAt: now.UTC(), EvidenceIDs: base.EvidenceIDs, EvidenceFingerprint: base.EvidenceFingerprint}
+	switch human.ParseStatus {
+	case spdxexpr.StatusParsed, spdxexpr.StatusUnknownTerms:
+		assessment.Status = AssessmentResolved
+		assessment.NormalizedExpression = human.NormalizedExpression
+	case spdxexpr.StatusNone, spdxexpr.StatusUnlicensed:
+		assessment.Status = AssessmentUnlicensed
+	default:
+		return base
+	}
+	without := Assess(componentID, snapshotID, declaredRaw, concludedRaw, automated, now)
+	if without.Status != AssessmentUnknown && (without.NormalizedExpression != assessment.NormalizedExpression || without.Status == AssessmentConflict) {
+		detail := "human conclusion (" + human.NormalizedExpression + ") overrides automated evidence"
+		if without.ConflictDetail != "" {
+			detail += ": " + without.ConflictDetail
+		} else if without.NormalizedExpression != "" {
+			detail += ": " + without.NormalizedExpression
+		}
+		assessment.ConflictDetail = detail
+	}
+	return assessment
+}
