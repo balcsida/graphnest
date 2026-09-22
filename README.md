@@ -213,6 +213,8 @@ What the inventory is and is not:
 - A failed refresh (403, 404, rate limit, malformed or oversized document, outage) records a collection attempt and leaves the last successful snapshot in place; the status reports `collection: failed` alongside the retained inventory.
 - Inventory eligibility is repository authorization alone. It works for repositories with no Zoekt index, no SCIP upload, and no graph enrichment, and inventory work never blocks lexical indexing.
 
+SBOMs produced elsewhere (Syft, ORT, or any tool writing SPDX 2.3 JSON or CycloneDX 1.6 JSON) can be imported into separate `import:<subject>:<label>` streams with `POST /v1/supply-chain/imports`; the uploader is recorded apart from the producer the document claims, and a derived SPDX export links back to the preserved original. Portfolio views (`/v1/supply-chain/overview`, `/components`, `/facets`, exports, comparison) aggregate only over the caller's authorized repositories and name every denominator.
+
 Every read resolves the live principal's repository scope before any inventory row is touched; snapshot and job identifiers outside that scope are indistinguishable from missing ones. Manual refresh (`POST /v1/supply-chain/repositories/{id}/refresh`) only enqueues a bounded background job and requires administrator access. The published snapshot is also projected into the existing GitHub-sourced SCIP package mappings; manual mappings are never touched. See [Operations](docs/operations.md#dependencies--licenses-inventory) and [ADR-0017](docs/adr/0017-supply-chain-inventory.md).
 
 ## Durable mode

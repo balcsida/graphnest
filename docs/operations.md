@@ -224,6 +224,74 @@ different expressions, or an expression against `UNLICENSED`/`NONE`),
 An assessment is evidence, not approval; the review workflow records
 conclusions and decisions separately.
 
+### Standards-based imports
+
+`POST /v1/supply-chain/imports?repository_id=<github id>&subject=<source|artifact>&label=<stream label>`
+accepts SPDX 2.3 JSON (`application/spdx+json`) and CycloneDX 1.6 JSON
+(`application/vnd.cyclonedx+json`); `application/json` is accepted and the
+format is detected from the document itself. Other formats and schema
+versions (SPDX 2.2, CycloneDX 1.5, XML, tag-value) are rejected with
+`415 unsupported_format`; GraphNest does not claim universal SBOM
+compatibility. Each `(subject, label)` pair is its own stream
+(`import:source:ort`, `import:artifact:syft-image`), separate from the GitHub
+observation, so a container SBOM never replaces the repository's GitHub
+snapshot and an older artifact upload never becomes the current source
+inventory.
+
+Permission: administrators may import into any authorized repository. Other
+principals need a repository-scoped upload grant
+(`PUT /v1/supply-chain/upload-grants` by an administrator, keyed by the
+principal's subject). A grant never widens read access. Quota: 100 imports
+per repository per 24 hours, counting rejected attempts. Identical bytes into
+the same stream are idempotent (`repeated: true`). Documents are bounded by
+`GRAPHNEST_SUPPLY_CHAIN_MAX_DOCUMENT_BYTES` and `..._MAX_COMPONENTS`.
+
+Trust boundaries: the authenticated uploader is recorded on the snapshot
+(`uploaded_by`) separately from the tool the document names, which is only
+the document's own claim; a `Tool: ORT` string grants nothing. An optional
+`subject_revision` (40-hex commit) is recorded as `producer_asserted`, never
+`verified`. Download locations, license URLs, and external document
+references inside uploads are never dereferenced.
+
+What is and is not carried: original bytes are always preserved and
+downloadable. From SPDX, GraphNest normalizes packages, versions, purls,
+checksums, suppliers, declared/concluded license values (verbatim), and every
+relationship with its direction. From CycloneDX, it flattens nested
+components (with `CONTAINS` edges), keeps `dependencies` as `DEPENDS_ON`,
+hashes, suppliers, purl qualifiers, and license choices as the format carries
+them: one `expression` or SPDX `id` verbatim; a `name`/`url` as a name or
+URL; several license objects as a semicolon list (CycloneDX defines no
+AND/OR meaning for them, so none is invented). CycloneDX component
+`evidence` (license findings, copyright, file occurrences), inline license
+text, ORT's per-file scan results and curations, and Syft's file catalog stay
+only in the stored original and are flagged by coverage warnings
+(`evidence_not_carried`, `license_text_inline`). GraphNest has no native
+ScanCode or Code Insight adapter; it imports what those tools export in the
+two supported formats.
+
+Producer examples (each writes a supported format; the fixtures under
+`test/fixtures/supplychain/` are sanitized shapes of these outputs):
+
+```sh
+# Syft: CycloneDX 1.6 JSON of a built image (artifact subject)
+syft registry.example.internal/acme/widgets:1.4.2 -o cyclonedx-json@1.6 > widgets-image.cdx.json
+curl --fail-with-body -X POST "https://graphnest.example/v1/supply-chain/imports?repository_id=101&subject=artifact&label=syft-image" \
+  -H "Authorization: Bearer $GRAPHNEST_TOKEN" -H 'Content-Type: application/vnd.cyclonedx+json' --data-binary @widgets-image.cdx.json
+
+# ORT: SPDX 2.3 JSON report of the analyzed source tree (source subject)
+ort report -i analyzer-result.yml -o reports -f SpdxDocument -O SpdxDocument=outputFileFormats=JSON
+curl --fail-with-body -X POST "https://graphnest.example/v1/supply-chain/imports?repository_id=101&subject=source&label=ort&subject_revision=$GITHUB_SHA" \
+  -H "Authorization: Bearer $GRAPHNEST_TOKEN" -H 'Content-Type: application/spdx+json' --data-binary @reports/bom.spdx.json
+```
+
+Derived export: `GET /v1/supply-chain/exports/{id}/derived.spdx.json` returns
+an SPDX 2.3 JSON document created by GraphNest that links the preserved
+original by URL and SHA-256 and adds assessments as `licenseComments` only
+(`licenseConcluded` is always `NOASSERTION`). It is validated with
+GraphNest's own reader before it is served and is never presented as the
+producer's document. `GET /v1/supply-chain/exports/{id}/components.csv` is
+the tabular equivalent with provenance columns and formula-safe cells.
+
 ## Break-glass administrator recovery
 
 SSO remains the primary sign-in method. Use the offline command only when an
