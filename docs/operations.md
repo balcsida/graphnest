@@ -189,7 +189,10 @@ One route per ecosystem. A package the route does not know is recorded as
 registry, so a private-registry deployment cannot leak package names. Requests
 are pinned to the route's origin and base path (redirects elsewhere are
 rejected), bodies are bounded after decompression (4 MiB), and credentials are
-attached only to the route's own origin.
+attached only to the route's own origin. Registry requests honour
+`HTTPS_PROXY`/`NO_PROXY` like the GitHub client; the private-address policy is
+applied to the route host, not to the proxy. A TLS-intercepting proxy needs
+its CA in `..._CA_FILE`.
 
 What each resolver reads and how it records it:
 
