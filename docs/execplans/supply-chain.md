@@ -438,3 +438,18 @@ Copilot configuration issue unrelated to this change.
 | m7-operations | [#113](https://github.com/balcsida/graphnest/pull/113) | #112 |
 
 Merging remains a separate owner decision; the PRs are drafts.
+
+### Merge and release record
+
+- 2026-09-22 22:01–22:30 UTC: #104, #105, #106 merged into `main` by the owner
+  (merge commits `185fba0`, `d750f6c`, `3329f34`); GitHub rebuilt the remaining
+  layers onto the new base and re-signed them as `web-flow` commits.
+- 2026-09-22 23:0x UTC: the rebuilt heads (`5e1f5d6` … `30afa59`) were adopted
+  locally after confirming tree identity with the signed originals, pushed with
+  `--force-with-lease`, and re-ran the `CI` workflow successfully on every layer.
+- 2026-09-23 00:0x UTC: `gh stack merge 113 --yes --merge` merged #107–#113
+  atomically into `main` as `0def80c`; `main`'s tree equals the stack head.
+- 2026-09-23: release PR #115 (`release/v0.6.0`: changelog and chart 0.6.0)
+  merged as `5dbe0ad`; the signed tag `v0.6.0` (verified on GitHub) points at
+  that commit and started the Release workflow
+  (https://github.com/balcsida/graphnest/actions/runs/35824989809).
