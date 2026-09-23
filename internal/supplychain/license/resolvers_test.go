@@ -7,10 +7,14 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -288,6 +292,97 @@ func TestCredentialsStayOnTheRoute(t *testing.T) {
 	evidence, _ = resolver.Resolve(t.Context(), Coordinates{Ecosystem: "npm", Name: "left-pad", Version: "1.3.0"})
 	if evidence.Outcome != OutcomeUnavailable || evidence.HTTPStatus == nil || *evidence.HTTPStatus != 401 {
 		t.Fatalf("basic auth refused = %+v", evidence)
+	}
+}
+
+// connectProxy is a minimal HTTP CONNECT proxy that tunnels every request to
+// one upstream listener and records the hosts it was asked for.
+func connectProxy(t *testing.T, upstream string) (proxyURL string, targets *[]string) {
+	t.Helper()
+	var mu sync.Mutex
+	seen := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodConnect {
+			http.Error(writer, "CONNECT only", http.StatusMethodNotAllowed)
+			return
+		}
+		mu.Lock()
+		seen = append(seen, request.Host)
+		mu.Unlock()
+		backend, err := net.Dial("tcp", upstream)
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer backend.Close()
+		client, _, err := http.NewResponseController(writer).Hijack()
+		if err != nil {
+			return
+		}
+		defer client.Close()
+		if _, err := io.WriteString(client, "HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
+			return
+		}
+		done := make(chan struct{}, 2)
+		go func() { io.Copy(backend, client); done <- struct{}{} }()
+		go func() { io.Copy(client, backend); done <- struct{}{} }()
+		<-done
+	}))
+	t.Cleanup(server.Close)
+	return server.URL, &seen
+}
+
+// TestFetcherUsesEgressProxy pins the route to a public-looking host name
+// (covered by the httptest certificate) and lets an HTTPS_PROXY tunnel carry
+// the request. Without proxy support the fetch would try to reach
+// example.com directly and fail; with it, the proxy sees exactly one CONNECT
+// for the route host, and a route whose host resolves to a private address
+// is still refused before any connection is made.
+func TestFetcherUsesEgressProxy(t *testing.T) {
+	r := newRegistry(t, func(writer http.ResponseWriter, request *http.Request) { fmt.Fprint(writer, npmLeftPad) })
+	proxyURL, targets := connectProxy(t, strings.TrimPrefix(r.server.URL, "https://"))
+	t.Setenv("HTTPS_PROXY", proxyURL)
+	t.Setenv("NO_PROXY", "")
+	t.Setenv("no_proxy", "")
+	// No real DNS in a unit test: the public route answers with a public
+	// address, the internal one with a private address; everything else
+	// (the proxy's loopback literal) resolves as usual.
+	previous := lookupNetIP
+	lookupNetIP = func(ctx context.Context, host string) ([]netip.Addr, error) {
+		switch host {
+		case "example.com":
+			return []netip.Addr{netip.MustParseAddr("93.184.216.34")}, nil
+		case "internal.example.com":
+			return []netip.Addr{netip.MustParseAddr("10.0.0.5")}, nil
+		}
+		return previous(ctx, host)
+	}
+	t.Cleanup(func() { lookupNetIP = previous })
+
+	route := r.route(t, "npm", "/")
+	route.AllowPrivateHosts = false
+	route.BaseURL, _ = url.Parse("https://example.com/")
+	resolver, err := NewNPMResolver(route)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, _ := resolver.Resolve(t.Context(), Coordinates{Ecosystem: "npm", Name: "left-pad", Version: "1.3.0"})
+	if evidence.Outcome != OutcomeResolved || r.calls.Load() != 1 {
+		t.Fatalf("proxied fetch = %+v (registry calls=%d, proxy targets=%v)", evidence, r.calls.Load(), *targets)
+	}
+	if len(*targets) != 1 || (*targets)[0] != "example.com:443" {
+		t.Fatalf("proxy CONNECT targets = %v", *targets)
+	}
+
+	// A route host that resolves to a private address must still be refused,
+	// even though the socket itself would only ever reach the (private) proxy.
+	privateRoute := r.route(t, "npm", "/")
+	privateRoute.AllowPrivateHosts = false
+	privateRoute.BaseURL, _ = url.Parse("https://internal.example.com/")
+	resolver, _ = NewNPMResolver(privateRoute)
+	evidence, _ = resolver.Resolve(t.Context(), Coordinates{Ecosystem: "npm", Name: "left-pad", Version: "1.3.0"})
+	if evidence.Outcome != OutcomeRejected || r.calls.Load() != 1 || len(*targets) != 1 {
+		t.Fatalf("private route reached through proxy: %+v (registry calls=%d, proxy targets=%v)", evidence, r.calls.Load(), *targets)
 	}
 }
 

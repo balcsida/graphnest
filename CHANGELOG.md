@@ -5,6 +5,14 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+### Fixed
+
+- License enrichment ignored `HTTPS_PROXY`, so registry routes behind an
+  egress proxy recorded `unavailable` for every package while the GitHub
+  client worked. Registry requests now honour the standard proxy variables;
+  the private-address policy is applied to the route host rather than the
+  proxy address.
+
 ## [0.6.0] - 2026-09-23
 
 This release adds the opt-in Dependencies & Licenses module: a preserved
