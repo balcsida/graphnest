@@ -18,6 +18,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"golang.org/x/net/http/httpproxy"
 )
 
 // Route is one configured registry destination for one ecosystem. All
@@ -184,7 +186,27 @@ func NewFetcher(route Route) (*Fetcher, error) {
 		return nil, errors.New("invalid registry CA certificate")
 	}
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	// The private-address policy applies to the route host: resolve it and
+	// reject any non-public answer (a public name answering with a private
+	// address is a rebinding attempt).
+	resolveRouteHost := func(ctx context.Context, host string) ([]netip.Addr, error) {
+		addresses, err := lookupNetIP(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		for _, candidate := range addresses {
+			if !route.AllowPrivateHosts && !publicAddress(candidate) {
+				return nil, fmt.Errorf("%w: %s resolves to a non-public address", ErrRouteRejected, host)
+			}
+		}
+		return addresses, nil
+	}
+	// HTTPS_PROXY/NO_PROXY, like every other outbound client in the process; a
+	// cluster behind an egress proxy has no other way out. Read once per
+	// route at construction (http.ProxyFromEnvironment caches process-wide).
+	proxy := httpproxy.FromEnvironment().ProxyFunc()
 	transport := &http.Transport{
+		Proxy:                 func(request *http.Request) (*url.URL, error) { return proxy(request.URL) },
 		TLSClientConfig:       &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12},
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          4,
@@ -196,14 +218,20 @@ func NewFetcher(route Route) (*Fetcher, error) {
 			if err != nil {
 				return nil, err
 			}
-			addresses, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+			var addresses []netip.Addr
+			if strings.EqualFold(host, route.BaseURL.Hostname()) {
+				// Direct connection: the answers that passed the policy are the
+				// answers dialled, so a rebinding between lookups cannot slip in.
+				addresses, err = resolveRouteHost(ctx, host)
+			} else {
+				// The dial goes to an egress proxy (normally a private address by
+				// design); the policy still applies to the route host it tunnels to.
+				if _, err = resolveRouteHost(ctx, route.BaseURL.Hostname()); err == nil {
+					addresses, err = lookupNetIP(ctx, host)
+				}
+			}
 			if err != nil {
 				return nil, err
-			}
-			for _, candidate := range addresses {
-				if !route.AllowPrivateHosts && !publicAddress(candidate) {
-					return nil, fmt.Errorf("%w: %s resolves to a non-public address", ErrRouteRejected, host)
-				}
 			}
 			var lastErr error
 			for _, candidate := range addresses {
@@ -327,5 +355,10 @@ func unwrapURLError(err error) error {
 	return err
 }
 
-// parseAddress is a small test seam around netip.ParseAddr.
+// parseAddress and lookupNetIP are small test seams around netip.ParseAddr
+// and the default resolver.
 func parseAddress(value string) (netip.Addr, error) { return netip.ParseAddr(value) }
+
+var lookupNetIP = func(ctx context.Context, host string) ([]netip.Addr, error) {
+	return net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+}
