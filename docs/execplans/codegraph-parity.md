@@ -663,7 +663,7 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 | S1.06a1 file dependencies | `feat/codegraph/s1-06a1-file-dependencies` | Implemented, independently reviewed and signed; depends on PR #78 | Draft [PR #79](https://github.com/balcsida/graphnest/pull/79); native stack #66, position 15 |
 | S1.06a2 graph aggregates | `feat/codegraph/s1-06a2-graph-aggregates` | Implemented, independently reviewed and signed (`85dee2e`); depends on PR #79 | Draft [PR #81](https://github.com/balcsida/graphnest/pull/81); native stack #66, position 16; CI and CodeQL passed |
 | S1.06a3 entity impact | `feat/codegraph/s1-06a3-entity-impact` | Implemented, independently approved and signed (`931e7d9`); depends on PR #81 | Draft [PR #82](https://github.com/balcsida/graphnest/pull/82); native stack #66, position 17; CI and CodeQL passed |
-| S1.06b1 type relations and hierarchy | `feat/codegraph/type-hierarchy` | Implemented; focused unit, service and PostgreSQL checks pass; based on `main` | Draft PR pending |
+| S1.06b1 type relations and hierarchy | `feat/codegraph/type-hierarchy` | Implemented; focused unit, service and PostgreSQL checks pass; based on `main` | [PR #119](https://github.com/balcsida/graphnest/pull/119) |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
