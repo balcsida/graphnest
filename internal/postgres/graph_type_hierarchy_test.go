@@ -3,12 +3,13 @@
 package postgres
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,8 +23,8 @@ import (
 )
 
 type hierarchyCapture struct {
-	Nodes          []positiveNode       `json:"nodes"`
-	Edges          []positiveEdge       `json:"edges"`
+	Nodes          []positiveNode        `json:"nodes"`
+	Edges          []positiveEdge        `json:"edges"`
 	Files          []hierarchyFile       `json:"files"`
 	UnresolvedRefs []hierarchyUnresolved `json:"unresolvedRefs"`
 }
@@ -41,16 +42,17 @@ type hierarchyFile struct {
 }
 
 type hierarchyUnresolved struct {
-	ID            int64           `json:"id"`
-	Source        string          `json:"from_node_id"`
-	Name          string          `json:"reference_name"`
-	Kind          string          `json:"reference_kind"`
-	Line, Column  *int32          `json:"line"`
-	Candidates    json.RawMessage `json:"candidates"`
-	Path          *string         `json:"file_path"`
-	Language      *string         `json:"language"`
-	Status        *string         `json:"status"`
-	NameTail      *string         `json:"name_tail"`
+	ID         int64           `json:"id"`
+	Source     string          `json:"from_node_id"`
+	Name       string          `json:"reference_name"`
+	Kind       string          `json:"reference_kind"`
+	Line       *int32          `json:"line"`
+	Column     *int32          `json:"col"`
+	Candidates json.RawMessage `json:"candidates"`
+	Path       *string         `json:"file_path"`
+	Language   *string         `json:"language"`
+	Status     *string         `json:"status"`
+	NameTail   *string         `json:"name_tail"`
 }
 
 func loadHierarchyCapture(t *testing.T) (*graphv2.Artifact, hierarchyCapture) {
@@ -85,7 +87,6 @@ func loadHierarchyCapture(t *testing.T) (*graphv2.Artifact, hierarchyCapture) {
 	artifact := storageV2Artifact()
 	artifact.ContentHash = nil
 	artifact.Commit = strings.Repeat("7", 40)
-	artifact.Repository = "s1-06b-cd02-hierarchy"
 	artifact.Nodes, artifact.Edges, artifact.Files, artifact.Unresolved, artifact.Diagnostics = nil, nil, nil, nil, nil
 	for _, node := range capture.Nodes {
 		path := node.FilePath
@@ -195,17 +196,22 @@ func TestGraphTypeHierarchyProducerOracle(t *testing.T) {
 	if err != nil || len(evidence) != 53 {
 		t.Fatalf("complete edges=%d err=%v", len(evidence), err)
 	}
-	assertEvidenceFacts(t, evidence, originalEdges)
+	for _, edge := range evidence {
+		// Store rows carry the internal repository ID; the service maps it to the public one.
+		if edge.RepositoryID != scope.SelectedRepositoryID || !proto.Equal(edge.Fact, originalEdges[edge.Fact.GetOccurrence()]) {
+			t.Fatalf("lost evidence fact=%+v", edge)
+		}
+	}
 	if all.Generations[0].NodeCount != 37 || all.Generations[0].EdgeCount != 53 || all.Generations[0].UnresolvedCount != 5 {
 		t.Fatalf("complete generation=%+v", all.Generations[0])
 	}
 
 	for _, test := range []struct {
-		name, kind string
-		ancestors  []string
-		descendants []string
+		name, kind           string
+		ancestors            []string
+		descendants          []string
 		direct, implementers int
-		polymorphic bool
+		polymorphic          bool
 	}{
 		{"Tile", "class", []string{"Square", "Shape", "Drawable"}, nil, 0, 0, false},
 		{"Shape", "class", []string{"Drawable"}, []string{"Square", "Tile"}, 1, 0, false},
@@ -215,7 +221,7 @@ func TestGraphTypeHierarchyProducerOracle(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			focus := captureNode(t, artifact, test.name, test.kind)
 			got, callErr := service.TypeHierarchy(t.Context(), graphprotocol.TypeHierarchyRequest{Scope: scope, Occurrence: focus.Occurrence})
-			if callErr != nil || !reflect.DeepEqual(hierarchyNames(got.Ancestors.Items), test.ancestors) || !reflect.DeepEqual(hierarchyNames(got.Descendants.Items), test.descendants) || got.DirectSubtypes != test.direct || got.DirectImplementers != test.implementers || got.Polymorphic != test.polymorphic || got.Bounded {
+			if callErr != nil || !slices.Equal(hierarchyNames(got.Ancestors.Items), test.ancestors) || !slices.Equal(hierarchyNames(got.Descendants.Items), test.descendants) || got.DirectSubtypes != test.direct || got.DirectImplementers != test.implementers || got.Polymorphic != test.polymorphic || got.Bounded {
 				t.Fatalf("hierarchy ancestors=%v descendants=%v direct=%d/%d bounded=%v err=%v", hierarchyNames(got.Ancestors.Items), hierarchyNames(got.Descendants.Items), got.DirectSubtypes, got.DirectImplementers, got.Bounded, callErr)
 			}
 			if got.Analysis == nil || got.Analysis.Unresolved != 5 || got.Analysis.Coverage != graphprotocol.AnalysisCoverageNotAssessed || !got.Analysis.Complete {
@@ -262,15 +268,15 @@ func TestGraphTypeHierarchyOriginalServiceAndBaseOracle(t *testing.T) {
 	base := captureNode(t, artifact, "Base", "class")
 	serviceType := captureNode(t, artifact, "Service", "class")
 	baseHierarchy, err := service.TypeHierarchy(t.Context(), graphprotocol.TypeHierarchyRequest{Scope: scope, Occurrence: base.Occurrence})
-	if err != nil || !reflect.DeepEqual(hierarchyNames(baseHierarchy.Descendants.Items), []string{"Service"}) || baseHierarchy.DirectSubtypes != 1 || baseHierarchy.Bounded {
+	if err != nil || !slices.Equal(hierarchyNames(baseHierarchy.Descendants.Items), []string{"Service"}) || baseHierarchy.DirectSubtypes != 1 || baseHierarchy.Bounded {
 		t.Fatalf("Base descendants=%+v err=%v", baseHierarchy, err)
 	}
 	entry := baseHierarchy.Descendants.Items[0]
-	if entry.Depth != 1 || entry.ParentID != baseHierarchy.Focus.ID || entry.Relation != "extends" || entry.Edge.Fact.GetLocation().GetStart().GetLine() != 5 || entry.Edge.Fact.GetLocation().GetStart().GetCharacter() != 28 || entry.Edge.Fact.GetConfidence() != 0.9 || entry.Edge.Fact.GetResolutionReason() != "exact-match" {
+	if entry.Depth != 1 || entry.ParentID != baseHierarchy.Focus.ID || entry.Relation != "extends" || entry.Edge.Fact.GetLocation().GetStart().GetLine() != 5 || entry.Edge.Fact.GetLocation().GetStart().GetCharacter() != 29 || entry.Edge.Fact.GetConfidence() != 0.9 || entry.Edge.Fact.GetResolutionReason() != "exact-match" {
 		t.Fatalf("Base descendant evidence=%+v", entry)
 	}
 	serviceHierarchy, err := service.TypeHierarchy(t.Context(), graphprotocol.TypeHierarchyRequest{Scope: scope, Occurrence: serviceType.Occurrence})
-	if err != nil || !reflect.DeepEqual(hierarchyNames(serviceHierarchy.Ancestors.Items), []string{"Base", "Greeter"}) || len(serviceHierarchy.DerivedOverrides) != 1 || serviceHierarchy.DerivedOverrides[0].Member.Fact.QualifiedName != "Service::greet" || serviceHierarchy.DerivedOverrides[0].BaseMember.Fact.QualifiedName != "Base::greet" {
+	if err != nil || !slices.Equal(hierarchyNames(serviceHierarchy.Ancestors.Items), []string{"Base", "Greeter"}) || len(serviceHierarchy.DerivedOverrides) != 1 || serviceHierarchy.DerivedOverrides[0].Member.Fact.QualifiedName != "Service::greet" || serviceHierarchy.DerivedOverrides[0].BaseMember.Fact.QualifiedName != "Base::greet" {
 		t.Fatalf("Service hierarchy=%+v err=%v", serviceHierarchy, err)
 	}
 	relations, err := service.TypeRelations(t.Context(), graphprotocol.TypeRelationsRequest{Scope: scope, Occurrence: serviceType.Occurrence})
@@ -283,7 +289,6 @@ func TestGraphTypeRelationsSyntheticDirectionAndOccurrences(t *testing.T) {
 	artifact := storageV2Artifact()
 	artifact.ContentHash = nil
 	artifact.Commit = strings.Repeat("8", 40)
-	artifact.Repository = "s1-06b-t1-synthetic-relations"
 	artifact.Nodes, artifact.Edges, artifact.Files, artifact.Unresolved, artifact.Diagnostics = nil, nil, nil, nil, nil
 	for _, value := range []struct{ occurrence, name, kind string }{
 		{"root", "makeService", "function"}, {"service", "Service", "class"}, {"greeter", "Greeter", "interface"},
@@ -306,5 +311,78 @@ func TestGraphTypeRelationsSyntheticDirectionAndOccurrences(t *testing.T) {
 	}
 	if got.Types[0].Edges[0].Fact.Occurrence == got.Types[0].Edges[1].Fact.Occurrence || got.Users[0].Edges[0].Fact.Source != "user" || got.Returners[0].Edges[0].Fact.Source != "returner" || got.ReferencedTypes[0].Entity.Fact.Occurrence != "service" {
 		t.Fatalf("synthetic direction/evidence=%+v", got)
+	}
+}
+
+func TestGraphHierarchyChildCountScopeAndBounds(t *testing.T) {
+	artifact := storageV2Artifact()
+	artifact.ContentHash = nil
+	artifact.Commit = strings.Repeat("9", 40)
+	artifact.Nodes, artifact.Edges, artifact.Files, artifact.Unresolved, artifact.Diagnostics = nil, nil, nil, nil, nil
+	for _, occurrence := range []string{"base", "both", "impl", "sub", "self"} {
+		artifact.Nodes = append(artifact.Nodes, &graphv2.Node{SourceId: occurrence, Occurrence: occurrence, Name: occurrence, QualifiedName: occurrence, Kind: "class"})
+	}
+	for i, value := range []struct{ source, target, kind string }{
+		{"both", "base", "implements"}, {"both", "base", "extends"}, {"impl", "base", "implements"},
+		{"impl", "base", "implements"}, {"sub", "base", "extends"}, {"base", "base", "extends"}, {"self", "base", "references"},
+	} {
+		relation, _ := graphartifact.ParseRelationship(value.kind)
+		artifact.Edges = append(artifact.Edges, &graphv2.Edge{SourceId: strconv.Itoa(i + 1), Occurrence: fmt.Sprintf("count-edge-%d", i+1), Source: value.source, Target: value.target, Kind: relation.WireKind()})
+	}
+	store, service, scope := fileDependencyService(t, artifact)
+	all, err := service.Entities(t.Context(), graphprotocol.EntitiesRequest{Scope: scope, Limit: 10})
+	if err != nil || len(all.Generations) != 1 {
+		t.Fatalf("generations=%+v err=%v", all.Generations, err)
+	}
+	snapshot := graphquery.QuerySnapshot{RepositoryID: scope.SelectedRepositoryID, UploadID: all.Generations[0].UploadID, Commit: artifact.Commit}
+
+	// Distinct subtypes only (extends rows list first, as upstream sortLevel): duplicate occurrences count once, extends wins over
+	// implements, self edges and other relations are not subtypes.
+	got, err := store.CountHierarchyChildren(t.Context(), graphquery.HierarchyCountQuery{Snapshot: snapshot, Occurrence: "base"})
+	if err != nil || got != (graphquery.HierarchyCount{Subtypes: 3, Implementers: 1}) {
+		t.Fatalf("base count=%+v err=%v", got, err)
+	}
+	hierarchy, err := service.TypeHierarchy(t.Context(), graphprotocol.TypeHierarchyRequest{Scope: scope, Occurrence: "base"})
+	if err != nil || !slices.Equal(hierarchyNames(hierarchy.Descendants.Items), []string{"both", "sub", "impl"}) || hierarchy.DirectSubtypes != 3 || hierarchy.DirectImplementers != 1 {
+		t.Fatalf("base hierarchy descendants=%v direct=%d/%d err=%v", hierarchyNames(hierarchy.Descendants.Items), hierarchy.DirectSubtypes, hierarchy.DirectImplementers, err)
+	}
+	for _, entry := range hierarchy.Descendants.Items {
+		if entry.Entity.Fact.Occurrence == "both" && entry.Relation != "extends" {
+			t.Fatalf("duplicate relation preference=%+v", entry)
+		}
+	}
+	for name, query := range map[string]graphquery.HierarchyCountQuery{
+		"leaf":       {Snapshot: snapshot, Occurrence: "sub"},
+		"missing":    {Snapshot: snapshot, Occurrence: "missing"},
+		"commit":     {Snapshot: graphquery.QuerySnapshot{RepositoryID: snapshot.RepositoryID, UploadID: snapshot.UploadID, Commit: strings.Repeat("8", 40)}, Occurrence: "base"},
+		"upload":     {Snapshot: graphquery.QuerySnapshot{RepositoryID: snapshot.RepositoryID, UploadID: snapshot.UploadID + 1000, Commit: snapshot.Commit}, Occurrence: "base"},
+		"repository": {Snapshot: graphquery.QuerySnapshot{RepositoryID: snapshot.RepositoryID + 1000, UploadID: snapshot.UploadID, Commit: snapshot.Commit}, Occurrence: "base"},
+	} {
+		if got, err := store.CountHierarchyChildren(t.Context(), query); err != nil || got != (graphquery.HierarchyCount{}) {
+			t.Fatalf("%s count=%+v err=%v", name, got, err)
+		}
+	}
+	for name, query := range map[string]graphquery.HierarchyCountQuery{
+		"occurrence": {Snapshot: snapshot},
+		"snapshot":   {Snapshot: graphquery.QuerySnapshot{RepositoryID: snapshot.RepositoryID, UploadID: 0, Commit: snapshot.Commit}, Occurrence: "base"},
+	} {
+		if _, err := store.CountHierarchyChildren(t.Context(), query); !errors.Is(err, graphquery.ErrInvalidRequest) {
+			t.Fatalf("%s invalid count err=%v", name, err)
+		}
+	}
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := store.CountHierarchyChildren(canceled, graphquery.HierarchyCountQuery{Snapshot: snapshot, Occurrence: "base"}); err == nil {
+		t.Fatal("canceled count succeeded")
+	}
+
+	// The descendant walk needs one row of lookahead beyond its 400-row page.
+	neighbors := graphquery.EntityNeighborQuery{Snapshot: snapshot, Occurrence: "base", Relation: "extends", Direction: "incoming", Limit: 401}
+	if rows, err := store.EntityNeighbors(t.Context(), neighbors); err != nil || len(rows) != 3 { // both, sub and the raw self edge
+		t.Fatalf("401 lookahead rows=%d err=%v", len(rows), err)
+	}
+	neighbors.Limit = 402
+	if _, err := store.EntityNeighbors(t.Context(), neighbors); !errors.Is(err, graphquery.ErrInvalidRequest) {
+		t.Fatalf("402 lookahead err=%v", err)
 	}
 }
