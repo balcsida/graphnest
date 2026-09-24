@@ -11,7 +11,17 @@ the compatibility and migration notes before upgrading.
   egress proxy recorded `unavailable` for every package while the GitHub
   client worked. Registry requests now honour the standard proxy variables;
   the private-address policy is applied to the route host rather than the
-  proxy address.
+  proxy address. ([#117])
+- A registry route configured after inventories existed was never consulted
+  for them: enrichment queued only on publication, and a repeat collection of
+  an unchanged export publishes nothing. The enrichment worker now queues
+  every stream's current snapshot at start-up (idempotent: fresh evidence and
+  active jobs are skipped).
+
+### Added
+
+- Helm: `server.extraEnv` renders plain variables into the server ConfigMap,
+  for `HTTPS_PROXY`/`NO_PROXY` on clusters whose only egress is a proxy.
 
 ## [0.6.0] - 2026-09-23
 
@@ -352,3 +362,4 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
 [#111]: https://github.com/balcsida/graphnest/pull/111
 [#112]: https://github.com/balcsida/graphnest/pull/112
 [#113]: https://github.com/balcsida/graphnest/pull/113
+[#117]: https://github.com/balcsida/graphnest/pull/117

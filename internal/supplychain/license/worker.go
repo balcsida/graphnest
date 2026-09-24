@@ -122,6 +122,31 @@ func (worker *Worker) EnqueueSnapshot(ctx context.Context, snapshotID int64) (in
 	return created, nil
 }
 
+// Backfill queues lookups for every stream's current snapshot. Publication
+// queues enrichment only for the snapshot it publishes and a repeat
+// collection of an unchanged export publishes nothing, so a route configured
+// after inventories exist would otherwise never be consulted for them.
+// EnqueueEnrichment skips coordinates with fresh evidence or an active job,
+// so running this at every start is idempotent.
+func (worker *Worker) Backfill(ctx context.Context) (int, error) {
+	if worker.Registry == nil || len(worker.Registry.Ecosystems()) == 0 {
+		return 0, nil
+	}
+	snapshots, err := worker.Store.LatestSnapshotIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+	created := 0
+	for _, snapshotID := range snapshots {
+		count, err := worker.EnqueueSnapshot(ctx, snapshotID)
+		created += count
+		if err != nil {
+			return created, err
+		}
+	}
+	return created, nil
+}
+
 // Run processes enrichment jobs until the context ends.
 func (worker *Worker) Run(ctx context.Context) error {
 	poll := worker.Poll

@@ -313,6 +313,24 @@ func (s *Store) UpsertAssessment(ctx context.Context, assessment license.Assessm
 	return err
 }
 
+// LatestSnapshotIDs lists every stream's current snapshot.
+func (s *Store) LatestSnapshotIDs(ctx context.Context) ([]int64, error) {
+	rows, err := s.pool.Query(ctx, `select latest_snapshot_id from supply_chain_streams where latest_snapshot_id is not null order by latest_snapshot_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		result = append(result, id)
+	}
+	return result, rows.Err()
+}
+
 // SnapshotCoordinates lists distinct exact coordinates of a snapshot's
 // components that have a purl name and a version.
 func (s *Store) SnapshotCoordinates(ctx context.Context, snapshotID int64) ([]license.Coordinates, error) {
