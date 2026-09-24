@@ -5,6 +5,16 @@ Implementation, validation, draft publication, and release are separate states.
 
 ## Progress
 
+- 2026-09-24: Resumed the paused S1.06b1 type relations and hierarchy layer
+  on `feat/codegraph/type-hierarchy`, based on `main`. PostgreSQL now counts
+  distinct direct subtypes, and the internal neighbor lookahead allows 401 rows
+  for the 400-row descendant walk. The integration test's capture translation
+  was corrected: the artifact keeps the store's repository ID, and store evidence
+  is compared by fact. The `Base` edge column expectation is 29, which matches
+  `core.ts`. The accepted CD02 capture, the library `Base`/`Service` hierarchy,
+  the synthetic direction controls and the count/scope/cancellation/bound
+  checks pass. Service-level only: no REST, MCP or browser exposure. B2 dead
+  code and the rest of S1.06 remain open.
 - 2026-09-14: The partial S1.07 discovery transport milestone exposes bounded
   v2 discovery, exploration, file inventory, and versioned capabilities over
   bearer-only REST and MCP while preserving existing context/impact/trace
@@ -610,6 +620,10 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 
 ## Remaining gaps
 
+- S1.06b1 type hierarchy is implemented at the service level only. Level
+  ordering uses byte order where the pinned source uses locale comparison, and
+  a subtype with both `extends` and `implements` counts as `extends` rather than
+  by the first edge read. Transport exposure belongs to S1.07/S1.09.
 - Representative reference captures are mapped to inventory task IDs;
   remaining conformance variants stay
   planned with their owning stages, comparison contracts and upstream tests.
@@ -649,6 +663,7 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 | S1.06a1 file dependencies | `feat/codegraph/s1-06a1-file-dependencies` | Implemented, independently reviewed and signed; depends on PR #78 | Draft [PR #79](https://github.com/balcsida/graphnest/pull/79); native stack #66, position 15 |
 | S1.06a2 graph aggregates | `feat/codegraph/s1-06a2-graph-aggregates` | Implemented, independently reviewed and signed (`85dee2e`); depends on PR #79 | Draft [PR #81](https://github.com/balcsida/graphnest/pull/81); native stack #66, position 16; CI and CodeQL passed |
 | S1.06a3 entity impact | `feat/codegraph/s1-06a3-entity-impact` | Implemented, independently approved and signed (`931e7d9`); depends on PR #81 | Draft [PR #82](https://github.com/balcsida/graphnest/pull/82); native stack #66, position 17; CI and CodeQL passed |
+| S1.06b1 type relations and hierarchy | `feat/codegraph/type-hierarchy` | Implemented; focused unit, service and PostgreSQL checks pass; based on `main` | Draft PR pending |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
