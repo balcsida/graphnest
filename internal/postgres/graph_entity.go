@@ -184,7 +184,7 @@ func (s *Store) EntityNeighbors(ctx context.Context, q graphquery.EntityNeighbor
 	ctx, cancel := s.graphQueryContext(ctx)
 	defer cancel()
 	relation, ok := graphartifact.ParseRelationship(q.Relation)
-	if !ok || (q.Direction != "incoming" && q.Direction != "outgoing") || q.Limit <= 0 || q.Limit > 101 || math.IsNaN(q.MinConfidence) || math.IsInf(q.MinConfidence, 0) || q.MinConfidence < 0 || q.MinConfidence > 1 {
+	if !ok || (q.Direction != "incoming" && q.Direction != "outgoing") || q.Limit <= 0 || q.Limit > 401 || math.IsNaN(q.MinConfidence) || math.IsInf(q.MinConfidence, 0) || q.MinConfidence < 0 || q.MinConfidence > 1 {
 		return nil, graphquery.ErrInvalidRequest
 	}
 	parent, neighbor := "source", "target"
