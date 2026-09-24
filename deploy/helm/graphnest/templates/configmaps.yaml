@@ -26,6 +26,9 @@ data:
   GRAPHNEST_SCIP_MAX_UPLOAD_BYTES: {{ printf "%d" (int64 .Values.server.config.scipMaxUploadBytes) | quote }}
   GRAPHNEST_GITHUB_PRIVATE_KEY_FILE: /var/run/secrets/graphnest/github/private-key.pem
   GRAPHNEST_GITHUB_WEBHOOK_SECRET_FILE: /var/run/secrets/graphnest/github/webhook-secret
+  {{- range $name, $value := .Values.server.extraEnv }}
+  {{ $name }}: {{ $value | quote }}
+  {{- end }}
   {{- if .Values.breakGlass.enabled }}
   GRAPHNEST_BREAK_GLASS_ENABLED: "true"
   {{- end }}

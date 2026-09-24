@@ -76,6 +76,9 @@ server:
   topologySpreadConstraints: []
   podSecurityContext: {}
   podAnnotations: {}
+  # Plain (non-secret) variables added to the server ConfigMap, e.g.
+  # HTTPS_PROXY/NO_PROXY on a cluster whose only egress is a proxy.
+  extraEnv: {}
   pdb: {enabled: true, minAvailable: 1}
 node:
   replicaCount: 1

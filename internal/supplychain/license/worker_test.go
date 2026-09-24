@@ -18,6 +18,7 @@ type memoryStore struct {
 	occurrences map[Coordinates][][2]int64
 	declared    map[int64]*string
 	coordinates []Coordinates
+	snapshots   []int64
 }
 
 func newMemoryStore() *memoryStore {
@@ -121,6 +122,10 @@ func (store *memoryStore) SnapshotCoordinates(context.Context, int64) ([]Coordin
 	return store.coordinates, nil
 }
 
+func (store *memoryStore) LatestSnapshotIDs(context.Context) ([]int64, error) {
+	return store.snapshots, nil
+}
+
 func (store *memoryStore) ComponentDeclarations(_ context.Context, componentID int64) (*string, *string, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
@@ -166,6 +171,32 @@ func TestWorkerEnqueuesOnlyRoutedEcosystemsAndAssesses(t *testing.T) {
 	}
 	if store.jobs[0].State != "succeeded" {
 		t.Fatalf("job = %+v", store.jobs[0])
+	}
+}
+
+// TestWorkerBackfillQueuesLatestSnapshots covers a route configured after
+// inventories exist: every stream's current snapshot is queued once, and a
+// second start queues nothing more.
+func TestWorkerBackfillQueuesLatestSnapshots(t *testing.T) {
+	r := newRegistry(t, func(writer http.ResponseWriter, request *http.Request) { fmt.Fprint(writer, npmLeftPad) })
+	registry, err := NewRegistry([]Route{r.route(t, "npm", "/")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newMemoryStore()
+	store.snapshots = []int64{3, 4}
+	store.coordinates = []Coordinates{{Ecosystem: "npm", Namespace: "@scope", Name: "left-pad", Version: "1.3.0"}}
+	worker := &Worker{Store: store, Registry: registry, Owner: "w"}
+	if created, err := worker.Backfill(t.Context()); err != nil || created != 1 || len(store.jobs) != 1 {
+		t.Fatalf("backfill created=%d jobs=%d err=%v (same coordinate in two snapshots is one job)", created, len(store.jobs), err)
+	}
+	if created, err := worker.Backfill(t.Context()); err != nil || created != 0 || len(store.jobs) != 1 {
+		t.Fatalf("second backfill created=%d jobs=%d err=%v", created, len(store.jobs), err)
+	}
+	unrouted := &Worker{Store: store, Registry: &Registry{resolvers: map[string]Resolver{}, routes: map[string]string{}}, Owner: "w"}
+	store.snapshots = nil // a nil store answer must not matter: no routes means no lookups at all
+	if created, err := unrouted.Backfill(t.Context()); err != nil || created != 0 {
+		t.Fatalf("unrouted backfill created=%d err=%v", created, err)
 	}
 }
 
