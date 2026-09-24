@@ -84,4 +84,6 @@ type Store interface {
 	UpsertAssessment(ctx context.Context, assessment Assessment) error
 	// SnapshotCoordinates lists distinct resolvable coordinates in a snapshot.
 	SnapshotCoordinates(ctx context.Context, snapshotID int64) ([]Coordinates, error)
+	// LatestSnapshotIDs lists every stream's current snapshot.
+	LatestSnapshotIDs(ctx context.Context) ([]int64, error)
 }

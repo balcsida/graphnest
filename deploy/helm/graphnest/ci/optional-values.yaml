@@ -22,6 +22,9 @@ secrets:
   supplyChainRegistries: {name: graphnest-registries, npmTokenKey: npm-token, nugetTokenKey: nuget-token, mavenBasicKey: maven-basic, caKey: ca.crt}
 server:
   scim: {enabled: true}
+  extraEnv:
+    HTTPS_PROXY: "http://proxy.example.invalid:3128"
+    NO_PROXY: ".svc,.cluster.local,github.example.invalid"
   supplyChain:
     enabled: true
     interval: 12h
