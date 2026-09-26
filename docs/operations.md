@@ -233,6 +233,12 @@ different expressions, or an expression against `UNLICENSED`/`NONE`),
 An assessment is evidence, not approval; the review workflow records
 conclusions and decisions separately.
 
+Lookups are queued when a snapshot is published and, at every server start,
+for every stream's current snapshot, so a route configured after inventories
+exist is consulted for them without waiting for the exports to change.
+Coordinates with a queued job or fresh evidence are skipped, so the start-up
+pass is idempotent.
+
 ### Standards-based imports
 
 `POST /v1/supply-chain/imports?repository_id=<github id>&subject=<source|artifact>&label=<stream label>`

@@ -177,7 +177,10 @@ key of the existing Secret named by `secrets.supplyChainRegistries` at
 `/var/run/secrets/graphnest/registries/` (npm and NuGet: bearer token; Maven:
 `user:password`); `registries.ca: true` mounts its `caKey` as the route CA.
 Credentials never render into a ConfigMap. A private route is never bypassed
-toward a public registry.
+toward a public registry. On a cluster whose only egress is an HTTP proxy,
+set `server.extraEnv` (plain variables rendered into the server ConfigMap),
+e.g. `{HTTPS_PROXY: "http://proxy:3128", NO_PROXY: ".svc,.cluster.local"}`;
+registry and GitHub requests honour them.
 
 `breakGlass.enabled=true` exposes only the disabled-by-default local recovery
 routes. It provisions no user name, password, hash, salt, or Secret and never

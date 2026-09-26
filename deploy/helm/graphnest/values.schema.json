@@ -125,7 +125,8 @@
         "topologySpreadConstraints",
         "podSecurityContext",
         "podAnnotations",
-        "pdb"
+        "pdb",
+        "extraEnv"
       ],
       "properties": {
         "replicas": {
@@ -319,6 +320,9 @@
           "$ref": "#/definitions/map"
         },
         "podAnnotations": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "extraEnv": {
           "$ref": "#/definitions/stringMap"
         },
         "pdb": {

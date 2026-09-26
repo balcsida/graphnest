@@ -555,6 +555,11 @@ func startSupplyChain(ctx context.Context, settings config.SupplyChain, store *p
 		done = append(done, enrichDone)
 		go func() {
 			defer close(enrichDone)
+			if created, err := enricher.Backfill(ctx); err != nil && ctx.Err() == nil {
+				logger.Error("supply chain enrichment backfill failed", "error", err)
+			} else if created > 0 {
+				logger.Info("supply chain enrichment backfill queued", "jobs", created)
+			}
 			if err := enricher.Run(ctx); err != nil && ctx.Err() == nil {
 				logger.Error("supply chain enrichment worker stopped", "error", err)
 			}
