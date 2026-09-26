@@ -5,8 +5,19 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-09-27
+
+Patch release with no migrations and no required configuration changes.
+
 ### Fixed
 
+- Reconciliation stopped at the first repository whose default branch GitHub
+  could not read (for example a renamed branch answering 404), skipping every
+  later installation on every tick. The failing repository is now marked
+  `error_code=default_branch`, no index job is queued for it, and
+  reconciliation continues; the mark clears on the next successful read.
+  Refresh and webhook reconcile failures now log the installation, repository,
+  and HTTP status. ([#120], [#102])
 - License enrichment ignored `HTTPS_PROXY`, so registry routes behind an
   egress proxy recorded `unavailable` for every package while the GitHub
   client worked. Registry requests now honour the standard proxy variables;
@@ -16,12 +27,13 @@ the compatibility and migration notes before upgrading.
   for them: enrichment queued only on publication, and a repeat collection of
   an unchanged export publishes nothing. The enrichment worker now queues
   every stream's current snapshot at start-up (idempotent: fresh evidence and
-  active jobs are skipped).
+  active jobs are skipped). ([#118])
 
 ### Added
 
 - Helm: `server.extraEnv` renders plain variables into the server ConfigMap,
   for `HTTPS_PROXY`/`NO_PROXY` on clusters whose only egress is a proxy.
+  ([#118])
 
 ## [0.6.0] - 2026-09-23
 
@@ -363,3 +375,6 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
 [#112]: https://github.com/balcsida/graphnest/pull/112
 [#113]: https://github.com/balcsida/graphnest/pull/113
 [#117]: https://github.com/balcsida/graphnest/pull/117
+[#102]: https://github.com/balcsida/graphnest/issues/102
+[#118]: https://github.com/balcsida/graphnest/pull/118
+[#120]: https://github.com/balcsida/graphnest/pull/120
