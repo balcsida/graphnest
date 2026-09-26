@@ -26,6 +26,7 @@ type Repository struct {
 	HTMLURL        string
 	DefaultBranch  string
 	DefaultSHA     string
+	ErrorCode      string
 	Private        bool
 	Archived       bool
 	Disabled       bool
