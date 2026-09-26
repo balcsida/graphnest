@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -14,6 +15,7 @@ type reconcileAPIStub struct {
 	installations []Installation
 	repositories  map[int64][]Repository
 	shas          map[int64]string
+	shaErrs       map[int64]error
 	reads         int
 }
 
@@ -22,12 +24,17 @@ func (api *reconcileAPIStub) Installations(context.Context) ([]Installation, err
 }
 
 func (api *reconcileAPIStub) InstallationRepositories(_ context.Context, installationID int64) ([]Repository, error) {
+	api.reads = 0
 	return api.repositories[installationID], nil
 }
 
 func (api *reconcileAPIStub) DefaultBranchSHA(_ context.Context, _ int64, _ string, name, _ string) (string, error) {
 	api.reads++
-	sha, ok := api.shas[repositoryID(name)]
+	id := repositoryID(name)
+	if err, ok := api.shaErrs[id]; ok {
+		return "", err
+	}
+	sha, ok := api.shas[id]
 	if !ok {
 		return "", fmt.Errorf("missing SHA for %s", name)
 	}
@@ -58,7 +65,16 @@ func (store *reconcileStoreStub) ReconcileInstallation(_ context.Context, instal
 		return fmt.Errorf("store called after %d of %d SHA reads", store.api.reads, expectedReads)
 	}
 	for _, repository := range repositories {
-		if !repository.Archived && !repository.Disabled && repository.DefaultSHA != store.api.shas[repository.ID] {
+		if repository.Archived || repository.Disabled {
+			continue
+		}
+		if repository.ErrorCode != "" {
+			if repository.DefaultSHA != "" {
+				return fmt.Errorf("repository %d SHA = %q with error %q", repository.ID, repository.DefaultSHA, repository.ErrorCode)
+			}
+			continue
+		}
+		if repository.DefaultSHA != store.api.shas[repository.ID] {
 			return fmt.Errorf("repository %d SHA = %q", repository.ID, repository.DefaultSHA)
 		}
 	}
@@ -166,11 +182,61 @@ func TestReconcileAllDisablesInstallationsMissingUpstream(t *testing.T) {
 	}
 }
 
-func repositoryID(name string) int64 {
-	if name == "one" {
-		return 101
+func TestReconcileAllContinuesAfterDefaultBranch404(t *testing.T) {
+	api := &reconcileAPIStub{
+		installations: []Installation{
+			{ID: 4121, AccountLogin: "acme", Status: "active"},
+			{ID: 7, AccountLogin: "other", Status: "active"},
+		},
+		repositories: map[int64][]Repository{
+			4121: {
+				{ID: 101, InstallationID: 4121, Owner: "acme", Name: "one", FullName: "acme/one", DefaultBranch: "main"},
+				{ID: 102, InstallationID: 4121, Owner: "acme", Name: "two", FullName: "acme/two", DefaultBranch: "trunk"},
+			},
+			7: {
+				{ID: 103, InstallationID: 7, Owner: "other", Name: "three", FullName: "other/three", DefaultBranch: "main"},
+			},
+		},
+		shas: map[int64]string{102: sha('b'), 103: sha('c')},
+		shaErrs: map[int64]error{
+			101: HTTPStatusError{StatusCode: http.StatusNotFound},
+		},
 	}
-	return 102
+	store := &reconcileStoreStub{api: api}
+	err := (&Reconciler{github: api, store: store}).All(t.Context())
+	if err == nil {
+		t.Fatal("expected default-branch error")
+	}
+	message := err.Error()
+	if !strings.Contains(message, "installation 4121") || !strings.Contains(message, "acme/one") || !strings.Contains(message, "HTTP 404") {
+		t.Fatalf("error %q missing installation, repository, or status", message)
+	}
+	if !reflect.DeepEqual(store.reconciled, []int64{4121, 7}) {
+		t.Fatalf("reconciled = %v", store.reconciled)
+	}
+	if len(store.repositories) != 2 {
+		t.Fatalf("installations stored = %d", len(store.repositories))
+	}
+	first := store.repositories[0]
+	if len(first) != 2 || first[0].ErrorCode != "default_branch" || first[0].DefaultSHA != "" || first[1].DefaultSHA != sha('b') {
+		t.Fatalf("installation 4121 repositories = %#v", first)
+	}
+	if len(store.repositories[1]) != 1 || store.repositories[1][0].DefaultSHA != sha('c') {
+		t.Fatalf("installation 7 repositories = %#v", store.repositories[1])
+	}
+}
+
+func repositoryID(name string) int64 {
+	switch name {
+	case "one":
+		return 101
+	case "two":
+		return 102
+	case "three":
+		return 103
+	default:
+		return 0
+	}
 }
 
 func sha(character byte) string {
