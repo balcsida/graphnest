@@ -276,9 +276,10 @@ func (s *Store) ReconcileInstallation(ctx context.Context, installation githubap
 		var status string
 		if err := tx.QueryRow(ctx, `
 			insert into repositories (github_id, installation_id, owner, name, clone_url, web_url, size_bytes,
-				default_branch, private, archived, enabled, status)
+				default_branch, private, archived, enabled, status, error_code)
 			select $1, id, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-				case when $11 then 'pending' else 'disabled' end
+				case when $11 then 'pending' else 'disabled' end,
+				nullif($12, '')
 			from installations where github_id=$2
 			on conflict (github_id) do update set installation_id=excluded.installation_id,
 				owner=excluded.owner, name=excluded.name, clone_url=excluded.clone_url,
@@ -287,15 +288,18 @@ func (s *Store) ReconcileInstallation(ctx context.Context, installation githubap
 				status=case when not excluded.enabled then 'disabled'
 					when repositories.status='disabled' and repositories.indexed_sha=repositories.desired_sha then 'ready'
 					when repositories.status='disabled' then 'pending' else repositories.status end,
-				error_code=case when excluded.enabled and repositories.status='disabled' then null
-					when not excluded.enabled then null else repositories.error_code end,
+				error_code=case when $12 <> '' then $12
+					when excluded.enabled and repositories.status='disabled' then null
+					when not excluded.enabled then null
+					when repositories.error_code = 'default_branch' then null
+					else repositories.error_code end,
 				updated_at=now()
 			returning id, desired_sha, status`, repository.ID, installation.ID, repository.Owner,
 			repository.Name, repository.CloneURL, repository.HTMLURL, repository.SizeBytes, repository.DefaultBranch,
-			repository.Private, repository.Archived, enabled).Scan(&id, &desiredSHA, &status); err != nil {
+			repository.Private, repository.Archived, enabled, repository.ErrorCode).Scan(&id, &desiredSHA, &status); err != nil {
 			return err
 		}
-		if enabled && (desiredSHA == nil || *desiredSHA != repository.DefaultSHA || status == "pending") {
+		if enabled && repository.ErrorCode == "" && repository.DefaultSHA != "" && (desiredSHA == nil || *desiredSHA != repository.DefaultSHA || status == "pending") {
 			if err := enqueueIndex(ctx, tx, IndexRequest{RepositoryID: id, TargetSHA: repository.DefaultSHA}); err != nil {
 				return err
 			}
