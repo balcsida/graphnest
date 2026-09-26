@@ -3,6 +3,110 @@
 Notable changes are recorded here. GraphNest is pre-1.0 pilot software; review
 the compatibility and migration notes before upgrading.
 
+## [Unreleased]
+
+### Fixed
+
+- License enrichment ignored `HTTPS_PROXY`, so registry routes behind an
+  egress proxy recorded `unavailable` for every package while the GitHub
+  client worked. Registry requests now honour the standard proxy variables;
+  the private-address policy is applied to the route host rather than the
+  proxy address. ([#117])
+- A registry route configured after inventories existed was never consulted
+  for them: enrichment queued only on publication, and a repeat collection of
+  an unchanged export publishes nothing. The enrichment worker now queues
+  every stream's current snapshot at start-up (idempotent: fresh evidence and
+  active jobs are skipped).
+
+### Added
+
+- Helm: `server.extraEnv` renders plain variables into the server ConfigMap,
+  for `HTTPS_PROXY`/`NO_PROXY` on clusters whose only egress is a proxy.
+
+## [0.6.0] - 2026-09-23
+
+This release adds the opt-in Dependencies & Licenses module: a preserved
+inventory of each managed repository's GitHub dependency-graph SBOM export,
+exact-version license evidence from explicitly configured package registries,
+portfolio queries and exports, standards-based SBOM imports, review workflows,
+and read-only MCP tools. Everything is disabled by default; with
+`GRAPHNEST_SUPPLY_CHAIN` unset the server behaves as in v0.5.0 apart from the
+additive migrations below.
+
+### Upgrade guidance
+
+- Migrations 033 through 036 add the `supply_chain_*` tables; they run
+  automatically at startup, cascade from `repositories`, and touch nothing
+  else. No configuration changes are required. ([#105], [#108], [#110], [#111])
+- The module is opt-in and durable-mode only: set `GRAPHNEST_SUPPLY_CHAIN=true`
+  (Helm: `server.supplyChain.enabled`) to start collection. It never contacts
+  a package registry unless a `GRAPHNEST_SUPPLY_CHAIN_REGISTRY_<ECOSYSTEM>_URL`
+  route is configured, and a GitHub dependency-graph export is always reported
+  as an unbound observation (`subject_assurance: unknown`) with `NOASSERTION`,
+  `NONE`, and `UNLICENSED` never mapped to a license. ([#106], [#108])
+- Snapshot retention defaults to ten snapshots per stream
+  (`GRAPHNEST_SUPPLY_CHAIN_RETAIN_SNAPSHOTS`); the current snapshot and any
+  snapshot referenced by a review record are always kept. ([#113])
+- The GitHub dependency-graph collector has been exercised against recorded
+  GHES fixtures only; live GHES and registry behaviour still require
+  environment-specific validation (`docs/supply-chain-pilot-checklist.md`).
+
+### Added
+
+- Opt-in Dependencies & Licenses inventory (`GRAPHNEST_SUPPLY_CHAIN=true`,
+  durable mode only). `graphnest-server` collects each managed repository's
+  GitHub dependency-graph SBOM export on a jittered schedule, preserves the
+  original SPDX 2.3 JSON byte-for-byte with its SHA-256, publishes an immutable
+  snapshot of component occurrences and relationships in one fenced
+  transaction, and serves it under `/v1/supply-chain/...` and the embedded
+  `/supply-chain` page. Failed refreshes are recorded and never remove the last
+  successful inventory; a GitHub export is reported as an unbound observation
+  (`subject_assurance: unknown`) and license fields are preserved verbatim.
+  Migration 033 adds the `supply_chain_*` tables; with the module disabled
+  nothing else changes. See ADR-0017 and `docs/execplans/supply-chain.md`.
+  ([#104], [#105], [#106], [#107])
+- Exact-version license evidence for npm, NuGet, and Maven components from
+  explicitly configured registry routes (`GRAPHNEST_SUPPLY_CHAIN_REGISTRY_*`),
+  parsed with a bounded SPDX 2.3 expression parser against the pinned SPDX
+  License List 3.27.0. Evidence rows are immutable and carry raw values,
+  parse status, resolver and list versions, content hashes, and outcomes;
+  per-occurrence assessments report resolved, declared, conflict, unlicensed,
+  or unknown and are shown in the component table and a new evidence detail
+  view (`GET /v1/supply-chain/repositories/{id}/component`). No route means no
+  outbound license traffic. Migration 034 adds the evidence, enrichment-job,
+  and assessment tables. ([#108])
+- Portfolio read APIs over the caller's authorized repositories: an overview
+  whose every count names its denominator, keyset-paginated unique
+  coordinates with ecosystem, search, license, and assessment filters,
+  bounded facets, a coordinate detail listing authorized occurrences, a CSV
+  export with provenance columns and formula-safe cells, and a snapshot
+  comparison that separates component, declared-license, and edge changes
+  from document metadata changes. ([#109])
+- Standards-based imports of SPDX 2.3 JSON and CycloneDX 1.6 JSON into
+  declared `import:<subject>:<label>` streams (`POST /v1/supply-chain/imports`),
+  with format detection from the document, explicit rejection of other
+  formats and versions, byte-preserving storage, uploader identity recorded
+  apart from the claimed producer, producer-asserted subject binding,
+  idempotency, per-repository quotas, and administrator-managed upload grants
+  (`PUT /v1/supply-chain/upload-grants`). A derived SPDX export
+  (`GET /v1/supply-chain/exports/{id}/derived.spdx.json`) names GraphNest as
+  creator, links the preserved original, and carries assessments as comments
+  only. Migration 035 adds imports and upload grants. ([#110])
+- Review workflows: a queue of occurrences needing review, human license
+  conclusions recorded as immutable evidence, scoped approve/reject/exception
+  decisions with optimistic concurrency on the evidence fingerprint
+  (`409 stale_basis`), versioned policies evaluated over the SPDX expression
+  tree with a clearly labelled example fixture and no auto-approval of
+  unknowns, repository-scoped review grants, and an append-only audit trail
+  under `/v1/supply-chain/review/*` and `/v1/supply-chain/policies`.
+  Migration 036 adds the review tables. ([#111])
+- Read-only MCP tools `search_dependency_inventory`,
+  `find_component_repositories`, and `inspect_component_license` over the
+  same authorized services as REST. ([#112])
+- Retention for inventory snapshots (`GRAPHNEST_SUPPLY_CHAIN_RETAIN_SNAPSHOTS`)
+  that always preserves the current snapshot and any snapshot referenced by
+  a review record, plus bounded collection and job history. ([#113])
+
 ## [0.5.0] - 2026-09-18
 
 This release adds repository-scoped graph discovery and exploration, introduces
@@ -224,6 +328,8 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
+[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/balcsida/graphnest/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/balcsida/graphnest/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/balcsida/graphnest/compare/v0.4.1...v0.4.3
 [0.4.2]: https://github.com/balcsida/graphnest/compare/v0.4.1...v0.4.2
@@ -246,3 +352,14 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
 [#94]: https://github.com/balcsida/graphnest/pull/94
 [#99]: https://github.com/balcsida/graphnest/pull/99
 [#100]: https://github.com/balcsida/graphnest/pull/100
+[#104]: https://github.com/balcsida/graphnest/pull/104
+[#105]: https://github.com/balcsida/graphnest/pull/105
+[#106]: https://github.com/balcsida/graphnest/pull/106
+[#107]: https://github.com/balcsida/graphnest/pull/107
+[#108]: https://github.com/balcsida/graphnest/pull/108
+[#109]: https://github.com/balcsida/graphnest/pull/109
+[#110]: https://github.com/balcsida/graphnest/pull/110
+[#111]: https://github.com/balcsida/graphnest/pull/111
+[#112]: https://github.com/balcsida/graphnest/pull/112
+[#113]: https://github.com/balcsida/graphnest/pull/113
+[#117]: https://github.com/balcsida/graphnest/pull/117

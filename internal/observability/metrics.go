@@ -31,6 +31,11 @@ type Metrics struct {
 	graphQueries       *prometheus.CounterVec
 	graphQueryDuration *prometheus.HistogramVec
 	authEvents         *prometheus.CounterVec
+	supplyChainRuns    *prometheus.CounterVec
+	supplyChainTime    *prometheus.HistogramVec
+	supplyChainDepth   *prometheus.GaugeVec
+	enrichmentRuns     *prometheus.CounterVec
+	enrichmentTime     *prometheus.HistogramVec
 }
 
 func New() *Metrics {
@@ -54,8 +59,32 @@ func New() *Metrics {
 	metrics.graphQueries = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "graphnest_graph_query_total", Help: "Graph queries."}, []string{"operation", "result"})
 	metrics.graphQueryDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "graphnest_graph_query_duration_seconds", Help: "Graph query duration."}, []string{"operation", "result"})
 	metrics.authEvents = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "graphnest_auth_events_total", Help: "Authentication events."}, []string{"provider", "event", "result"})
-	metrics.registry.MustRegister(metrics.archiveOperations, metrics.archiveDuration, metrics.activeRequests, metrics.httpRequests, metrics.httpDuration, metrics.httpResponseSize, metrics.backendCalls, metrics.backendDuration, metrics.githubRequests, metrics.webhookDeliveries, metrics.indexQueueDepth, metrics.indexPhases, metrics.indexDuration, metrics.graphQueueDepth, metrics.graphPhases, metrics.graphDuration, metrics.graphQueries, metrics.graphQueryDuration, metrics.authEvents)
+	metrics.supplyChainRuns = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "graphnest_supply_chain_collections_total", Help: "Supply chain collection attempts by outcome."}, []string{"outcome"})
+	metrics.supplyChainTime = prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "graphnest_supply_chain_collection_duration_seconds", Help: "Supply chain collection duration by outcome."}, []string{"outcome"})
+	metrics.supplyChainDepth = prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "graphnest_supply_chain_queue_depth", Help: "Supply chain refresh and enrichment jobs by state."}, []string{"state"})
+	metrics.enrichmentRuns = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "graphnest_supply_chain_enrichment_total", Help: "License enrichment lookups by outcome."}, []string{"outcome"})
+	metrics.enrichmentTime = prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "graphnest_supply_chain_enrichment_duration_seconds", Help: "License enrichment lookup duration by outcome."}, []string{"outcome"})
+	metrics.registry.MustRegister(metrics.enrichmentRuns, metrics.enrichmentTime, metrics.archiveOperations, metrics.archiveDuration, metrics.activeRequests, metrics.httpRequests, metrics.httpDuration, metrics.httpResponseSize, metrics.backendCalls, metrics.backendDuration, metrics.githubRequests, metrics.webhookDeliveries, metrics.indexQueueDepth, metrics.indexPhases, metrics.indexDuration, metrics.graphQueueDepth, metrics.graphPhases, metrics.graphDuration, metrics.graphQueries, metrics.graphQueryDuration, metrics.authEvents, metrics.supplyChainRuns, metrics.supplyChainTime, metrics.supplyChainDepth)
 	return metrics
+}
+
+// ObserveSupplyChainCollection records one collection attempt. Outcomes are
+// a fixed vocabulary; no repository or component identity is labeled.
+func (metrics *Metrics) ObserveSupplyChainCollection(outcome string, duration time.Duration) {
+	label := fixed(outcome, "published", "unchanged", "unavailable", "forbidden", "rate_limited", "not_found", "malformed", "too_large", "transient", "cancelled", "error")
+	metrics.supplyChainRuns.WithLabelValues(label).Inc()
+	metrics.supplyChainTime.WithLabelValues(label).Observe(duration.Seconds())
+}
+
+func (metrics *Metrics) SetSupplyChainQueueDepth(state string, depth int64) {
+	metrics.supplyChainDepth.WithLabelValues(fixed(state, "queued", "running", "enrichment_queued", "enrichment_running")).Set(float64(depth))
+}
+
+// ObserveSupplyChainEnrichment records one registry lookup by outcome class.
+func (metrics *Metrics) ObserveSupplyChainEnrichment(outcome string, duration time.Duration) {
+	label := fixed(outcome, "resolved", "not_found", "no_license_metadata", "unavailable", "rejected", "too_large", "malformed")
+	metrics.enrichmentRuns.WithLabelValues(label).Inc()
+	metrics.enrichmentTime.WithLabelValues(label).Observe(duration.Seconds())
 }
 
 func (metrics *Metrics) ObserveGraphQuery(operation, result string, duration time.Duration) {
