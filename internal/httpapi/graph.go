@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -14,29 +15,36 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const graphContentType = "application/vnd.graphnest.graph.v1+protobuf"
+const (
+	graphContentType   = "application/vnd.graphnest.graph.v1+protobuf"
+	graphV2ContentType = "application/vnd.graphnest.graph.v2+protobuf"
+)
 
+// RegisterGraphIngestion mounts graph uploads and status.
+//
+//	POST /v1/graph/uploads?repository_id=101&commit=<sha>                                   (v1, administrators)
+//	POST /v1/graph/uploads?repository_id=101&commit=<sha>&expected_generation=7[&replace_producer=true] (v2)
 func RegisterGraphIngestion(mux *http.ServeMux, authenticator authn.Authenticator, service *graphingest.Service, maxUploadBytes, maxResponseBytes int64) {
 	mux.Handle("/v1/graph/uploads", exactMethod(http.MethodPost, AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Header.Get("Content-Type") != graphContentType {
+		contentType := request.Header.Get("Content-Type")
+		v2 := contentType == graphV2ContentType
+		if !v2 && contentType != graphContentType {
 			writeError(writer, http.StatusUnsupportedMediaType, "invalid_request", "request is invalid", false)
 			return
 		}
-		query := request.URL.Query()
-		if len(query) != 2 || len(query["repository_id"]) != 1 || len(query["commit"]) != 1 {
-			writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
-			return
-		}
-		repositoryID, err := strconv.ParseInt(query.Get("repository_id"), 10, 64)
-		commit := query.Get("commit")
-		if err != nil || repositoryID < 1 || !scipCommitPattern.MatchString(commit) {
+		repositoryID, commit, intent, ok := graphUploadQuery(request.URL.Query(), v2)
+		if !ok {
 			writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
 			return
 		}
 		controller := http.NewResponseController(writer)
 		setWriteDeadline := func() { _ = controller.SetWriteDeadline(time.Now().Add(10 * time.Second)) }
 		principal := PrincipalFromContext(request.Context())
-		if err := service.ValidateExternalUpload(request.Context(), principal, repositoryID, commit); err != nil {
+		validate := service.ValidateExternalUpload
+		if v2 {
+			validate = service.ValidatePublication
+		}
+		if err := validate(request.Context(), principal, repositoryID, commit); err != nil {
 			setWriteDeadline()
 			writeGraphError(writer, err)
 			return
@@ -46,6 +54,16 @@ func RegisterGraphIngestion(mux *http.ServeMux, authenticator authn.Authenticato
 		if err != nil {
 			setWriteDeadline()
 			writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
+			return
+		}
+		if v2 {
+			result, err := service.Publish(request.Context(), principal, repositoryID, commit, data, intent)
+			setWriteDeadline()
+			if err != nil {
+				writeGraphError(writer, err)
+				return
+			}
+			writeBoundedJSON(writer, result, maxResponseBytes)
 			return
 		}
 		if _, err := service.UploadExternal(request.Context(), principal, repositoryID, commit, data); err != nil {
@@ -72,6 +90,37 @@ func RegisterGraphIngestion(mux *http.ServeMux, authenticator authn.Authenticato
 	}))))
 }
 
+// graphUploadQuery accepts exactly repository_id and commit, plus
+// expected_generation and an optional replace_producer=true for v2.
+func graphUploadQuery(query url.Values, v2 bool) (int64, string, graphingest.Publication, bool) {
+	var intent graphingest.Publication
+	for key, values := range query {
+		known := key == "repository_id" || key == "commit" || v2 && (key == "expected_generation" || key == "replace_producer")
+		if !known || len(values) != 1 {
+			return 0, "", intent, false
+		}
+	}
+	repositoryID, err := strconv.ParseInt(query.Get("repository_id"), 10, 64)
+	commit := query.Get("commit")
+	if err != nil || repositoryID < 1 || !scipCommitPattern.MatchString(commit) {
+		return 0, "", intent, false
+	}
+	if !v2 {
+		return repositoryID, commit, intent, true
+	}
+	intent.ExpectedGeneration, err = strconv.ParseInt(query.Get("expected_generation"), 10, 64)
+	if err != nil || intent.ExpectedGeneration < 0 {
+		return 0, "", intent, false
+	}
+	if query.Has("replace_producer") {
+		if query.Get("replace_producer") != "true" {
+			return 0, "", intent, false
+		}
+		intent.ReplaceProducer = true
+	}
+	return repositoryID, commit, intent, true
+}
+
 func graphStatusRepositoryID(path string) (int64, bool) {
 	const prefix, suffix = "/v1/graph/repositories/", "/status"
 	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
@@ -93,7 +142,13 @@ func writeGraphError(writer http.ResponseWriter, err error) {
 func classifyGraphError(err error) (int, string, string, bool) {
 	switch {
 	case errors.Is(err, graphingest.ErrForbidden):
-		return http.StatusForbidden, "forbidden", "administrator access required", false
+		return http.StatusForbidden, "forbidden", "graph publication is not permitted", false
+	case errors.Is(err, graphingest.ErrConflict):
+		return http.StatusConflict, "generation_conflict", "graph generation or indexed commit changed", false
+	case errors.Is(err, graphingest.ErrProducerConflict):
+		return http.StatusConflict, "producer_conflict", "replacing another producer requires replace_producer=true", false
+	case errors.Is(err, graphingest.ErrUnauthenticated):
+		return http.StatusUnauthorized, "unauthenticated", "authentication required", false
 	case errors.Is(err, graphingest.ErrInvalidArtifact):
 		return http.StatusBadRequest, "invalid_request", "request is invalid", false
 	case errors.Is(err, graphingest.ErrNotIndexed):
