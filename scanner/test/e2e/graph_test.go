@@ -146,7 +146,7 @@ func TestGraphLanguageFixturesReachRESTAndMCP(t *testing.T) {
 	graphIngest := &graphingest.Service{Store: database.store}
 	mux := http.NewServeMux()
 	httpapi.RegisterGraphQueries(mux, authenticator, graphService, 64<<10, 256<<10)
-	httpapi.RegisterGraphIngestion(mux, authenticator, graphIngest, 1<<20, 256<<10)
+	httpapi.RegisterGraphIngestion(mux, authenticator, graphIngest, nil, 1<<20, 256<<10)
 	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return mcpserver.NewWithLimits(mcpserver.Services{Graph: graphService}, mcpserver.Limits{MaxOutputBytes: 256 << 10, GraphMaxOutputBytes: 256 << 10})
 	}, nil)))

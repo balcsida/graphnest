@@ -494,6 +494,7 @@ func TestGraphNameSelectors(t *testing.T) {
 	if err = s.RebuildGraphDiscovery(t.Context(), id, pub.Upload.ID); err != nil {
 		t.Fatal(err)
 	}
+	a.Diagnostics[0].Message = "replacement" // identical content would deduplicate
 	if _, err = s.ReplaceGraphV2(t.Context(), id, GraphPublication{Publisher: "replacement", ExpectedActiveID: pub.Upload.ID}, a); err != nil {
 		t.Fatal(err)
 	}

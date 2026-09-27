@@ -10,6 +10,7 @@ import (
 	"github.com/balcsida/graphnest/internal/authn"
 	"github.com/balcsida/graphnest/internal/graphartifact"
 	graphv1 "github.com/balcsida/graphnest/internal/graphartifact/v1"
+	graphv2 "github.com/balcsida/graphnest/internal/graphartifact/v2"
 	"github.com/balcsida/graphnest/internal/postgres"
 	"github.com/balcsida/graphnest/internal/repository"
 	"github.com/balcsida/graphnest/pkg/api"
@@ -131,7 +132,11 @@ func TestStatusPreservesGraphStates(t *testing.T) {
 		t.Run(string(status.State), func(t *testing.T) {
 			store := &fakeStore{repository: readyRepository(101, testCommit), status: status}
 			got, err := (&Service{Store: store}).Status(t.Context(), authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}, 101)
-			if err != nil || got != status {
+			if err != nil || got.Publication == nil {
+				t.Fatalf("status=%#v err=%v", got, err)
+			}
+			got.Publication = nil
+			if got != status {
 				t.Fatalf("status=%#v err=%v", got, err)
 			}
 		})
@@ -153,6 +158,38 @@ type fakeStore struct {
 	replaced             bool
 	replacedRepositoryID int64
 	replacedArtifact     graphartifact.Artifact
+	granted              map[string]bool
+	grantCalls           int
+	afterGrant           func()
+	active               *api.GraphActiveGeneration
+	activeErr            error
+	replacementV2        postgres.GraphReplacement
+	replaceV2Err         error
+	publication          postgres.GraphPublication
+	replacedV2           *graphv2.Artifact
+}
+
+func (store *fakeStore) GraphPublicationAllowed(_ context.Context, _ int64, subject string) (bool, error) {
+	store.grantCalls++
+	if store.afterGrant != nil && store.grantCalls == 1 {
+		defer store.afterGrant()
+	}
+	return store.granted[subject], nil
+}
+
+func (store *fakeStore) ActiveGraphGeneration(context.Context, int64) (*api.GraphActiveGeneration, error) {
+	return store.active, store.activeErr
+}
+
+func (store *fakeStore) ReplaceGraphV2(_ context.Context, repositoryID int64, publication postgres.GraphPublication, artifact *graphv2.Artifact) (postgres.GraphReplacement, error) {
+	if store.replaceV2Err != nil {
+		return postgres.GraphReplacement{}, store.replaceV2Err
+	}
+	store.replacedRepositoryID, store.publication, store.replacedV2 = repositoryID, publication, artifact
+	if store.replacementV2.Applied {
+		return store.replacementV2, nil
+	}
+	return postgres.GraphReplacement{Upload: postgres.GraphUpload{ID: 9}, Applied: true, ReplacedID: publication.ExpectedActiveID}, nil
 }
 
 func (store *fakeStore) AuthorizedRepository(_ context.Context, _ int64, _ []int64, _ int64) (repository.Repository, error) {
@@ -182,7 +219,7 @@ func readyRepository(githubID int64, sha string) repository.Repository {
 }
 
 func adminPrincipal(repositoryID int64) authn.Principal {
-	return authn.Principal{Administrator: true, InstallationID: 10, RepositoryIDs: []int64{repositoryID}}
+	return authn.Principal{Subject: "1", Method: "api_token", Administrator: true, InstallationID: 10, RepositoryIDs: []int64{repositoryID}}
 }
 
 func testArtifactLimits() graphartifact.Limits { return graphartifact.Limits{MaxNodes: 2, MaxEdges: 1} }

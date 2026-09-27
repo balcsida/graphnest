@@ -5,11 +5,33 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+### Added
+
+- Repository-scoped graph publication (CodeGraph parity S1.08).
+  `POST /v1/graph/uploads` now accepts v2 artifacts
+  (`application/vnd.graphnest.graph.v2+protobuf`). Administrators can publish
+  them, and so can users whom an administrator has granted publication through
+  `PUT /v1/graph/publication-grants`. Read access alone never publishes.
+  - Each upload names the generation it replaces (`expected_generation`).
+    Replacing another producer needs `replace_producer=true`.
+  - An identical retry is deduplicated instead of rejected.
+  - The token, grant and indexed commit are checked again after the upload is
+    parsed.
+  - Graph status gains a `publication` preflight block, and capabilities list
+    upload versions `[1, 2]`.
+  - v1 uploads remain administrator-only and unchanged.
+
 ### Fixed
 
 - The search sidebar's repository and language filters overflowed past the
   sidebar border because a long example query widened the whole column. The
   filters now fit the sidebar and long examples are truncated.
+
+### Upgrade guidance
+
+- Migration 037 adds the empty `graph_publication_grants` table. It runs
+  automatically at startup, cascades from `repositories`, and touches nothing
+  else. No configuration changes are required.
 
 ## [0.6.1] - 2026-09-27
 

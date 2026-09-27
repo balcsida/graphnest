@@ -1,7 +1,9 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"strconv"
 	"strings"
@@ -9,6 +11,7 @@ import (
 
 	"github.com/balcsida/graphnest/internal/graphartifact"
 	graphv2 "github.com/balcsida/graphnest/internal/graphartifact/v2"
+	"github.com/balcsida/graphnest/pkg/api"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/proto"
 )
@@ -20,7 +23,7 @@ var (
 
 // GraphPublication is trusted publication context, separate from producer facts.
 // Zero ExpectedActiveID means no active generation, not an unconditional write.
-// These storage APIs are deliberately absent from production upload interfaces.
+// Callers authorize the publisher first; see graphingest.Service.Publish.
 type GraphPublication struct {
 	Publisher           string
 	Capabilities        []string
@@ -69,13 +72,24 @@ func (s *Store) ReplaceGraphV2(ctx context.Context, repositoryID int64, publicat
 		return GraphReplacement{}, graphartifact.ErrInvalidArtifact
 	}
 	var currentID int64
-	var producer []byte
+	var currentSchema, currentNodes, currentEdges int
+	var producer, currentHash []byte
 	var source GraphSource
-	err = tx.QueryRow(ctx, `select id,case when schema_version=2 then producer_name else convert_to(analyzer_name,'UTF8') end,source from graph_uploads where repository_id=$1 and active`, repositoryID).Scan(&currentID, &producer, &source)
+	err = tx.QueryRow(ctx, `select id,case when schema_version=2 then producer_name else convert_to(analyzer_name,'UTF8') end,source,schema_version,content_hash,node_count,edge_count from graph_uploads where repository_id=$1 and active`, repositoryID).Scan(&currentID, &producer, &source, &currentSchema, &currentHash, &currentNodes, &currentEdges)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return GraphReplacement{}, err
 	}
-	if currentID != publication.ExpectedActiveID || artifact.Commit != indexedSHA {
+	if artifact.Commit != indexedSHA {
+		return GraphReplacement{}, ErrGraphPrecondition
+	}
+	// A retry of the active generation's exact content succeeds whatever it
+	// expected. The verified semantic hash covers repository, commit and
+	// producer; v1 hashes are unverified, so only v2 generations match.
+	if currentID != 0 && currentSchema == 2 && bytes.Equal(currentHash, artifact.ContentHash) {
+		upload := GraphUpload{ID: currentID, RepositoryID: repositoryID, Commit: artifact.Commit, SchemaVersion: 2, Source: GraphSourceExternal, NodeCount: currentNodes, EdgeCount: currentEdges}
+		return GraphReplacement{Upload: upload, Applied: true, Deduplicated: true}, nil
+	}
+	if currentID != publication.ExpectedActiveID {
 		return GraphReplacement{}, ErrGraphPrecondition
 	}
 	if currentID != 0 && (source != GraphSourceExternal || string(producer) != artifact.Producer.Name) && !publication.AllowProviderChange {
@@ -142,7 +156,46 @@ func (s *Store) ReplaceGraphV2(ctx context.Context, repositoryID int64, publicat
 	if err = tx.Commit(ctx); err != nil {
 		return GraphReplacement{}, err
 	}
-	return GraphReplacement{Upload: upload, Applied: true}, nil
+	return GraphReplacement{Upload: upload, Applied: true, ReplacedID: currentID}, nil
+}
+
+// ActiveGraphGeneration describes the repository's active generation of any
+// schema: the value a publisher names as its expected generation. It returns
+// nil when no generation is active.
+func (s *Store) ActiveGraphGeneration(ctx context.Context, repositoryID int64) (*api.GraphActiveGeneration, error) {
+	var active api.GraphActiveGeneration
+	var source string
+	var producer, version, hash []byte
+	err := s.pool.QueryRow(ctx, `select id,commit,schema_version,source,
+ case when schema_version=2 then producer_name else convert_to(analyzer_name,'UTF8') end,
+ case when schema_version=2 then producer_version else convert_to(analyzer_version,'UTF8') end,
+ content_hash from graph_uploads where repository_id=$1 and active`, repositoryID).Scan(&active.ID, &active.Commit, &active.SchemaVersion, &source, &producer, &version, &hash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	active.Source, active.Producer, active.ProducerVersion, active.ContentHash = api.GraphSource(source), string(producer), string(version), hex.EncodeToString(hash)
+	return &active, nil
+}
+
+// GraphPublicationAllowed reports whether a non-administrator subject holds a
+// graph publication grant for the repository.
+func (s *Store) GraphPublicationAllowed(ctx context.Context, repositoryID int64, subject string) (bool, error) {
+	var allowed bool
+	err := s.pool.QueryRow(ctx, `select exists(select 1 from graph_publication_grants where repository_id=$1 and subject=$2)`, repositoryID, subject).Scan(&allowed)
+	return allowed, err
+}
+
+// SetGraphPublicationGrant adds or removes a repository-scoped publication grant.
+func (s *Store) SetGraphPublicationGrant(ctx context.Context, repositoryID int64, subject, grantedBy string, allow bool) error {
+	if !allow {
+		_, err := s.pool.Exec(ctx, `delete from graph_publication_grants where repository_id=$1 and subject=$2`, repositoryID, subject)
+		return err
+	}
+	_, err := s.pool.Exec(ctx, `insert into graph_publication_grants (repository_id, subject, granted_by) values ($1, $2, $3) on conflict do nothing`, repositoryID, subject, grantedBy)
+	return err
 }
 
 func validGraphPublisher(value string) bool {

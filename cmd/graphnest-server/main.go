@@ -439,7 +439,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	searchService := search.NewService(backend, authz.NewPostgres(store), searchLimits(settings))
 	repositoryService := &repository.Service{Store: store, GitHub: githubClient, SCIP: store}
 	scipService := &scipgraph.Service{Store: store, GitHub: githubClient, MaxResults: settings.Limits.MaxResults}
-	graphService := &graphingest.Service{Store: store}
+	graphService := &graphingest.Service{Store: store, MaxUploadBytes: settings.Limits.GraphMaxUploadBytes}
 	graphQueries := &graphservice.Service{Store: store, Backend: &graphquery.Service{Store: store, Limits: backendGraphQueryLimits(settings.Graph)}, Files: repositoryService, Limits: graphQueryLimits(settings.Graph), Observe: metrics.ObserveGraphQuery}
 	processor := webhook.NewGitHubProcessor(store, reconcileRequests, metrics)
 	adminService := &admin.Service{
@@ -660,7 +660,15 @@ func newAPIHandlerWithMCP(settings config.Config, metrics *observability.Metrics
 		httpapi.RegisterSCIP(mux, authenticator, scipGraph, settings.Limits.MaxRequestBytes, settings.Limits.SCIPMaxUploadBytes, settings.Limits.MaxResponseBytes)
 	}
 	if graph != nil {
-		httpapi.RegisterGraphIngestion(mux, authenticator.Bearer, graph, settings.Limits.GraphMaxUploadBytes, settings.Limits.MaxResponseBytes)
+		var grants *httpapi.UploadGrants
+		if store, ok := graph.Store.(*postgres.Store); ok {
+			authorizer := authz.NewPostgres(store)
+			grants = &httpapi.UploadGrants{Set: store.SetGraphPublicationGrant, Resolve: func(ctx context.Context, principal authn.Principal, githubID int64) (int64, error) {
+				repo, err := authorizer.AuthorizedRepository(ctx, principal, githubID)
+				return repo.ID, err
+			}}
+		}
+		httpapi.RegisterGraphIngestion(mux, authenticator.Bearer, graph, grants, settings.Limits.GraphMaxUploadBytes, settings.Limits.MaxResponseBytes)
 	}
 	if graphQueries != nil {
 		httpapi.RegisterGraphQueries(mux, authenticator.Bearer, graphQueries, settings.Graph.MaxRequestBytes, settings.Graph.MaxResponseBytes)
