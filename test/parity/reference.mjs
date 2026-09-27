@@ -63,6 +63,32 @@ try {
   assert.deepEqual(graph.getNodesByName('MissingFixtureSymbol987'), []);
   assert.ok(!answers['mcp-explore-source'].isError);
   assert.ok(answers['mcp-explore-source'].content.some(item => item.text?.includes("return 'skipped'")));
+  // Symbol-addressed MCP tools: name resolution, per-definition grouping, file narrowing and bounds.
+  const mcp = {
+    'mcp-callers-grouped': ['codegraph_callers', { symbol: 'normalize' }],
+    'mcp-callers-file': ['codegraph_callers', { symbol: 'normalize', file: 'core.ts' }],
+    'mcp-callers-file-miss': ['codegraph_callers', { symbol: 'normalize', file: 'missing.ts' }],
+    'mcp-callers-limit': ['codegraph_callers', { symbol: 'normalize', file: 'core.ts', limit: 1 }],
+    'mcp-callers-qualified': ['codegraph_callers', { symbol: 'Service.greet' }],
+    'mcp-callers-missing': ['codegraph_callers', { symbol: 'MissingFixtureSymbol987' }],
+    'mcp-callees-single': ['codegraph_callees', { symbol: 'run' }],
+    'mcp-callees-grouped': ['codegraph_callees', { symbol: 'greet' }],
+    'mcp-impact-file': ['codegraph_impact', { symbol: 'normalize', file: 'core.ts' }],
+    'mcp-impact-depth': ['codegraph_impact', { symbol: 'normalize', file: 'core.ts', depth: 1 }],
+    'mcp-impact-grouped': ['codegraph_impact', { symbol: 'identity' }],
+  };
+  for (const [id, [name, args]] of Object.entries(mcp)) {
+    answers[id] = await tool.execute(name, { ...args, projectPath: root });
+    assert.ok(!answers[id].isError, id);
+  }
+  const text = id => answers[id].content.map(item => item.text).join('\n');
+  assert.match(text('mcp-callers-grouped'), /3 distinct definitions/);
+  assert.match(text('mcp-callers-file'), /greet \(method\) - core\.ts:8/);
+  assert.match(text('mcp-callers-file-miss'), /no definition of "normalize" matches file "missing\.ts"/);
+  assert.match(text('mcp-callers-qualified'), /Callers of Service\.greet/);
+  assert.match(text('mcp-callers-missing'), /not found in the codebase/);
+  assert.match(text('mcp-callees-single'), /normalize \(function\) - core\.ts:3/);
+  assert.match(text('mcp-impact-grouped'), /2 distinct definitions/);
   answers['ui-flow-branch'] = await buildFlow(graph, root, params({ from: 'processGreeting', to: 'run' }));
   answers['ui-flow-missing'] = await buildFlow(graph, root, params({ from: 'processGreeting', to: 'MissingFixtureSymbol987' }));
   answers['ui-flow-invalid'] = await refusal(() => buildFlow(graph, root, params({ from: 'run', to: 'run' })), 'bad-request');

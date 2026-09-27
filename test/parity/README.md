@@ -56,7 +56,7 @@ is exercised by real `searchNodes`/`findRelevantContext` answers. Hashes cover t
 database, source configuration, sources, schema and expected answers. SQLite
 physical layout is not the determinism contract; complete logical rows are.
 
-`expected.json` records ordered SQL facts. `library-expected.json` records 41
+`expected.json` records ordered SQL facts. `library-expected.json` records 52
 actual producer query/workflow answers. The manifest lists their exact task IDs.
 The first 13 cover library search, callers/callees, call graph, hierarchy, usage,
 impact, path, dependencies, context and source reads. The additional answers run
@@ -65,6 +65,7 @@ trail services directly; they do not simulate those implementations.
 
 | Workflow | Oracle task IDs and independently checked evidence |
 | --- | --- |
+| Symbol tools | `mcp-callers-*`, `mcp-callees-*` and `mcp-impact-*` run the upstream `codegraph_callers`, `codegraph_callees` and `codegraph_impact` handlers. They cover grouping of same-named definitions (`normalize`, `greet`, `identity`), `file` narrowing and its no-match fallback, qualified names (`Service.greet`), limits, depth, an absent symbol, and `via instantiation`/`via import` labels. |
 | Explore | `mcp-explore-source` includes verbatim `processGreeting` source. `mcp-explore-unmatched-fallback` records the pinned engine's unrelated fallback sources for an absent symbol; it is not a correct-match or no-results claim. |
 | Conditional flow and steps | `ui-flow-branch` records the `enabled` guard at consumer.ts:4; `ui-flow-missing` and `ui-flow-invalid` preserve absence/refusal. `ui-steps-branch` records the program fork; `ui-steps-screen` records conditional screen traversal. |
 | Navigation and maps | `ui-screens-navigation` records `/` to `/details` with the `enabled` guard. `ui-map-modules` records concrete cross-module imports. |
