@@ -33,12 +33,15 @@ type Store interface {
 	ReplaceGraph(context.Context, int64, postgres.GraphSource, graphartifact.Artifact) (postgres.GraphReplacement, error)
 	GraphStatus(context.Context, int64) (api.GraphStatus, error)
 	ReplaceGraphV2(context.Context, int64, postgres.GraphPublication, *graphv2.Artifact) (postgres.GraphReplacement, error)
+	ActiveGraphGeneration(context.Context, int64) (*api.GraphActiveGeneration, error)
 	GraphPublicationAllowed(context.Context, int64, string) (bool, error)
 }
 
 type Service struct {
 	Store  Store
 	Limits graphartifact.Limits
+	// MaxUploadBytes is reported to publishers; the transport enforces it.
+	MaxUploadBytes int64
 }
 
 // Publication is a v2 publisher's replacement intent from its preflight.
@@ -145,6 +148,15 @@ func (service *Service) Status(ctx context.Context, principal authn.Principal, r
 	if err != nil {
 		return api.GraphStatus{}, unavailable(err)
 	}
+	active, err := service.Store.ActiveGraphGeneration(ctx, repository.ID)
+	if err != nil {
+		return api.GraphStatus{}, unavailable(err)
+	}
+	permitted, err := service.mayPublish(ctx, principal, repository)
+	if err != nil {
+		return api.GraphStatus{}, err
+	}
+	status.Publication = &api.GraphPublication{UploadArtifactVersions: []int{1, 2}, MaxUploadBytes: service.MaxUploadBytes, Permitted: permitted, ActiveGeneration: active}
 	return status, nil
 }
 

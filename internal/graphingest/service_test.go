@@ -132,7 +132,11 @@ func TestStatusPreservesGraphStates(t *testing.T) {
 		t.Run(string(status.State), func(t *testing.T) {
 			store := &fakeStore{repository: readyRepository(101, testCommit), status: status}
 			got, err := (&Service{Store: store}).Status(t.Context(), authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}}, 101)
-			if err != nil || got != status {
+			if err != nil || got.Publication == nil {
+				t.Fatalf("status=%#v err=%v", got, err)
+			}
+			got.Publication = nil
+			if got != status {
 				t.Fatalf("status=%#v err=%v", got, err)
 			}
 		})

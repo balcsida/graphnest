@@ -232,10 +232,21 @@ type GraphStatus struct {
 	JobState     GraphJobState       `json:"job_state,omitempty"`
 	ErrorCode    string              `json:"error_code,omitempty"`
 	SCIPFallback *SCIPFallbackStatus `json:"scip_fallback,omitempty"`
+	Publication  *GraphPublication   `json:"publication,omitempty"`
 }
 
 type SCIPFallbackStatus struct {
 	Commit string `json:"commit"`
+}
+
+// GraphPublication is the preflight a publisher reads before uploading: the
+// accepted artifact versions and size, whether this caller may publish, and
+// the active generation to name as expected_generation (absent means 0).
+type GraphPublication struct {
+	UploadArtifactVersions []int                  `json:"upload_artifact_versions"`
+	MaxUploadBytes         int64                  `json:"max_upload_bytes"`
+	Permitted              bool                   `json:"permitted"`
+	ActiveGeneration       *GraphActiveGeneration `json:"active_generation,omitempty"`
 }
 
 type GraphActiveGeneration struct {
