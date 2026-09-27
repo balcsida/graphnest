@@ -61,13 +61,16 @@ func TestGraphMCPMatchesService(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, description := range map[string]string{
-		"context":            "Inspect a symbol's incoming and outgoing code relationships.",
-		"impact":             "Analyze the upstream or downstream impact of a code symbol.",
-		"trace":              "Trace code relationships between two symbols.",
-		"graph_discover":     "Find bounded entry points in an indexed graph.",
-		"explore":            "Explore bounded graph facts and exact indexed source.",
-		"graph_files":        "List bounded files from an indexed graph generation.",
-		"graph_capabilities": "Report graph query, upload, and selected generation capabilities.",
+		"context":             "Inspect a symbol's incoming and outgoing code relationships.",
+		"impact":              "Analyze the upstream or downstream impact of a code symbol.",
+		"trace":               "Trace code relationships between two symbols.",
+		"graph_discover":      "Find bounded entry points in an indexed graph.",
+		"explore":             "Explore bounded graph facts and exact indexed source.",
+		"graph_files":         "List bounded files from an indexed graph generation.",
+		"graph_capabilities":  "Report graph query, upload, and selected generation capabilities.",
+		"graph_callers":       "List what calls, imports, instantiates, navigates to, or references each definition of a symbol name.",
+		"graph_callees":       "List what each definition of a symbol name calls, imports, instantiates, navigates to, or references.",
+		"graph_impact_radius": "List the symbols affected by changing each definition of a symbol name.",
 	} {
 		schema := repositoryToolSchema(t, tools.Tools, name)
 		if schema["additionalProperties"] != false {
