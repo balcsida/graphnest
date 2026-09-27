@@ -247,3 +247,14 @@ type GraphActiveGeneration struct {
 	ProducerVersion string      `json:"producer_version"`
 	ContentHash     string      `json:"content_hash"`
 }
+
+// GraphPublicationResult reports a v2 publication. Deduplicated means the
+// active generation already held this exact content, so nothing changed.
+type GraphPublicationResult struct {
+	RepositoryID       int64  `json:"repository_id"`
+	Commit             string `json:"commit"`
+	Generation         int64  `json:"generation"`
+	ReplacedGeneration int64  `json:"replaced_generation,omitempty"`
+	ContentHash        string `json:"content_hash"`
+	Deduplicated       bool   `json:"deduplicated"`
+}
