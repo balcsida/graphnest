@@ -748,7 +748,7 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 | S1.06a3 entity impact | `feat/codegraph/s1-06a3-entity-impact` | Implemented, independently approved and signed (`931e7d9`); depends on PR #81 | Draft [PR #82](https://github.com/balcsida/graphnest/pull/82); native stack #66, position 17; CI and CodeQL passed |
 | S1.06b1 type relations and hierarchy | `feat/codegraph/type-hierarchy` | Implemented; focused unit, service and PostgreSQL checks pass; based on `main` | [PR #119](https://github.com/balcsida/graphnest/pull/119) |
 | S1.08 publication policy | `feat/codegraph/s1-08-publish-policy` | Implemented; unit race, PostgreSQL integration race (apart from clock-skewed supply-chain claims that fail on `main` too), vet, staticcheck and OpenAPI checks pass; based on `main` | [PR #123](https://github.com/balcsida/graphnest/pull/123) |
-| S1.07 symbol tools | `feat/codegraph/s1-07-symbol-tools` | Implemented; oracle, unit race, PostgreSQL integration race, vet, staticcheck, OpenAPI and parity-reference checks pass; based on `main` | PR pending |
+| S1.07 symbol tools | `feat/codegraph/s1-07-symbol-tools` | Implemented; oracle, unit race, PostgreSQL integration race, vet, staticcheck, OpenAPI and parity-reference checks pass; based on `main` | [PR #124](https://github.com/balcsida/graphnest/pull/124) |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
