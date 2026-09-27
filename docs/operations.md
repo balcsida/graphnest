@@ -99,6 +99,54 @@ request-byte, and response-byte caps. PostgreSQL queries are parameterized,
 repository/upload/commit scoped, stable-ordered, and batch each relation
 frontier.
 
+### Publishing v2 graph generations
+
+`POST /v1/graph/uploads` with `Content-Type:
+application/vnd.graphnest.graph.v2+protobuf` publishes a v2 (CodeGraph)
+generation for the repository's current indexed commit. Administrators need no
+grant. Anyone else needs read access to the repository within their API token
+ceiling *and* a publication grant, which an administrator adds or removes:
+
+```sh
+curl -X PUT "$GRAPHNEST/v1/graph/publication-grants" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"repository_id":101,"subject":"42","allow":true}'
+```
+
+`subject` is the GraphNest user ID the API token belongs to. REST publication
+accepts API tokens only; MCP OAuth access tokens are not valid here.
+
+A publisher first reads `GET /v1/graph/repositories/{id}/status`. Its
+`publication` block reports the accepted artifact versions, the upload limit,
+whether this caller may publish, and the active generation. The upload then
+names that generation:
+
+```sh
+curl -X POST "$GRAPHNEST/v1/graph/uploads?repository_id=101&commit=$SHA&expected_generation=7" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/vnd.graphnest.graph.v2+protobuf' --data-binary @graph.pb
+```
+
+Use `expected_generation=0` when no generation is active. Replacing a
+generation from another producer, such as the managed scanner, also needs
+`replace_producer=true`. The token, grant and indexed commit are checked
+before the body is read and again after parsing. The expected generation and
+commit are compared under the repository lock.
+
+| Response | Meaning | Publisher action |
+| --- | --- | --- |
+| `200`, `deduplicated: false` | New generation active; `replaced_generation` names the retired one | None |
+| `200`, `deduplicated: true` | The active generation already holds this exact content (a retry) | None |
+| `409 not_indexed` | `commit` is not the indexed commit | Re-index at the new commit |
+| `409 generation_conflict` | Another publication or a new indexed commit landed since preflight | Read status again and decide |
+| `409 producer_conflict` | Active generation is from another producer | Retry with `replace_producer=true` if intended |
+| `403 forbidden` | No grant, or no publisher identity | Ask an administrator for a grant |
+
+Each generation records its publisher (`api_token:<user id>`), producer,
+commit, verified content hash, and activation/retirement times in
+`graph_uploads`, which is the publication audit trail. Revoking a grant does
+not retire generations already published.
+
 ## Dependencies & Licenses inventory
 
 The supply-chain inventory ([ADR-0017](adr/0017-supply-chain-inventory.md))
