@@ -1987,6 +1987,70 @@
       "score": 3.570200490862841
     }
   ],
+  "mcp-callees-grouped": {
+    "content": [
+      {
+        "text": "**Callees of greet \u2014 4 distinct definitions (narrow with `file`)**\n\n**Parent::greet** (method) \u2014 model.swift:3\n- greet (method) - model.swift:4\n\n**Child::greet** (method) \u2014 model.swift:4\n- (no callees)\n\n**Base::greet** (method) \u2014 core.ts:2\n- greet (method) - core.ts:8\n\n**Service::greet** (method) \u2014 core.ts:8\n- normalize (function) - core.ts:3",
+        "type": "text"
+      }
+    ]
+  },
+  "mcp-callees-single": {
+    "content": [
+      {
+        "text": "**Callees of run (3 found)**\n\n- greet (method) - core.ts:8\n- normalize (function) - core.ts:3\n- Service (class) - core.ts:6 \u2014 via instantiation",
+        "type": "text"
+      }
+    ]
+  },
+  "mcp-callers-file": {
+    "content": [
+      {
+        "text": "**Callers of normalize (6 found)**\n\n- Widget.vue (file) - Widget.vue:1\n- greet (method) - core.ts:8\n- run (function) - main.ts:2\n- unicodeCaller (function) - unicode.ts:2\n- main.ts (file) - main.ts:1 \u2014 via import\n- unicode.ts (file) - unicode.ts:1 \u2014 via import",
+        "type": "text"
+      }
+    ]
+  },
+  "mcp-callers-file-miss": {
+    "content": [
+      {
+        "text": "**Callers of normalize \u2014 3 distinct definitions (narrow with `file`)**\n\n**Fixture::Model::normalize** (method) \u2014 model.rb:3\n- (no callers)\n\n**normalize** (function) \u2014 core.ts:3\n- Widget.vue (file) - Widget.vue:1\n- greet (method) - core.ts:8\n- run (function) - main.ts:2\n- unicodeCaller (function) - unicode.ts:2\n- main.ts (file) - main.ts:1 \u2014 via import\n- unicode.ts (file) - unicode.ts:1 \u2014 via import\n\n**fixture.models::Model::normalize** (method) \u2014 Model.java:3\n- (no callers)\n\n> **Note:** no definition of \"normalize\" matches file \"missing.ts\" \u2014 showing all definitions instead.",
+        "type": "text"
+      }
+    ]
+  },
+  "mcp-callers-grouped": {
+    "content": [
+      {
+        "text": "**Callers of normalize \u2014 3 distinct definitions (narrow with `file`)**\n\n**Fixture::Model::normalize** (method) \u2014 model.rb:3\n- (no callers)\n\n**normalize** (function) \u2014 core.ts:3\n- Widget.vue (file) - Widget.vue:1\n- greet (method) - core.ts:8\n- run (function) - main.ts:2\n- unicodeCaller (function) - unicode.ts:2\n- main.ts (file) - main.ts:1 \u2014 via import\n- unicode.ts (file) - unicode.ts:1 \u2014 via import\n\n**fixture.models::Model::normalize** (method) \u2014 Model.java:3\n- (no callers)",
+        "type": "text"
+      }
+    ]
+  },
+  "mcp-callers-limit": {
+    "content": [
+      {
+        "text": "**Callers of normalize (1 found)**\n\n- Widget.vue (file) - Widget.vue:1",
+        "type": "text"
+      }
+    ]
+  },
+  "mcp-callers-missing": {
+    "content": [
+      {
+        "text": "Symbol \"MissingFixtureSymbol987\" not found in the codebase",
+        "type": "text"
+      }
+    ]
+  },
+  "mcp-callers-qualified": {
+    "content": [
+      {
+        "text": "**Callers of Service.greet (2 found)**\n\n- run (function) - main.ts:2\n- greet (method) - core.ts:2",
+        "type": "text"
+      }
+    ]
+  },
   "mcp-explore-source": {
     "content": [
       {
@@ -1999,6 +2063,30 @@
     "content": [
       {
         "text": "**Exploration: MissingFixtureSymbol987**\n\nFound 6 symbols across 2 files.\n\n**Source Code**\n\n> The code below is the **verbatim, current on-disk source** of these files \u2014 re-read from disk on this call and line-numbered, byte-for-byte identical to what the Read tool returns. It is NOT a summary, outline, or stale cache. Treat each block as a Read you have already performed: do not Read a file shown here.\n\n**`model.rb`** \u2014 Fixture(module), normalize(method), Model(class)\n\n```ruby\n1\tmodule Fixture\n2\t  class Model\n3\t    def normalize(name)\n4\t      name.strip\n5\t    end\n6\t  end\n7\tend\n```\n\n**`Model.java`** \u2014 fixture.models(namespace), normalize(method), Model(class)\n\n```java\n1\tpackage fixture.models;\n2\tpublic class Model {\n3\t    public String normalize(String name) { return name.trim(); }\n4\t}\n```\n",
+        "type": "text"
+      }
+    ]
+  },
+  "mcp-impact-depth": {
+    "content": [
+      {
+        "text": "**Impact: \"normalize\" affects 7 symbols**\n\n**core.ts:**\nnormalize:3, greet:8\n\n**Widget.vue:**\nWidget.vue:1\n\n**main.ts:**\nrun:2, main.ts:1\n\n**unicode.ts:**\nunicodeCaller:2, unicode.ts:1\n",
+        "type": "text"
+      }
+    ]
+  },
+  "mcp-impact-file": {
+    "content": [
+      {
+        "text": "**Impact: \"normalize\" affects 8 symbols**\n\n**core.ts:**\nnormalize:3, greet:8, greet:2\n\n**Widget.vue:**\nWidget.vue:1\n\n**main.ts:**\nrun:2, main.ts:1\n\n**unicode.ts:**\nunicodeCaller:2, unicode.ts:1\n",
+        "type": "text"
+      }
+    ]
+  },
+  "mcp-impact-grouped": {
+    "content": [
+      {
+        "text": "**Impact of identity \u2014 2 distinct definitions (each with its own blast radius; narrow with `file`)**\n\n**Impact: \"identity (core.ts:15)\" affects 1 symbols**\n\n**core.ts:**\nidentity:15\n\n\n**Impact: \"identity (model.rs:5)\" affects 1 symbols**\n\n**model.rs:**\nidentity:5\n",
         "type": "text"
       }
     ]
