@@ -16,6 +16,7 @@ import (
 	"github.com/balcsida/graphnest/internal/authn"
 	"github.com/balcsida/graphnest/internal/graphartifact"
 	graphv1 "github.com/balcsida/graphnest/internal/graphartifact/v1"
+	graphv2 "github.com/balcsida/graphnest/internal/graphartifact/v2"
 	"github.com/balcsida/graphnest/internal/graphingest"
 	"github.com/balcsida/graphnest/internal/postgres"
 	"github.com/balcsida/graphnest/internal/repository"
@@ -213,6 +214,10 @@ func (reader *countingReader) Read(data []byte) (int, error) {
 
 type graphStoreStub struct {
 	status                        api.GraphStatus
+	granted                       map[string]bool
+	active                        *api.GraphActiveGeneration
+	replaceV2Err                  error
+	publication                   postgres.GraphPublication
 	authorizedCalls               atomic.Int64
 	authorizedBeforeDeadlineClear atomic.Bool
 	writeDeadlineSetDuringReplace atomic.Bool
@@ -237,6 +242,22 @@ func (store *graphStoreStub) ReplaceGraph(context.Context, int64, postgres.Graph
 
 func (store *graphStoreStub) GraphStatus(context.Context, int64) (api.GraphStatus, error) {
 	return store.status, nil
+}
+
+func (store *graphStoreStub) GraphPublicationAllowed(_ context.Context, _ int64, subject string) (bool, error) {
+	return store.granted[subject], nil
+}
+
+func (store *graphStoreStub) ActiveGraphGeneration(context.Context, int64) (*api.GraphActiveGeneration, error) {
+	return store.active, nil
+}
+
+func (store *graphStoreStub) ReplaceGraphV2(_ context.Context, _ int64, publication postgres.GraphPublication, _ *graphv2.Artifact) (postgres.GraphReplacement, error) {
+	if store.replaceV2Err != nil {
+		return postgres.GraphReplacement{}, store.replaceV2Err
+	}
+	store.publication = publication
+	return postgres.GraphReplacement{Upload: postgres.GraphUpload{ID: 9}, Applied: true, ReplacedID: publication.ExpectedActiveID}, nil
 }
 
 type graphDeadlineRecorder struct {
