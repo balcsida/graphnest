@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -165,11 +166,23 @@ func TestGraphErrorsAreSafe(t *testing.T) {
 
 func graphHandler(store *graphStoreStub, maxUpload, maxResponse int64) http.Handler {
 	mux := http.NewServeMux()
+	grants := &UploadGrants{
+		Set: func(_ context.Context, repositoryID int64, subject, grantedBy string, allow bool) error {
+			store.grants = append(store.grants, fmt.Sprintf("%d %s %s %t", repositoryID, subject, grantedBy, allow))
+			return nil
+		},
+		Resolve: func(_ context.Context, _ authn.Principal, githubID int64) (int64, error) {
+			if githubID != 101 {
+				return 0, pgx.ErrNoRows
+			}
+			return 1, nil
+		},
+	}
 	RegisterGraphIngestion(mux, authn.NewStatic(map[string]authn.Principal{
 		"user":    {InstallationID: 10, RepositoryIDs: []int64{101}},
 		"grantee": {Subject: "42", Method: "api_token", InstallationID: 10, RepositoryIDs: []int64{101}},
 		"admin":   {Subject: "1", Method: "api_token", InstallationID: 10, RepositoryIDs: []int64{101}, Administrator: true},
-	}), &graphingest.Service{Store: store, Limits: graphartifact.Limits{MaxNodes: 2, MaxEdges: 1}}, maxUpload, maxResponse)
+	}), &graphingest.Service{Store: store, Limits: graphartifact.Limits{MaxNodes: 2, MaxEdges: 1}}, grants, maxUpload, maxResponse)
 	return mux
 }
 
@@ -236,6 +249,31 @@ func TestGraphV2UploadRejectsUnpermittedBodyBeforeRead(t *testing.T) {
 	}
 }
 
+func TestGraphPublicationGrantRoute(t *testing.T) {
+	for _, test := range []struct {
+		name, method, token, body string
+		want                      int
+		grants                    []string
+	}{
+		{"administrator grants", http.MethodPut, "admin", `{"repository_id":101,"subject":"42","allow":true}`, http.StatusNoContent, []string{"1 42 1 true"}},
+		{"administrator revokes", http.MethodPut, "admin", `{"repository_id":101,"subject":"42","allow":false}`, http.StatusNoContent, []string{"1 42 1 false"}},
+		{"grantee cannot grant", http.MethodPut, "grantee", `{"repository_id":101,"subject":"43","allow":true}`, http.StatusForbidden, nil},
+		{"unknown repository", http.MethodPut, "admin", `{"repository_id":102,"subject":"42","allow":true}`, http.StatusNotFound, nil},
+		{"empty subject", http.MethodPut, "admin", `{"repository_id":101,"subject":"","allow":true}`, http.StatusBadRequest, nil},
+		{"oversized subject", http.MethodPut, "admin", `{"repository_id":101,"subject":"` + strings.Repeat("x", 257) + `","allow":true}`, http.StatusBadRequest, nil},
+		{"unknown field", http.MethodPut, "admin", `{"repository_id":101,"subject":"42","allow":true,"scope":"all"}`, http.StatusBadRequest, nil},
+		{"exact method", http.MethodPost, "admin", `{"repository_id":101,"subject":"42","allow":true}`, http.StatusMethodNotAllowed, nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := &graphStoreStub{}
+			response := graphRequest(graphHandler(store, 1024, 1024), test.method, "/v1/graph/publication-grants", []byte(test.body), test.token, "application/json")
+			if response.Code != test.want || !reflect.DeepEqual(store.grants, test.grants) {
+				t.Fatalf("status=%d grants=%v body=%q", response.Code, store.grants, response.Body.String())
+			}
+		})
+	}
+}
+
 func graphV2ArtifactBytes(t *testing.T) []byte {
 	t.Helper()
 	data, err := graphartifact.MarshalV2(&graphv2.Artifact{SchemaVersion: 2, Repository: "101", Commit: graphTestSHA, Producer: &graphv2.Producer{Name: "codegraph", Version: "0.7.0", Configuration: "portable"},
@@ -296,6 +334,7 @@ type graphStoreStub struct {
 	active                        *api.GraphActiveGeneration
 	replaceV2Err                  error
 	publication                   postgres.GraphPublication
+	grants                        []string
 	authorizedCalls               atomic.Int64
 	authorizedBeforeDeadlineClear atomic.Bool
 	writeDeadlineSetDuringReplace atomic.Bool
