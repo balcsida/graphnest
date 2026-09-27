@@ -180,6 +180,24 @@ func (s *Store) ActiveGraphGeneration(ctx context.Context, repositoryID int64) (
 	return &active, nil
 }
 
+// GraphPublicationAllowed reports whether a non-administrator subject holds a
+// graph publication grant for the repository.
+func (s *Store) GraphPublicationAllowed(ctx context.Context, repositoryID int64, subject string) (bool, error) {
+	var allowed bool
+	err := s.pool.QueryRow(ctx, `select exists(select 1 from graph_publication_grants where repository_id=$1 and subject=$2)`, repositoryID, subject).Scan(&allowed)
+	return allowed, err
+}
+
+// SetGraphPublicationGrant adds or removes a repository-scoped publication grant.
+func (s *Store) SetGraphPublicationGrant(ctx context.Context, repositoryID int64, subject, grantedBy string, allow bool) error {
+	if !allow {
+		_, err := s.pool.Exec(ctx, `delete from graph_publication_grants where repository_id=$1 and subject=$2`, repositoryID, subject)
+		return err
+	}
+	_, err := s.pool.Exec(ctx, `insert into graph_publication_grants (repository_id, subject, granted_by) values ($1, $2, $3) on conflict do nothing`, repositoryID, subject, grantedBy)
+	return err
+}
+
 func validGraphPublisher(value string) bool {
 	return len(value) > 0 && len(value) <= 256 && utf8.ValidString(value) && !strings.ContainsRune(value, 0) && strings.TrimSpace(value) == value
 }
