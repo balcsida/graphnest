@@ -154,8 +154,10 @@ type GraphUpload struct {
 }
 
 type GraphReplacement struct {
-	Upload  GraphUpload
-	Applied bool
+	Upload       GraphUpload
+	Applied      bool
+	Deduplicated bool
+	ReplacedID   int64
 }
 
 type GraphJob struct {

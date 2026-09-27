@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strconv"
@@ -20,7 +21,7 @@ var (
 
 // GraphPublication is trusted publication context, separate from producer facts.
 // Zero ExpectedActiveID means no active generation, not an unconditional write.
-// These storage APIs are deliberately absent from production upload interfaces.
+// Callers authorize the publisher first; see graphingest.Service.Publish.
 type GraphPublication struct {
 	Publisher           string
 	Capabilities        []string
@@ -69,13 +70,24 @@ func (s *Store) ReplaceGraphV2(ctx context.Context, repositoryID int64, publicat
 		return GraphReplacement{}, graphartifact.ErrInvalidArtifact
 	}
 	var currentID int64
-	var producer []byte
+	var currentSchema, currentNodes, currentEdges int
+	var producer, currentHash []byte
 	var source GraphSource
-	err = tx.QueryRow(ctx, `select id,case when schema_version=2 then producer_name else convert_to(analyzer_name,'UTF8') end,source from graph_uploads where repository_id=$1 and active`, repositoryID).Scan(&currentID, &producer, &source)
+	err = tx.QueryRow(ctx, `select id,case when schema_version=2 then producer_name else convert_to(analyzer_name,'UTF8') end,source,schema_version,content_hash,node_count,edge_count from graph_uploads where repository_id=$1 and active`, repositoryID).Scan(&currentID, &producer, &source, &currentSchema, &currentHash, &currentNodes, &currentEdges)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return GraphReplacement{}, err
 	}
-	if currentID != publication.ExpectedActiveID || artifact.Commit != indexedSHA {
+	if artifact.Commit != indexedSHA {
+		return GraphReplacement{}, ErrGraphPrecondition
+	}
+	// A retry of the active generation's exact content succeeds whatever it
+	// expected. The verified semantic hash covers repository, commit and
+	// producer; v1 hashes are unverified, so only v2 generations match.
+	if currentID != 0 && currentSchema == 2 && bytes.Equal(currentHash, artifact.ContentHash) {
+		upload := GraphUpload{ID: currentID, RepositoryID: repositoryID, Commit: artifact.Commit, SchemaVersion: 2, Source: GraphSourceExternal, NodeCount: currentNodes, EdgeCount: currentEdges}
+		return GraphReplacement{Upload: upload, Applied: true, Deduplicated: true}, nil
+	}
+	if currentID != publication.ExpectedActiveID {
 		return GraphReplacement{}, ErrGraphPrecondition
 	}
 	if currentID != 0 && (source != GraphSourceExternal || string(producer) != artifact.Producer.Name) && !publication.AllowProviderChange {
@@ -142,7 +154,7 @@ func (s *Store) ReplaceGraphV2(ctx context.Context, repositoryID int64, publicat
 	if err = tx.Commit(ctx); err != nil {
 		return GraphReplacement{}, err
 	}
-	return GraphReplacement{Upload: upload, Applied: true}, nil
+	return GraphReplacement{Upload: upload, Applied: true, ReplacedID: currentID}, nil
 }
 
 func validGraphPublisher(value string) bool {

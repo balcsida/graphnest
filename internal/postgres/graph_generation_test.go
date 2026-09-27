@@ -89,8 +89,8 @@ func TestGraphV2RoundTripAndPublicationPreconditions(t *testing.T) {
 	if err := s.pool.QueryRow(t.Context(), `select count(*) filter(where visibility is null),count(*) filter(where visibility=''::bytea) from graph_v2_nodes where upload_id=$1`, result.Upload.ID).Scan(&absentVisibility, &emptyVisibility); err != nil || absentVisibility != 1 || emptyVisibility != 1 {
 		t.Fatalf("visibility projection lost empty/absent: absent=%d empty=%d err=%v", absentVisibility, emptyVisibility, err)
 	}
-	if _, err := s.ReplaceGraphV2(t.Context(), id, options, artifact); !errors.Is(err, ErrGraphPrecondition) {
-		t.Fatalf("stale precondition=%v", err)
+	if retry, err := s.ReplaceGraphV2(t.Context(), id, options, artifact); err != nil || !retry.Deduplicated || retry.Upload.ID != result.Upload.ID {
+		t.Fatalf("identical retry with stale precondition=%#v err=%v", retry, err)
 	}
 	if _, err := s.LoadGraph(t.Context(), result.Upload.ID); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("v1 reader accepted v2: %v", err)
@@ -206,9 +206,13 @@ func TestGraphV2CopyFailurePreservesGeneration(t *testing.T) {
 func TestGraphV2ConcurrentPublishComparesGeneration(t *testing.T) {
 	s, id := readyGraphStore(t, testSHA('a'))
 	results := make(chan error, 2)
-	for range 2 {
+	for i := range 2 {
 		go func() {
-			_, err := s.ReplaceGraphV2(t.Context(), id, GraphPublication{Publisher: "user:42"}, storageV2Artifact())
+			// Distinct content: an identical concurrent retry deduplicates instead.
+			a := storageV2Artifact()
+			a.Diagnostics[0].Message = fmt.Sprint("partial ", i)
+			a.ContentHash = nil
+			_, err := s.ReplaceGraphV2(t.Context(), id, GraphPublication{Publisher: "user:42"}, a)
 			results <- err
 		}()
 	}
@@ -565,8 +569,11 @@ func TestGraphV2PreservesContractStringValues(t *testing.T) {
 			}
 			// Exact same producer bytes remain the same provider, including embedded NUL.
 			publication.ExpectedActiveID = result.Upload.ID
-			next, err := s.ReplaceGraphV2(t.Context(), id, publication, a)
-			if err != nil {
+			same := proto.Clone(a).(*graphv2.Artifact)
+			same.ContentHash = nil
+			same.Diagnostics[0].Message = "replacement"
+			next, err := s.ReplaceGraphV2(t.Context(), id, publication, same)
+			if err != nil || next.Upload.ID == result.Upload.ID {
 				t.Fatalf("same provider bytes were not recognized: %v", err)
 			}
 			if test == "nul_producer" {
