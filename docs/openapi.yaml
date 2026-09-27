@@ -558,6 +558,54 @@ paths:
         '500': {description: Response exceeded the configured byte limit}
         '503': {$ref: '#/components/responses/Unavailable'}
         '504': {$ref: '#/components/responses/Timeout'}
+  /v1/graph/callers:
+    post:
+      description: Everything that calls, imports, instantiates, navigates to, or references each definition of a symbol name, one entry per distinct definition (same path and qualified name). Each neighbor appears once with the first edge that reached it, in the producer's edge order.
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/GraphSymbolCallsRequest'}}}}
+      responses:
+        '200': {description: Definitions of the symbol with their bounded results; status not_found when no definition matches exactly, content: {application/json: {schema: {$ref: '#/components/schemas/GraphSymbolResponse'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/GraphConflict'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {$ref: '#/components/responses/Timeout'}
+  /v1/graph/callees:
+    post:
+      description: The outgoing counterpart of /v1/graph/callers.
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/GraphSymbolCallsRequest'}}}}
+      responses:
+        '200': {description: Definitions of the symbol with their bounded results; status not_found when no definition matches exactly, content: {application/json: {schema: {$ref: '#/components/schemas/GraphSymbolResponse'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/GraphConflict'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {$ref: '#/components/responses/Timeout'}
+  /v1/graph/impact-radius:
+    post:
+      description: Each distinct definition's merged impact radius. Unlike /v1/graph/impact it addresses v2 generations by symbol name.
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/GraphSymbolImpactRequest'}}}}
+      responses:
+        '200': {description: Definitions of the symbol with their bounded results; status not_found when no definition matches exactly, content: {application/json: {schema: {$ref: '#/components/schemas/GraphSymbolResponse'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/GraphConflict'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {$ref: '#/components/responses/Timeout'}
   /v1/graph/explore:
     post:
       security: [{bearerAuth: []}]
@@ -2107,7 +2155,7 @@ components:
         version: {type: integer, const: 1}
         query_artifact_versions: {type: array, items: {type: integer, enum: [1, 2]}}
         upload_artifact_versions: {type: array, items: {type: integer, enum: [1, 2]}, description: POST /v1/graph/uploads accepts v1 from administrators and v2 from administrators or publication grantees.}
-        workflows: {type: array, items: {type: object, additionalProperties: false, required: [name, artifact_version], properties: {name: {type: string, enum: [context, impact, trace, discover, explore, files, capabilities]}, artifact_version: {type: integer, enum: [1, 2]}}}}
+        workflows: {type: array, items: {type: object, additionalProperties: false, required: [name, artifact_version], properties: {name: {type: string, enum: [context, impact, trace, discover, explore, files, capabilities, callers, callees, impact_radius]}, artifact_version: {type: integer, enum: [1, 2]}}}}
         status: {type: string, enum: [ready]}
         freshness: {type: string, enum: [current]}
         repository_id: {type: integer, format: int64, minimum: 1}
@@ -2209,6 +2257,54 @@ components:
         range: {$ref: '#/components/schemas/GraphPosition'}
         confidence: {type: number}
         resolution_reason: {type: string}
+    GraphSymbolCallsRequest:
+      type: object
+      additionalProperties: false
+      required: [symbol]
+      properties:
+        repo: {$ref: '#/components/schemas/GraphRepositorySelector'}
+        branch: {type: string, minLength: 1}
+        symbol: {type: string, minLength: 1, maxLength: 16384, description: 'Name, or qualified name such as Class.method, module::fn or dir/module'}
+        file: {type: string, maxLength: 16384, description: Narrow same-named definitions to this path or path suffix; when none matches every definition is returned and file_filter is unmatched.}
+        limit: {type: integer, description: Per definition; default 20; clamped to 1-100.}
+    GraphSymbolImpactRequest:
+      type: object
+      additionalProperties: false
+      required: [symbol]
+      properties:
+        repo: {$ref: '#/components/schemas/GraphRepositorySelector'}
+        branch: {type: string, minLength: 1}
+        symbol: {type: string, minLength: 1, maxLength: 16384}
+        file: {type: string, maxLength: 16384}
+        depth: {type: integer, description: Default 2; clamped to 1-10.}
+    GraphSymbolRelated:
+      type: object
+      additionalProperties: false
+      required: [entity, edge]
+      properties:
+        entity: {$ref: '#/components/schemas/GraphEntityV2'}
+        edge: {$ref: '#/components/schemas/GraphEvidenceV2'}
+    GraphSymbolDefinition:
+      type: object
+      additionalProperties: false
+      required: [definitions]
+      properties:
+        definitions: {type: array, minItems: 1, items: {$ref: '#/components/schemas/GraphEntityV2'}, description: Every match sharing one path and qualified name.}
+        related: {type: array, items: {$ref: '#/components/schemas/GraphSymbolRelated'}, description: Callers or callees.}
+        truncated: {type: boolean, description: More callers or callees exist than limit.}
+        entities: {type: array, items: {$ref: '#/components/schemas/GraphEntityV2'}, description: Impact radius, definitions included.}
+        edges: {type: array, items: {$ref: '#/components/schemas/GraphEvidenceV2'}}
+    GraphSymbolResponse:
+      type: object
+      additionalProperties: false
+      required: [status, definitions, generations, partial]
+      properties:
+        status: {type: string, enum: [ok, not_found]}
+        file_filter: {type: string, enum: [matched, unmatched]}
+        definitions: {type: array, items: {$ref: '#/components/schemas/GraphSymbolDefinition'}}
+        generations: {type: array, minItems: 1, items: {$ref: '#/components/schemas/GraphGeneration'}}
+        boundaries: {type: array, items: {$ref: '#/components/schemas/GraphBoundary'}}
+        partial: {type: boolean}
     GraphBoundary:
       type: object
       additionalProperties: false
