@@ -12,6 +12,40 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func TestGraphPublicationGrants(t *testing.T) {
+	s, id := readyGraphStore(t, testSHA('a'))
+	other := seedReadyRepository(t, s, 102, testSHA('a'))
+	allowed := func(repositoryID int64, subject string) bool {
+		t.Helper()
+		ok, err := s.GraphPublicationAllowed(t.Context(), repositoryID, subject)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	if allowed(id, "42") {
+		t.Fatal("publication allowed without a grant")
+	}
+	for range 2 {
+		if err := s.SetGraphPublicationGrant(t.Context(), id, "42", "1", true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !allowed(id, "42") || allowed(other, "42") || allowed(id, "43") {
+		t.Fatal("grant is not scoped to repository and subject")
+	}
+	var grantedBy string
+	if err := s.pool.QueryRow(t.Context(), `select granted_by from graph_publication_grants where repository_id=$1 and subject='42'`, id).Scan(&grantedBy); err != nil || grantedBy != "1" {
+		t.Fatalf("granted_by=%q err=%v", grantedBy, err)
+	}
+	if err := s.SetGraphPublicationGrant(t.Context(), id, "42", "1", false); err != nil {
+		t.Fatal(err)
+	}
+	if allowed(id, "42") {
+		t.Fatal("revoked grant still allows publication")
+	}
+}
+
 func TestActiveGraphGenerationDescribesAnySchema(t *testing.T) {
 	s, id := readyGraphStore(t, testSHA('a'))
 	if active, err := s.ActiveGraphGeneration(t.Context(), id); err != nil || active != nil {
