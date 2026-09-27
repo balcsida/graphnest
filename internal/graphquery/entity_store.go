@@ -28,6 +28,9 @@ type EntityNeighborQuery struct {
 	Direction     string
 	MinConfidence float64
 	Limit         int
+	// ProducerOrder returns edges in the producer's original row order
+	// instead of by neighbor occurrence.
+	ProducerOrder bool
 }
 
 type EntityNeighbor struct {
