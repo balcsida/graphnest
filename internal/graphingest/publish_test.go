@@ -122,6 +122,34 @@ func TestPublishMapsReplacementOutcomes(t *testing.T) {
 	}
 }
 
+func TestStatusReportsPublicationPreflight(t *testing.T) {
+	active := &api.GraphActiveGeneration{ID: 3, Commit: testCommit, SchemaVersion: 2, Source: api.GraphSourceExternal, Producer: "codegraph", ProducerVersion: "0.7.0", ContentHash: strings.Repeat("ab", 32)}
+	for _, test := range []struct {
+		name      string
+		principal authn.Principal
+		granted   map[string]bool
+		permitted bool
+	}{
+		{"reader", readerPrincipal("42", 101), nil, false},
+		{"grantee", readerPrincipal("42", 101), map[string]bool{"42": true}, true},
+		{"administrator", adminPrincipal(101), nil, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := &fakeStore{repository: readyRepository(101, testCommit), status: api.GraphStatus{RepositoryID: 101, Commit: testCommit, State: api.GraphStatePending}, active: active, granted: test.granted}
+			got, err := (&Service{Store: store, MaxUploadBytes: 1 << 20}).Status(t.Context(), test.principal, 101)
+			want := api.GraphPublication{UploadArtifactVersions: []int{1, 2}, MaxUploadBytes: 1 << 20, Permitted: test.permitted, ActiveGeneration: active}
+			if err != nil || got.Publication == nil || got.Publication.Permitted != want.Permitted || got.Publication.MaxUploadBytes != want.MaxUploadBytes ||
+				len(got.Publication.UploadArtifactVersions) != 2 || got.Publication.ActiveGeneration != active {
+				t.Fatalf("publication=%#v err=%v", got.Publication, err)
+			}
+		})
+	}
+	store := &fakeStore{repository: readyRepository(101, testCommit), activeErr: errors.New("database password")}
+	if _, err := (&Service{Store: store}).Status(t.Context(), adminPrincipal(101), 101); !errors.Is(err, ErrUnavailable) || strings.Contains(err.Error(), "password") {
+		t.Fatalf("active generation error=%v", err)
+	}
+}
+
 func readerPrincipal(subject string, repositoryID int64) authn.Principal {
 	return authn.Principal{Subject: subject, Method: "api_token", InstallationID: 10, RepositoryIDs: []int64{repositoryID}}
 }

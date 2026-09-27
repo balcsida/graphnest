@@ -106,9 +106,10 @@ func TestGraphStatusContractAndBound(t *testing.T) {
 	handler := graphHandler(store, 1024, 1024)
 	response := graphRequest(handler, http.MethodGet, "/v1/graph/repositories/101/status", nil, "user", "")
 	var got api.GraphStatus
-	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
+	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil || got.Publication == nil {
+		t.Fatalf("status=%s err=%v", response.Body.String(), err)
 	}
+	got.Publication = nil
 	if response.Code != http.StatusOK || !reflect.DeepEqual(got, store.status) {
 		t.Fatalf("status=%d response=%#v", response.Code, got)
 	}
