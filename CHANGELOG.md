@@ -5,6 +5,12 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+### Fixed
+
+- The search sidebar's repository and language filters overflowed past the
+  sidebar border because a long example query widened the whole column. The
+  filters now fit the sidebar and long examples are truncated.
+
 ## [0.6.1] - 2026-09-27
 
 Patch release with no migrations and no required configuration changes.
