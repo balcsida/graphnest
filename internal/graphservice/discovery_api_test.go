@@ -3,6 +3,7 @@ package graphservice
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/balcsida/graphnest/internal/authn"
@@ -39,7 +40,7 @@ func TestDiscoverRejectsUntrustedMatchAndFreshCredential(t *testing.T) {
 	}
 }
 
-func TestCapabilitiesReportsCurrentV2GenerationAndV1Upload(t *testing.T) {
+func TestCapabilitiesReportsCurrentV2GenerationAndUploadVersions(t *testing.T) {
 	service, backend, _ := exploreFixture()
 	backend.generation.Capabilities = []string{"relations", "source"}
 	got, err := service.Capabilities(t.Context(), principalFor(101), api.GraphCapabilitiesRequest{Repo: api.GraphRepositorySelector{ID: 101}})
@@ -49,7 +50,7 @@ func TestCapabilitiesReportsCurrentV2GenerationAndV1Upload(t *testing.T) {
 	if got.Version != 1 || got.Status != "ready" || got.Freshness != "current" || got.CurrentIndexedCommit != backend.generation.Commit || got.Generation == nil || got.Generation.UploadID != 1 {
 		t.Fatalf("capabilities=%+v", got)
 	}
-	if len(got.QueryArtifactVersions) != 2 || got.QueryArtifactVersions[0] != 1 || got.QueryArtifactVersions[1] != 2 || len(got.UploadArtifactVersions) != 1 || got.UploadArtifactVersions[0] != 1 {
+	if len(got.QueryArtifactVersions) != 2 || got.QueryArtifactVersions[0] != 1 || got.QueryArtifactVersions[1] != 2 || !slices.Equal(got.UploadArtifactVersions, []int{1, 2}) {
 		t.Fatalf("artifact versions=%+v/%+v", got.QueryArtifactVersions, got.UploadArtifactVersions)
 	}
 	if !got.DiscoveryProjection || len(got.ProducerCapabilities) != 2 {
