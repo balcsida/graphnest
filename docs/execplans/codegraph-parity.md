@@ -5,6 +5,33 @@ Implementation, validation, draft publication, and release are separate states.
 
 ## Progress
 
+- 2026-09-27: S1.08 repository-scoped publication on
+  `feat/codegraph/s1-08-publish-policy`, based on `main`. `POST
+  /v1/graph/uploads` now accepts v2 artifacts from administrators and from
+  holders of a new repository grant (`graph_publication_grants`, migration 037,
+  administrator-only `PUT /v1/graph/publication-grants`). Read access never
+  implies publication. Each upload names its `expected_generation`; replacing
+  another producer needs `replace_producer=true`. The repository ceiling of
+  the API token and the current read grants still apply. The credential
+  (through the request's fresh-principal hook), grant and indexed commit are
+  checked before the body is read and again after parsing. PostgreSQL compares
+  the generation and commit under the repository lock. An identical retry of
+  the active v2 content deduplicates by verified semantic hash. Graph status
+  gains a `publication` preflight block (versions, limit, permission, active
+  generation), and capabilities advertise upload versions `[1, 2]`.
+  `graph_uploads` rows audit publisher, producer, commit, hash and
+  activation/retirement. A real-token PostgreSQL test covers every S1.08
+  acceptance case: grant-only success; read-only, wrong-repository,
+  token-ceiling and expired-token failures; token and grant revocation during
+  the upload; retry;
+  stale and concurrent replacement; an advancing SHA; and the producer
+  takeover. With the race detector, the unit suite and the PostgreSQL suites
+  (postgres, authz, webhook, integration, indexer and server) passed, along
+  with vet, staticcheck and OpenAPI validation. A second PostgreSQL run
+  failed only the ten supply-chain job-claim tests, and `main` fails them the
+  same way. The Docker VM clock ran about 16 ms behind the host: the tests
+  enqueue at host `time.Now()` and immediately claim against the database's
+  `now()`, so the job is not yet due.
 - 2026-09-24: Resumed the paused S1.06b1 type relations and hierarchy layer
   on `feat/codegraph/type-hierarchy`, based on `main`. PostgreSQL now counts
   distinct direct subtypes, and the internal neighbor lookahead allows 401 rows
@@ -464,6 +491,24 @@ these tests.
   shared/viewer result includes its Service subtype. Preserve that legacy
   omission as a known comparison difference rather than removing descendants
   from GraphNest. Other hierarchy cases remain unimplemented and unverified.
+- S1.08 reuses the supply-chain upload-grant design (a per-subject table
+  and an administrator `PUT`, one shared handler) rather than adding token
+  scopes. API tokens already carry repository ceilings, and grants stay
+  revocable without reissuing tokens. REST publication uses API tokens only;
+  MCP OAuth tokens remain confined to `/mcp`.
+- Retries deduplicate inside the replacement transaction, after the
+  indexed-commit check and before the expected-generation check. They match
+  only the active v2 generation, because v1 content hashes are supplied rather
+  than verified. A late retry of retired content therefore conflicts instead
+  of reactivating it. The explicit idempotency key the plan mentions is not
+  needed: the verified semantic hash already scopes repository, commit and
+  producer.
+- Publication authority is final at the post-parse recheck, not at commit. A
+  grant revoked during the storage copy still lands (marked `ponytail:` in
+  `graphingest.Service.Publish`); move the grant check into the replacement
+  transaction if that window matters.
+- REST-published generations record no producer capability list. Stage 2
+  should declare capabilities once it negotiates CodeGraph schema versions.
 
 ## Discoveries
 
@@ -634,8 +679,10 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 - Native/portable coordinate conversion assertions belong to S1.02; GraphNest
   query implementations and their parity comparisons belong to subsequent
   layers, and are not circular prerequisites for S1.01.
-- V2 artifact/storage foundations are complete. Production query parity, publication policy, browser parity,
-  CLI import, and local-engine work remains pending.
+- V2 artifact/storage foundations and S1.08 publication policy are
+  implemented. Production query parity, browser parity, CLI import, and
+  local-engine work remains pending. Publication has no MCP tool; publishers
+  use REST.
 - Full Stage 1 validation (including authorization, database, browser, deployment,
   and real-producer conformance) has not run and is not claimed as passing.
 - The proposed warm-query p95 budgets remain unchanged: existing GraphNest within
@@ -664,6 +711,7 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 | S1.06a2 graph aggregates | `feat/codegraph/s1-06a2-graph-aggregates` | Implemented, independently reviewed and signed (`85dee2e`); depends on PR #79 | Draft [PR #81](https://github.com/balcsida/graphnest/pull/81); native stack #66, position 16; CI and CodeQL passed |
 | S1.06a3 entity impact | `feat/codegraph/s1-06a3-entity-impact` | Implemented, independently approved and signed (`931e7d9`); depends on PR #81 | Draft [PR #82](https://github.com/balcsida/graphnest/pull/82); native stack #66, position 17; CI and CodeQL passed |
 | S1.06b1 type relations and hierarchy | `feat/codegraph/type-hierarchy` | Implemented; focused unit, service and PostgreSQL checks pass; based on `main` | [PR #119](https://github.com/balcsida/graphnest/pull/119) |
+| S1.08 publication policy | `feat/codegraph/s1-08-publish-policy` | Implemented; unit race, PostgreSQL integration race (apart from clock-skewed supply-chain claims that fail on `main` too), vet, staticcheck and OpenAPI checks pass; based on `main` | PR pending |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
