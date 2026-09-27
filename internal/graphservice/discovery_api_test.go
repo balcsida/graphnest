@@ -53,6 +53,15 @@ func TestCapabilitiesReportsCurrentV2GenerationAndUploadVersions(t *testing.T) {
 	if len(got.QueryArtifactVersions) != 2 || got.QueryArtifactVersions[0] != 1 || got.QueryArtifactVersions[1] != 2 || !slices.Equal(got.UploadArtifactVersions, []int{1, 2}) {
 		t.Fatalf("artifact versions=%+v/%+v", got.QueryArtifactVersions, got.UploadArtifactVersions)
 	}
+	var workflows []string
+	for _, workflow := range got.Workflows {
+		workflows = append(workflows, workflow.Name)
+	}
+	for _, name := range []string{"callers", "callees", "impact_radius"} {
+		if !slices.Contains(workflows, name) {
+			t.Fatalf("workflows=%v missing %s", workflows, name)
+		}
+	}
 	if !got.DiscoveryProjection || len(got.ProducerCapabilities) != 2 {
 		t.Fatalf("availability=%+v", got)
 	}
