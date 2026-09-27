@@ -7,6 +7,14 @@ the compatibility and migration notes before upgrading.
 
 ### Added
 
+- Name-addressed callers, callees and impact radius for v2 (CodeGraph)
+  generations: `POST /v1/graph/callers`, `/v1/graph/callees` and
+  `/v1/graph/impact-radius`, and the MCP tools `graph_callers`, `graph_callees`
+  and `graph_impact_radius`. They follow CodeGraph's `codegraph_callers`,
+  `codegraph_callees` and `codegraph_impact`: qualified names, per-definition
+  sections, `file` narrowing and limits. They are compared with the pinned
+  CodeGraph answers. Differences in definition order and non-exact name fallback
+  are documented in `docs/graph-exploration.md`.
 - Repository-scoped graph publication (CodeGraph parity S1.08).
   `POST /v1/graph/uploads` now accepts v2 artifacts
   (`application/vnd.graphnest.graph.v2+protobuf`). Administrators can publish
