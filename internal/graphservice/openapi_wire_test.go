@@ -50,6 +50,18 @@ func TestOpenAPIExplorationWireResponses(t *testing.T) {
 		}
 	}
 
+	symbols, stub := symbolFixture()
+	stub.generation.Producer = &graphv2.Producer{Name: "fixture", Version: "1"}
+	stub.generation.ContentHash = []byte("hash")
+	stub.generation.Capabilities = []string{}
+	stub.result.Generations = []graphprotocol.Generation{stub.generation}
+	stub.result.FileFilter = "matched"
+	callers, err := symbols.SymbolCallers(t.Context(), principalFor(101), api.GraphSymbolCallsRequest{Symbol: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validate("symbol callers", "GraphSymbolResponse", callers)
+
 	service, backend, _ := exploreFixture()
 	backend.generation.Producer = &graphv2.Producer{Name: "fixture", Version: "1"}
 	backend.generation.ContentHash = []byte("hash")
