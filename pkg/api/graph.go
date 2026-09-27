@@ -237,3 +237,13 @@ type GraphStatus struct {
 type SCIPFallbackStatus struct {
 	Commit string `json:"commit"`
 }
+
+type GraphActiveGeneration struct {
+	ID              int64       `json:"id"`
+	Commit          string      `json:"commit"`
+	SchemaVersion   int         `json:"schema_version"`
+	Source          GraphSource `json:"source"`
+	Producer        string      `json:"producer"`
+	ProducerVersion string      `json:"producer_version"`
+	ContentHash     string      `json:"content_hash"`
+}

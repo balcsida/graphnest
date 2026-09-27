@@ -3,6 +3,7 @@ package postgres
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/balcsida/graphnest/internal/graphartifact"
 	graphv2 "github.com/balcsida/graphnest/internal/graphartifact/v2"
+	"github.com/balcsida/graphnest/pkg/api"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/proto"
 )
@@ -155,6 +157,27 @@ func (s *Store) ReplaceGraphV2(ctx context.Context, repositoryID int64, publicat
 		return GraphReplacement{}, err
 	}
 	return GraphReplacement{Upload: upload, Applied: true, ReplacedID: currentID}, nil
+}
+
+// ActiveGraphGeneration describes the repository's active generation of any
+// schema: the value a publisher names as its expected generation. It returns
+// nil when no generation is active.
+func (s *Store) ActiveGraphGeneration(ctx context.Context, repositoryID int64) (*api.GraphActiveGeneration, error) {
+	var active api.GraphActiveGeneration
+	var source string
+	var producer, version, hash []byte
+	err := s.pool.QueryRow(ctx, `select id,commit,schema_version,source,
+ case when schema_version=2 then producer_name else convert_to(analyzer_name,'UTF8') end,
+ case when schema_version=2 then producer_version else convert_to(analyzer_version,'UTF8') end,
+ content_hash from graph_uploads where repository_id=$1 and active`, repositoryID).Scan(&active.ID, &active.Commit, &active.SchemaVersion, &source, &producer, &version, &hash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	active.Source, active.Producer, active.ProducerVersion, active.ContentHash = api.GraphSource(source), string(producer), string(version), hex.EncodeToString(hash)
+	return &active, nil
 }
 
 func validGraphPublisher(value string) bool {
