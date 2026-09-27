@@ -60,14 +60,21 @@ func RegisterSupplyChainImports(mux *http.ServeMux, authenticator authn.RequestA
 	if grants == nil {
 		return
 	}
-	mux.Handle("/v1/supply-chain/upload-grants", exactMethod(http.MethodPut, AuthenticateRequest(authenticator, jsonSCIPHandler(4<<10, func(writer http.ResponseWriter, request *http.Request, input struct {
+	mux.Handle("/v1/supply-chain/upload-grants", exactMethod(http.MethodPut, AuthenticateRequest(authenticator,
+		uploadGrantHandler(grants, func(writer http.ResponseWriter) { writeSupplyChainError(writer, supplychain.ErrForbidden) }, writeSupplyChainError))))
+}
+
+// uploadGrantHandler lets an administrator add or remove one repository-scoped
+// upload grant: PUT {"repository_id":101,"subject":"42","allow":true}.
+func uploadGrantHandler(grants *UploadGrants, deny func(http.ResponseWriter), fail func(http.ResponseWriter, error)) http.Handler {
+	return jsonSCIPHandler(4<<10, func(writer http.ResponseWriter, request *http.Request, input struct {
 		RepositoryID int64  `json:"repository_id"`
 		Subject      string `json:"subject"`
 		Allow        bool   `json:"allow"`
 	}) {
 		principal := PrincipalFromContext(request.Context())
 		if !principal.Administrator {
-			writeSupplyChainError(writer, supplychain.ErrForbidden)
+			deny(writer)
 			return
 		}
 		if input.RepositoryID < 1 || input.Subject == "" || len(input.Subject) > 256 {
@@ -76,15 +83,15 @@ func RegisterSupplyChainImports(mux *http.ServeMux, authenticator authn.RequestA
 		}
 		internalID, err := grants.Resolve(request.Context(), principal, input.RepositoryID)
 		if err != nil {
-			writeSupplyChainError(writer, err)
+			fail(writer, err)
 			return
 		}
 		if err := grants.Set(request.Context(), internalID, input.Subject, principal.Subject, input.Allow); err != nil {
-			writeSupplyChainError(writer, err)
+			fail(writer, err)
 			return
 		}
 		writer.WriteHeader(http.StatusNoContent)
-	}))))
+	})
 }
 
 func writeSupplyChainImportError(writer http.ResponseWriter, err error) {

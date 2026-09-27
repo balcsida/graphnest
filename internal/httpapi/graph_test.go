@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -16,6 +17,7 @@ import (
 	"github.com/balcsida/graphnest/internal/authn"
 	"github.com/balcsida/graphnest/internal/graphartifact"
 	graphv1 "github.com/balcsida/graphnest/internal/graphartifact/v1"
+	graphv2 "github.com/balcsida/graphnest/internal/graphartifact/v2"
 	"github.com/balcsida/graphnest/internal/graphingest"
 	"github.com/balcsida/graphnest/internal/postgres"
 	"github.com/balcsida/graphnest/internal/repository"
@@ -105,9 +107,10 @@ func TestGraphStatusContractAndBound(t *testing.T) {
 	handler := graphHandler(store, 1024, 1024)
 	response := graphRequest(handler, http.MethodGet, "/v1/graph/repositories/101/status", nil, "user", "")
 	var got api.GraphStatus
-	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
+	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil || got.Publication == nil {
+		t.Fatalf("status=%s err=%v", response.Body.String(), err)
 	}
+	got.Publication = nil
 	if response.Code != http.StatusOK || !reflect.DeepEqual(got, store.status) {
 		t.Fatalf("status=%d response=%#v", response.Code, got)
 	}
@@ -141,7 +144,10 @@ func TestGraphErrorsAreSafe(t *testing.T) {
 		message   string
 		retryable bool
 	}{
-		{"forbidden", graphingest.ErrForbidden, http.StatusForbidden, "forbidden", "administrator access required", false},
+		{"forbidden", graphingest.ErrForbidden, http.StatusForbidden, "forbidden", "graph publication is not permitted", false},
+		{"generation changed", graphingest.ErrConflict, http.StatusConflict, "generation_conflict", "graph generation or indexed commit changed", false},
+		{"producer changed", graphingest.ErrProducerConflict, http.StatusConflict, "producer_conflict", "replacing another producer requires replace_producer=true", false},
+		{"credential revoked", graphingest.ErrUnauthenticated, http.StatusUnauthorized, "unauthenticated", "authentication required", false},
 		{"invalid artifact", graphingest.ErrInvalidArtifact, http.StatusBadRequest, "invalid_request", "request is invalid", false},
 		{"stale", graphingest.ErrNotIndexed, http.StatusConflict, "not_indexed", "repository is not indexed", false},
 		{"missing", pgx.ErrNoRows, http.StatusNotFound, "not_found", "repository not found", false},
@@ -160,11 +166,122 @@ func TestGraphErrorsAreSafe(t *testing.T) {
 
 func graphHandler(store *graphStoreStub, maxUpload, maxResponse int64) http.Handler {
 	mux := http.NewServeMux()
+	grants := &UploadGrants{
+		Set: func(_ context.Context, repositoryID int64, subject, grantedBy string, allow bool) error {
+			store.grants = append(store.grants, fmt.Sprintf("%d %s %s %t", repositoryID, subject, grantedBy, allow))
+			return nil
+		},
+		Resolve: func(_ context.Context, _ authn.Principal, githubID int64) (int64, error) {
+			if githubID != 101 {
+				return 0, pgx.ErrNoRows
+			}
+			return 1, nil
+		},
+	}
 	RegisterGraphIngestion(mux, authn.NewStatic(map[string]authn.Principal{
-		"user":  {InstallationID: 10, RepositoryIDs: []int64{101}},
-		"admin": {InstallationID: 10, RepositoryIDs: []int64{101}, Administrator: true},
-	}), &graphingest.Service{Store: store, Limits: graphartifact.Limits{MaxNodes: 2, MaxEdges: 1}}, maxUpload, maxResponse)
+		"user":    {InstallationID: 10, RepositoryIDs: []int64{101}},
+		"grantee": {Subject: "42", Method: "api_token", InstallationID: 10, RepositoryIDs: []int64{101}},
+		"admin":   {Subject: "1", Method: "api_token", InstallationID: 10, RepositoryIDs: []int64{101}, Administrator: true},
+	}), &graphingest.Service{Store: store, Limits: graphartifact.Limits{MaxNodes: 2, MaxEdges: 1}}, grants, maxUpload, maxResponse)
 	return mux
+}
+
+const graphV2Type = "application/vnd.graphnest.graph.v2+protobuf"
+
+func TestGraphV2UploadContract(t *testing.T) {
+	data := graphV2ArtifactBytes(t)
+	target := graphUploadTarget(graphTestSHA) + "&expected_generation=7"
+	for _, test := range []struct {
+		name, target, token string
+		granted             bool
+		want                int
+	}{
+		{"read access only", target, "grantee", false, http.StatusForbidden},
+		{"no publisher identity", target, "user", true, http.StatusForbidden},
+		{"grantee", target, "grantee", true, http.StatusOK},
+		{"administrator without grant", target, "admin", false, http.StatusOK},
+		{"missing expected generation", graphUploadTarget(graphTestSHA), "admin", false, http.StatusBadRequest},
+		{"negative expected generation", graphUploadTarget(graphTestSHA) + "&expected_generation=-1", "admin", false, http.StatusBadRequest},
+		{"duplicate expected generation", target + "&expected_generation=7", "admin", false, http.StatusBadRequest},
+		{"replace producer must be true", target + "&replace_producer=yes", "admin", false, http.StatusBadRequest},
+		{"empty replace producer", target + "&replace_producer=", "admin", false, http.StatusBadRequest},
+		{"unknown query", target + "&extra=1", "admin", false, http.StatusBadRequest},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := &graphStoreStub{}
+			if test.granted {
+				store.granted = map[string]bool{"42": true, "": true}
+			}
+			response := graphRequest(graphHandler(store, int64(len(data)), 1024), http.MethodPost, test.target, data, test.token, graphV2Type)
+			if response.Code != test.want {
+				t.Fatalf("status=%d want=%d body=%q", response.Code, test.want, response.Body.String())
+			}
+		})
+	}
+	store := &graphStoreStub{granted: map[string]bool{"42": true}}
+	response := graphRequest(graphHandler(store, int64(len(data)), 1024), http.MethodPost, target+"&replace_producer=true", data, "grantee", graphV2Type)
+	var result api.GraphPublicationResult
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusOK || result.Generation != 9 || result.ReplacedGeneration != 7 || result.RepositoryID != 101 || len(result.ContentHash) != 64 {
+		t.Fatalf("status=%d result=%#v err=%v", response.Code, result, err)
+	}
+	if !reflect.DeepEqual(store.publication, postgres.GraphPublication{Publisher: "api_token:42", ExpectedActiveID: 7, AllowProviderChange: true}) {
+		t.Fatalf("publication=%#v", store.publication)
+	}
+	v1WithIntent := graphRequest(graphHandler(&graphStoreStub{}, 1<<20, 1024), http.MethodPost, target, graphArtifactBytes(t, 101), "admin", "application/vnd.graphnest.graph.v1+protobuf")
+	if v1WithIntent.Code != http.StatusBadRequest {
+		t.Fatalf("v1 accepted v2 parameters: %d", v1WithIntent.Code)
+	}
+	conflict := graphRequest(graphHandler(&graphStoreStub{replaceV2Err: postgres.ErrGraphPrecondition}, 1<<20, 1024), http.MethodPost, target, data, "admin", graphV2Type)
+	if conflict.Code != http.StatusConflict || !strings.Contains(conflict.Body.String(), "generation_conflict") {
+		t.Fatalf("conflict=%d %s", conflict.Code, conflict.Body.String())
+	}
+}
+
+func TestGraphV2UploadRejectsUnpermittedBodyBeforeRead(t *testing.T) {
+	body := &countingReader{Reader: bytes.NewReader(graphV2ArtifactBytes(t))}
+	request := httptest.NewRequest(http.MethodPost, graphUploadTarget(graphTestSHA)+"&expected_generation=0", body)
+	request.Header.Set("Authorization", "Bearer grantee")
+	request.Header.Set("Content-Type", graphV2Type)
+	recorder := httptest.NewRecorder()
+	graphHandler(&graphStoreStub{}, 1<<20, 1024).ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusForbidden || body.reads != 0 {
+		t.Fatalf("status=%d reads=%d", recorder.Code, body.reads)
+	}
+}
+
+func TestGraphPublicationGrantRoute(t *testing.T) {
+	for _, test := range []struct {
+		name, method, token, body string
+		want                      int
+		grants                    []string
+	}{
+		{"administrator grants", http.MethodPut, "admin", `{"repository_id":101,"subject":"42","allow":true}`, http.StatusNoContent, []string{"1 42 1 true"}},
+		{"administrator revokes", http.MethodPut, "admin", `{"repository_id":101,"subject":"42","allow":false}`, http.StatusNoContent, []string{"1 42 1 false"}},
+		{"grantee cannot grant", http.MethodPut, "grantee", `{"repository_id":101,"subject":"43","allow":true}`, http.StatusForbidden, nil},
+		{"unknown repository", http.MethodPut, "admin", `{"repository_id":102,"subject":"42","allow":true}`, http.StatusNotFound, nil},
+		{"empty subject", http.MethodPut, "admin", `{"repository_id":101,"subject":"","allow":true}`, http.StatusBadRequest, nil},
+		{"oversized subject", http.MethodPut, "admin", `{"repository_id":101,"subject":"` + strings.Repeat("x", 257) + `","allow":true}`, http.StatusBadRequest, nil},
+		{"unknown field", http.MethodPut, "admin", `{"repository_id":101,"subject":"42","allow":true,"scope":"all"}`, http.StatusBadRequest, nil},
+		{"exact method", http.MethodPost, "admin", `{"repository_id":101,"subject":"42","allow":true}`, http.StatusMethodNotAllowed, nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := &graphStoreStub{}
+			response := graphRequest(graphHandler(store, 1024, 1024), test.method, "/v1/graph/publication-grants", []byte(test.body), test.token, "application/json")
+			if response.Code != test.want || !reflect.DeepEqual(store.grants, test.grants) {
+				t.Fatalf("status=%d grants=%v body=%q", response.Code, store.grants, response.Body.String())
+			}
+		})
+	}
+}
+
+func graphV2ArtifactBytes(t *testing.T) []byte {
+	t.Helper()
+	data, err := graphartifact.MarshalV2(&graphv2.Artifact{SchemaVersion: 2, Repository: "101", Commit: graphTestSHA, Producer: &graphv2.Producer{Name: "codegraph", Version: "0.7.0", Configuration: "portable"},
+		Nodes: []*graphv2.Node{{SourceId: "a", Occurrence: "declaration:1", Kind: "function"}, {SourceId: "b", Occurrence: "declaration:2", Kind: "class"}}}, graphartifact.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func graphRequest(handler http.Handler, method, target string, body []byte, token, contentType string) *httptest.ResponseRecorder {
@@ -213,6 +330,11 @@ func (reader *countingReader) Read(data []byte) (int, error) {
 
 type graphStoreStub struct {
 	status                        api.GraphStatus
+	granted                       map[string]bool
+	active                        *api.GraphActiveGeneration
+	replaceV2Err                  error
+	publication                   postgres.GraphPublication
+	grants                        []string
 	authorizedCalls               atomic.Int64
 	authorizedBeforeDeadlineClear atomic.Bool
 	writeDeadlineSetDuringReplace atomic.Bool
@@ -237,6 +359,22 @@ func (store *graphStoreStub) ReplaceGraph(context.Context, int64, postgres.Graph
 
 func (store *graphStoreStub) GraphStatus(context.Context, int64) (api.GraphStatus, error) {
 	return store.status, nil
+}
+
+func (store *graphStoreStub) GraphPublicationAllowed(_ context.Context, _ int64, subject string) (bool, error) {
+	return store.granted[subject], nil
+}
+
+func (store *graphStoreStub) ActiveGraphGeneration(context.Context, int64) (*api.GraphActiveGeneration, error) {
+	return store.active, nil
+}
+
+func (store *graphStoreStub) ReplaceGraphV2(_ context.Context, _ int64, publication postgres.GraphPublication, _ *graphv2.Artifact) (postgres.GraphReplacement, error) {
+	if store.replaceV2Err != nil {
+		return postgres.GraphReplacement{}, store.replaceV2Err
+	}
+	store.publication = publication
+	return postgres.GraphReplacement{Upload: postgres.GraphUpload{ID: 9}, Applied: true, ReplacedID: publication.ExpectedActiveID}, nil
 }
 
 type graphDeadlineRecorder struct {
