@@ -224,7 +224,46 @@ changes before delivery.
 Discovery and exploration require an artifact v2 generation with its discovery
 projection. Missing or stale data returns `graph_not_ready`; an empty ready
 result is never used to hide unavailable data. Capabilities report the selected
-generation and producer coverage separately from server workflows. Public graph
-upload remains v1 only: there is no public v2 upload endpoint in this milestone.
+generation and producer coverage separately from server workflows. v2
+generations are published through `POST /v1/graph/uploads` by administrators or
+repository publication grantees; see [operations](operations.md#publishing-v2-graph-generations).
 Session history, entity selectors, and qualified wildcard methods are not part
 of these public requests.
+
+## Symbol callers, callees and impact
+
+`POST /v1/graph/callers`, `/v1/graph/callees`, and `/v1/graph/impact-radius`, and
+the MCP tools `graph_callers`, `graph_callees`, and `graph_impact_radius`, address
+a v2 generation by symbol name, like CodeGraph's `codegraph_callers`,
+`codegraph_callees`, and `codegraph_impact`. They follow the pinned handlers:
+
+- A name matches a node's name, a file's name without its extension, or a
+  qualified form (`Class.method`, `module::fn`, `dir/module`). The qualified form
+  matches the qualified-name suffix, or the containing directories and file for
+  Rust modules and Python packages. `crate::`, `super::`, and `self::` are
+  ignored, and an Erlang arity (`fn/3`) must match. A dotted Nix option resolves
+  its `options.` declaration and writes first.
+- Matches sharing a path and qualified name form one definition, so same-file
+  overloads stay together and same-named classes in different apps stay apart.
+  `file` narrows by path or path suffix. When it matches nothing, every
+  definition is returned with `file_filter: unmatched`.
+- Callers and callees follow `calls`, `imports`, `instantiates`, `navigates`, and
+  `references` one hop, in the producer's edge order. Each neighbor appears once
+  with the first edge that reached it; the edge kind tells an instantiation or
+  import apart from a call. `limit` bounds each definition (default 20, 1-100)
+  and `truncated` says more exist.
+- Impact merges each definition's impact radius (`depth` default 2, 1-10).
+
+`TestGraphSymbolToolsMatchCodeGraph` compares all eleven captured `mcp-callers-*`,
+`mcp-callees-*`, and `mcp-impact-*` answers. Known differences:
+
+- CodeGraph orders same-named definitions by SQLite FTS5 BM25 score. GraphNest
+  orders them by generated file last, then path and line.
+- CodeGraph falls back to its best non-exact search hit when no definition
+  matches exactly. GraphNest returns `not_found` until a `searchNodes` port lands.
+  At most 50 matches are considered, as upstream does; `candidate_limit` marks
+  more.
+- Impact visits dependency levels by shortest depth (see
+  [graph analysis](graph-analysis.md#entity-impact-and-public-graph-projections)).
+  It can therefore list nodes that CodeGraph's depth-first walk omits, in a
+  different order within a file.
