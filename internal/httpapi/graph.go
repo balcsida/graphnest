@@ -20,11 +20,12 @@ const (
 	graphV2ContentType = "application/vnd.graphnest.graph.v2+protobuf"
 )
 
-// RegisterGraphIngestion mounts graph uploads and status.
+// RegisterGraphIngestion mounts graph uploads, status, and the
+// administrator-only publication-grant route.
 //
 //	POST /v1/graph/uploads?repository_id=101&commit=<sha>                                   (v1, administrators)
 //	POST /v1/graph/uploads?repository_id=101&commit=<sha>&expected_generation=7[&replace_producer=true] (v2)
-func RegisterGraphIngestion(mux *http.ServeMux, authenticator authn.Authenticator, service *graphingest.Service, maxUploadBytes, maxResponseBytes int64) {
+func RegisterGraphIngestion(mux *http.ServeMux, authenticator authn.Authenticator, service *graphingest.Service, grants *UploadGrants, maxUploadBytes, maxResponseBytes int64) {
 	mux.Handle("/v1/graph/uploads", exactMethod(http.MethodPost, AuthenticateBearer(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		contentType := request.Header.Get("Content-Type")
 		v2 := contentType == graphV2ContentType
@@ -88,6 +89,11 @@ func RegisterGraphIngestion(mux *http.ServeMux, authenticator authn.Authenticato
 		}
 		writeBoundedJSON(writer, status, maxResponseBytes)
 	}))))
+
+	if grants != nil {
+		mux.Handle("/v1/graph/publication-grants", exactMethod(http.MethodPut, AuthenticateBearer(authenticator,
+			uploadGrantHandler(grants, func(writer http.ResponseWriter) { writeForbidden(writer) }, writeGraphError))))
+	}
 }
 
 // graphUploadQuery accepts exactly repository_id and commit, plus

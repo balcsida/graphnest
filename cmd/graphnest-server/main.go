@@ -660,7 +660,15 @@ func newAPIHandlerWithMCP(settings config.Config, metrics *observability.Metrics
 		httpapi.RegisterSCIP(mux, authenticator, scipGraph, settings.Limits.MaxRequestBytes, settings.Limits.SCIPMaxUploadBytes, settings.Limits.MaxResponseBytes)
 	}
 	if graph != nil {
-		httpapi.RegisterGraphIngestion(mux, authenticator.Bearer, graph, settings.Limits.GraphMaxUploadBytes, settings.Limits.MaxResponseBytes)
+		var grants *httpapi.UploadGrants
+		if store, ok := graph.Store.(*postgres.Store); ok {
+			authorizer := authz.NewPostgres(store)
+			grants = &httpapi.UploadGrants{Set: store.SetGraphPublicationGrant, Resolve: func(ctx context.Context, principal authn.Principal, githubID int64) (int64, error) {
+				repo, err := authorizer.AuthorizedRepository(ctx, principal, githubID)
+				return repo.ID, err
+			}}
+		}
+		httpapi.RegisterGraphIngestion(mux, authenticator.Bearer, graph, grants, settings.Limits.GraphMaxUploadBytes, settings.Limits.MaxResponseBytes)
 	}
 	if graphQueries != nil {
 		httpapi.RegisterGraphQueries(mux, authenticator.Bearer, graphQueries, settings.Graph.MaxRequestBytes, settings.Graph.MaxResponseBytes)
