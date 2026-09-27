@@ -419,10 +419,19 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/graph/uploads:
     post:
+      description: >-
+        Replace the repository's graph for its current indexed commit. A v1 artifact requires an administrator and answers 204.
+        A v2 artifact requires an administrator or a repository publication grant on top of read access, names the active
+        generation it replaces (expected_generation, 0 when none is active; read it from the status publication block), and
+        answers 200 with the publication result. Replacing another producer's generation also requires replace_producer=true.
+        An identical retry of the active v2 content succeeds with deduplicated=true whatever it expected. The credential,
+        grant, and indexed commit are checked before the body is read and again after it is parsed.
       security: [{bearerAuth: []}]
       parameters:
         - {name: repository_id, in: query, required: true, schema: {type: integer, format: int64, minimum: 1}}
         - {name: commit, in: query, required: true, schema: {type: string, pattern: '^[0-9a-f]{40}$'}}
+        - {name: expected_generation, in: query, required: false, description: Required for v2 and rejected for v1., schema: {type: integer, format: int64, minimum: 0}}
+        - {name: replace_producer, in: query, required: false, description: v2 only., schema: {type: string, enum: ['true']}}
       requestBody:
         required: true
         content:
@@ -433,14 +442,39 @@ paths:
               description: Default upload limit is 67108864 bytes; server maximum is 268435456 bytes.
               x-default-max-bytes: 67108864
               x-server-max-bytes: 268435456
+          application/vnd.graphnest.graph.v2+protobuf:
+            schema:
+              type: string
+              format: binary
+              description: Artifact v2 with repository set to the decimal repository_id and commit equal to the query commit. Same upload limit as v1.
       responses:
-        '204': {description: External graph replaced}
+        '200':
+          description: v2 generation published or deduplicated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GraphPublicationResult'}
+        '204': {description: External v1 graph replaced}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {description: Graph publication is not permitted, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '409': {description: 'Commit is not the indexed commit (not_indexed), the active generation or indexed commit changed since preflight (generation_conflict), or the active generation came from another producer without replace_producer=true (producer_conflict)', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/graph/publication-grants:
+    put:
+      description: Administrator-only. Grant or revoke a principal's (by subject) permission to publish v2 graph generations to one repository. Grants never widen read access; the publisher still needs repository read access within its token ceiling.
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false, required: [repository_id, subject, allow], properties: {repository_id: {type: integer, format: int64, minimum: 1}, subject: {type: string, minLength: 1, maxLength: 256}, allow: {type: boolean}}}}}}
+      responses:
+        '204': {description: Grant updated}
         '400': {$ref: '#/components/responses/InvalidRequest'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '405': {$ref: '#/components/responses/InvalidRequest'}
-        '409': {$ref: '#/components/responses/Conflict'}
         '413': {$ref: '#/components/responses/InvalidRequest'}
         '415': {$ref: '#/components/responses/InvalidRequest'}
         '503': {$ref: '#/components/responses/Unavailable'}
@@ -1679,6 +1713,40 @@ components:
         job_state: {type: string, enum: [queued, running, succeeded, failed, superseded]}
         error_code: {type: string}
         scip_fallback: {$ref: '#/components/schemas/SCIPFallbackStatus'}
+        publication: {$ref: '#/components/schemas/GraphPublication'}
+    GraphPublication:
+      type: object
+      additionalProperties: false
+      description: Publisher preflight. permitted is true for administrators and repository publication grantees. Name active_generation.id as expected_generation, or 0 when it is absent.
+      required: [upload_artifact_versions, max_upload_bytes, permitted]
+      properties:
+        upload_artifact_versions: {type: array, items: {type: integer, enum: [1, 2]}}
+        max_upload_bytes: {type: integer, format: int64, minimum: 0}
+        permitted: {type: boolean}
+        active_generation: {$ref: '#/components/schemas/GraphActiveGeneration'}
+    GraphActiveGeneration:
+      type: object
+      additionalProperties: false
+      required: [id, commit, schema_version, source, producer, producer_version, content_hash]
+      properties:
+        id: {type: integer, format: int64, minimum: 1}
+        commit: {type: string, pattern: '^[0-9a-f]{40}$'}
+        schema_version: {type: integer, enum: [1, 2]}
+        source: {type: string, enum: [managed, external, scip]}
+        producer: {type: string}
+        producer_version: {type: string}
+        content_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
+    GraphPublicationResult:
+      type: object
+      additionalProperties: false
+      required: [repository_id, commit, generation, content_hash, deduplicated]
+      properties:
+        repository_id: {type: integer, format: int64, minimum: 1}
+        commit: {type: string, pattern: '^[0-9a-f]{40}$'}
+        generation: {type: integer, format: int64, minimum: 1}
+        replaced_generation: {type: integer, format: int64, minimum: 1}
+        content_hash: {type: string, pattern: '^[0-9a-f]{64}$', description: Verified v2 semantic hash.}
+        deduplicated: {type: boolean, description: The active generation already held this content; nothing changed.}
     GraphRepositorySelector:
       oneOf:
         - {type: integer, format: int64, minimum: 1}
@@ -2038,7 +2106,7 @@ components:
       properties:
         version: {type: integer, const: 1}
         query_artifact_versions: {type: array, items: {type: integer, enum: [1, 2]}}
-        upload_artifact_versions: {type: array, items: {type: integer, enum: [1]}, description: Public upload supports v1 only; no public v2 upload endpoint exists.}
+        upload_artifact_versions: {type: array, items: {type: integer, enum: [1, 2]}, description: POST /v1/graph/uploads accepts v1 from administrators and v2 from administrators or publication grantees.}
         workflows: {type: array, items: {type: object, additionalProperties: false, required: [name, artifact_version], properties: {name: {type: string, enum: [context, impact, trace, discover, explore, files, capabilities]}, artifact_version: {type: integer, enum: [1, 2]}}}}
         status: {type: string, enum: [ready]}
         freshness: {type: string, enum: [current]}
