@@ -33,6 +33,9 @@ func TestGraphQueryContracts(t *testing.T) {
 		{"/v1/graph/explore", api.GraphExploreRequest{Query: "symbol"}},
 		{"/v1/graph/files", api.GraphFilesRequest{}},
 		{"/v1/graph/capabilities", api.GraphCapabilitiesRequest{}},
+		{"/v1/graph/callers", api.GraphSymbolCallsRequest{Symbol: "a"}},
+		{"/v1/graph/callees", api.GraphSymbolCallsRequest{Symbol: "a"}},
+		{"/v1/graph/impact-radius", api.GraphSymbolImpactRequest{Symbol: "a"}},
 	}
 	for _, route := range routes {
 		t.Run(route.path, func(t *testing.T) {
@@ -323,6 +326,15 @@ func (graphQueryEngine) Traverse(_ context.Context, request graphprotocol.Traver
 func (graphQueryEngine) IndexedFiles(_ context.Context, request graphprotocol.FilesRequest) (graphprotocol.FilesResponse, error) {
 	total := int64(1)
 	return graphprotocol.FilesResponse{Files: []graphprotocol.IndexedFile{{RepositoryID: 101, Fact: &graphv2.File{Path: "a.go"}}}, Generations: []graphprotocol.Generation{graphQueryGeneration(request.Scope)}, TotalFiles: &total}, nil
+}
+func (graphQueryEngine) SymbolCalls(_ context.Context, request graphprotocol.SymbolCallsRequest) (graphprotocol.SymbolResponse, error) {
+	return graphQuerySymbols(request.Scope), nil
+}
+func (graphQueryEngine) SymbolImpact(_ context.Context, request graphprotocol.SymbolImpactRequest) (graphprotocol.SymbolResponse, error) {
+	return graphQuerySymbols(request.Scope), nil
+}
+func graphQuerySymbols(scope graphprotocol.Scope) graphprotocol.SymbolResponse {
+	return graphprotocol.SymbolResponse{Status: graphprotocol.StatusOK, Definitions: []graphprotocol.SymbolDefinition{{Definitions: []graphprotocol.Entity{graphQueryEntity()}}}, Generations: []graphprotocol.Generation{graphQueryGeneration(scope)}}
 }
 func (graphQueryEngine) ValidateGenerations(context.Context, graphprotocol.Scope, []graphprotocol.Generation) error {
 	return nil

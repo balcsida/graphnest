@@ -203,7 +203,12 @@ func (s *Store) EntityNeighbors(ctx context.Context, q graphquery.EntityNeighbor
  where u.repository_id=$1 and u.id=$2 and u.commit=$3 and u.schema_version=2
  and e.` + parent + `_key=sha256($4::bytea) and e.` + parent + `=$4::bytea and e.kind=$5
  and (e.confidence is null or e.confidence >= $6)
- order by n.occurrence,e.occurrence limit $7`
+ order by `
+	if q.ProducerOrder {
+		sql += `e.ordinal limit $7`
+	} else {
+		sql += `n.occurrence,e.occurrence limit $7`
+	}
 	rows, err := s.pool.Query(ctx, sql, q.Snapshot.RepositoryID, q.Snapshot.UploadID, q.Snapshot.Commit, []byte(q.Occurrence), int16(relation.Kind), q.MinConfidence, q.Limit, graphquery.MaxEntityQueryBytes)
 	if err != nil {
 		return nil, err

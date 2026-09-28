@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/balcsida/graphnest/internal/authn"
+	"github.com/balcsida/graphnest/internal/graphprotocol"
 	"github.com/balcsida/graphnest/internal/graphquery"
 	"github.com/balcsida/graphnest/internal/graphservice"
 	"github.com/balcsida/graphnest/pkg/api"
@@ -54,6 +55,27 @@ func RegisterGraphQueries(mux *http.ServeMux, authenticator authn.Authenticator,
 	}))))
 	mux.Handle("/v1/graph/files", exactMethod(http.MethodPost, AuthenticateBearer(authenticator, jsonSCIPHandler(maxRequestBytes, func(writer http.ResponseWriter, request *http.Request, input api.GraphFilesRequest) {
 		response, err := service.ListFilesPublic(request.Context(), PrincipalFromContext(request.Context()), input)
+		if err != nil {
+			writeGraphQueryError(writer, err)
+			return
+		}
+		writeBoundedJSON(writer, response, maxResponseBytes)
+	}))))
+	for path, query := range map[string]func(context.Context, authn.Principal, api.GraphSymbolCallsRequest) (graphprotocol.SymbolResponse, error){
+		"/v1/graph/callers": service.SymbolCallers,
+		"/v1/graph/callees": service.SymbolCallees,
+	} {
+		mux.Handle(path, exactMethod(http.MethodPost, AuthenticateBearer(authenticator, jsonSCIPHandler(maxRequestBytes, func(writer http.ResponseWriter, request *http.Request, input api.GraphSymbolCallsRequest) {
+			response, err := query(request.Context(), PrincipalFromContext(request.Context()), input)
+			if err != nil {
+				writeGraphQueryError(writer, err)
+				return
+			}
+			writeBoundedJSON(writer, response, maxResponseBytes)
+		}))))
+	}
+	mux.Handle("/v1/graph/impact-radius", exactMethod(http.MethodPost, AuthenticateBearer(authenticator, jsonSCIPHandler(maxRequestBytes, func(writer http.ResponseWriter, request *http.Request, input api.GraphSymbolImpactRequest) {
+		response, err := service.SymbolImpact(request.Context(), PrincipalFromContext(request.Context()), input)
 		if err != nil {
 			writeGraphQueryError(writer, err)
 			return

@@ -1,13 +1,24 @@
 {
-  "index_ms": 799.504667,
+  "index_ms": 507.1895830000001,
   "library_getCallers_ms": {
-    "p50": 0.024959000000080778,
-    "p95": 0.031874999999899956,
+    "p50": 0.02554099999997561,
+    "p95": 0.03483300000016243,
     "samples": 100
+  },
+  "machine": {
+    "architecture": "arm64",
+    "cpu_model": "Apple M3 Max",
+    "logical_cpus": 14,
+    "node": "v24.13.0",
+    "os_release": "25.6.0",
+    "os_version": "Darwin Kernel Version 25.6.0: Tue Aug 18 17:51:35 PDT 2026; root:xnu-12377.161.15.700.19~2/RELEASE_ARM64_T6031",
+    "platform": "darwin",
+    "sqlite": "3.50.4",
+    "v8": "13.6.233.17-node.37"
   },
   "platform": "Darwin arm64",
   "result": {
-    "durationMs": 743,
+    "durationMs": 447,
     "edgesCreated": 93,
     "errors": [],
     "filesDiscovered": 13,
@@ -20,8 +31,9 @@
   "runtime": "v24.13.0",
   "scope": "pinned portable CodeGraph indexing, library getCallers, and separate direct SQLite call query; not GraphNest or browser latency",
   "sqlite_warm_call_query_ms": {
-    "p50": 0.019625,
-    "p95": 0.022917,
+    "p50": 0.019667,
+    "p95": 0.02125,
     "samples": 100
-  }
+  },
+  "workflow_timings": {}
 }

@@ -116,7 +116,7 @@ func (s *Service) Capabilities(ctx context.Context, p authn.Principal, r api.Gra
 	generation := files.Generations[0]
 	result := CapabilitiesResponse{
 		Version: 1, QueryArtifactVersions: []int{1, 2}, UploadArtifactVersions: []int{1, 2},
-		Workflows: []CapabilityWorkflow{{Name: "context", ArtifactVersion: 1}, {Name: "impact", ArtifactVersion: 1}, {Name: "trace", ArtifactVersion: 1}, {Name: "discover", ArtifactVersion: 2}, {Name: "explore", ArtifactVersion: 2}, {Name: "files", ArtifactVersion: 2}, {Name: "capabilities", ArtifactVersion: 2}},
+		Workflows: []CapabilityWorkflow{{Name: "context", ArtifactVersion: 1}, {Name: "impact", ArtifactVersion: 1}, {Name: "trace", ArtifactVersion: 1}, {Name: "discover", ArtifactVersion: 2}, {Name: "explore", ArtifactVersion: 2}, {Name: "files", ArtifactVersion: 2}, {Name: "capabilities", ArtifactVersion: 2}, {Name: "callers", ArtifactVersion: 2}, {Name: "callees", ArtifactVersion: 2}, {Name: "impact_radius", ArtifactVersion: 2}},
 		Status:    "ready", Freshness: "current", RepositoryID: i.selected.GitHubID, Repository: i.selected.Name,
 		Branch: i.selected.Branch, CurrentIndexedCommit: i.selected.Commit, Generation: &generation,
 		ProducerCapabilities: slices.Clone(generation.Capabilities), DiscoveryProjection: true, DiscoveryCoverage: probe.Coverage,
