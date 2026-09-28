@@ -5,6 +5,12 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-28
+
+This release lets repositories publish their own v2 (CodeGraph) graph
+generations under an administrator grant, and adds name-addressed callers,
+callees and impact radius over REST and MCP.
+
 ### Added
 
 - Name-addressed callers, callees and impact radius for v2 (CodeGraph)
@@ -14,8 +20,8 @@ the compatibility and migration notes before upgrading.
   `codegraph_callees` and `codegraph_impact`: qualified names, per-definition
   sections, `file` narrowing and limits. They are compared with the pinned
   CodeGraph answers. Differences in definition order and non-exact name fallback
-  are documented in `docs/graph-exploration.md`.
-- Repository-scoped graph publication (CodeGraph parity S1.08).
+  are documented in `docs/graph-exploration.md`. ([#124])
+- Repository-scoped graph publication (CodeGraph parity S1.08). ([#123])
   `POST /v1/graph/uploads` now accepts v2 artifacts
   (`application/vnd.graphnest.graph.v2+protobuf`). Administrators can publish
   them, and so can users whom an administrator has granted publication through
@@ -33,7 +39,7 @@ the compatibility and migration notes before upgrading.
 
 - The search sidebar's repository and language filters overflowed past the
   sidebar border because a long example query widened the whole column. The
-  filters now fit the sidebar and long examples are truncated.
+  filters now fit the sidebar and long examples are truncated. ([#122])
 
 ### Upgrade guidance
 
@@ -376,7 +382,9 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
-[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/balcsida/graphnest/compare/v0.6.1...v0.7.0
+[0.6.1]: https://github.com/balcsida/graphnest/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/balcsida/graphnest/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/balcsida/graphnest/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/balcsida/graphnest/compare/v0.4.1...v0.4.3
@@ -414,3 +422,6 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
 [#102]: https://github.com/balcsida/graphnest/issues/102
 [#118]: https://github.com/balcsida/graphnest/pull/118
 [#120]: https://github.com/balcsida/graphnest/pull/120
+[#122]: https://github.com/balcsida/graphnest/pull/122
+[#123]: https://github.com/balcsida/graphnest/pull/123
+[#124]: https://github.com/balcsida/graphnest/pull/124
