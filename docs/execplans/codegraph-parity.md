@@ -5,6 +5,25 @@ Implementation, validation, draft publication, and release are separate states.
 
 ## Progress
 
+- 2026-09-27: S1.07 symbol tools on `feat/codegraph/s1-07-symbol-tools`, based
+  on `main`. The pinned harness now also runs the upstream `codegraph_callers`,
+  `codegraph_callees`, and `codegraph_impact` handlers: eleven new real answers,
+  52 in all.
+  - The timing baseline was refreshed because it pins the harness hash; timings
+    were measured on the same machine class.
+  - GraphNest adds name-addressed `SymbolCalls`/`SymbolImpact` queries, service
+    authorization, REST (`/v1/graph/callers`, `/callees`, `/impact-radius`), MCP
+    (`graph_callers`, `graph_callees`, `graph_impact_radius`), and capability
+    workflows.
+  - `TestGraphSymbolToolsMatchCodeGraph` loads the real fixture into PostgreSQL
+    and renders GraphNest's structured answers in upstream's layout. The eight
+    callers/callees answers match exactly apart from the order of same-named
+    definitions. The three impact answers match as sets: depth 1 is equal, and
+    depth 2 adds only the two documented shortest-depth nodes.
+  - Reversing the relation order fails five cases.
+  - REST and MCP return identical answers from PostgreSQL, and an ungranted
+    repository returns 404.
+
 - 2026-09-27: S1.08 repository-scoped publication on
   `feat/codegraph/s1-08-publish-policy`, based on `main`. `POST
   /v1/graph/uploads` now accepts v2 artifacts from administrators and from
@@ -509,6 +528,19 @@ these tests.
   transaction if that window matters.
 - REST-published generations record no producer capability list. Stage 2
   should declare capabilities once it negotiates CodeGraph schema versions.
+- Symbol tools resolve exact-name candidates with upstream's `matchesSymbol`
+  rules instead of `Discover`. `Discover` is exploration ranking: it splits
+  `MissingFixtureSymbol987` and matches `Fixture`, while upstream `searchNodes`
+  returns nothing. Two consequences are recorded until `searchNodes` (FTS5 BM25,
+  LIKE and Levenshtein fallbacks, rescoring) is ported:
+  - same-named definitions are ordered by generated flag, path, and line instead
+    of by BM25;
+  - a name with no exact match returns `not_found` instead of the best
+    non-exact hit.
+- Callers and callees read edges in the producer's row order. Upstream's
+  unordered `IN (...)` over `idx_edges_{target,source}_kind` yields kind
+  ascending, then rowid; v2 fixtures keep rowid order as the edge ordinal. Stage
+  2 importers must export edges in rowid order to keep this.
 
 ## Discoveries
 
@@ -683,6 +715,10 @@ The rebased sessions layer also passes the exact two-call restoration comparison
   implemented. Production query parity, browser parity, CLI import, and
   local-engine work remains pending. Publication has no MCP tool; publishers
   use REST.
+- `searchNodes` has no GraphNest port; symbol tools use exact-name candidates
+  (see Decisions). `codegraph_node` (file and symbol modes) and the remaining
+  S1.07 transports are still to do. The Nix option-path branch is covered by
+  code review only; the pinned fixture has no Nix sources.
 - Full Stage 1 validation (including authorization, database, browser, deployment,
   and real-producer conformance) has not run and is not claimed as passing.
 - The proposed warm-query p95 budgets remain unchanged: existing GraphNest within
@@ -712,6 +748,7 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 | S1.06a3 entity impact | `feat/codegraph/s1-06a3-entity-impact` | Implemented, independently approved and signed (`931e7d9`); depends on PR #81 | Draft [PR #82](https://github.com/balcsida/graphnest/pull/82); native stack #66, position 17; CI and CodeQL passed |
 | S1.06b1 type relations and hierarchy | `feat/codegraph/type-hierarchy` | Implemented; focused unit, service and PostgreSQL checks pass; based on `main` | [PR #119](https://github.com/balcsida/graphnest/pull/119) |
 | S1.08 publication policy | `feat/codegraph/s1-08-publish-policy` | Implemented; unit race, PostgreSQL integration race (apart from clock-skewed supply-chain claims that fail on `main` too), vet, staticcheck and OpenAPI checks pass; based on `main` | [PR #123](https://github.com/balcsida/graphnest/pull/123) |
+| S1.07 symbol tools | `feat/codegraph/s1-07-symbol-tools` | Implemented; oracle, unit race, PostgreSQL integration race, vet, staticcheck, OpenAPI and parity-reference checks pass; based on `main` | [PR #124](https://github.com/balcsida/graphnest/pull/124) |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66

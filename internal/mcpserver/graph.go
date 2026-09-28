@@ -40,6 +40,18 @@ func registerGraphTools(server *mcp.Server, service *graphservice.Service, maxOu
 		response, err := service.ListFilesPublic(ctx, httpapi.PrincipalFromContext(ctx), input)
 		return graphResult(response, err, maxOutputBytes)
 	})
+	mcp.AddTool(server, &mcp.Tool{Name: "graph_callers", Description: "List what calls, imports, instantiates, navigates to, or references each definition of a symbol name.", InputSchema: graphSymbolSchema("limit")}, func(ctx context.Context, _ *mcp.CallToolRequest, input api.GraphSymbolCallsRequest) (*mcp.CallToolResult, any, error) {
+		response, err := service.SymbolCallers(ctx, httpapi.PrincipalFromContext(ctx), input)
+		return graphResult(response, err, maxOutputBytes)
+	})
+	mcp.AddTool(server, &mcp.Tool{Name: "graph_callees", Description: "List what each definition of a symbol name calls, imports, instantiates, navigates to, or references.", InputSchema: graphSymbolSchema("limit")}, func(ctx context.Context, _ *mcp.CallToolRequest, input api.GraphSymbolCallsRequest) (*mcp.CallToolResult, any, error) {
+		response, err := service.SymbolCallees(ctx, httpapi.PrincipalFromContext(ctx), input)
+		return graphResult(response, err, maxOutputBytes)
+	})
+	mcp.AddTool(server, &mcp.Tool{Name: "graph_impact_radius", Description: "List the symbols affected by changing each definition of a symbol name.", InputSchema: graphSymbolSchema("depth")}, func(ctx context.Context, _ *mcp.CallToolRequest, input api.GraphSymbolImpactRequest) (*mcp.CallToolResult, any, error) {
+		response, err := service.SymbolImpact(ctx, httpapi.PrincipalFromContext(ctx), input)
+		return graphResult(response, err, maxOutputBytes)
+	})
 	mcp.AddTool(server, &mcp.Tool{Name: "graph_capabilities", Description: "Report graph query, upload, and selected generation capabilities.", InputSchema: graphCapabilitiesSchema()}, func(ctx context.Context, _ *mcp.CallToolRequest, input api.GraphCapabilitiesRequest) (*mcp.CallToolResult, any, error) {
 		response, err := service.Capabilities(ctx, httpapi.PrincipalFromContext(ctx), input)
 		return graphResult(response, err, maxOutputBytes)
@@ -151,6 +163,21 @@ func graphFilesSchema() map[string]any {
 	properties["limit"] = map[string]any{"type": "integer", "minimum": 0, "maximum": 100}
 	properties["cursor"] = map[string]any{"type": "string"}
 	return map[string]any{"type": "object", "additionalProperties": false, "properties": properties}
+}
+
+// graphSymbolSchema addresses definitions by name like CodeGraph's callers,
+// callees and impact tools; bound is "limit" (default 20, 1-100) or "depth"
+// (default 2, 1-10). Values outside the range are clamped.
+func graphSymbolSchema(bound string) map[string]any {
+	properties := graphBaseProperties()
+	properties["symbol"] = map[string]any{"type": "string", "minLength": 1, "maxLength": 16384, "description": "name, or qualified name such as Class.method or module::fn"}
+	properties["file"] = map[string]any{"type": "string", "maxLength": 16384, "description": "narrow same-named definitions to this path or path suffix"}
+	if bound == "limit" {
+		properties["limit"] = map[string]any{"type": "integer", "default": 20, "description": "per definition; default: 20; clamped to 1-100"}
+	} else {
+		properties["depth"] = map[string]any{"type": "integer", "default": 2, "description": "default: 2; clamped to 1-10"}
+	}
+	return map[string]any{"type": "object", "additionalProperties": false, "required": []string{"symbol"}, "properties": properties}
 }
 
 func graphCapabilitiesSchema() map[string]any {
