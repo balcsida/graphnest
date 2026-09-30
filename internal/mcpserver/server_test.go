@@ -23,6 +23,7 @@ import (
 	"github.com/balcsida/graphnest/internal/repository"
 	"github.com/balcsida/graphnest/internal/scipgraph"
 	"github.com/balcsida/graphnest/internal/search"
+	"github.com/balcsida/graphnest/internal/supplychain"
 	"github.com/balcsida/graphnest/internal/zoekt"
 	"github.com/balcsida/graphnest/pkg/api"
 	"github.com/jackc/pgx/v5"
@@ -61,7 +62,7 @@ func TestGraphMCPMatchesService(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, description := range map[string]string{
-		"context":             "Inspect a symbol's incoming and outgoing code relationships.",
+		"context":             "Inspect a symbol's incoming and outgoing code relationships. Identify the symbol by exactly one of uid or name.",
 		"impact":              "Analyze the upstream or downstream impact of a code symbol.",
 		"trace":               "Trace code relationships between two symbols.",
 		"graph_discover":      "Find bounded entry points in an indexed graph.",
@@ -115,9 +116,6 @@ func TestGraphMCPMatchesService(t *testing.T) {
 	contextSchema := repositoryToolSchema(t, tools.Tools, "context")
 	if contextSchema["properties"].(map[string]any)["uid"] == nil || contextSchema["properties"].(map[string]any)["name"] == nil {
 		t.Fatalf("context schema = %#v", contextSchema)
-	}
-	if contextSchema["oneOf"] == nil || contextSchema["anyOf"] != nil {
-		t.Fatalf("context selector schema = %#v", contextSchema)
 	}
 	contextLimit := contextSchema["properties"].(map[string]any)["per_category_limit"].(map[string]any)
 	if contextLimit["minimum"] != float64(0) || contextLimit["default"] != float64(100) || !strings.Contains(contextLimit["description"].(string), "default: 100; values above 100 are capped") {
@@ -1005,3 +1003,40 @@ func (backend *recordingBackend) Search(_ context.Context, request search.Backen
 }
 
 func (*recordingBackend) Health(context.Context) error { return nil }
+
+// OpenAI-compatible function calling (Azure OpenAI, LiteLLM) rejects a
+// parameters schema that is not an object or that combines schemas at the
+// top level. Every tool must stay loadable there.
+func TestToolSchemasAcceptedByFunctionCalling(t *testing.T) {
+	server := NewWithLimits(Services{
+		Search: testService(t, &recordingBackend{}), Repositories: &repository.Service{}, SCIP: &scipgraph.Service{}, Graph: &graphservice.Service{},
+		SupplyChain: SupplyChainServices{Inventory: &supplychain.Service{}, Portfolio: &supplychain.Portfolio{}},
+	}, Limits{})
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	if _, err := server.Connect(t.Context(), serverTransport, nil); err != nil {
+		t.Fatal(err)
+	}
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(t.Context(), clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	tools, err := session.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tools.Tools) < 15 {
+		t.Fatalf("only %d tools registered", len(tools.Tools))
+	}
+	for _, tool := range tools.Tools {
+		schema := repositoryToolSchema(t, tools.Tools, tool.Name)
+		if schema["type"] != "object" {
+			t.Fatalf("%s schema type = %#v, want object", tool.Name, schema["type"])
+		}
+		for _, keyword := range []string{"oneOf", "anyOf", "allOf", "enum", "const", "not"} {
+			if _, found := schema[keyword]; found {
+				t.Fatalf("%s schema has top-level %s: %#v", tool.Name, keyword, schema)
+			}
+		}
+	}
+}
