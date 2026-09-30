@@ -16,7 +16,7 @@ func registerGraphTools(server *mcp.Server, service *graphservice.Service, maxOu
 	if service == nil {
 		return
 	}
-	mcp.AddTool(server, &mcp.Tool{Name: "context", Description: "Inspect a symbol's incoming and outgoing code relationships.", InputSchema: graphContextSchema()}, func(ctx context.Context, _ *mcp.CallToolRequest, input api.GraphContextRequest) (*mcp.CallToolResult, any, error) {
+	mcp.AddTool(server, &mcp.Tool{Name: "context", Description: "Inspect a symbol's incoming and outgoing code relationships. Identify the symbol by exactly one of uid or name.", InputSchema: graphContextSchema()}, func(ctx context.Context, _ *mcp.CallToolRequest, input api.GraphContextRequest) (*mcp.CallToolResult, any, error) {
 		response, err := service.Context(ctx, httpapi.PrincipalFromContext(ctx), input)
 		return graphResult(response, err, maxOutputBytes)
 	})
@@ -108,7 +108,8 @@ func graphContextSchema() map[string]any {
 	properties["per_category_limit"] = cappedIntegerSchema("maximum relationships per category; default: 100; values above 100 are capped", 100)
 	properties["per_category_offset"] = map[string]any{"type": "integer", "minimum": 0, "description": "relationships to skip per category"}
 	properties["include_content"] = map[string]any{"type": "boolean", "description": "include source content for the symbol"}
-	return map[string]any{"type": "object", "additionalProperties": false, "properties": properties, "oneOf": []any{map[string]any{"required": []string{"uid"}}, map[string]any{"required": []string{"name"}}}}
+	// No top-level oneOf for the uid/name choice: OpenAI-compatible function calling rejects it. The service enforces exactly one.
+	return map[string]any{"type": "object", "additionalProperties": false, "properties": properties}
 }
 
 func graphImpactSchema() map[string]any {

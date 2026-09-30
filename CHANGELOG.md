@@ -5,6 +5,15 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+### Fixed
+
+- The MCP `context` tool could not be loaded through OpenAI-compatible
+  function calling (Azure OpenAI, LiteLLM): its input schema expressed the
+  uid-or-name choice as a top-level `oneOf`, which those APIs reject with
+  `invalid_function_parameters`, failing the whole request for every tool.
+  The choice is now stated in the tool description and enforced by the
+  service as before.
+
 ## [0.7.0] - 2026-09-28
 
 This release lets repositories publish their own v2 (CodeGraph) graph
