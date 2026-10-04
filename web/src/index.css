@@ -31,6 +31,11 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-license-permissive: var(--license-permissive);
+  --color-license-weak-copyleft: var(--license-weak_copyleft);
+  --color-license-strong-copyleft: var(--license-strong_copyleft);
+  --color-license-other: var(--license-other);
+  --color-license-unknown: var(--license-unknown);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -66,6 +71,12 @@
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
+  /* License families, strictest last; one meaning per hue in both themes. */
+  --license-permissive: oklch(0.6 0.11 172);
+  --license-weak_copyleft: oklch(0.76 0.15 78);
+  --license-strong_copyleft: oklch(0.577 0.245 27.325);
+  --license-other: oklch(0.6 0.1 300);
+  --license-unknown: oklch(0.7 0 0);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -100,6 +111,11 @@
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
+  --license-permissive: oklch(0.68 0.11 172);
+  --license-weak_copyleft: oklch(0.8 0.15 78);
+  --license-strong_copyleft: oklch(0.65 0.22 25);
+  --license-other: oklch(0.68 0.1 300);
+  --license-unknown: oklch(0.6 0 0);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -116,6 +132,17 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--muted-foreground) 45%, transparent) transparent;
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 22%, transparent);
+    color: inherit;
+  }
+  table {
+    font-variant-numeric: tabular-nums;
   }
 }
 

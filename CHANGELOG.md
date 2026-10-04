@@ -5,6 +5,41 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+The web console is rebuilt as a React application. See
+[ADR-0018](docs/adr/0018-react-shadcn-web-console.md).
+
+### Added
+
+- License dashboard at `/supply-chain/licenses` for directors: key figures with
+  named denominators, assessment status donut, top licenses, per-repository
+  license mix by family, components per ecosystem, and a collection freshness
+  strip. It is built from the existing supply-chain REST routes.
+- Dependency graph at `/supply-chain/graph`: onboarded repositories linked to
+  the external dependencies they share, with filters, a detail sheet per node,
+  and a table alternative.
+- `make ui`, `make ui-check`, `make ui-dev`, and `make ui-screenshots` build,
+  check, run, and photograph the console.
+
+### Changed
+
+- The console is one React single-page application on shadcn/ui, with a
+  sidebar, client routes (`/`, `/repositories`, `/supply-chain`, `/admin`,
+  `/account`), and a light, dark, or system theme, replacing the three
+  separate pages.
+- The bearer token is kept in `sessionStorage` under `graphnest_token` and is
+  migrated from `graphnest_admin_token` on first load. It is never stored in
+  `localStorage` or a cookie.
+- The Content-Security-Policy on HTML is now `script-src 'self'` with
+  `style-src 'self' 'unsafe-inline'` instead of script and style hashes.
+  Radix UI, Recharts, and Sonner inject style elements at runtime; inline
+  scripts and `eval` remain forbidden.
+
+### Removed
+
+- The hand-written single-file pages and their 40 KiB budget, the Go contract
+  tests and fake-DOM tests that read them, and the break-glass HTML stripping.
+  The console reads `break_glass` from `GET /v1/auth/config`.
+
 ### Fixed
 
 - The MCP `context` tool could not be loaded through OpenAI-compatible
@@ -13,6 +48,13 @@ the compatibility and migration notes before upgrading.
   `invalid_function_parameters`, failing the whole request for every tool.
   The choice is now stated in the tool description and enforced by the
   service as before.
+
+### Upgrade guidance
+
+- Building from source or images now requires Node 24. `make build`,
+  `make test`, and the Docker image build run `make ui`; run it before building
+  `Dockerfile.offline`. A Go binary built without it answers the console routes
+  with `503`. Published images are unaffected.
 
 ## [0.7.0] - 2026-09-28
 

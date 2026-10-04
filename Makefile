@@ -9,7 +9,7 @@ NODE_IMAGE ?= graphnest-node:dev
 WEB_INPUTS = web/package.json web/package-lock.json web/vite.config.ts web/index.html web/components.json \
 	$(wildcard web/tsconfig*.json) $(shell find web/src web/public -type f)
 
-.PHONY: brand-check fmt lint staticcheck govulncheck test test-race makefile-test scanner-build scanner-test scanner-vulncheck abi-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test tools-check ui-smoke ui ui-check ui-dev
+.PHONY: brand-check fmt lint staticcheck govulncheck test test-race makefile-test scanner-build scanner-test scanner-vulncheck abi-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test tools-check ui-smoke ui ui-check ui-dev ui-screenshots
 
 brand-check:
 	@status=0; git grep -I -i -E 'grep[-_]?nest|graph[-_]nest' -- . || status=$$?; test $$status -eq 1
@@ -122,6 +122,9 @@ ui-check: web/node_modules/.package-lock.json
 
 ui-dev: web/node_modules/.package-lock.json
 	npm --prefix web run dev
+
+ui-screenshots: ui
+	node test/smoke/console-screenshots.mjs docs/images
 
 build: ui
 	go build ./cmd/...

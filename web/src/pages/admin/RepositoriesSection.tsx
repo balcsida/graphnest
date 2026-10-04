@@ -71,10 +71,7 @@ export function RepositoriesSection() {
     })
 
   async function reindexSelected() {
-    if (selectedVisible.length === 0) {
-      toast.error('Select at least one repository.')
-      return
-    }
+    if (selectedVisible.length === 0) return
     if (!(await confirm(`Queue ${selectedVisible.length} selected repositories for reindexing?`))) return
     try {
       for (const repository of selectedVisible) await reindexRepository(repository.github_id)
@@ -106,8 +103,8 @@ export function RepositoriesSection() {
         <Button type="button" variant="outline" className="ml-auto" onClick={() => void confirmed('Reconcile repositories from GitHub now?', reconcileGitHub, 'Reconciliation completed.')}>
           Reconcile GitHub
         </Button>
-        <Button type="button" onClick={() => void reindexSelected()}>
-          Reindex selected
+        <Button type="button" disabled={selectedVisible.length === 0} onClick={() => void reindexSelected()}>
+          Reindex selected{selectedVisible.length > 0 && ` (${selectedVisible.length})`}
         </Button>
       </div>
       <Table>

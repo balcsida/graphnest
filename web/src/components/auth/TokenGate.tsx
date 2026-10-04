@@ -137,11 +137,13 @@ export function TokenGate() {
           )}
           {token_login && (
             <>
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <Separator className="flex-1" />
-                or use a token
-                <Separator className="flex-1" />
-              </div>
+              {links.length > 0 && (
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <Separator className="flex-1" />
+                  or use a token
+                  <Separator className="flex-1" />
+                </div>
+              )}
               <TokenForm />
             </>
           )}

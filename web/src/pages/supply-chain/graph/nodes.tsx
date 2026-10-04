@@ -21,18 +21,19 @@ export function DependencyNode({ data }: NodeProps<DependencyFlowNode>) {
   return (
     <div
       className={cn(
-        'flex h-full w-full flex-col justify-center rounded-md border-2 border-l-8 bg-card px-3 text-card-foreground shadow-xs',
+        'flex h-full w-full flex-col justify-center rounded-md border-2 bg-card px-3 text-card-foreground shadow-xs',
         dependency.risky && 'border-destructive',
         transition,
         data.dimmed && 'opacity-30',
       )}
-      style={dependency.risky ? { borderLeftColor: ecosystemColor(data.colorIndex) } : { borderColor: ecosystemColor(data.colorIndex) }}
+      style={dependency.risky ? undefined : { borderColor: ecosystemColor(data.colorIndex) }}
     >
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <p className="truncate text-sm font-medium" title={dependency.label}>
         {dependency.label}
       </p>
-      <p className="truncate text-xs text-muted-foreground">
+      <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+        <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ backgroundColor: ecosystemColor(data.colorIndex) }} />
         {dependency.ecosystem} · {dependency.repositoryIds.length} repositories{dependency.risky ? ' · conflict or unlicensed' : ''}
       </p>
     </div>

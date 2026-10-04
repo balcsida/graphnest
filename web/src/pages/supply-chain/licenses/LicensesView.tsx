@@ -1,10 +1,12 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router'
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from 'recharts'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
+import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { getSupplyChainFacets, getSupplyChainOverview } from '@/api/supply-chain'
 import type { SupplyChainFacets, SupplyChainOverview } from '@/api/types'
@@ -32,8 +34,18 @@ const DEFAULT_TOP_N = 10
 
 const chartColor = (index: number) => `var(--chart-${(index % 5) + 1})`
 
+/** Statuses with a clear good/warn/bad reading reuse the licence palette; others cycle the chart colours. */
+const STATUS_COLOR: Record<string, string> = {
+  resolved: 'var(--license-permissive)',
+  conflict: 'var(--license-strong_copyleft)',
+  unlicensed: 'var(--license-weak_copyleft)',
+  declared: 'var(--license-other)',
+  unknown: 'var(--license-unknown)',
+  unassessed: 'var(--license-unknown)',
+}
+
 const familyConfig = Object.fromEntries(
-  LICENSE_FAMILIES.map((family, index) => [family, { label: FAMILY_LABEL[family], color: chartColor(index) }]),
+  LICENSE_FAMILIES.map((family) => [family, { label: FAMILY_LABEL[family], color: `var(--license-${family})` }]),
 ) as ChartConfig
 
 const shorten = (value: string, length: number) => (value.length > length ? `${value.slice(0, length - 1)}…` : value)
@@ -63,10 +75,11 @@ function MixTooltip({ active, payload }: { active?: boolean; payload?: readonly 
 function Kpis({ overview }: { overview: SupplyChainOverview }) {
   const { repositories, components } = overview
   const totals = assessmentTotals(overview)
-  const coordinates = 'coordinates with an assessment status'
+  const coordinates = 'component occurrences with an assessment status'
   const authorized = 'authorized repositories'
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" role="group" aria-label="Key figures">
+    <div className="@container" role="group" aria-label="Key figures">
+      <div className="grid grid-cols-2 gap-3 @2xl:grid-cols-4 @5xl:grid-cols-7">
       <MetricCard label="Repositories with inventory" value={repositories.with_inventory} denominator={denominatorText(repositories.with_inventory, repositories.authorized, authorized)} />
       <MetricCard label="Unique coordinates" value={components.unique_coordinates} denominator={denominatorText(components.unique_coordinates, components.occurrences, 'occurrences')} />
       <MetricCard
@@ -78,23 +91,24 @@ function Kpis({ overview }: { overview: SupplyChainOverview }) {
       <MetricCard label="Unlicensed" value={components.assessments?.unlicensed ?? 0} denominator={denominatorText(components.assessments?.unlicensed ?? 0, totals.total, coordinates)} />
       <MetricCard label="Never collected" value={repositories.never_collected} denominator={denominatorText(repositories.never_collected, repositories.authorized, authorized)} />
       <MetricCard label="Stale" value={repositories.stale} denominator={denominatorText(repositories.stale, repositories.authorized, authorized)} />
+      </div>
     </div>
   )
 }
 
 function StatusDonut({ overview }: { overview: SupplyChainOverview }) {
   const slices = statusSlices(overview)
-  const config = Object.fromEntries(slices.map(({ status }, index) => [status, { label: status, color: chartColor(index) }])) as ChartConfig
+  const config = Object.fromEntries(slices.map(({ status }, index) => [status, { label: status, color: STATUS_COLOR[status] ?? chartColor(index) }])) as ChartConfig
   const total = assessmentTotals(overview).total
   return (
     <ChartCard
       title="Assessment status"
-      description={`Unique coordinates by assessment status, out of ${total} coordinates with an assessment status. Evidence, not compliance.`}
-      table={{ head: ['Status', 'Coordinates'], rows: slices.map(({ status, count }) => [status, count]) }}
+      description={`Component occurrences by assessment status, out of ${total} component occurrences with an assessment status. Evidence, not compliance.`}
+      table={{ head: ['Status', 'Occurrences'], rows: slices.map(({ status, count }) => [status, count]) }}
     >
       {(labels) =>
         slices.length ? (
-          <ChartContainer config={config} className="mx-auto aspect-square max-h-72" {...labels}>
+          <ChartContainer config={config} className="aspect-auto h-72 w-full" {...labels}>
             <PieChart>
               <ChartTooltip content={<ChartTooltipContent nameKey="status" hideLabel />} />
               <Pie data={slices} dataKey="count" nameKey="status" innerRadius="55%" isAnimationActive={false}>
@@ -115,21 +129,27 @@ function StatusDonut({ overview }: { overview: SupplyChainOverview }) {
 
 const barHeight = (rows: number) => ({ height: `${Math.max(rows, 1) * 32 + 48}px` })
 
-function LicenseBars({ facets, stream }: { facets: SupplyChainFacets; stream: string }) {
+function LicenseBars({ facets, stream, occurrences }: { facets: SupplyChainFacets; stream: string; occurrences: number }) {
   const navigate = useNavigate()
   const rows = topLicenses(facets)
-  const config = { count: { label: 'Components', color: 'var(--chart-1)' } } satisfies ChartConfig
+  const [asTable, setAsTable] = useState(false)
+  const config = { count: { label: 'Components', color: 'var(--primary)' } } satisfies ChartConfig
   return (
     <ChartCard
       title="Top license expressions"
-      description={`The ${rows.length} most common normalized license expressions, by components. Each bar opens the components list filtered to that expression.`}
+      description={`The ${rows.length} most common normalized license expressions, by components, out of ${occurrences} component occurrences in scope (at most 50 expressions are listed). Each bar opens the components list filtered to that expression.`}
       table={{ head: ['License expression', 'Components'], rows: rows.map((row) => [row.value, row.count]) }}
     >
       {(labels) => (
         <>
-          {rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No license expressions have been recorded.</p>
-          ) : (
+          {rows.length === 0 && <p className="text-sm text-muted-foreground">No license expressions have been recorded.</p>}
+          {rows.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Switch id="sc-license-table" checked={asTable} onCheckedChange={setAsTable} />
+              <Label htmlFor="sc-license-table">Show as table</Label>
+            </div>
+          )}
+          {rows.length > 0 && !asTable && (
             <ChartContainer config={config} className="aspect-auto w-full" style={barHeight(rows.length)} {...labels}>
               <BarChart data={rows} layout="vertical" margin={{ left: 8 }}>
                 <CartesianGrid horizontal={false} />
@@ -147,7 +167,7 @@ function LicenseBars({ facets, stream }: { facets: SupplyChainFacets; stream: st
               </BarChart>
             </ChartContainer>
           )}
-          {rows.length > 0 && (
+          {rows.length > 0 && asTable && (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -164,7 +184,7 @@ function LicenseBars({ facets, stream }: { facets: SupplyChainFacets; stream: st
                         <span className="sr-only">: show components</span>
                       </Link>
                     </TableCell>
-                    <TableCell className="text-right font-mono">{row.count}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{row.count}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -201,7 +221,7 @@ function FamilyBars({ rows, withLicenses, inspected, topN }: { rows: RepositoryM
               <YAxis dataKey="name" type="category" width={150} tickLine={false} axisLine={false} tickFormatter={(value: string) => shorten(value, 24)} />
               <XAxis type="number" allowDecimals={false} />
               <ChartTooltip content={MixTooltip} />
-              <ChartLegend content={<ChartLegendContent />} />
+              <ChartLegend itemSorter={null} content={<ChartLegendContent />} />
               {LICENSE_FAMILIES.map((family) => (
                 <Bar key={family} dataKey={family} stackId="mix" fill={`var(--color-${family})`} isAnimationActive={false} />
               ))}
@@ -213,13 +233,13 @@ function FamilyBars({ rows, withLicenses, inspected, topN }: { rows: RepositoryM
   )
 }
 
-function EcosystemBars({ facets }: { facets: SupplyChainFacets }) {
+function EcosystemBars({ facets, occurrences }: { facets: SupplyChainFacets; occurrences: number }) {
   const rows = [...facets.ecosystems].sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
-  const config = { count: { label: 'Components', color: 'var(--chart-2)' } } satisfies ChartConfig
+  const config = { count: { label: 'Components', color: 'var(--primary)' } } satisfies ChartConfig
   return (
     <ChartCard
       title="Components per ecosystem"
-      description="Components in scope grouped by package ecosystem."
+      description={`Components grouped by package ecosystem, out of ${occurrences} component occurrences in scope (at most 50 ecosystems are listed).`}
       table={{ head: ['Ecosystem', 'Components'], rows: rows.map((row) => [row.value, row.count]) }}
     >
       {(labels) =>
@@ -290,6 +310,7 @@ export default function LicensesView() {
       queryKey: ['supply-chain', 'facets', stream, repository.github_id],
       queryFn: ({ signal }: { signal: AbortSignal }) => getSupplyChainFacets({ stream, repository_id: repository.github_id }, signal),
       retry: false,
+      staleTime: 60_000,
     })),
   })
 
@@ -340,13 +361,13 @@ export default function LicensesView() {
               <Kpis overview={data} />
               <div className="grid gap-4 xl:grid-cols-2">
                 <StatusDonut overview={data} />
-                {scopeFacets ? <LicenseBars facets={scopeFacets} stream={stream} /> : <Skeleton className="h-64 w-full" aria-label="Loading license expressions" />}
+                {scopeFacets ? <LicenseBars facets={scopeFacets} stream={stream} occurrences={data.components.occurrences} /> : <Skeleton className="h-64 w-full" aria-label="Loading license expressions" />}
                 {settled ? (
                   <FamilyBars rows={mix.rows} withLicenses={mix.withLicenses} inspected={targets.length} topN={topN} />
                 ) : (
                   <Skeleton className="h-64 w-full" aria-label="Loading repository license mix" />
                 )}
-                {scopeFacets ? <EcosystemBars facets={scopeFacets} /> : <Skeleton className="h-64 w-full" aria-label="Loading ecosystems" />}
+                {scopeFacets ? <EcosystemBars facets={scopeFacets} occurrences={data.components.occurrences} /> : <Skeleton className="h-64 w-full" aria-label="Loading ecosystems" />}
               </div>
               {failed > 0 && (
                 <Alert variant="destructive" aria-live="polite">

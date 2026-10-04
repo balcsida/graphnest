@@ -91,6 +91,7 @@ export default function GraphView() {
       scanComponents((cursor, pageSignal) => listSupplyChainComponents({ stream, ecosystem, assessment, q, cursor, limit: SCAN_PAGE_SIZE }, pageSignal), signal),
     retry: false,
     refetchOnWindowFocus: false,
+    staleTime: 60_000,
   })
 
   const graph = useMemo(() => {
@@ -127,8 +128,7 @@ export default function GraphView() {
 
   return (
     <div className="grid gap-4">
-      <ViewHeader title="Dependency graph" />
-      <p className="text-sm text-muted-foreground">Which onboarded repositories share which external dependencies. Assessments describe evidence, not compliance.</p>
+      <ViewHeader title="Dependency graph" description="Which onboarded repositories share which external dependencies. Assessments describe evidence, not compliance." />
       <div className="flex flex-wrap items-end gap-3">
         <StreamSelect stream={stream} onChange={(value) => update({ stream: value })} />
         <ChoiceSelect id="sc-graph-min" label="Minimum shared repositories" value={String(minRepositories)} choices={MIN_CHOICES} onChange={(value) => update({ min: value })} className="w-56" />
@@ -184,7 +184,7 @@ export default function GraphView() {
               <EdgeTable graph={graph} onSelect={setSelection} />
             ) : (
               <>
-                <div role="region" aria-label="Dependency graph" className="h-[65vh] min-h-96 rounded-md border">
+                <div role="region" aria-label="Dependency graph" className="h-[75vh] min-h-96 rounded-md border">
                   <ReactFlow
                     key={graphKey}
                     nodes={nodes}
