@@ -5,6 +5,13 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+### Fixed
+
+- With the sidebar collapsed to icons, the GraphNest wordmark spilled out of
+  the icon rail over the header's sidebar toggle, so clicking the toggle
+  followed the wordmark link instead of expanding the sidebar. The wordmark is
+  now hidden while the sidebar is collapsed.
+
 ## [0.8.0] - 2026-10-04
 
 The web console is rebuilt as a React application with a License dashboard
