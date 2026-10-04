@@ -1,4 +1,4 @@
-import { Suspense } from 'react'
+import { Suspense, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, NavLink, Outlet, useLocation } from 'react-router'
 import { LogOut } from 'lucide-react'
@@ -87,7 +87,12 @@ function AppSidebar() {
                             <span>{item.title}</span>
                           </NavLink>
                         </SidebarMenuButton>
-                        {counts.has(item.to) && <SidebarMenuBadge aria-label={`${counts.get(item.to)} ${item.to.endsWith('jobs') ? 'queued or running' : 'repositories'}`}>{counts.get(item.to)}</SidebarMenuBadge>}
+                        {counts.has(item.to) && (
+                          <SidebarMenuBadge>
+                            {counts.get(item.to)}
+                            <span className="sr-only">{item.to.endsWith('jobs') ? ' jobs queued or running' : ' repositories'}</span>
+                          </SidebarMenuBadge>
+                        )}
                       </SidebarMenuItem>
                     ))}
                 </SidebarMenu>
@@ -104,6 +109,11 @@ function Header() {
   const { signOut } = useAuth()
   const { pathname } = useLocation()
   const trail = breadcrumbFor(pathname)
+
+  useEffect(() => {
+    // The search page is the landing page, so it keeps the bare product name.
+    document.title = [...(pathname === '/' ? [] : trail), 'GraphNest'].join(' · ')
+  }, [pathname, trail])
 
   async function handleSignOut() {
     try {
@@ -143,8 +153,14 @@ function Header() {
 export function AppShell() {
   return (
     <SidebarProvider>
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:shadow"
+      >
+        Skip to content
+      </a>
       <AppSidebar />
-      <SidebarInset>
+      <SidebarInset id="main-content" tabIndex={-1} className="outline-none">
         <Header />
         <div className="flex-1 p-4">
           <SearchStateProvider>
