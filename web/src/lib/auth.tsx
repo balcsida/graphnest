@@ -73,6 +73,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     resets.current.forEach((reset) => reset())
   }, [queryClient])
 
+  // A 401 from any call (including the admin probe) lands on the gate with the legacy console message.
+  const dropUnauthorized = useCallback(() => {
+    dropPrincipal()
+    setError('Token required or expired.')
+  }, [dropPrincipal])
+
   const check = useCallback(async () => {
     try {
       setConfig(await getAuthConfig())
@@ -116,12 +122,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [queryClient])
 
   useEffect(() => {
-    setUnauthorizedHandler(dropPrincipal)
+    setUnauthorizedHandler(dropUnauthorized)
     // Initial session check; its state updates arrive after awaited requests.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void check()
     return () => setUnauthorizedHandler(() => {})
-  }, [check, dropPrincipal])
+  }, [check, dropUnauthorized])
 
   const signInWithToken = useCallback(
     async (token: string) => {
@@ -143,6 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     if (method !== 'bearer') await logout()
     dropPrincipal()
+    setError('')
   }, [method, dropPrincipal])
 
   const registerPrincipalReset = useCallback((reset: () => void) => {

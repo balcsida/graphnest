@@ -3,6 +3,7 @@ import { vi } from 'vitest'
 export interface StubbedResponse {
   status?: number
   body?: unknown
+  headers?: Record<string, string>
 }
 
 export type Handler = StubbedResponse | ((request: { headers: Headers; body: unknown }) => StubbedResponse)
@@ -29,12 +30,12 @@ export function stubFetch(routes: Record<string, Handler>) {
       const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
       calls.push({ method, path, headers, body })
       const handler = routes[`${method} ${path}`]
-      const { status = 200, body: payload } = handler
+      const { status = 200, body: payload, headers: responseHeaders } = handler
         ? typeof handler === 'function'
           ? handler({ headers, body })
           : handler
         : { status: 404, body: { error: { code: 'not_found', message: 'Not found.', request_id: 'test', retryable: false } } }
-      return new Response(payload === undefined || status === 204 ? null : JSON.stringify(payload), { status })
+      return new Response(payload === undefined || status === 204 ? null : JSON.stringify(payload), { status, headers: responseHeaders })
     }),
   )
   return calls

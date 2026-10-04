@@ -10,7 +10,8 @@ test("searches pinned public repositories through the static UI", async ({ page 
   await page.getByLabel("Bearer token").fill(token);
   await page.getByRole("button", { name: "Connect" }).click();
 
-  await page.getByRole("button", { name: "Repositories" }).click();
+  await page.getByRole("link", { name: "Repositories", exact: true }).first().click();
+  await expect(page.getByRole("heading", { name: "Repositories", level: 1 })).toBeVisible();
   const helloRow = page.getByRole("row").filter({ hasText: "octocat/Hello-World" });
   const spoonRow = page.getByRole("row").filter({ hasText: "octocat/Spoon-Knife" });
   await expect(helloRow).toContainText("master");
@@ -18,22 +19,26 @@ test("searches pinned public repositories through the static UI", async ({ page 
   await expect(spoonRow).toContainText("main");
   await expect(spoonRow).toContainText("d0dd1f6");
 
-  await page.locator("#search-nav").click();
-  await page.locator("#repository-picker summary").click();
-  await page.getByLabel("All authorized repositories").uncheck();
-  const hello = page.getByLabel("octocat/Hello-World");
-  const spoon = page.getByLabel("octocat/Spoon-Knife");
+  await page.getByRole("link", { name: "Search", exact: true }).click();
+  const searchbox = page.getByRole("searchbox", { name: "Search code" });
+  const searchButton = page.getByRole("button", { name: "Search", exact: true });
+  await page.getByRole("button", { name: "All repositories" }).click();
+  await page.getByRole("checkbox", { name: "All authorized repositories" }).uncheck();
+  const hello = page.getByRole("checkbox", { name: "octocat/Hello-World", exact: true });
+  const spoon = page.getByRole("checkbox", { name: "octocat/Spoon-Knife", exact: true });
   await expect(hello).toBeEnabled();
   await expect(spoon).toBeEnabled();
 
+  const repositoryHeading = (name) => page.getByRole("heading", { level: 2, name: new RegExp(`^${name}`) });
+
   await hello.check();
-  await page.getByRole("searchbox", { name: "Search code" }).fill("Hello");
-  await page.locator("#search-button").click();
-  await expect(page.locator("#results")).toContainText("octocat/Hello-World");
-  await expect(page.locator("#results")).not.toContainText("octocat/Spoon-Knife");
-  const helloFile = page.locator("#results .file-result").first();
-  await expect(helloFile.locator("h3")).toHaveText("README");
-  await expect(helloFile.locator("h3 button")).toHaveCount(0);
+  await searchbox.fill("Hello");
+  await searchButton.click();
+  await expect(repositoryHeading("octocat/Hello-World")).toBeVisible();
+  await expect(repositoryHeading("octocat/Spoon-Knife")).toHaveCount(0);
+  const helloFile = page.getByRole("article").first();
+  await expect(helloFile.getByRole("heading", { level: 3 })).toHaveText("README");
+  await expect(helloFile.getByRole("button")).toHaveCount(0);
   await expect(helloFile.getByRole("link", { name: "Open indexed source" })).toHaveAttribute(
     "href",
     "https://github.com/octocat/Hello-World/blob/7fd1a60b01f91b314f59955a4e4d4e80d8edf11d/README#L1",
@@ -41,13 +46,13 @@ test("searches pinned public repositories through the static UI", async ({ page 
 
   await hello.uncheck();
   await spoon.check();
-  await page.getByRole("searchbox", { name: "Search code" }).fill("Forking");
-  await page.locator("#search-button").click();
-  await expect(page.locator("#results")).toContainText("octocat/Spoon-Knife");
-  await expect(page.locator("#results")).not.toContainText("octocat/Hello-World");
-  const spoonFile = page.locator("#results .file-result").first();
-  await expect(spoonFile.locator("h3")).toHaveText("README.md");
-  await expect(spoonFile.locator("h3 button")).toHaveCount(0);
+  await searchbox.fill("Forking");
+  await searchButton.click();
+  await expect(repositoryHeading("octocat/Spoon-Knife")).toBeVisible();
+  await expect(repositoryHeading("octocat/Hello-World")).toHaveCount(0);
+  const spoonFile = page.getByRole("article").first();
+  await expect(spoonFile.getByRole("heading", { level: 3 })).toHaveText("README.md");
+  await expect(spoonFile.getByRole("button")).toHaveCount(0);
   await expect(spoonFile.getByRole("link", { name: "Open indexed source" })).toHaveAttribute(
     "href",
     "https://github.com/octocat/Spoon-Knife/blob/d0dd1f61b33d64e29d8bc1372a94ef6a2fee76a9/README.md#L5",

@@ -27,7 +27,9 @@ export function setUnauthorizedHandler(handler: () => void) {
 
 export interface RequestOptions {
   method?: string
+  /** A Blob is sent as is with `contentType`; anything else is sent as JSON. */
   body?: unknown
+  contentType?: string
   signal?: AbortSignal
   /** Do not treat a 401 as a lost credential (session and sign-in probes). */
   keepCredentialOn401?: boolean
@@ -52,11 +54,12 @@ function isErrorResponse(value: unknown): value is ErrorResponse {
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (bearerToken) headers.Authorization = `Bearer ${bearerToken}`
-  if (options.body !== undefined) headers['Content-Type'] = 'application/json'
+  const binary = options.body instanceof Blob
+  if (options.body !== undefined) headers['Content-Type'] = options.contentType ?? 'application/json'
   const response = await fetch(path, {
     method: options.method ?? 'GET',
     headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    body: options.body === undefined ? undefined : binary ? (options.body as Blob) : JSON.stringify(options.body),
     credentials: 'same-origin',
     cache: 'no-store',
     signal: options.signal,
@@ -67,4 +70,18 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     throw new ApiError(response.status, isErrorResponse(body) ? body : undefined)
   }
   return body as T
+}
+
+/** Downloads a binary response with the same credentials as `request`; the filename comes from Content-Disposition. */
+export async function requestBlob(path: string, signal?: AbortSignal): Promise<{ blob: Blob; filename: string | null }> {
+  const headers: Record<string, string> = {}
+  if (bearerToken) headers.Authorization = `Bearer ${bearerToken}`
+  const response = await fetch(path, { headers, credentials: 'same-origin', cache: 'no-store', signal })
+  if (!response.ok) {
+    const body = await parseBody(response)
+    if (response.status === 401) onUnauthorized()
+    throw new ApiError(response.status, isErrorResponse(body) ? body : undefined)
+  }
+  const match = /filename="?([^";]+)"?/.exec(response.headers.get('Content-Disposition') ?? '')
+  return { blob: await response.blob(), filename: match ? match[1] : null }
 }
