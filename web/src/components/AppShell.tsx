@@ -67,7 +67,7 @@ function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <Link to="/" className="px-2 py-1 text-lg font-semibold">GraphNest</Link>
+        <Link to="/" className="truncate px-2 py-1 text-lg font-semibold group-data-[collapsible=icon]:invisible">GraphNest</Link>
       </SidebarHeader>
       <SidebarContent>
         {navGroups
