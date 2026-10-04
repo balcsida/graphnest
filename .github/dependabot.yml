@@ -18,6 +18,10 @@ updates:
     directory: /tools
     patterns: ["*"]
     multi-ecosystem-group: dependencies
+  - package-ecosystem: npm
+    directory: /web
+    patterns: ["*"]
+    multi-ecosystem-group: dependencies
 
   - package-ecosystem: github-actions
     directory: /

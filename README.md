@@ -20,6 +20,10 @@ Under the hood, GraphNest combines fast [Zoekt](https://github.com/sourcegraph/z
 
 ![GraphNest code search with SCIP navigation](docs/images/graphnest-ui.png)
 
+| License dashboard | Dependency graph |
+| --- | --- |
+| ![GraphNest License dashboard with assessment, license and ecosystem charts](docs/images/console-licenses-light.png) | ![GraphNest Dependency graph linking repositories to shared external dependencies](docs/images/console-graph-light.png) |
+
 ## What GraphNest provides
 
 | Capability | Description |
@@ -69,7 +73,7 @@ superseded design decisions.
 
 | Interface | Location | Authentication |
 | --- | --- | --- |
-| Browser console | `/` | Development bearer token or durable OIDC or GitHub OAuth session |
+| Browser console | `/`, `/repositories`, `/supply-chain` (Licenses and Dependency graph views), `/admin`, `/account` | Development bearer token or durable OIDC or GitHub OAuth session |
 | REST API | `/v1/...` | Bearer token or, where supported, same-origin browser session |
 | Streamable HTTP MCP | `/mcp` | Bearer API token, or an OAuth access token obtained through the built-in authorization server |
 | Stdio MCP proxy | `graphnest-mcp` | Uses `GRAPHNEST_SERVER_URL` and `GRAPHNEST_TOKEN` |
@@ -86,6 +90,7 @@ The fixture profile is the fastest way to try GraphNest. It starts a determinist
 ### Prerequisites
 
 - Go 1.27.1
+- Node 24.10.0 (builds the embedded web console)
 - Git
 - Docker with Docker Compose
 - `jq`
@@ -125,6 +130,19 @@ graphnest-dev-user-token
 ```
 
 The browser keeps this development token only for the current session.
+
+### Building the web console
+
+The browser console is a React single-page application under `web/`, embedded into `graphnest-server` from `internal/webui/dist`. Building it needs Node 24.10.0:
+
+```sh
+make ui              # npm ci and a production build into internal/webui/dist
+make ui-dev          # Vite dev server, proxying the API to 127.0.0.1:8080
+make ui-check        # ESLint, type check, and Vitest
+make ui-screenshots  # refresh docs/images/console-*.png with Playwright
+```
+
+`make build`, `make test`, `make test-race`, `make server`, and the container image builds run `make ui` automatically. A Go binary built without the console (for example a plain `go build`) still starts, but answers the console routes with `503 Service Unavailable`. See [ADR-0018](docs/adr/0018-react-shadcn-web-console.md).
 
 ### 3. Search through REST
 
@@ -203,7 +221,7 @@ curl --fail-with-body -X POST "https://graphnest.example/v1/admin/api-tokens" \
 
 ## Dependencies & Licenses (opt-in)
 
-With `GRAPHNEST_SUPPLY_CHAIN=true` in durable mode, `graphnest-server` collects each managed repository's dependency-graph SBOM export from GitHub on a jittered schedule (`GRAPHNEST_SUPPLY_CHAIN_INTERVAL`, default `24h`), preserves the original SPDX 2.3 JSON document and its SHA-256, normalizes component occurrences and relationships into an immutable snapshot, and serves them under `/v1/supply-chain/...` and the embedded page at `/supply-chain`. The module is disabled by default; enabling it centrally requires no change to any repository.
+With `GRAPHNEST_SUPPLY_CHAIN=true` in durable mode, `graphnest-server` collects each managed repository's dependency-graph SBOM export from GitHub on a jittered schedule (`GRAPHNEST_SUPPLY_CHAIN_INTERVAL`, default `24h`), preserves the original SPDX 2.3 JSON document and its SHA-256, normalizes component occurrences and relationships into an immutable snapshot, and serves them under `/v1/supply-chain/...` and the embedded console at `/supply-chain`, which includes a License dashboard (`/supply-chain/licenses`) and a Dependency graph of repositories and their shared external dependencies (`/supply-chain/graph`). The module is disabled by default; enabling it centrally requires no change to any repository.
 
 What the inventory is and is not:
 

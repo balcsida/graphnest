@@ -26,3 +26,4 @@ topology is not rendered.
 | [0015](0015-isolate-optional-enrichment.md) | Optional enrichment boundaries | Accepted |
 | [0016](0016-mcp-oauth-authorization-server.md) | MCP OAuth authorization server | Accepted |
 | [0017](0017-supply-chain-inventory.md) | Supply-chain inventory from preserved SBOM observations | Accepted |
+| [0018](0018-react-shadcn-web-console.md) | React and shadcn/ui web console | Accepted |

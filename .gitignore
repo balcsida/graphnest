@@ -2,6 +2,11 @@
 .superpowers/
 .worktrees/
 node_modules/
+web/node_modules/
+web/dist/
+web/coverage/
+internal/webui/dist/*
+!internal/webui/dist/.gitkeep
 test-results/
 
 .env

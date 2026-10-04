@@ -105,11 +105,14 @@ all clients appear as one source.
 
 ## Web UI controls
 
-- the bearer token is held only in session storage or memory and is cleared on
-  authentication failure;
-- a strict hash-based CSP permits only same-origin connections and the exact
-  embedded style and script blocks;
-- API-controlled text is rendered through DOM text nodes, never HTML sinks;
+- the bearer token is held only in `sessionStorage` (`graphnest_token`), never in
+  `localStorage` or a cookie, and is cleared on authentication failure;
+- the CSP permits only same-origin connections and `script-src 'self'`, with no
+  inline scripts and no `eval`; `style-src` also allows inline styles because
+  Radix UI, Recharts, and Sonner inject `<style>` elements at runtime;
+- API-controlled text is rendered as React text, never through HTML sinks, and
+  a Vitest test fails if `dangerouslySetInnerHTML` or `innerHTML` appears in
+  the console source outside the chart component's static style block;
 - outbound repository links require HTTPS, encode SHA and path components, and
   use opener isolation; and
 - the client selects repository names for usability, while the server still
