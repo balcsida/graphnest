@@ -1,3 +1,12 @@
+FROM node:24.10.0-bookworm-slim@sha256:b8d2197aff9129d16c801a3e3e1b2a873c4946480f5a310f38056df2268c38d9 AS web
+
+WORKDIR /src/web
+COPY web/package.json web/package-lock.json web/.npmrc ./
+RUN npm ci
+COPY web/ ./
+# vite.config.ts writes the build to ../internal/webui/dist.
+RUN npm run build
+
 FROM golang:1.27.1-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b AS builder
 
 ARG ZOEKT_VERSION
@@ -7,6 +16,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN GOWORK=off go mod download
 COPY . .
+COPY --from=web /src/internal/webui/dist internal/webui/dist
 # GOWORK=off: the module is self-contained; the workspace (go.work) would pull
 # the optional scanner's tree-sitter dependencies into the image build.
 RUN GOWORK=off go build -trimpath -ldflags="-s -w" -o /out/graphnest-server ./cmd/graphnest-server && \

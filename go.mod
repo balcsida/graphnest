@@ -2,6 +2,9 @@ module github.com/balcsida/graphnest
 
 go 1.27.1
 
+// The web console is an npm project; keep its node_modules out of ./... patterns.
+ignore ./web
+
 require (
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/jackc/pgx/v5 v5.11.0
