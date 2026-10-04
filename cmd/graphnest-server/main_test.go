@@ -41,6 +41,7 @@ import (
 	"github.com/balcsida/graphnest/internal/scipgraph"
 	"github.com/balcsida/graphnest/internal/sso/browserflow"
 	"github.com/balcsida/graphnest/internal/webhook"
+	"github.com/balcsida/graphnest/internal/webui"
 	"github.com/scip-code/scip/bindings/go/scip"
 	"google.golang.org/protobuf/proto"
 )
@@ -75,11 +76,6 @@ func TestStaticHandlerHasNoBreakGlassSurface(t *testing.T) {
 	handler.ServeHTTP(login, httptest.NewRequest(http.MethodPost, "/auth/local", nil))
 	if login.Code != http.StatusNotFound {
 		t.Fatalf("login status=%d", login.Code)
-	}
-	page := httptest.NewRecorder()
-	handler.ServeHTTP(page, httptest.NewRequest(http.MethodGet, "/", nil))
-	if strings.Contains(page.Body.String(), `id="local-auth"`) {
-		t.Fatal("static page exposes administrator recovery")
 	}
 }
 
@@ -980,6 +976,9 @@ func TestGraphQueryRoutesRegisterOnlyWithService(t *testing.T) {
 }
 
 func TestAPIHandlerMountsWebUIWithoutFallback(t *testing.T) {
+	if !webui.Built() {
+		t.Skip("web console not built; run make ui")
+	}
 	authenticator := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user"}})
 	handler := newAPIHandler(
 		config.Config{Limits: config.Limits{MaxRequestBytes: 1024, MaxResponseBytes: 1024, MaxResults: 100}},

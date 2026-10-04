@@ -147,6 +147,23 @@ commit, verified content hash, and activation/retirement times in
 `graph_uploads`, which is the publication audit trail. Revoking a grant does
 not retire generations already published.
 
+## Web console
+
+`graphnest-server` serves the browser console at `/`, `/repositories`,
+`/supply-chain` (inventory, Licenses at `/supply-chain/licenses`, Dependency
+graph at `/supply-chain/graph`), `/admin`, and `/account`
+([ADR-0018](adr/0018-react-shadcn-web-console.md)). The build is embedded in the
+application image, so there is nothing to deploy or configure separately.
+`Dockerfile.offline` copies the build context instead of building the console;
+run `make ui` (Node 24.10.0) before building it. A server built without the
+console answers these routes with `503`.
+
+HTML responses carry `script-src 'self'` (no inline script, no `eval`) and
+`style-src 'self' 'unsafe-inline'`, with `default-src 'none'`,
+`connect-src 'self'`, `frame-ancestors 'none'`, and the usual no-sniff,
+referrer, and permissions headers. Hashed files under `/assets/` are cached as
+immutable; HTML is `no-store`.
+
 ## Dependencies & Licenses inventory
 
 The supply-chain inventory ([ADR-0017](adr/0017-supply-chain-inventory.md))
@@ -155,7 +172,7 @@ mode; ordinary repositories need no workflow or configuration file.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `GRAPHNEST_SUPPLY_CHAIN` | `false` | Enable routes, the `/supply-chain` page, the scheduler, and collection workers. Requires `GRAPHNEST_DATABASE_URL`. |
+| `GRAPHNEST_SUPPLY_CHAIN` | `false` | Enable routes, the `/supply-chain` console views, the scheduler, and collection workers. Requires `GRAPHNEST_DATABASE_URL`. |
 | `GRAPHNEST_SUPPLY_CHAIN_INTERVAL` | `24h` | Scheduled refresh interval per repository stream (minimum `1m`). A stream is due when its last attempt is older than this; new jobs receive up to 10% jitter. `collection: stale` is reported after twice this interval. |
 | `GRAPHNEST_SUPPLY_CHAIN_WORKERS` | `1` | Collection workers per server process (maximum 8). Each leases one job at a time. |
 | `GRAPHNEST_SUPPLY_CHAIN_MAX_DOCUMENT_BYTES` | `16777216` | Maximum SBOM export size (whole HTTP body, maximum 256 MiB). Larger exports record `too_large`. |

@@ -642,7 +642,7 @@ func newAPIHandlerWithMCP(settings config.Config, metrics *observability.Metrics
 	}
 	fileReads := repositories != nil && repositories.GitHub != nil
 	httpapi.RegisterAuth(mux, true, settings.SSO.BreakGlass, fileReads, providers, authenticator, sessions, metrics)
-	webui.RegisterWithBreakGlass(mux, settings.SSO.BreakGlass)
+	webui.Register(mux)
 	httpapi.RegisterSystem(mux, checker, metrics.Handler())
 	httpapi.RegisterSearch(mux, authenticator, service, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
 	if manager, ok := authenticator.Bearer.(authn.TokenManager); ok {

@@ -39,10 +39,16 @@ MCP behind bearer authentication. `graphnest-mcp` is a stdio proxy: it connects
 to `<GRAPHNEST_SERVER_URL>/mcp` with `GRAPHNEST_TOKEN`, lists the hosted tools,
 and forwards calls. It does not call Zoekt.
 
-The embedded Web UI at `/` and `/index.html` is a thin, same-origin client of
-the repository service at `GET /v1/repositories` and the search service at
-`POST /v1/search`. It makes no authorization decisions: repository names are
-only usability selectors, and the server authenticates every API request and
+The embedded Web UI is a React single-page application
+([ADR-0018](adr/0018-react-shadcn-web-console.md)) built from `web/` into
+`internal/webui/dist` and embedded in the server binary. It is served at `/`,
+`/index.html`, `/repositories`, `/supply-chain`, `/admin`, and `/account`; the
+client routes below those prefixes are resolved in the browser. It is a thin,
+same-origin client of the existing REST API: the repository service at
+`GET /v1/repositories`, the search service at `POST /v1/search`, and the admin,
+account, and supply-chain routes. The server adds no console-specific
+endpoints. The UI makes no authorization decisions: repository names are only
+usability selectors, and the server authenticates every API request and
 enforces the principal's repository scope.
 
 Beginning in Milestone 2, PostgreSQL supplies repository metadata and the
@@ -103,7 +109,8 @@ collection attempt and never move the stream's latest snapshot. Inventory
 eligibility is repository authorization alone: it does not depend on Zoekt, an
 indexed SHA, SCIP, or graph enrichment, and it shares nothing with the indexer.
 
-`/v1/supply-chain/...` and the embedded `/supply-chain` page read through one
+`/v1/supply-chain/...` and the embedded `/supply-chain` console views (inventory,
+License dashboard, Dependency graph) read through one
 service that resolves the live principal's repository scope before touching
 inventory rows; snapshots and jobs outside that scope are indistinguishable
 from missing ones, and original-document downloads are re-authorized at

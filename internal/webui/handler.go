@@ -1,112 +1,106 @@
 package webui
 
 import (
-	"bytes"
-	"crypto/sha256"
 	"embed"
-	"encoding/base64"
-	"fmt"
+	"io/fs"
 	"net/http"
 	"strings"
 )
 
-//go:embed index.html admin.html supply-chain.html
-var assets embed.FS
+//go:embed all:dist
+var embedded embed.FS
 
-var breakGlassDocument = mustReadDocument()
-var document = withoutMarked(withoutMarked(breakGlassDocument, "<!-- break-glass -->", "<!-- /break-glass -->"), "/* break-glass */", "/* /break-glass */")
-var contentSecurityPolicy = policyFor(document)
-var adminDocument = mustRead("admin.html")
-var adminContentSecurityPolicy = policyFor(adminDocument)
-var supplyChainDocument = mustRead("supply-chain.html")
-var supplyChainContentSecurityPolicy = policyFor(supplyChainDocument)
+const contentSecurityPolicy = "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; " +
+	"connect-src 'self'; img-src 'self' data:; font-src 'self'; script-src 'self'; " +
+	"style-src 'self' 'unsafe-inline'"
 
+var htmlRoutes = []string{
+	"GET /{$}", "GET /index.html", "GET /repositories", "GET /admin", "GET /admin/",
+	"GET /account", "GET /account/", "GET /supply-chain", "GET /supply-chain/",
+}
+
+func embeddedBuild() fs.FS {
+	build, err := fs.Sub(embedded, "dist")
+	if err != nil {
+		panic(err)
+	}
+	return build
+}
+
+// Built reports whether the web console build is embedded in this binary.
+func Built() bool {
+	return built(embeddedBuild())
+}
+
+// Register mounts the console routes. There is deliberately no catch-all
+// pattern: it would turn the 404 of unknown non-GET paths into a 405.
 func Register(mux *http.ServeMux) {
-	RegisterWithBreakGlass(mux, false)
+	register(mux, embeddedBuild())
 }
 
-func RegisterWithBreakGlass(mux *http.ServeMux, breakGlass bool) {
-	index := document
-	policy := contentSecurityPolicy
-	if breakGlass {
-		index = breakGlassDocument
-		policy = policyFor(index)
-	}
-	mux.Handle("GET /{$}", handler(index, policy))
-	mux.Handle("GET /index.html", handler(index, policy))
-	mux.Handle("GET /admin", handler(adminDocument, adminContentSecurityPolicy))
-	mux.Handle("GET /account", handler(adminDocument, adminContentSecurityPolicy))
-	mux.Handle("GET /supply-chain", handler(supplyChainDocument, supplyChainContentSecurityPolicy))
+func built(build fs.FS) bool {
+	info, err := fs.Stat(build, "index.html")
+	return err == nil && !info.IsDir()
 }
 
-func withoutMarked(document []byte, opening, closing string) []byte {
-	found := false
-	for {
-		start := bytes.Index(document, []byte(opening))
-		if start < 0 {
-			break
-		}
-		end := bytes.Index(document[start+len(opening):], []byte(closing))
-		if end < 0 {
-			panic("embedded index.html has unmatched break-glass markers")
-		}
-		end += start + len(opening)
-		document = bytes.Join([][]byte{document[:start], document[end+len(closing):]}, nil)
-		found = true
+func register(mux *http.ServeMux, build fs.FS) {
+	for _, route := range htmlRoutes {
+		mux.HandleFunc(route, func(writer http.ResponseWriter, request *http.Request) {
+			serveIndex(writer, build)
+		})
 	}
-	if !found {
-		panic("embedded index.html must contain break-glass markers")
-	}
-	return document
-}
-
-func handler(body []byte, policy string) http.Handler {
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		writer.Header().Set("Cache-Control", "no-store")
-		writer.Header().Set("Content-Security-Policy", policy)
-		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-		writer.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
-		writer.Header().Set("Permissions-Policy", "camera=(), geolocation=(), microphone=(), payment=(), usb=()")
-		writer.Header().Set("Referrer-Policy", "no-referrer")
-		writer.Header().Set("X-Content-Type-Options", "nosniff")
-		writer.Header().Set("X-Frame-Options", "DENY")
-		_, _ = writer.Write(body)
+	mux.HandleFunc("GET /assets/", func(writer http.ResponseWriter, request *http.Request) {
+		serveFile(writer, request, build, "assets/"+strings.TrimPrefix(request.URL.Path, "/assets/"), "public, max-age=31536000, immutable")
+	})
+	mux.HandleFunc("GET /favicon.svg", func(writer http.ResponseWriter, request *http.Request) {
+		serveFile(writer, request, build, "favicon.svg", "no-store")
 	})
 }
 
-func mustReadDocument() []byte {
-	return mustRead("index.html")
+func securityHeaders(writer http.ResponseWriter) {
+	header := writer.Header()
+	header.Set("Cross-Origin-Opener-Policy", "same-origin")
+	header.Set("Permissions-Policy", "camera=(), geolocation=(), microphone=(), payment=(), usb=()")
+	header.Set("Referrer-Policy", "no-referrer")
+	header.Set("X-Content-Type-Options", "nosniff")
+	header.Set("X-Frame-Options", "DENY")
 }
 
-func mustRead(name string) []byte {
-	document, err := assets.ReadFile(name)
+func serveIndex(writer http.ResponseWriter, build fs.FS) {
+	securityHeaders(writer)
+	body, err := fs.ReadFile(build, "index.html")
 	if err != nil {
-		panic(fmt.Sprintf("read embedded %s: %v", name, err))
+		writer.Header().Set("Cache-Control", "no-store")
+		http.Error(writer, "web console not built; run make ui", http.StatusServiceUnavailable)
+		return
 	}
-	return document
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.Header().Set("Content-Security-Policy", contentSecurityPolicy)
+	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = writer.Write(body)
 }
 
-func policyFor(document []byte) string {
-	styleHash := base64.StdEncoding.EncodeToString(sha256Bytes(inlineContent(document, "style")))
-	scriptHash := base64.StdEncoding.EncodeToString(sha256Bytes(inlineContent(document, "script")))
-	return fmt.Sprintf("default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; script-src 'sha256-%s'; style-src 'sha256-%s'", scriptHash, styleHash)
-}
-
-func sha256Bytes(content []byte) []byte {
-	hash := sha256.Sum256(content)
-	return hash[:]
-}
-
-func inlineContent(document []byte, tag string) []byte {
-	open, close := "<"+tag+">", "</"+tag+">"
-	start := strings.Index(string(document), open)
-	if start < 0 || strings.Count(string(document), open) != 1 || strings.Count(string(document), close) != 1 {
-		panic("embedded index.html must contain one " + tag + " element")
+func serveFile(writer http.ResponseWriter, request *http.Request, build fs.FS, name, cacheControl string) {
+	securityHeaders(writer)
+	if !fs.ValidPath(name) {
+		http.NotFound(writer, request)
+		return
 	}
-	start += len(open)
-	end := strings.Index(string(document[start:]), close)
-	if end < 0 {
-		panic("embedded index.html has an unclosed " + tag + " element")
+	file, err := build.Open(name)
+	if err != nil {
+		http.NotFound(writer, request)
+		return
 	}
-	return document[start : start+end]
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	seeker, ok := file.(interface {
+		Read([]byte) (int, error)
+		Seek(int64, int) (int64, error)
+	})
+	if err != nil || info.IsDir() || !ok {
+		http.NotFound(writer, request)
+		return
+	}
+	writer.Header().Set("Cache-Control", cacheControl)
+	http.ServeContent(writer, request, info.Name(), info.ModTime(), seeker)
 }
