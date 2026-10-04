@@ -21,6 +21,9 @@ function applyTheme(theme: Theme) {
   document.documentElement.classList.toggle('dark', dark)
 }
 
+// Applied before React renders so a stored dark theme never flashes light first.
+applyTheme(readTheme())
+
 interface ThemeContextValue {
   theme: Theme
   setTheme: (theme: Theme) => void

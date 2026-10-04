@@ -16,6 +16,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN GOWORK=off go mod download
 COPY . .
+RUN rm -rf internal/webui/dist
 COPY --from=web /src/internal/webui/dist internal/webui/dist
 # GOWORK=off: the module is self-contained; the workspace (go.work) would pull
 # the optional scanner's tree-sitter dependencies into the image build.

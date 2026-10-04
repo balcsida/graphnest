@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { act, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ApiError, request } from '@/lib/api'
 import { AuthProvider, useAuth, type Auth } from '@/lib/auth'
 import { authConfig, stubFetch, unauthenticated } from '@/test/fetch'
@@ -30,6 +30,14 @@ function mount() {
 
 const bearerOnly = (calls: ReturnType<typeof stubFetch>) =>
   calls.filter((call) => call.path === '/v1/auth/session').map((call) => call.headers.get('Authorization'))
+
+describe('request', () => {
+  it('rejects a non-JSON success body and keeps empty bodies undefined', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => (String(input) === '/html' ? new Response('<html></html>', { status: 200 }) : new Response(null, { status: 204 }))))
+    await expect(request('/html')).rejects.toMatchObject({ name: 'ApiError', message: 'Unexpected response from the server.' })
+    await expect(request('/empty')).resolves.toBeUndefined()
+  })
+})
 
 describe('auth state machine', () => {
   it('prefers a browser session and ignores the stored token', async () => {

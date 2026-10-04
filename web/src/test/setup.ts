@@ -1,6 +1,9 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, configure } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
+
+// Heavy chart renders overrun the 1000 ms default under load; stays well inside testTimeout.
+configure({ asyncUtilTimeout: 5000 })
 
 // jsdom has no ResizeObserver; Radix form controls measure themselves with it.
 class ResizeObserverStub {

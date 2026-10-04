@@ -35,13 +35,15 @@ export interface RequestOptions {
   keepCredentialOn401?: boolean
 }
 
+const NOT_JSON = Symbol('not json')
+
 async function parseBody(response: Response): Promise<unknown> {
   const text = await response.text()
   if (!text) return undefined
   try {
     return JSON.parse(text)
   } catch {
-    return undefined
+    return NOT_JSON
   }
 }
 
@@ -69,6 +71,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     if (response.status === 401 && !options.keepCredentialOn401) onUnauthorized()
     throw new ApiError(response.status, isErrorResponse(body) ? body : undefined)
   }
+  if (body === NOT_JSON) throw new ApiError(response.status, { error: { code: 'unexpected_response', message: 'Unexpected response from the server.', request_id: '', retryable: false } })
   return body as T
 }
 

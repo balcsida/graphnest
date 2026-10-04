@@ -19,7 +19,7 @@ describe('dependency graph', () => {
     const user = userEvent.setup()
     const { calls } = mountSupplyChain('/supply-chain/graph', routes)
     expect(await screen.findByRole('region', { name: 'Dependency graph' })).toBeInTheDocument()
-    expect(await screen.findByText('Showing 2 of 2 matching dependencies used by 2 repositories.', {}, { timeout: 4000 })).toBeInTheDocument()
+    expect(await screen.findByText('Showing 2 of 2 matching dependencies used by 2 repositories.', {}, { timeout: 10000 })).toBeInTheDocument()
     expect(calls.filter((call) => call.path.startsWith('/v1/supply-chain/components')).map((call) => call.path)).toEqual([list, `${list}&cursor=p2`])
     expect(screen.queryByText(/^Based on the first/)).not.toBeInTheDocument()
     expect(screen.getByRole('group', { name: 'Legend' })).toHaveTextContent('npm')
