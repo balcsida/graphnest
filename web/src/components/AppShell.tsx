@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, NavLink, Outlet, useLocation } from 'react-router'
 import { LogOut } from 'lucide-react'
 import { toast } from 'sonner'
-import { getAdminOverview } from '@/api/admin'
 import { getSupplyChainOverview } from '@/api/supply-chain'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { breadcrumbFor, navGroups } from '@/components/nav'
@@ -20,6 +19,7 @@ import {
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
@@ -28,33 +28,41 @@ import {
 } from '@/components/ui/sidebar'
 import { ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { queueDepth, repositoryTotal } from '@/pages/admin/format'
+import { useAdminOverview } from '@/pages/admin/use-admin-overview'
+import { SearchStateProvider } from '@/pages/search/state'
 
 function useNavVisibility() {
   const supplyChain = useQuery({
     queryKey: ['nav', 'supply-chain'],
-    queryFn: ({ signal }) => getSupplyChainOverview(signal),
+    queryFn: ({ signal }) => getSupplyChainOverview({}, signal),
     retry: false,
     staleTime: Infinity,
   })
-  const admin = useQuery({
-    queryKey: ['nav', 'admin'],
-    queryFn: ({ signal }) => getAdminOverview(signal),
-    retry: false,
-    staleTime: Infinity,
-  })
-  return {
+  const admin = useAdminOverview()
+  const visible = {
     // Shown unless the feature is off (404); other failures keep it visible so the page can explain them.
     'supply-chain': supplyChain.isSuccess || (supplyChain.isError && !(supplyChain.error instanceof ApiError && supplyChain.error.status === 404)),
     administration: admin.isSuccess,
     code: true,
     account: true,
   }
+  // Counts beside the admin Repositories and Jobs entries; the console keeps them fresh while it polls.
+  const counts = new Map<string, number>(
+    admin.data
+      ? [
+          ['/admin/repositories', repositoryTotal(admin.data)],
+          ['/admin/jobs', queueDepth(admin.data)],
+        ]
+      : [],
+  )
+  return { visible, counts }
 }
 
 function AppSidebar() {
   const { method } = useAuth()
   const { pathname } = useLocation()
-  const visible = useNavVisibility()
+  const { visible, counts } = useNavVisibility()
   const path = pathname.replace(/\/+$/, '') || '/'
   return (
     <Sidebar collapsible="icon">
@@ -79,6 +87,7 @@ function AppSidebar() {
                             <span>{item.title}</span>
                           </NavLink>
                         </SidebarMenuButton>
+                        {counts.has(item.to) && <SidebarMenuBadge aria-label={`${counts.get(item.to)} ${item.to.endsWith('jobs') ? 'queued or running' : 'repositories'}`}>{counts.get(item.to)}</SidebarMenuBadge>}
                       </SidebarMenuItem>
                     ))}
                 </SidebarMenu>
@@ -138,9 +147,11 @@ export function AppShell() {
       <SidebarInset>
         <Header />
         <div className="flex-1 p-4">
-          <Suspense fallback={<Skeleton className="h-32 w-full" aria-label="Loading page" />}>
-            <Outlet />
-          </Suspense>
+          <SearchStateProvider>
+            <Suspense fallback={<Skeleton className="h-32 w-full" aria-label="Loading page" />}>
+              <Outlet />
+            </Suspense>
+          </SearchStateProvider>
         </div>
       </SidebarInset>
     </SidebarProvider>

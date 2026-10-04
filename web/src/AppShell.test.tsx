@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it } from 'vitest'
 import { AppRoutes } from '@/App'
@@ -37,11 +37,12 @@ describe('app shell', () => {
       'GET /v1/admin/overview': { body: {} },
     })
     mount('/repositories')
-    await waitFor(() => expect(document.querySelector('[data-slot="card-title"]')).toHaveTextContent('Repositories'))
+    expect(await screen.findByRole('heading', { name: 'Repositories' })).toBeInTheDocument()
     expect(await screen.findByText('Supply chain')).toBeInTheDocument()
     expect(await screen.findByText('Administration')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Search' })).toHaveAttribute('href', '/')
     expect(screen.getByRole('link', { name: 'Users' })).toBeInTheDocument()
+    expect(screen.getAllByText('0').length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument()
   })
 
@@ -63,7 +64,7 @@ describe('app shell', () => {
   it('shows the gate instead of the shell when unauthenticated', async () => {
     stubFetch({ 'GET /v1/auth/config': { body: authConfig }, 'GET /v1/auth/session': unauthenticated })
     mount('/')
-    expect(await screen.findByLabelText('API token')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Bearer token')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /sign out/i })).not.toBeInTheDocument()
   })
 })

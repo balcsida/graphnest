@@ -93,6 +93,60 @@ export interface SearchResponse {
   consistency?: SearchConsistency
 }
 
+export interface ReadFileRequest {
+  repository_id: number
+  path: string
+  start_line?: number
+  end_line?: number
+}
+
+export interface ReadFileResponse {
+  repository_id: number
+  path: string
+  indexed_sha: string
+  blob_sha: string
+  content: string
+  start_line: number
+  end_line: number
+  truncated: boolean
+}
+
+export type ScipOperation = 'definitions' | 'references' | 'implementations'
+
+/** The three offsets are sent together; the server rejects a partial set. */
+export interface ScipNavigationRequest {
+  repository_id: number
+  path: string
+  commit?: string
+  line: number
+  character_utf8: number
+  character_utf16: number
+  character_utf32: number
+  operation: ScipOperation
+}
+
+export interface ScipLocation {
+  repository_id: number
+  repository_name: string
+  branch: string
+  web_url: string
+  commit: string
+  path: string
+  symbol: string
+  start_line: number
+  start_character: number
+  end_line: number
+  end_character: number
+  position_encoding: 'UTF8CodeUnitOffsetFromLineStart' | 'UTF16CodeUnitOffsetFromLineStart' | 'UTF32CodeUnitOffsetFromLineStart'
+  roles: number
+  approximate: boolean
+}
+
+export interface ScipNavigationResponse {
+  locations: ScipLocation[]
+  truncated: boolean
+}
+
 export interface AdminOverview {
   repositories: Record<string, number>
   jobs: Record<string, number>
@@ -323,4 +377,379 @@ export interface SupplyChainRepositoryStatus {
   documents: SupplyChainDocumentRef[]
   /** Every stream known for the repository (GitHub observation and imports). */
   streams: SupplyChainStreamRef[]
+}
+
+export interface SupplyChainLicenseAssessment {
+  status: 'unknown' | 'declared' | 'resolved' | 'conflict' | 'unlicensed' | 'not_applicable' | 'pending'
+  /** Normalized SPDX expression when status is declared or resolved. */
+  expression?: string
+  conflict_detail?: string
+  evidence_count: number
+  assessed_at: string
+  evidence_fingerprint: string
+}
+
+export interface SupplyChainComponent {
+  /** Document-scoped identifier (SPDXID or bom-ref). */
+  element_id: string
+  ordinal: number
+  name: string
+  version: string | null
+  purl: string | null
+  /** Lowercase purl type. */
+  ecosystem?: string
+  namespace?: string
+  package_name?: string
+  qualifiers?: Record<string, string>
+  /** Verbatim producer value; NOASSERTION and NONE are preserved, never mapped. */
+  license_declared_raw: string | null
+  license_concluded_raw: string | null
+  download_location?: string
+  supplier?: string
+  checksums?: { algorithm: string; value: string }[]
+  is_root: boolean
+  scope: 'root' | 'direct' | 'transitive' | 'unknown'
+  license?: SupplyChainLicenseAssessment | null
+}
+
+export interface SupplyChainComponentList {
+  snapshot_id: number
+  components: SupplyChainComponent[]
+  truncated: boolean
+  next_cursor?: string
+}
+
+export type SupplyChainEvidenceSource =
+  | 'producer_declared'
+  | 'producer_concluded'
+  | 'registry_npm'
+  | 'registry_nuget'
+  | 'registry_maven'
+  | 'import'
+  | 'human'
+
+export interface SupplyChainLicenseEvidence {
+  /** 0 for producer declarations synthesized from the snapshot. */
+  id: number
+  source: SupplyChainEvidenceSource
+  route?: string
+  ecosystem: string
+  namespace?: string
+  name: string
+  version: string
+  artifact_sha256?: string
+  /** Verbatim value as observed. */
+  raw_value: string
+  raw_kind:
+    | 'expression'
+    | 'expression_or_file'
+    | 'license_file'
+    | 'license_url'
+    | 'license_name'
+    | 'legacy_object'
+    | 'missing'
+    | 'sentinel'
+  parse_status: 'parsed' | 'unknown_terms' | 'no_assertion' | 'none' | 'unlicensed' | 'invalid' | 'not_applicable'
+  expression?: string
+  unknown_terms?: string[]
+  license_url?: string
+  license_file_name?: string
+  detail?: Record<string, unknown>
+  resolver_version: number
+  license_list_version: string
+  content_sha256?: string
+  fetched_at: string
+  /** Present on negative outcomes; the lookup is retried after this time. */
+  expires_at?: string
+  outcome: 'resolved' | 'not_found' | 'no_license_metadata' | 'unavailable' | 'rejected' | 'too_large' | 'malformed'
+  http_status?: number
+  message?: string
+}
+
+export interface SupplyChainRelationship {
+  from: string
+  type: string
+  to: string
+  resolved: boolean
+}
+
+export interface SupplyChainComponentDetail {
+  component: SupplyChainComponent
+  snapshot: SupplyChainSnapshot
+  declarations: SupplyChainLicenseEvidence[]
+  /** At most 100 rows. */
+  evidence: SupplyChainLicenseEvidence[]
+  /** At most 100 rows. */
+  relationships: SupplyChainRelationship[]
+  notes: string[]
+  truncated: boolean
+}
+
+export interface SupplyChainCollectionList {
+  collections: SupplyChainCollection[]
+  truncated: boolean
+  next_cursor?: string
+}
+
+export interface SupplyChainSnapshotList {
+  /** Newest first. */
+  snapshots: SupplyChainSnapshot[]
+}
+
+export interface SupplyChainSnapshotComparison {
+  repository_id: number
+  base: SupplyChainSnapshot
+  head: SupplyChainSnapshot
+  added_components: string[]
+  removed_components: string[]
+  license_changes: { component: string; from: string; to: string }[]
+  edges_added: number
+  edges_removed: number
+  metadata_changes: string[]
+  notes: string[]
+}
+
+export interface SupplyChainRefreshResponse {
+  job: SupplyChainJob
+  created: boolean
+}
+
+export interface AdminRepository {
+  id: number
+  github_id: number
+  installation_id: number
+  name: string
+  default_branch: string
+  desired_sha: string
+  indexed_sha: string
+  status: string
+  error_code: string
+  web_url: string
+  enabled: boolean
+  private: boolean
+  archived: boolean
+  last_indexed_at?: string
+}
+
+export interface AdminRepositoryList {
+  repositories: AdminRepository[]
+  truncated: boolean
+  next_cursor?: string
+}
+
+export interface AdminJob {
+  id: number
+  repository_id: number
+  repository: string
+  target_sha: string
+  target_ref: string
+  reason: string
+  state: string
+  error_code: string
+  attempt: number
+  max_attempts: number
+  priority: number
+  run_after: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AdminJobList {
+  jobs: AdminJob[]
+  truncated: boolean
+  next_cursor?: string
+}
+
+export interface AdminUser {
+  id: number
+  external_id: string
+  user_name: string
+  display_name: string
+  source: 'scim' | 'local' | 'github'
+  scim_active: boolean
+  suspended: boolean
+  administrator: boolean
+  repository_ids: number[]
+  direct_administrator: boolean
+  direct_repository_ids: number[]
+  github_repository_ids: number[]
+}
+
+export interface AdminUserList {
+  users: AdminUser[]
+  truncated: boolean
+}
+
+export interface AdminGroup {
+  id: number
+  external_id: string
+  display_name: string
+  administrator: boolean
+  repository_ids: number[]
+  member_count: number
+}
+
+export interface AdminGroupList {
+  groups: AdminGroup[]
+  truncated: boolean
+}
+
+export interface AdminAccessRequest {
+  administrator: boolean
+  repository_ids: number[]
+}
+
+export interface AdminUserAccessRequest {
+  direct_administrator: boolean
+  direct_repository_ids: number[]
+}
+
+export interface AuditEvent {
+  actor_type: 'anonymous' | 'operator' | 'scim' | 'system' | 'user'
+  actor_id: string
+  target_type: 'api_token' | 'authentication' | 'group' | 'oauth_client' | 'oauth_grant' | 'session' | 'user'
+  target_id: string
+  authentication_method: '' | 'api_token' | 'local' | 'oauth' | 'oauth_token' | 'oidc' | 'operator' | 'scim_token'
+  /** One of the audit operation names in docs/openapi.yaml; shown verbatim. */
+  operation: string
+  outcome: 'success' | 'denied' | 'invalid' | 'error'
+  request_id: string
+  created_at: string
+}
+
+export interface AuditEventList {
+  events: AuditEvent[]
+  truncated: boolean
+}
+
+export interface AdminSCIPUpload {
+  id: number
+  repository_id: number
+  repository: string
+  commit: string
+  project_root: string
+  indexer_name: string
+  indexer_version: string
+  uploaded_at: string
+}
+
+export interface AdminSCIPUploadList {
+  uploads: AdminSCIPUpload[]
+  truncated: boolean
+}
+
+export interface AdminSCIPDependency {
+  repository_id: number
+  repository: string
+  source: 'manual' | 'github'
+  relation: 'provides' | 'depends_on'
+  purl: string
+  manager: string
+  name: string
+  version: string
+}
+
+export interface AdminSCIPDependencyList {
+  dependencies: AdminSCIPDependency[]
+  truncated: boolean
+}
+
+export interface SCIPDependencyRefreshResponse {
+  available: boolean
+  packages: number
+}
+
+export interface AdminDelivery {
+  id: number
+  delivery_id: string
+  event: string
+  state: string
+  error_code: string
+  installation_id: number
+  received_at: string
+  processed_at?: string
+}
+
+export interface AdminDeliveryList {
+  deliveries: AdminDelivery[]
+  truncated: boolean
+}
+
+export interface AdminInstallation {
+  github_id: number
+  account_login: string
+  account_type: string
+  status: string
+  suspended_at?: string
+}
+
+export interface AdminGitHub {
+  app_id: number
+  web_url: string
+  api_url: string
+  upload_url: string
+  git_url: string
+  api_version: string
+  private_key_configured: boolean
+  webhook_secret_configured: boolean
+  ca_configured: boolean
+  installations: AdminInstallation[]
+  truncated: boolean
+}
+
+export interface APIToken {
+  id: number
+  prefix: string
+  repository_ids?: number[]
+  /** Present and true for delegation-only administrator tokens, which carry no repository ceiling. */
+  delegation_only?: boolean
+  created_at: string
+  last_used_at?: string
+  expires_at?: string
+}
+
+export interface APITokenList {
+  tokens: APIToken[]
+}
+
+export interface CreateAPITokenRequest {
+  expires_at?: string
+  repository_ids?: number[]
+}
+
+export interface CreatedAPIToken {
+  id: number
+  prefix: string
+  repository_ids?: number[]
+  created_at: string
+  expires_at?: string
+  token: string
+}
+
+export interface CreateDelegationOnlyTokenRequest {
+  expires_at?: string
+}
+
+export interface CreatedDelegationOnlyToken {
+  id: number
+  prefix: string
+  delegation_only: true
+  created_at: string
+  expires_at?: string
+  token: string
+}
+
+export interface OAuthGrant {
+  id: number
+  client_name: string
+  scope?: string
+  created_at: string
+  last_used_at: string
+  expires_at: string
+}
+
+export interface OAuthGrantList {
+  grants: OAuthGrant[]
+  truncated: boolean
+  next_cursor?: string
 }
