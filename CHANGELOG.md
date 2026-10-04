@@ -5,27 +5,30 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
-The web console is rebuilt as a React application. See
-[ADR-0018](docs/adr/0018-react-shadcn-web-console.md).
+## [0.8.0] - 2026-10-04
+
+The web console is rebuilt as a React application with a License dashboard
+and a Dependency graph for directors. See
+[ADR-0018](docs/adr/0018-react-shadcn-web-console.md). ([#128])
 
 ### Added
 
 - License dashboard at `/supply-chain/licenses` for directors: key figures with
   named denominators, assessment status donut, top licenses, per-repository
   license mix by family, components per ecosystem, and a collection freshness
-  strip. It is built from the existing supply-chain REST routes.
+  strip. It is built from the existing supply-chain REST routes. ([#128])
 - Dependency graph at `/supply-chain/graph`: onboarded repositories linked to
   the external dependencies they share, with filters, a detail sheet per node,
-  and a table alternative.
+  and a table alternative. ([#128])
 - `make ui`, `make ui-check`, `make ui-dev`, and `make ui-screenshots` build,
-  check, run, and photograph the console.
+  check, run, and photograph the console. ([#128])
 
 ### Changed
 
 - The console is one React single-page application on shadcn/ui, with a
   sidebar, client routes (`/`, `/repositories`, `/supply-chain`, `/admin`,
   `/account`), and a light, dark, or system theme, replacing the three
-  separate pages.
+  separate pages. ([#128])
 - The bearer token is kept in `sessionStorage` under `graphnest_token` and is
   migrated from `graphnest_admin_token` on first load. It is never stored in
   `localStorage` or a cookie.
@@ -47,7 +50,7 @@ The web console is rebuilt as a React application. See
   uid-or-name choice as a top-level `oneOf`, which those APIs reject with
   `invalid_function_parameters`, failing the whole request for every tool.
   The choice is now stated in the tool description and enforced by the
-  service as before.
+  service as before. ([#126])
 
 ### Upgrade guidance
 
@@ -433,7 +436,8 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
-[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/balcsida/graphnest/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/balcsida/graphnest/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/balcsida/graphnest/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/balcsida/graphnest/compare/v0.5.0...v0.6.0
@@ -476,3 +480,5 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
 [#122]: https://github.com/balcsida/graphnest/pull/122
 [#123]: https://github.com/balcsida/graphnest/pull/123
 [#124]: https://github.com/balcsida/graphnest/pull/124
+[#126]: https://github.com/balcsida/graphnest/pull/126
+[#128]: https://github.com/balcsida/graphnest/pull/128
