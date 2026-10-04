@@ -149,7 +149,8 @@ export default function SearchPage() {
             <div className="flex flex-wrap items-baseline gap-x-3">
               <h1 className="text-xl font-semibold">{search.data ? countLabel(search.data.matches.length, 'match') : 'No search yet'}</h1>
               <span className="text-sm text-muted-foreground">{search.data ? countLabel(groups.length, 'repository') : 'All authorized repositories'}</span>
-              <p role="status" aria-live="polite" aria-atomic="true" className="w-full text-sm text-muted-foreground">
+              {search.data?.truncated && <span className="text-sm text-muted-foreground">Results truncated</span>}
+              <p role="status" aria-live="polite" aria-atomic="true" className={search.data ? 'sr-only' : 'w-full text-sm text-muted-foreground'}>
                 {status}
               </p>
             </div>

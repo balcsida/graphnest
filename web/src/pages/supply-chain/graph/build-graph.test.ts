@@ -113,6 +113,8 @@ describe('layoutGraph', () => {
     expect(repositories).toHaveLength(3)
     expect(dependencies).toHaveLength(3)
     expect(Math.max(...repositories.map((node) => node.position.x))).toBeLessThan(Math.min(...dependencies.map((node) => node.position.x)))
+    const positions = nodes.map((node) => `${node.position.x},${node.position.y}`)
+    expect(new Set(positions).size).toBe(nodes.length)
     expect(edges).toHaveLength(8)
     expect(edges[0].source).toBe(repositoryNodeId(Number(edges[0].source.slice(2))))
     expect(nodes.some((node) => node.id === dependencyNodeId(edges[0].target.slice(2)))).toBe(true)

@@ -195,11 +195,13 @@ export const derivedSpdxPath = (id: number, params: { stream?: string; snapshot_
 
 /** Fetches a document or export with the caller's credentials and saves it under the server's filename or the fallback. */
 export async function downloadSupplyChainFile(path: string, fallbackName: string): Promise<void> {
+  // The bearer token must only go to this API, never to a path the server named off-origin.
+  if (!path.startsWith('/v1/') || path.startsWith('//')) throw new Error('Refusing to download from an unexpected path.')
   const { blob, filename } = await requestBlob(path)
   const href = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = href
   link.download = filename ?? fallbackName
   link.click()
-  URL.revokeObjectURL(href)
+  setTimeout(() => URL.revokeObjectURL(href), 1000)
 }

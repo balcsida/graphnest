@@ -133,14 +133,13 @@ describe('repositories', () => {
       'POST /v1/admin/repositories/2/reindex': { status: 204 },
     })
     await screen.findByRole('row', { name: /beta\/three/ })
-    await user.click(screen.getByRole('button', { name: 'Reindex selected' }))
-    expect(await screen.findByText('Select at least one repository.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reindex selected' })).toBeDisabled()
 
     await user.type(screen.getByLabelText('Filter repositories'), 'acme')
     expect(screen.queryByRole('row', { name: /beta\/three/ })).not.toBeInTheDocument()
     await user.click(screen.getByRole('checkbox', { name: 'Select all visible repositories' }))
     expect(screen.getByRole('checkbox', { name: 'Select acme/two' })).toBeChecked()
-    await user.click(screen.getByRole('button', { name: 'Reindex selected' }))
+    await user.click(screen.getByRole('button', { name: 'Reindex selected (2)' }))
     expect(await screen.findByText('Queue 2 selected repositories for reindexing?')).toBeInTheDocument()
     await confirmDialog(user)
     expect(await screen.findByText('Selected repositories queued.')).toBeInTheDocument()

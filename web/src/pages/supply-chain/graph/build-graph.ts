@@ -166,7 +166,7 @@ export type DependencyFlowNode = Node<DependencyNodeData, 'dependency'>
 export type GraphFlowNode = RepositoryFlowNode | DependencyFlowNode
 
 export const REPOSITORY_NODE = { width: 220, height: 44 }
-export const DEPENDENCY_NODE = { width: 240, height: 56 }
+export const DEPENDENCY_NODE = { width: 240, height: 48 }
 
 /** Theme chart colour of an ecosystem slot, so dark mode follows the theme. */
 export const ecosystemColor = (index: number) => `var(--chart-${(index % 5) + 1})`
@@ -177,14 +177,15 @@ export const ecosystemColorIndexes = (dependencies: GraphDependency[]) => new Ma
 /** Dagre left-to-right layout: repositories on the left, their dependencies on the right. */
 export function layoutGraph(graph: DependencyGraph): { nodes: GraphFlowNode[]; edges: Edge[] } {
   const layout = new graphlib.Graph()
-  layout.setGraph({ rankdir: 'LR', nodesep: 16, ranksep: 160, marginx: 16, marginy: 16 })
+  layout.setGraph({ rankdir: 'LR', nodesep: 10, ranksep: 160, marginx: 16, marginy: 16 })
   layout.setDefaultEdgeLabel(() => ({}))
-  for (const repository of graph.repositories) layout.setNode(repositoryNodeId(repository.id), REPOSITORY_NODE)
-  for (const dependency of graph.dependencies) layout.setNode(dependencyNodeId(dependency.id), DEPENDENCY_NODE)
+  for (const repository of graph.repositories) layout.setNode(repositoryNodeId(repository.id), { ...REPOSITORY_NODE })
+  for (const dependency of graph.dependencies) layout.setNode(dependencyNodeId(dependency.id), { ...DEPENDENCY_NODE })
   for (const edge of graph.edges) layout.setEdge(repositoryNodeId(edge.repositoryId), dependencyNodeId(edge.dependencyId))
   dagreLayout(layout)
 
   const colors = ecosystemColorIndexes(graph.dependencies)
+  // Dagre writes x/y into the label object it is given, so each node gets its own copy above.
   // Dagre positions the centre of a node; React Flow wants the top-left corner.
   const place = (id: string, size: { width: number; height: number }) => {
     const { x, y } = layout.node(id)

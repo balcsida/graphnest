@@ -53,7 +53,7 @@ export function PortfolioDetailSheet({
           <SheetTitle ref={title} tabIndex={-1}>
             {detail ? `Component occurrences · ${text(detail.name)}` : 'Component occurrences'}
           </SheetTitle>
-          <SheetDescription>Occurrences are limited to the caller&apos;s authorized repositories.</SheetDescription>
+          <SheetDescription className="sr-only">Occurrences are limited to the caller&apos;s authorized repositories.</SheetDescription>
         </SheetHeader>
         <div className="grid gap-3 px-4 pb-4 text-sm">
           {query.isPending && (

@@ -7,12 +7,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DEFAULT_STREAM } from '@/api/supply-chain'
 import { messageOf } from './format'
 
-export function ViewHeader({ title }: { title: string }) {
+export function ViewHeader({ title, description = 'Observed inventory, exactly as the producer reported it.' }: { title: string; description?: string }) {
   return (
     <div className="grid gap-1">
-      <h1 className="text-xl font-semibold">Dependencies &amp; Licenses</h1>
-      <p className="text-sm text-muted-foreground">observed inventory, exactly as the producer reported it</p>
-      <h2 className="mt-2 text-base font-medium">{title}</h2>
+      <h1 className="text-xl font-semibold">{title}</h1>
+      <p className="text-sm text-muted-foreground">{description}</p>
     </div>
   )
 }
@@ -20,12 +19,12 @@ export function ViewHeader({ title }: { title: string }) {
 /** A count with the denominator it is measured against. */
 export function MetricCard({ label, value, denominator }: { label: string; value: ReactNode; denominator: string }) {
   return (
-    <Card className="gap-1 py-4">
+    <Card className="h-full gap-1 py-4">
       <CardHeader className="px-4">
         <p className="text-sm text-muted-foreground">{label}</p>
       </CardHeader>
       <CardContent className="grid gap-1 px-4">
-        <strong className="text-2xl">{value}</strong>
+        <strong className="text-3xl leading-none font-semibold tabular-nums">{value}</strong>
         <small className="text-muted-foreground">{denominator}</small>
       </CardContent>
     </Card>
@@ -77,7 +76,7 @@ export function ChoiceSelect({
 export function StreamSelect({ stream, onChange }: { stream: string; onChange: (stream: string) => void }) {
   const choices: Choice[] = [{ value: DEFAULT_STREAM, label: 'GitHub dependency graph (source observation)' }]
   if (stream !== DEFAULT_STREAM) choices.push({ value: stream, label: stream })
-  return <ChoiceSelect id="sc-stream" label="Stream" value={stream} choices={choices} onChange={onChange} className="w-72 max-w-full" />
+  return <ChoiceSelect id="sc-stream" label="Stream" value={stream} choices={choices} onChange={onChange} className="w-96 max-w-full" />
 }
 
 /** The overview answered 404: the module is switched off on this server. */
