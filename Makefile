@@ -6,8 +6,10 @@ GRAPHNEST_TEST_POSTGRES_DSN ?= $(GRAPHNEST_TEST_DATABASE_URL)
 IMAGE_PLATFORM ?= linux/amd64
 APPLICATION_IMAGE ?= graphnest-application:dev
 NODE_IMAGE ?= graphnest-node:dev
+WEB_INPUTS = web/package.json web/package-lock.json web/vite.config.ts web/index.html web/components.json \
+	$(wildcard web/tsconfig*.json) $(shell find web/src web/public -type f)
 
-.PHONY: brand-check fmt lint staticcheck govulncheck test test-race makefile-test scanner-build scanner-test scanner-vulncheck abi-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test tools-check ui-smoke
+.PHONY: brand-check fmt lint staticcheck govulncheck test test-race makefile-test scanner-build scanner-test scanner-vulncheck abi-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test tools-check ui-smoke ui ui-check ui-dev
 
 brand-check:
 	@status=0; git grep -I -i -E 'grep[-_]?nest|graph[-_]nest' -- . || status=$$?; test $$status -eq 1
@@ -16,7 +18,7 @@ brand-check:
 	test $$status -eq 1
 
 fmt:
-	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*'))"
+	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.cache/*' -not -path './web/*'))"
 
 lint:
 	go vet ./...
@@ -31,10 +33,10 @@ govulncheck:
 	GOBIN=$$(pwd)/.cache/bin go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
 	.cache/bin/govulncheck ./...
 
-test:
+test: ui
 	CGO_ENABLED=0 go test ./...
 
-test-race:
+test-race: ui
 	go test -race ./...
 
 tools-check:
@@ -105,10 +107,26 @@ e2e-test:
 	GRAPHNEST_TEST_POSTGRES_DSN='$(GRAPHNEST_TEST_POSTGRES_DSN)' GRAPHNEST_REQUIRE_POSTGRES=1 ZOEKT_INDEX=$$(pwd)/.cache/bin/zoekt-index ZOEKT_GIT_INDEX=$$(pwd)/.cache/bin/zoekt-git-index ZOEKT_WEBSERVER=$$(pwd)/.cache/bin/zoekt-webserver go test -v -tags=e2e ./test/e2e
 	GRAPHNEST_TEST_POSTGRES_DSN='$(GRAPHNEST_TEST_POSTGRES_DSN)' GRAPHNEST_REQUIRE_POSTGRES=1 CGO_ENABLED=1 go -C scanner test -v -tags=e2e ./test/e2e
 
-build:
+web/node_modules/.package-lock.json: web/package-lock.json
+	npm --prefix web ci
+	touch $@
+
+internal/webui/dist/index.html: web/node_modules/.package-lock.json $(WEB_INPUTS)
+	npm --prefix web run build
+
+ui: internal/webui/dist/index.html
+
+ui-check: web/node_modules/.package-lock.json
+	npm --prefix web run check
+	npm --prefix web test
+
+ui-dev: web/node_modules/.package-lock.json
+	npm --prefix web run dev
+
+build: ui
 	go build ./cmd/...
 
-server:
+server: ui
 	go run ./cmd/graphnest-server
 
 zoekt-version:
@@ -136,7 +154,7 @@ release-chart-test:
 compose-test:
 	sh deploy/compose/test.sh
 
-ui-smoke: tools
+ui-smoke: tools ui
 	sh test/smoke/public_ui.sh
 
 .PHONY: parity-reference
