@@ -318,3 +318,28 @@ func TestEnqueueSnapshotAssessesFromStoredEvidence(t *testing.T) {
 		t.Fatalf("registry calls = %d", calls)
 	}
 }
+
+// TestWorkerRetryKeepsHumanConclusion covers the retry of a negative lookup:
+// rebuilding the assessment must keep a reviewer's conclusion.
+func TestWorkerRetryKeepsHumanConclusion(t *testing.T) {
+	r := newRegistry(t, func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusNotFound)
+	})
+	registry, _ := NewRegistry([]Route{r.route(t, "npm", "/")})
+	store := newMemoryStore()
+	coordinates := Coordinates{Ecosystem: "npm", Name: "pkg", Version: "1.0.0"}
+	store.occurrences[coordinates] = [][2]int64{{1, 1}}
+	human := Evidence{Source: SourceHuman, Coordinates: coordinates, Outcome: OutcomeResolved}
+	classify(&human, "Apache-2.0", RawExpression)
+	store.evidence = append(store.evidence, human)
+	worker := &Worker{Store: store, Registry: registry, Owner: "w", Now: func() time.Time { return time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC) }}
+	if _, err := store.EnqueueEnrichment(t.Context(), coordinates, "npm:test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := worker.RunOnce(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.assessments[1]; got.Status != AssessmentResolved || got.NormalizedExpression != "Apache-2.0" {
+		t.Fatalf("assessment = %+v", got)
+	}
+}

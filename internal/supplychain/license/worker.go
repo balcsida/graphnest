@@ -266,7 +266,7 @@ func (worker *Worker) Reassess(ctx context.Context, coordinates Coordinates) err
 		if err != nil {
 			return err
 		}
-		if err := worker.Store.UpsertAssessment(ctx, Assess(occurrence[0], occurrence[1], declared, concluded, evidence, worker.now())); err != nil {
+		if err := worker.Store.UpsertAssessment(ctx, AssessWithHuman(occurrence[0], occurrence[1], declared, concluded, evidence, worker.now())); err != nil {
 			return err
 		}
 	}
