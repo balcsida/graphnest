@@ -236,3 +236,44 @@ func TestSnapshotCoordinatesAndAssessments(t *testing.T) {
 	}
 	_ = supplychain.StreamGitHubSource
 }
+
+// TestSnapshotComponentsAndEnqueueAssessment covers a snapshot published
+// after its evidence exists: EnqueueSnapshot assesses every component.
+func TestSnapshotComponentsAndEnqueueAssessment(t *testing.T) {
+	store := migratedStore(t)
+	npm := license.Coordinates{Ecosystem: "npm", Namespace: "@scope", Name: "left-pad", Version: "1.3.0"}
+	if _, _, err := store.InsertLicenseEvidence(t.Context(), resolvedEvidence(npm, "npm:test", "MIT")); err != nil {
+		t.Fatal(err)
+	}
+	repositoryID := supplyChainRepository(t, store, 102, "widgets")
+	collection, err := store.PublishSupplyChainSnapshot(t.Context(), publication(t, repositoryID, claimSupplyChain(t, store, repositoryID, "worker"), supplyChainFixture(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	components, err := store.SnapshotComponents(t.Context(), *collection.SnapshotID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(components) != 7 {
+		t.Fatalf("components = %+v", components)
+	}
+	if components[1].Coordinates != npm || components[1].DeclaredRaw == nil || *components[1].DeclaredRaw != "NOASSERTION" {
+		t.Fatalf("npm component = %+v", components[1])
+	}
+	if components[0].Coordinates.Version != "" {
+		t.Fatalf("root component = %+v", components[0])
+	}
+	if components[6].Coordinates != (license.Coordinates{}) {
+		t.Fatalf("vendored component = %+v", components[6])
+	}
+	if _, err := (&license.Worker{Store: store}).EnqueueSnapshot(t.Context(), *collection.SnapshotID); err != nil {
+		t.Fatal(err)
+	}
+	counts, err := store.SupplyChainAssessmentCounts(t.Context(), *collection.SnapshotID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(counts) != 2 || counts["resolved"] != 1 || counts["unknown"] != 6 {
+		t.Fatalf("counts = %v", counts)
+	}
+}

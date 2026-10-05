@@ -351,6 +351,27 @@ func (s *Store) SnapshotCoordinates(ctx context.Context, snapshotID int64) ([]li
 	return result, rows.Err()
 }
 
+// SnapshotComponents lists every component of a snapshot in ordinal order
+// with its coordinates (empty when unknown) and raw license values.
+func (s *Store) SnapshotComponents(ctx context.Context, snapshotID int64) ([]license.SnapshotComponent, error) {
+	rows, err := s.pool.Query(ctx, `select id, coalesce(ecosystem, ''), coalesce(purl_namespace, ''), coalesce(purl_name, ''), coalesce(purl_version, version, ''),
+		license_declared_raw, license_concluded_raw from supply_chain_components where snapshot_id=$1 order by ordinal`, snapshotID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []license.SnapshotComponent
+	for rows.Next() {
+		var item license.SnapshotComponent
+		c := &item.Coordinates
+		if err := rows.Scan(&item.ID, &c.Ecosystem, &c.Namespace, &c.Name, &c.Version, &item.DeclaredRaw, &item.ConcludedRaw); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}
+
 // SupplyChainAssessments returns assessments for a snapshot's components,
 // keyed by component ID. Callers authorize the snapshot first.
 func (s *Store) SupplyChainAssessments(ctx context.Context, snapshotID int64, componentIDs []int64) (map[int64]license.Assessment, error) {

@@ -60,6 +60,14 @@ const (
 	AssessmentPending AssessmentStatus = "pending"
 )
 
+// SnapshotComponent is one component occurrence of a snapshot with the
+// producer's raw license values; coordinate fields are empty when unknown.
+type SnapshotComponent struct {
+	ID                        int64
+	Coordinates               Coordinates
+	DeclaredRaw, ConcludedRaw *string
+}
+
 // Store is the persistence the enrichment worker and assessor need.
 type Store interface {
 	// InsertLicenseEvidence appends an immutable evidence row and returns its ID.
@@ -84,6 +92,8 @@ type Store interface {
 	UpsertAssessment(ctx context.Context, assessment Assessment) error
 	// SnapshotCoordinates lists distinct resolvable coordinates in a snapshot.
 	SnapshotCoordinates(ctx context.Context, snapshotID int64) ([]Coordinates, error)
+	// SnapshotComponents lists every component of a snapshot in ordinal order.
+	SnapshotComponents(ctx context.Context, snapshotID int64) ([]SnapshotComponent, error)
 	// LatestSnapshotIDs lists every stream's current snapshot.
 	LatestSnapshotIDs(ctx context.Context) ([]int64, error)
 }
