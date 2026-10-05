@@ -42,8 +42,8 @@ and forwards calls. It does not call Zoekt.
 The embedded Web UI is a React single-page application
 ([ADR-0018](adr/0018-react-shadcn-web-console.md)) built from `web/` into
 `internal/webui/dist` and embedded in the server binary. It is served at `/`,
-`/index.html`, `/repositories`, `/supply-chain`, `/admin`, and `/account`; the
-client routes below those prefixes are resolved in the browser. It is a thin,
+`/index.html`, `/repositories`, `/supply-chain`, `/admin`, `/connect`, and
+`/account`; the client routes below those prefixes are resolved in the browser. It is a thin,
 same-origin client of the existing REST API: the repository service at
 `GET /v1/repositories`, the search service at `POST /v1/search`, and the admin,
 account, and supply-chain routes. The server adds no console-specific

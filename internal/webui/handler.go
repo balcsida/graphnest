@@ -16,7 +16,7 @@ const contentSecurityPolicy = "default-src 'none'; base-uri 'none'; frame-ancest
 
 var htmlRoutes = []string{
 	"GET /{$}", "GET /index.html", "GET /repositories", "GET /admin", "GET /admin/",
-	"GET /account", "GET /account/", "GET /supply-chain", "GET /supply-chain/",
+	"GET /connect", "GET /account", "GET /account/", "GET /supply-chain", "GET /supply-chain/",
 }
 
 func embeddedBuild() fs.FS {

@@ -46,7 +46,7 @@ func requireSecurityHeaders(t *testing.T, response *httptest.ResponseRecorder) {
 
 func TestHTMLRoutesServeIndexWithPolicy(t *testing.T) {
 	mux := testMux(testBuild())
-	for _, path := range []string{"/", "/index.html", "/repositories", "/admin", "/admin/", "/account", "/account/", "/supply-chain", "/supply-chain/", "/admin/jobs", "/supply-chain/licenses"} {
+	for _, path := range []string{"/", "/index.html", "/repositories", "/admin", "/admin/", "/connect", "/account", "/account/", "/supply-chain", "/supply-chain/", "/admin/jobs", "/supply-chain/licenses"} {
 		response := serve(mux, http.MethodGet, path)
 		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "<title>console</title>") {
 			t.Fatalf("%s status=%d body=%q", path, response.Code, response.Body.String())

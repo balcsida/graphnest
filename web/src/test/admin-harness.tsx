@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from '@/lib/auth'
 import { ThemeProvider } from '@/lib/theme'
 import AccountPage from '@/pages/account/AccountPage'
 import AdminPage from '@/pages/admin/AdminPage'
+import ConnectPage from '@/pages/connect/ConnectPage'
 import { authConfig, stubFetch, unauthenticated, type Handler } from '@/test/fetch'
 
 // Test helper file: it exports a mount function next to private components.
@@ -61,6 +62,7 @@ export function mountConsole(path: string, routes: Record<string, Handler> = {},
                 <Routes>
                   <Route path="admin" element={<AdminPage />} />
                   <Route path="admin/:section" element={<AdminPage />} />
+                  <Route path="connect" element={<ConnectPage />} />
                   <Route path="account" element={<AccountPage />} />
                 </Routes>
               </Gate>

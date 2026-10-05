@@ -21,7 +21,7 @@ export default defineConfig({
   resolve: { alias: { '@': path.resolve(import.meta.dirname, 'src') } },
   build: { outDir, emptyOutDir: true },
   server: {
-    proxy: Object.fromEntries(['/v1', '/auth', '/healthz', '/readyz'].map((route) => [route, backend])),
+    proxy: Object.fromEntries(['/v1', '/auth', '/healthz', '/readyz', '/.well-known'].map((route) => [route, backend])),
   },
   test: {
     environment: 'jsdom',

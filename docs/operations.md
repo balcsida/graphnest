@@ -151,8 +151,8 @@ not retire generations already published.
 
 `graphnest-server` serves the browser console at `/`, `/repositories`,
 `/supply-chain` (inventory, Licenses at `/supply-chain/licenses`, Dependency
-graph at `/supply-chain/graph`), `/admin`, and `/account`
-([ADR-0018](adr/0018-react-shadcn-web-console.md)). The build is embedded in the
+graph at `/supply-chain/graph`), `/admin`, `/connect` (MCP client setup), and
+`/account` ([ADR-0018](adr/0018-react-shadcn-web-console.md)). The build is embedded in the
 application image, so there is nothing to deploy or configure separately.
 `Dockerfile.offline` copies the build context instead of building the console;
 run `make ui` (Node 24.10.0) before building it. A server built without the
