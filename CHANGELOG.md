@@ -5,6 +5,20 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+### Fixed
+
+- Republished inventory snapshots stayed unassessed. Assessments were written
+  only when a registry lookup finished, and coordinates with stored evidence
+  are not looked up again, so a newly collected snapshot of the same
+  dependencies had no assessments. Publishing a snapshot, and the startup
+  backfill, now assess every component from the stored evidence without
+  registry requests.
+- Retrying a negative registry lookup rebuilt the assessment without the
+  human conclusion's precedence, turning a reviewed coordinate back into
+  `declared`. The rebuild now keeps the reviewer's conclusion. Assessment no
+  longer sorts the caller's evidence in place, which could make the reviewer's
+  conclusion be missed when evidence arrived out of order.
+
 ## [0.9.1] - 2026-10-06
 
 ### Changed
