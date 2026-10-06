@@ -5,6 +5,13 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+### Added
+
+- "Connect an agent" page at `/connect` with copy-ready MCP setup for Claude
+  Code, Codex, OpenCode, Pi, Cursor, VS Code, Antigravity CLI and Claude
+  Desktop, filled in with this server's address. When MCP OAuth is on, clients can
+  sign in instead of using a token.
+
 ### Fixed
 
 - With the sidebar collapsed to icons, the GraphNest wordmark spilled out of

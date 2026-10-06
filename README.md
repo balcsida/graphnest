@@ -166,6 +166,8 @@ docker compose -f deploy/compose/compose.yml --profile fixture down
 
 ## Connect an MCP client
 
+The web console's Connect an agent page (`/connect`) shows copy-ready setup for common agent clients, filled in with this server's address.
+
 MCP clients that support Streamable HTTP can connect directly to:
 
 ```text

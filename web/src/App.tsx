@@ -10,6 +10,7 @@ const SearchPage = lazy(() => import('@/pages/search/SearchPage'))
 const RepositoriesPage = lazy(() => import('@/pages/repositories/RepositoriesPage'))
 const AdminPage = lazy(() => import('@/pages/admin/AdminPage'))
 const AccountPage = lazy(() => import('@/pages/account/AccountPage'))
+const ConnectPage = lazy(() => import('@/pages/connect/ConnectPage'))
 const SupplyChainPage = lazy(() => import('@/pages/supply-chain/SupplyChainPage'))
 
 function RequireAuth() {
@@ -28,6 +29,7 @@ export function AppRoutes() {
           <Route path="repositories" element={<RepositoriesPage />} />
           <Route path="admin" element={<AdminPage />} />
           <Route path="admin/:section" element={<AdminPage />} />
+          <Route path="connect" element={<ConnectPage />} />
           <Route path="account" element={<AccountPage />} />
           <Route path="supply-chain" element={<SupplyChainPage />} />
           <Route path="supply-chain/:view" element={<SupplyChainPage />} />

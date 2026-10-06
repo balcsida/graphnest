@@ -506,7 +506,7 @@ function api(method, url, bearer, requestBody) {
 }
 
 // Go's "GET /admin/" style patterns match the whole subtree, so deep links such as /admin/jobs serve the shell too.
-const htmlRoutes = new Set(["/", "/index.html", "/repositories", "/admin", "/account", "/supply-chain"]);
+const htmlRoutes = new Set(["/", "/index.html", "/repositories", "/admin", "/connect", "/account", "/supply-chain"]);
 const isHtmlRoute = (p) => htmlRoutes.has(p) || ["/admin/", "/account/", "/supply-chain/"].some((prefix) => p.startsWith(prefix));
 const mime = { ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".woff": "font/woff", ".json": "application/json", ".map": "application/json" };
 const notFoundApi = new Set();
@@ -533,6 +533,11 @@ const server = http.createServer((request, response) => {
   }
   if (p === "/healthz" || p === "/readyz") return response.writeHead(200, { "Content-Type": "text/plain" }).end("ok");
   if (p === "/auth/logout") return response.writeHead(204).end();
+  // MCP OAuth is on in the stub, so the Connect an agent page shows its sign-in switch.
+  if (p === "/.well-known/oauth-protected-resource") {
+    response.writeHead(200, { "Content-Type": "application/json" });
+    return response.end(JSON.stringify({ resource: "https://graphnest.example.com/mcp", authorization_servers: ["https://graphnest.example.com"], bearer_methods_supported: ["header"], scopes_supported: [] }));
+  }
   if (p.startsWith("/v1/")) {
     const chunks = [];
     request.on("data", (chunk) => chunks.push(chunk));
@@ -639,6 +644,7 @@ async function run(theme, viewport, suffix) {
   await step("admin-overview", "/admin", () => page.getByText("Health OK").waitFor());
   await step("admin-repositories", "/admin/repositories", () => page.getByText("acme/data-pipeline").first().waitFor(), true, hasRows);
   await step("account", "/account", () => page.getByText("gnu_4f8a2c1e").waitFor());
+  await step("connect", "/connect", () => page.getByLabel("Sign in with OAuth instead of a token").waitFor());
   await step("supply-chain-overview", "/supply-chain", () => page.getByText("Authorized repositories").first().waitFor());
   await step("components", "/supply-chain/components", async () => {
     await page.getByRole("button", { name: "lodash", exact: true }).click();

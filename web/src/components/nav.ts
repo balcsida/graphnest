@@ -1,4 +1,4 @@
-import { Code2, FolderGit2, Gauge, GitFork, KeyRound, Package, Scale, Settings2, ShieldCheck, Users, type LucideIcon } from 'lucide-react'
+import { Bot, Code2, FolderGit2, Gauge, GitFork, KeyRound, Package, Scale, Settings2, ShieldCheck, Users, type LucideIcon } from 'lucide-react'
 
 export interface NavItem {
   title: string
@@ -29,6 +29,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { title: 'Search', to: '/', icon: Code2 },
       { title: 'Repositories', to: '/repositories', icon: FolderGit2 },
+      { title: 'Connect an agent', to: '/connect', icon: Bot },
     ],
   },
   {
