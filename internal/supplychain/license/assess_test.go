@@ -67,6 +67,18 @@ func TestAssessCombinesDeclarationsAndRegistryEvidence(t *testing.T) {
 	}
 }
 
+// TestAssessWithHumanIgnoresEvidenceOrder covers evidence out of ID order:
+// Assess must not reorder the caller's slice under AssessWithHuman's pointer
+// to the human row.
+func TestAssessWithHumanIgnoresEvidenceOrder(t *testing.T) {
+	human := Evidence{ID: 1, Source: SourceHuman, Coordinates: Coordinates{Ecosystem: "npm", Name: "a", Version: "1"}, Outcome: OutcomeResolved}
+	classify(&human, "Apache-2.0", RawExpression)
+	got := AssessWithHuman(1, 1, nil, nil, []Evidence{registryEvidence(2, "npm:a", "", OutcomeNotFound), human}, time.Now())
+	if got.Status != AssessmentResolved || got.NormalizedExpression != "Apache-2.0" {
+		t.Fatalf("assessment = %+v", got)
+	}
+}
+
 func TestAssessFingerprintTracksMaterialChange(t *testing.T) {
 	now := time.Now()
 	base := Assess(1, 1, ptr("MIT"), nil, []Evidence{registryEvidence(1, "npm:a", "MIT", OutcomeResolved)}, now)
