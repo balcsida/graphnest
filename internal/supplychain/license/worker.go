@@ -93,11 +93,14 @@ func (worker *Worker) logger() *slog.Logger {
 	return worker.Logger
 }
 
-// EnqueueSnapshot queues lookups for every resolvable coordinate of a
-// snapshot whose ecosystem has a route, and writes an initial assessment for
-// every component from its producer declaration alone so the inventory shows
-// declared/unknown immediately rather than waiting for registries.
+// EnqueueSnapshot writes an assessment for every component of a snapshot from
+// its producer declaration and stored evidence, then queues lookups for every
+// resolvable coordinate whose ecosystem has a route. It returns the number of
+// jobs created.
 func (worker *Worker) EnqueueSnapshot(ctx context.Context, snapshotID int64) (int, error) {
+	if err := worker.assessSnapshot(ctx, snapshotID); err != nil {
+		return 0, err
+	}
 	if worker.Registry == nil {
 		return 0, nil
 	}
@@ -120,6 +123,34 @@ func (worker *Worker) EnqueueSnapshot(ctx context.Context, snapshotID int64) (in
 		}
 	}
 	return created, nil
+}
+
+// assessSnapshot writes an assessment for every component of a snapshot from
+// its producer declaration and stored evidence. It makes no registry requests.
+func (worker *Worker) assessSnapshot(ctx context.Context, snapshotID int64) error {
+	components, err := worker.Store.SnapshotComponents(ctx, snapshotID)
+	if err != nil {
+		return err
+	}
+	cache := map[Coordinates][]Evidence{}
+	for _, component := range components {
+		var evidence []Evidence
+		if c := component.Coordinates; c.Ecosystem != "" && c.Name != "" && c.Version != "" {
+			cached, ok := cache[c]
+			if !ok {
+				if cached, err = worker.Store.LatestLicenseEvidence(ctx, c); err != nil {
+					return err
+				}
+				cache[c] = cached
+			}
+			evidence = cached
+		}
+		assessment := AssessWithHuman(component.ID, snapshotID, component.DeclaredRaw, component.ConcludedRaw, evidence, worker.now())
+		if err := worker.Store.UpsertAssessment(ctx, assessment); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Backfill queues lookups for every stream's current snapshot. Publication
@@ -235,7 +266,7 @@ func (worker *Worker) Reassess(ctx context.Context, coordinates Coordinates) err
 		if err != nil {
 			return err
 		}
-		if err := worker.Store.UpsertAssessment(ctx, Assess(occurrence[0], occurrence[1], declared, concluded, evidence, worker.now())); err != nil {
+		if err := worker.Store.UpsertAssessment(ctx, AssessWithHuman(occurrence[0], occurrence[1], declared, concluded, evidence, worker.now())); err != nil {
 			return err
 		}
 	}

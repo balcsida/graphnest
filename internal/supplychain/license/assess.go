@@ -2,6 +2,7 @@ package license
 
 import (
 	"crypto/sha256"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -44,6 +45,8 @@ func Assess(componentID, snapshotID int64, declaredRaw, concludedRaw *string, re
 		consider("producer_declared", *declaredRaw)
 	}
 	pending := false
+	// Sort a copy: AssessWithHuman holds a pointer into the caller's slice.
+	registry = slices.Clone(registry)
 	sort.SliceStable(registry, func(i, j int) bool { return registry[i].ID < registry[j].ID })
 	for _, evidence := range registry {
 		assessment.EvidenceIDs = append(assessment.EvidenceIDs, evidence.ID)

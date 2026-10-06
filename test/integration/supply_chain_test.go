@@ -357,8 +357,9 @@ func TestSupplyChainLicenseEnrichment(t *testing.T) {
 		t.Fatalf("declared raw must remain the producer's NOASSERTION: %+v", leftPad)
 	}
 	response = get("acme", "/v1/supply-chain/repositories/101/components?q=core")
-	if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil || len(page.Components) != 1 || page.Components[0].License != nil {
-		t.Fatalf("maven component without a route must have no assessment: %s", response.Body.String())
+	if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil || len(page.Components) != 1 || page.Components[0].License == nil ||
+		page.Components[0].License.Status != "unknown" || page.Components[0].License.EvidenceCount != 0 {
+		t.Fatalf("maven component without a route must be assessed from its declaration alone: %s", response.Body.String())
 	}
 	response = get("acme", "/v1/supply-chain/repositories/101/component?element=SPDXRef-npm-scope-left-pad-1.3.0")
 	var detail api.SupplyChainComponentDetail

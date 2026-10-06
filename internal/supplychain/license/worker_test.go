@@ -19,6 +19,7 @@ type memoryStore struct {
 	declared    map[int64]*string
 	coordinates []Coordinates
 	snapshots   []int64
+	components  map[int64][]SnapshotComponent
 }
 
 func newMemoryStore() *memoryStore {
@@ -124,6 +125,10 @@ func (store *memoryStore) SnapshotCoordinates(context.Context, int64) ([]Coordin
 
 func (store *memoryStore) LatestSnapshotIDs(context.Context) ([]int64, error) {
 	return store.snapshots, nil
+}
+
+func (store *memoryStore) SnapshotComponents(_ context.Context, snapshotID int64) ([]SnapshotComponent, error) {
+	return store.components[snapshotID], nil
 }
 
 func (store *memoryStore) ComponentDeclarations(_ context.Context, componentID int64) (*string, *string, error) {
@@ -273,5 +278,68 @@ func TestNewRegistryRejectsDuplicatesAndUnknownEcosystems(t *testing.T) {
 	registry, err := NewRegistry([]Route{r.route(t, "maven", "/"), r.route(t, "nuget", "/")})
 	if err != nil || len(registry.Ecosystems()) != 2 || registry.Ecosystems()[0] != "nuget" {
 		t.Fatalf("registry = %v %v", registry, err)
+	}
+}
+
+// TestEnqueueSnapshotAssessesFromStoredEvidence covers a republished
+// snapshot whose coordinates already have evidence: no lookup is queued, so
+// its components are assessed from the stored evidence without registry calls.
+func TestEnqueueSnapshotAssessesFromStoredEvidence(t *testing.T) {
+	r := newRegistry(t, func(http.ResponseWriter, *http.Request) {
+		t.Error("registry must not be called")
+	})
+	registry, _ := NewRegistry([]Route{r.route(t, "npm", "/")})
+	store := newMemoryStore()
+	known := Coordinates{Ecosystem: "npm", Name: "pkg", Version: "1.0.0"}
+	evidence := Evidence{Source: SourceRegistryNPM, Route: "npm:test", Coordinates: known, Outcome: OutcomeResolved}
+	classify(&evidence, "MIT", RawExpression)
+	store.evidence = append(store.evidence, evidence)
+	noassertion := "NOASSERTION"
+	store.components = map[int64][]SnapshotComponent{5: {
+		{ID: 1, Coordinates: known, DeclaredRaw: &noassertion},
+		{ID: 2, DeclaredRaw: &noassertion},
+		{ID: 3, Coordinates: Coordinates{Ecosystem: "npm", Name: "other", Version: "2.0.0"}, DeclaredRaw: &noassertion},
+	}}
+	worker := &Worker{Store: store, Registry: registry, Owner: "w"}
+	if _, err := worker.EnqueueSnapshot(t.Context(), 5); err != nil {
+		t.Fatal(err)
+	}
+	want := []AssessmentStatus{AssessmentResolved, AssessmentUnknown, AssessmentUnknown}
+	for i, status := range want {
+		got := store.assessments[int64(i+1)]
+		if got.Status != status || got.SnapshotID != 5 {
+			t.Fatalf("component %d = %+v, want %s", i+1, got, status)
+		}
+	}
+	if got := store.assessments[1].NormalizedExpression; got != "MIT" {
+		t.Fatalf("expression = %q", got)
+	}
+	if calls := r.calls.Load(); calls != 0 {
+		t.Fatalf("registry calls = %d", calls)
+	}
+}
+
+// TestWorkerRetryKeepsHumanConclusion covers the retry of a negative lookup:
+// rebuilding the assessment must keep a reviewer's conclusion.
+func TestWorkerRetryKeepsHumanConclusion(t *testing.T) {
+	r := newRegistry(t, func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusNotFound)
+	})
+	registry, _ := NewRegistry([]Route{r.route(t, "npm", "/")})
+	store := newMemoryStore()
+	coordinates := Coordinates{Ecosystem: "npm", Name: "pkg", Version: "1.0.0"}
+	store.occurrences[coordinates] = [][2]int64{{1, 1}}
+	human := Evidence{Source: SourceHuman, Coordinates: coordinates, Outcome: OutcomeResolved}
+	classify(&human, "Apache-2.0", RawExpression)
+	store.evidence = append(store.evidence, human)
+	worker := &Worker{Store: store, Registry: registry, Owner: "w", Now: func() time.Time { return time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC) }}
+	if _, err := store.EnqueueEnrichment(t.Context(), coordinates, "npm:test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := worker.RunOnce(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.assessments[1]; got.Status != AssessmentResolved || got.NormalizedExpression != "Apache-2.0" {
+		t.Fatalf("assessment = %+v", got)
 	}
 }
