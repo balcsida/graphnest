@@ -24,7 +24,7 @@ jobs:
           go-version: "1.27.1"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24.10.0"
+          node-version: "26.10.0"
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: make ui ui-check
@@ -43,7 +43,7 @@ jobs:
           go-version: "1.27.1"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24.10.0"
+          node-version: "26.10.0"
           cache: npm
           cache-dependency-path: |
             package-lock.json
@@ -63,7 +63,7 @@ jobs:
           go-version: "1.27.1"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24.10.0"
+          node-version: "26.10.0"
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: make ui
@@ -83,7 +83,7 @@ jobs:
           go-version: "1.27.1"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24.10.0"
+          node-version: "26.10.0"
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: make ui

@@ -90,7 +90,7 @@ The fixture profile is the fastest way to try GraphNest. It starts a determinist
 ### Prerequisites
 
 - Go 1.27.1
-- Node 24.10.0 (builds the embedded web console)
+- Node 26.10.0 (builds the embedded web console)
 - Git
 - Docker with Docker Compose
 - `jq`
@@ -133,7 +133,7 @@ The browser keeps this development token only for the current session.
 
 ### Building the web console
 
-The browser console is a React single-page application under `web/`, embedded into `graphnest-server` from `internal/webui/dist`. Building it needs Node 24.10.0:
+The browser console is a React single-page application under `web/`, embedded into `graphnest-server` from `internal/webui/dist`. Building it needs Node 26.10.0:
 
 ```sh
 make ui              # npm ci and a production build into internal/webui/dist
