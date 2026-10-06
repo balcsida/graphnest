@@ -5,6 +5,12 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+### Changed
+
+- Require Node 26.10.0 to build the web console, in CI and in the image build.
+  Node 24 leaves active LTS on 2026-10-20 and Node 26 enters it on 2026-10-28.
+  Published images do not contain Node and are unaffected.
+
 ## [0.9.0] - 2026-10-06
 
 ### Added
