@@ -5,11 +5,16 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-06
+
 ### Changed
 
+- Update the web console to React Router 8 and Recharts 3.10, and its build and
+  test tooling to Vite 8, ESLint 10 and jsdom 30. TypeScript stays on 6.0 until
+  typescript-eslint supports TypeScript 7. ([#130])
 - Require Node 26.10.0 to build the web console, in CI and in the image build.
   Node 24 leaves active LTS on 2026-10-20 and Node 26 enters it on 2026-10-28.
-  Published images do not contain Node and are unaffected.
+  Published images do not contain Node and are unaffected. ([#136])
 
 ## [0.9.0] - 2026-10-06
 
@@ -458,7 +463,8 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
-[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/balcsida/graphnest/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/balcsida/graphnest/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/balcsida/graphnest/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/balcsida/graphnest/compare/v0.6.1...v0.7.0
@@ -506,3 +512,5 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
 [#126]: https://github.com/balcsida/graphnest/pull/126
 [#133]: https://github.com/balcsida/graphnest/pull/133
 [#128]: https://github.com/balcsida/graphnest/pull/128
+[#130]: https://github.com/balcsida/graphnest/pull/130
+[#136]: https://github.com/balcsida/graphnest/pull/136
