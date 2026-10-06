@@ -5,6 +5,13 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+### Changed
+
+- Release smoke tests, including the scan for fixable HIGH/CRITICAL
+  vulnerabilities, now run on the amd64 images only. The arm64 images are
+  still published with SBOMs and provenance, but are no longer smoke-tested or
+  scanned before publishing.
+
 ## [0.9.2] - 2026-10-06
 
 ### Fixed
