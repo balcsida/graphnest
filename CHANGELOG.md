@@ -5,6 +5,8 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-10-06
+
 ### Fixed
 
 - Republished inventory snapshots stayed unassessed. Assessments were written
@@ -12,12 +14,12 @@ the compatibility and migration notes before upgrading.
   are not looked up again, so a newly collected snapshot of the same
   dependencies had no assessments. Publishing a snapshot, and the startup
   backfill, now assess every component from the stored evidence without
-  registry requests.
+  registry requests. ([#138])
 - Retrying a negative registry lookup rebuilt the assessment without the
   human conclusion's precedence, turning a reviewed coordinate back into
   `declared`. The rebuild now keeps the reviewer's conclusion. Assessment no
   longer sorts the caller's evidence in place, which could make the reviewer's
-  conclusion be missed when evidence arrived out of order.
+  conclusion be missed when evidence arrived out of order. ([#138])
 
 ## [0.9.1] - 2026-10-06
 
@@ -477,7 +479,8 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
-[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/balcsida/graphnest/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/balcsida/graphnest/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/balcsida/graphnest/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/balcsida/graphnest/compare/v0.7.0...v0.8.0
@@ -528,3 +531,4 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
 [#128]: https://github.com/balcsida/graphnest/pull/128
 [#130]: https://github.com/balcsida/graphnest/pull/130
 [#136]: https://github.com/balcsida/graphnest/pull/136
+[#138]: https://github.com/balcsida/graphnest/pull/138
