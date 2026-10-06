@@ -5,6 +5,8 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-06
+
 ### Added
 
 - "Connect an agent" page at `/connect` with copy-ready MCP setup for Claude
