@@ -24,7 +24,7 @@ export async function scanComponents(
   const components: SupplyChainPortfolioComponent[] = []
   let cursor: string | undefined
   let pages = 0
-  let more = false
+  let more: boolean
   do {
     const page = await fetchPage(cursor, signal)
     pages++
