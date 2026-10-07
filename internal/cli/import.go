@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -19,22 +20,23 @@ import (
 
 var commitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
-const importUsage = "graphnest graph import codegraph --dry-run [--repo DIR] [--index FILE] [--repository-id N] [--commit SHA] [--timeout D]"
+const importUsage = "graphnest graph import codegraph (--dry-run | --output FILE) [--repo DIR] [--index FILE] [--repository-id N] [--commit SHA] [--timeout D]"
 
 // importReport is the JSON document printed by graph import codegraph.
 type importReport struct {
-	Command      string          `json:"command"`
-	DryRun       bool            `json:"dry_run"`
-	Index        indexReport     `json:"index"`
-	RepositoryID int64           `json:"repository_id,omitempty"`
-	Commit       string          `json:"commit"`
-	Freshness    freshnessReport `json:"freshness"`
-	Counts       countsReport    `json:"counts"`
-	NodeKinds    map[string]int  `json:"node_kinds"`
-	EdgeKinds    map[string]int  `json:"edge_kinds"`
-	Artifact     artifactReport  `json:"artifact"`
-	Diagnostics  diagnostics     `json:"diagnostics"`
-	Published    bool            `json:"published"`
+	Command      string                `json:"command"`
+	DryRun       bool                  `json:"dry_run"`
+	Index        indexReport           `json:"index"`
+	RepositoryID int64                 `json:"repository_id,omitempty"`
+	Commit       string                `json:"commit"`
+	Freshness    graphimport.Freshness `json:"freshness"`
+	Counts       countsReport          `json:"counts"`
+	NodeKinds    map[string]int        `json:"node_kinds"`
+	EdgeKinds    map[string]int        `json:"edge_kinds"`
+	Artifact     artifactReport        `json:"artifact"`
+	Output       *outputReport         `json:"output"`
+	Diagnostics  diagnostics           `json:"diagnostics"`
+	Published    bool                  `json:"published"`
 }
 
 type indexReport struct {
@@ -49,9 +51,9 @@ type producerReport struct {
 	Configuration string `json:"configuration"`
 }
 
-type freshnessReport struct {
-	Status string `json:"status"`
-	Detail string `json:"detail"`
+type outputReport struct {
+	Path  string `json:"path"`
+	Bytes int    `json:"bytes"`
 }
 
 type countsReport struct {
@@ -77,7 +79,8 @@ type diagnostics struct {
 
 func runImportCodeGraph(ctx context.Context, args []string, env Environment, stdout, stderr io.Writer) error {
 	flags := newFlags("import codegraph", importUsage, stderr)
-	dryRun := flags.Bool("dry-run", false, "convert and report without publishing or writing (required in this release)")
+	dryRun := flags.Bool("dry-run", false, "convert and report without writing (exactly one of --dry-run and --output)")
+	output := flags.String("output", "", "write the artifact to `FILE` after verifying the index is fresh and complete")
 	repo := flags.String("repo", ".", "repository directory")
 	index := flags.String("index", "", "CodeGraph index file (default <repo>/<CODEGRAPH_DIR or .codegraph>/codegraph.db)")
 	repositoryID := flags.Int64("repository-id", 0, "GraphNest repository ID")
@@ -86,8 +89,11 @@ func runImportCodeGraph(ctx context.Context, args []string, env Environment, std
 	if err := parse(flags, args); err != nil {
 		return err
 	}
-	if !*dryRun {
-		return usageError{"artifact output and publication follow in a later release; use --dry-run"}
+	switch {
+	case *dryRun && *output != "":
+		return usageError{"--dry-run and --output are mutually exclusive"}
+	case !*dryRun && *output == "":
+		return usageError{"publication follows in a later release; use --dry-run or --output"}
 	}
 	if *timeout <= 0 {
 		return usageError{"--timeout must be positive"}
@@ -96,6 +102,9 @@ func runImportCodeGraph(ctx context.Context, args []string, env Environment, std
 	flags.Visit(func(f *flag.Flag) { idSet = idSet || f.Name == "repository-id" })
 	if idSet && *repositoryID <= 0 {
 		return usageError{"--repository-id must be a positive integer"}
+	}
+	if *output != "" && !idSet {
+		return usageError{"artifact output needs --repository-id, the identity the artifact is published under"}
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
@@ -110,12 +119,12 @@ func runImportCodeGraph(ctx context.Context, args []string, env Environment, std
 	if !commitPattern.MatchString(*commit) {
 		return errors.New("commit must be 40 lowercase hexadecimal characters")
 	}
+	dir := env.Getenv("CODEGRAPH_DIR")
+	if dir == "" {
+		dir = ".codegraph"
+	}
 	path := *index
 	if path == "" {
-		dir := env.Getenv("CODEGRAPH_DIR")
-		if dir == "" {
-			dir = ".codegraph"
-		}
 		path = filepath.Join(*repo, dir, "codegraph.db")
 	}
 
@@ -140,9 +149,28 @@ func runImportCodeGraph(ctx context.Context, args []string, env Environment, std
 	if err != nil {
 		return err
 	}
+	artifact.ContentHash = hash
 	encoded, err := graphartifact.MarshalV2(artifact, graphartifact.Limits{})
 	if err != nil {
 		return err
+	}
+	freshness, err := graphimport.Verify(ctx, env.Repository, *repo, *commit, snapshot, graphimport.VerifyOptions{DataDir: dir})
+	if err != nil {
+		freshness = &graphimport.Freshness{
+			Status: graphimport.StatusUnverifiable, Commit: *commit, Detail: err.Error(),
+			Modified: []string{}, NotInCommit: []string{}, NotIndexed: []string{}, Unverified: []string{},
+		}
+	}
+	var refusal error
+	if *output != "" {
+		refusal = outputRefusal(freshness, snapshot, *output, filepath.Join(*repo, dir))
+	}
+	var written *outputReport
+	if *output != "" && refusal == nil {
+		if err := os.WriteFile(*output, encoded, 0o644); err != nil {
+			return err
+		}
+		written = &outputReport{Path: *output, Bytes: len(encoded)}
 	}
 	withErrors := 0
 	for _, f := range snapshot.Files {
@@ -150,20 +178,64 @@ func runImportCodeGraph(ctx context.Context, args []string, env Environment, std
 			withErrors++
 		}
 	}
-	return writeJSON(stdout, importReport{
+	if err := writeJSON(stdout, importReport{
 		Command: "graph import codegraph",
-		DryRun:  true,
+		DryRun:  *dryRun,
 		Index: indexReport{Path: snapshot.Path, SchemaVersion: snapshot.SchemaVersion, Producer: producerReport{
 			Name: artifact.Producer.Name, Version: artifact.Producer.Version, Configuration: artifact.Producer.Configuration,
 		}},
 		RepositoryID: *repositoryID,
 		Commit:       *commit,
-		Freshness:    freshnessReport{Status: "unverified", Detail: "the index contents are not compared with the commit yet"},
+		Freshness:    *freshness,
 		Counts:       countsReport{Nodes: report.Nodes, Edges: report.Edges, Files: report.Files, Unresolved: report.Unresolved, Metadata: report.Metadata},
 		NodeKinds:    report.NodeKinds,
 		EdgeKinds:    report.EdgeKinds,
 		Artifact:     artifactReport{Repository: identity, Bytes: len(encoded), ContentHash: hex.EncodeToString(hash)},
 		Diagnostics:  diagnostics{UnresolvedReferences: report.Unresolved, FilesWithErrors: withErrors, RoundedTimestamps: snapshot.RoundedTimestamps, Dropped: []string{}},
+		Output:       written,
 		Published:    false,
-	})
+	}); err != nil {
+		return err
+	}
+	return refusal
+}
+
+// outputRefusal returns why the artifact must not be written, or nil.
+func outputRefusal(freshness *graphimport.Freshness, snapshot *graphimport.Snapshot, output, dataDir string) error {
+	if freshness.Status != graphimport.StatusFresh {
+		return fmt.Errorf("the index is not fresh (status=%s): %s", freshness.Status, freshness.Detail)
+	}
+	if state, _ := snapshot.MetadataValue("index_state"); state != "complete" {
+		if state == "" {
+			state = "missing"
+		}
+		return fmt.Errorf("the index is not complete (index_state=%s); finish indexing with CodeGraph and retry", state)
+	}
+	if insideDir(output, dataDir) {
+		return errors.New("refusing to write into the CodeGraph data directory")
+	}
+	return nil
+}
+
+// insideDir reports whether path resolves inside dir, following symlinks of the deepest existing ancestor.
+func insideDir(path, dir string) bool {
+	rel, err := filepath.Rel(resolve(dir), resolve(path))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func resolve(path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	var tail []string
+	for p := abs; ; p = filepath.Dir(p) {
+		if real, err := filepath.EvalSymlinks(p); err == nil {
+			return filepath.Join(append([]string{real}, tail...)...)
+		}
+		if p == filepath.Dir(p) {
+			return abs
+		}
+		tail = append([]string{filepath.Base(p)}, tail...)
+	}
 }

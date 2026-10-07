@@ -27,16 +27,16 @@ type ProjectConfig struct {
 
 // Freshness is the result of checking an index against the content of a commit.
 type Freshness struct {
-	Status      string // "fresh", "stale" or "unverifiable"
-	Commit      string
-	Producer    string   // indexed_with_version
-	Compared    int      // indexed files found at the commit and hashed
-	Modified    []string // indexed files whose content at the commit hashes differently
-	NotInCommit []string // indexed files absent from the commit tree: untracked or deleted content
-	NotIndexed  []string // files at the commit the producer would index that the index lacks
-	Unverified  []string // indexed paths that are symlinks or submodules at the commit
-	Virtual     int      // node file paths that are not files in the index
-	Detail      string
+	Status      string   `json:"status"` // "fresh", "stale" or "unverifiable"
+	Commit      string   `json:"commit"`
+	Producer    string   `json:"producer"`      // indexed_with_version
+	Compared    int      `json:"compared"`      // indexed files found at the commit and hashed
+	Modified    []string `json:"modified"`      // indexed files whose content at the commit hashes differently
+	NotInCommit []string `json:"not_in_commit"` // indexed files absent from the commit tree: untracked or deleted content
+	NotIndexed  []string `json:"not_indexed"`   // files at the commit the producer would index that the index lacks
+	Unverified  []string `json:"unverified"`    // indexed paths that are symlinks or submodules at the commit
+	Virtual     int      `json:"virtual"`       // node file paths that are not files in the index
+	Detail      string   `json:"detail"`
 }
 
 // VerifyOptions configures Verify.
@@ -54,7 +54,7 @@ const maxConfigBytes = 1 << 20
 // embedded repos and .git/info/exclude are not modelled, and any string is accepted as an
 // extension override language.
 func Verify(ctx context.Context, git Git, repo, commit string, s *Snapshot, options VerifyOptions) (*Freshness, error) {
-	f := &Freshness{Commit: commit}
+	f := &Freshness{Commit: commit, Modified: []string{}, NotInCommit: []string{}, NotIndexed: []string{}, Unverified: []string{}}
 	producer, ok := s.MetadataValue("indexed_with_version")
 	if !ok {
 		f.Status, f.Detail = StatusUnverifiable, "The index records no indexed_with_version, so the producer's file rules are unknown; re-index with CodeGraph 1.6.0 or newer."
@@ -156,7 +156,9 @@ func Verify(ctx context.Context, git Git, repo, commit string, s *Snapshot, opti
 	if f.NotIndexed, err = notIndexed(ctx, git, rules, config, gitignore, candidates); err != nil {
 		return nil, err
 	}
-	f.Compared, f.Modified, f.Unverified = compared, modified, unverified
+	f.Compared = compared
+	f.Modified, f.Unverified = append([]string{}, modified...), append([]string{}, unverified...)
+	f.NotInCommit, f.NotIndexed = append([]string{}, f.NotInCommit...), append([]string{}, f.NotIndexed...)
 	for _, list := range [][]string{f.Modified, f.NotInCommit, f.NotIndexed, f.Unverified} {
 		slices.Sort(list)
 	}

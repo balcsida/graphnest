@@ -1,19 +1,27 @@
 package cli
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
+	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
+	"io/fs"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/balcsida/graphnest/internal/graphartifact"
 	"github.com/balcsida/graphnest/internal/graphimport"
 )
 
@@ -21,12 +29,85 @@ const (
 	fixture = "../../test/fixtures/codegraph/reference.db"
 	sha     = "0123456789abcdef0123456789abcdef01234567"
 	token   = "s3cret-token"
+	source  = "../../test/fixtures/codegraph/source"
 )
 
+// fakeRepository serves an in-memory archive (or an error) and delegates ignore evaluation to git.
+type fakeRepository struct {
+	archive    []byte
+	archiveErr error
+}
+
+func (r fakeRepository) Archive(context.Context, string, string) (io.ReadCloser, error) {
+	if r.archiveErr != nil {
+		return nil, r.archiveErr
+	}
+	return io.NopCloser(bytes.NewReader(r.archive)), nil
+}
+
+func (fakeRepository) Ignored(ctx context.Context, patterns string, ignoreCase bool, paths []string) ([]string, error) {
+	return graphimport.ExecGit{}.Ignored(ctx, patterns, ignoreCase, paths)
+}
+
+// sourceTree reads every file of the fixture source tree.
+func sourceTree() map[string][]byte {
+	tree := map[string][]byte{}
+	err := filepath.WalkDir(source, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		rel, _ := filepath.Rel(source, path)
+		tree[filepath.ToSlash(rel)] = data
+		return err
+	})
+	if err != nil {
+		panic(err)
+	}
+	return tree
+}
+
+// tarOf builds a tar stream with directory entries followed by the files.
+func tarOf(tree map[string][]byte) []byte {
+	var buf bytes.Buffer
+	w := tar.NewWriter(&buf)
+	write := func(h *tar.Header, data []byte) {
+		if err := w.WriteHeader(h); err != nil {
+			panic(err)
+		}
+		if _, err := w.Write(data); err != nil {
+			panic(err)
+		}
+	}
+	dirs := map[string]bool{}
+	names := slices.Sorted(maps.Keys(tree))
+	for _, name := range names {
+		for dir := filepath.Dir(name); dir != "."; dir = filepath.Dir(dir) {
+			dirs[dir+"/"] = true
+		}
+	}
+	for _, dir := range slices.Sorted(maps.Keys(dirs)) {
+		write(&tar.Header{Typeflag: tar.TypeDir, Name: dir, Mode: 0o755}, nil)
+	}
+	for _, name := range names {
+		write(&tar.Header{Typeflag: tar.TypeReg, Name: name, Size: int64(len(tree[name])), Mode: 0o644}, tree[name])
+	}
+	if err := w.Close(); err != nil {
+		panic(err)
+	}
+	return buf.Bytes()
+}
+
+// testEnv serves the unmodified fixture source tree as the commit.
 func testEnv(vars map[string]string) Environment {
+	return testEnvWith(vars, fakeRepository{archive: tarOf(sourceTree())})
+}
+
+func testEnvWith(vars map[string]string, repository fakeRepository) Environment {
 	return Environment{
-		Getenv:   func(k string) string { return vars[k] },
-		ReadFile: os.ReadFile,
+		Repository: repository,
+		Getenv:     func(k string) string { return vars[k] },
+		ReadFile:   os.ReadFile,
 		Git: func(context.Context, string, ...string) ([]byte, error) {
 			return nil, errors.New("git must not run")
 		},
@@ -69,7 +150,7 @@ func TestDryRunReport(t *testing.T) {
 	if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(report.Artifact.ContentHash) || report.Artifact.Bytes == 0 {
 		t.Fatalf("artifact %+v", report.Artifact)
 	}
-	if report.Freshness.Status != "unverified" || report.Diagnostics.Dropped == nil || len(report.Diagnostics.Dropped) != 0 || report.Diagnostics.UnresolvedReferences != 6 {
+	if report.Output != nil || report.Freshness.Status != "fresh" || report.Freshness.Compared != 13 || len(report.Freshness.Modified)+len(report.Freshness.NotInCommit)+len(report.Freshness.NotIndexed)+len(report.Freshness.Unverified) != 0 || report.Diagnostics.Dropped == nil || len(report.Diagnostics.Dropped) != 0 || report.Diagnostics.UnresolvedReferences != 6 {
 		t.Fatalf("%+v %+v", report.Freshness, report.Diagnostics)
 	}
 	if report.Index.Producer.Name != "codegraph" || report.Index.Producer.Version == "" || report.Index.SchemaVersion != 9 || len(report.NodeKinds) == 0 || len(report.EdgeKinds) == 0 {
@@ -77,6 +158,14 @@ func TestDryRunReport(t *testing.T) {
 	}
 	if !strings.Contains(stdout, `"dropped": []`) {
 		t.Fatal("dropped must serialise as an empty array")
+	}
+	for _, list := range []string{"modified", "not_in_commit", "not_indexed", "unverified"} {
+		if !strings.Contains(stdout, `"`+list+`": []`) {
+			t.Fatalf("%s must serialise as an empty array", list)
+		}
+	}
+	if !strings.Contains(stdout, `"output": null`) {
+		t.Fatal("a dry run reports output null")
 	}
 	_, again, _ := run(t, testEnv(nil), "graph", "import", "codegraph", "--dry-run", "--index", fixture, "--commit", sha, "--repository-id", "42")
 	if again != stdout {
@@ -267,5 +356,130 @@ func TestCancelledContext(t *testing.T) {
 	code, stdout, stderr = runCtx(t, ctx, testEnv(vars), "graph", "status", "--repository-id", "9")
 	if code != 1 || stdout != "" || !strings.Contains(stderr, "context canceled") {
 		t.Fatalf("status: code %d stdout %q stderr %q", code, stdout, stderr)
+	}
+}
+
+func importArgs(index string, extra ...string) []string {
+	return append([]string{"graph", "import", "codegraph", "--index", index, "--commit", sha, "--repository-id", "42"}, extra...)
+}
+
+func decodeReport(t *testing.T, stdout string) importReport {
+	t.Helper()
+	var report importReport
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("%v: %q", err, stdout)
+	}
+	return report
+}
+
+func TestOutputWritesArtifact(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "graph.pb")
+	code, stdout, stderr := run(t, testEnv(nil), importArgs(fixture, "--output", out)...)
+	if code != 0 || stderr != "" {
+		t.Fatalf("code %d stderr %q", code, stderr)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := decodeReport(t, stdout)
+	if report.DryRun || report.Published || report.Output == nil || report.Output.Path != out || report.Output.Bytes != len(data) || report.Artifact.Bytes != len(data) {
+		t.Fatalf("%+v len %d", report, len(data))
+	}
+	artifact, err := graphartifact.ParseV2(data, graphartifact.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if artifact.Repository != "42" || artifact.Commit != sha || len(artifact.ContentHash) != 32 || hex.EncodeToString(artifact.ContentHash) != report.Artifact.ContentHash || len(artifact.Nodes) != 68 || len(artifact.Files) != 13 {
+		t.Fatalf("artifact %s %s %d nodes %d files", artifact.Repository, artifact.Commit, len(artifact.Nodes), len(artifact.Files))
+	}
+}
+
+func TestOutputRefusals(t *testing.T) {
+	tree := sourceTree()
+	partial := filepath.Join(t.TempDir(), "partial.db")
+	data, _ := os.ReadFile(fixture)
+	if err := os.WriteFile(partial, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", partial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(`update project_metadata set value='partial' where key='index_state'`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	repo := t.TempDir()
+	inData := filepath.Join(repo, ".codegraph", "graph.pb")
+	if err = os.MkdirAll(filepath.Dir(inData), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	changed := maps.Clone(tree)
+	changed["core.ts"] = append([]byte("x"), tree["core.ts"][1:]...)
+	missing := maps.Clone(tree)
+	delete(missing, "Model.java")
+	extra := maps.Clone(tree)
+	extra["extra.ts"] = []byte("export const extra = 1\n")
+
+	for _, tc := range []struct {
+		name       string
+		index      string
+		repository fakeRepository
+		repo, out  string
+		wantStdout string
+		wantStderr string
+	}{
+		{"modified", fixture, fakeRepository{archive: tarOf(changed)}, "", "", `"modified": [` + "\n" + `      "core.ts"`, "modified"},
+		{"not in commit", fixture, fakeRepository{archive: tarOf(missing)}, "", "", `"Model.java"`, "not in the commit"},
+		{"not indexed", fixture, fakeRepository{archive: tarOf(extra)}, "", "", `"extra.ts"`, "missing from the index"},
+		{"unverifiable", fixture, fakeRepository{archiveErr: errors.New("boom")}, "", "", `"status": "unverifiable"`, "boom"},
+		{"partial index", partial, fakeRepository{archive: tarOf(tree)}, "", "", `"status": "fresh"`, "index_state=partial"},
+		{"data directory", fixture, fakeRepository{archive: tarOf(tree)}, repo, inData, `"status": "fresh"`, "CodeGraph data directory"},
+	} {
+		out := tc.out
+		if out == "" {
+			out = filepath.Join(t.TempDir(), "graph.pb")
+		}
+		args := importArgs(tc.index, "--output", out)
+		if tc.repo != "" {
+			args = append(args, "--repo", tc.repo)
+		}
+		code, stdout, stderr := run(t, testEnvWith(nil, tc.repository), args...)
+		if code != 1 || !strings.Contains(stdout, tc.wantStdout) || !strings.Contains(stderr, tc.wantStderr) {
+			t.Errorf("%s: code %d stdout %q stderr %q", tc.name, code, stdout, stderr)
+		}
+		if _, err := os.Stat(out); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("%s: output exists (%v)", tc.name, err)
+		}
+		if report := decodeReport(t, stdout); report.Output != nil || report.Published {
+			t.Errorf("%s: %+v", tc.name, report)
+		}
+	}
+}
+
+func TestDryRunUnverifiableFreshness(t *testing.T) {
+	env := testEnvWith(nil, fakeRepository{archiveErr: errors.New("boom")})
+	code, stdout, stderr := run(t, env, importArgs(fixture, "--dry-run")...)
+	report := decodeReport(t, stdout)
+	if code != 0 || stderr != "" || report.Freshness.Status != "unverifiable" || report.Freshness.Detail != "boom" || report.Freshness.Commit != sha || !strings.Contains(stdout, `"modified": []`) {
+		t.Fatalf("code %d stderr %q %+v", code, stderr, report.Freshness)
+	}
+}
+
+func TestOutputUsageErrors(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "graph.pb")
+	for name, args := range map[string][]string{
+		"both flags":    importArgs(fixture, "--dry-run", "--output", out),
+		"no repository": {"graph", "import", "codegraph", "--index", fixture, "--commit", sha, "--output", out},
+	} {
+		code, stdout, stderr := run(t, testEnv(nil), args...)
+		if code != 2 || stdout != "" || stderr == "" {
+			t.Errorf("%s: code %d stdout %q stderr %q", name, code, stdout, stderr)
+		}
+		if _, err := os.Stat(out); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("%s: output exists", name)
+		}
 	}
 }

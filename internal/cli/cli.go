@@ -14,6 +14,8 @@ import (
 	"runtime/debug"
 	"strings"
 	"time"
+
+	"github.com/balcsida/graphnest/internal/graphimport"
 )
 
 // Exit codes returned by Run.
@@ -35,7 +37,7 @@ commands:
 const graphUsage = `usage: graphnest graph <command>
 
 commands:
-  import codegraph   convert a CodeGraph index (dry run only in this release)
+  import codegraph   convert a CodeGraph index (--dry-run or --output FILE)
   status             show the repository and graph status held by the server
 `
 
@@ -45,6 +47,8 @@ type Environment struct {
 	ReadFile func(string) ([]byte, error)
 	Git      func(ctx context.Context, dir string, args ...string) ([]byte, error) // runs the git binary; replaceable in tests
 	Now      func() time.Time
+	// Repository reads commits and evaluates ignore rules for freshness verification.
+	Repository graphimport.Git
 }
 
 // OSEnvironment is the real process environment.
@@ -55,7 +59,8 @@ func OSEnvironment() Environment {
 		Git: func(ctx context.Context, dir string, args ...string) ([]byte, error) {
 			return exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...).Output()
 		},
-		Now: time.Now,
+		Now:        time.Now,
+		Repository: graphimport.ExecGit{},
 	}
 }
 
