@@ -5,6 +5,38 @@ Implementation, validation, draft publication, and release are separate states.
 
 ## Progress
 
+- 2026-10-07: S2.04 import UX, distribution and gate on
+  `feat/codegraph/s2-04-import-gate`, stacked on S2.03. `graphnest doctor`
+  runs read-only checks (git, repository commit, index and schema, captured
+  producer rules, index state and WAL sidecars, freshness against HEAD, and
+  the server's indexed commit and publication rights); `--format text` gives
+  the import and upload reports a readable form that ends with the next step
+  or the recovery hint; `make cli` cross-builds the static command for Linux
+  and macOS on amd64 and arm64 with checksums and a module inventory, and
+  the release workflow attests and attaches them. `TestCodeGraphImportGate`
+  (e2e) indexes a repository through the fake GitHub, grants a
+  non-administrator token, runs the dry run, writes the artifact, uploads
+  it, repeats the upload to show the deduplicated retry, asks callers,
+  callees, impact, explore and files through MCP beside CodeGraph's own
+  answers, shows a reader's upload refused, and writes a Markdown transcript.
+  On the pinned fixture the answers agree as Stage 1 established (impact at
+  depth 2 adds the two documented shortest-depth nodes; explore is a
+  superset by the documented budget rule). On a scratch clone of this
+  repository at `32fa3ba2`, indexed by the pinned CodeGraph 1.6.0 and 1.6.2
+  builds (681 files, 12,727 and 13,367 nodes), both indexes verify fresh,
+  publish, and answer; callees, impact and files agree exactly, callers
+  agree apart from one entry each side under the 20-entry per-definition
+  cap, and explore differs twice: with default bounds GraphNest's answer
+  exceeds its 256 KiB response budget and is refused rather than truncated,
+  and the bounded re-ask (`limit` 8, `candidate_limit` 32, `max_files` 4)
+  ranks files differently, sharing two source files with CodeGraph's
+  selection, omitting the other five or six and adding thirteen pointer
+  entries. Both are recorded as gaps.
+  - The first real index exposed a reader defect the sanitized fixture could
+    not: fractional `mtimeMs` stored as SQLite REAL in INTEGER timestamp
+    columns. Fixed in S2.01 (`TestReadRoundsRealTimestamps`); the count of
+    rounded values is part of every report.
+
 - 2026-10-07: S2.03 publication on `feat/codegraph/s2-03-publish`, stacked
   on S2.02. `graphnest graph upload ARTIFACT` and `graph import codegraph`
   without `--dry-run`/`--output` share one publication path: preflight
@@ -564,6 +596,13 @@ these tests.
   default-ignored directories, and `exclude` always wins, as in the producer.
 - `--output` (artifact creation gated on freshness) ships with S2.02 because
   it is the consumer of the freshness check; S2.03 adds publication.
+- The Stage 2 gate runs in-process against the production packages with the
+  e2e suite's fake GitHub, real PostgreSQL and the pinned Zoekt binaries,
+  because the Compose durable stack needs a GitHub App installation that a
+  scratch clone cannot have (owner-approved). It runs on the pinned fixture
+  in CI and takes a repository, commit, index and CodeGraph answers from the
+  environment for the real demonstration; differences on a real repository
+  are reviewed from the transcript rather than asserted.
 - The command never guesses a precondition: the observed active generation
   is the `expected_generation`, a stale `--expected-generation` is refused
   locally, and replacing another producer's generation is only ever explicit.
@@ -794,9 +833,20 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 
 ## Remaining gaps
 
-- Human-readable import reports, `graphnest doctor`, CLI distribution with
-  checksums and attestations, and the Stage 2 gate demonstration belong to
-  S2.04. Publication has no MCP tool. Freshness does not model nested `.gitignore` files,
+- Gaps the Stage 2 gate recorded on a real repository: `explore` for a
+  widely referenced symbol (`ReplaceSCIP`, 25 callers) exceeds the 256 KiB
+  response budget with default bounds and is refused with
+  `graph query response is too large` instead of a truncated answer, while
+  pinned CodeGraph answers from its own smaller budget; the bounded re-ask
+  selects a different file set from CodeGraph's (two source files in
+  common), so exploration relevance on a real repository is not at parity;
+  `graph_callers`
+  and `codegraph_callers` both cap a definition at 20 neighbours but order
+  them differently, so one entry on each side falls outside the cap. The v1
+  graph job reports `enrichment_disabled` where no scanner is configured,
+  which is also a default deployment's state. The release workflow's CLI
+  steps are unexercised until the next tag. Publication has no MCP tool.
+  Freshness does not model nested `.gitignore` files,
   `includeIgnored`, embedded repositories, `.git/info/exclude` or
   `export-ignore`, and treats symlinks and submodules as unverifiable; a
   CodeGraph version without captured rules is unverifiable too.
@@ -855,6 +905,7 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 | S2.01 CLI foundation and import pipeline | `feat/codegraph/s2-01-cli` | Implemented; oracle, unit, live-WAL, boundary, vet, staticcheck and govulncheck checks pass; based on `main` after PR #141 | Pending submission as the first layer of the Stage 2 stack |
 | S2.02 complete CodeGraph importer | `feat/codegraph/s2-02-codegraph` | Implemented; both pins regenerated and checked, parity-reference, rule-decision replay, freshness, unit, vet and staticcheck checks pass; depends on S2.01 | Pending submission as the second layer |
 | S2.03 publication and conflict recovery | `feat/codegraph/s2-03-publish` | Implemented; unit, PostgreSQL integration (eight acceptance scenarios), vet and staticcheck checks pass; depends on S2.02 | Pending submission as the third layer |
+| S2.04 import UX, distribution and gate | `feat/codegraph/s2-04-import-gate` | Implemented; unit, e2e gate on the fixture and on two real indexes, makefile, vet and staticcheck checks pass; depends on S2.03 | Pending submission as the fourth layer |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
