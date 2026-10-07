@@ -483,10 +483,24 @@ func (github *fakeGHES) serveAPI(writer http.ResponseWriter, request *http.Reque
 			return
 		}
 		for _, repository := range repositories {
-			if repository.name == parts[0] && request.URL.Query().Get("ref") == repository.sha && parts[1] == "main.go" {
-				_ = json.NewEncoder(writer).Encode(githubapp.Content{Type: "file", Encoding: "base64", Content: base64.StdEncoding.EncodeToString([]byte(repository.content)), SHA: repository.blobSHA, Size: int64(len(repository.content))})
-				return
+			if repository.name != parts[0] || request.URL.Query().Get("ref") != repository.sha {
+				continue
 			}
+			content, blobSHA := []byte(repository.content), repository.blobSHA
+			if parts[1] != "main.go" || repository.content == "" {
+				gitDir := filepath.Join(github.gitRoot, filepath.FromSlash(repository.name)+".git")
+				var err error
+				if content, err = exec.CommandContext(request.Context(), "git", "--git-dir", gitDir, "cat-file", "blob", repository.sha+":"+parts[1]).Output(); err != nil {
+					break
+				}
+				sha, err := exec.CommandContext(request.Context(), "git", "--git-dir", gitDir, "rev-parse", repository.sha+":"+parts[1]).Output()
+				if err != nil {
+					break
+				}
+				blobSHA = strings.TrimSpace(string(sha))
+			}
+			_ = json.NewEncoder(writer).Encode(githubapp.Content{Type: "file", Encoding: "base64", Content: base64.StdEncoding.EncodeToString(content), SHA: blobSHA, Size: int64(len(content))})
+			return
 		}
 		writer.WriteHeader(http.StatusNotFound)
 	default:
