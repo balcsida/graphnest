@@ -89,7 +89,8 @@ def produce(upstream, node, destination, pin, timings=False):
         metrics = json.loads((Path(temporary) / "metrics.json").read_text())
         metrics["sqlite_warm_call_query_ms"] = {"samples": 100, "p50": sorted(timings[5:])[49], "p95": sorted(timings[5:])[94]}
         library = None if PINS[pin]["facts_only"] else json.loads((Path(temporary) / "metrics.json.answers").read_text())
-        return expected, snapshot, schema, metrics, library
+        rules = json.loads((Path(temporary) / "metrics.json.rules").read_text())
+        return expected, snapshot, schema, metrics, library, rules
 
 
 def main():
@@ -129,9 +130,9 @@ def main():
         subprocess.run([args.node, "node_modules/typescript/bin/tsc"], cwd=upstream, env=build_env, check=True)
         subprocess.run(["npm", "run", "copy-assets"], cwd=upstream, env=build_env, check=True)
         first = Path(temporary) / "first.db"
-        expected, snapshot, schema, metrics, library = produce(upstream, args.node, first, args.pin, timings=args.timings)
-        repeated, repeated_snapshot, repeated_schema, _, repeated_library = produce(upstream, args.node, Path(temporary) / "second.db", args.pin)
-        if (expected, snapshot, schema, library) != (repeated, repeated_snapshot, repeated_schema, repeated_library):
+        expected, snapshot, schema, metrics, library, rules = produce(upstream, args.node, first, args.pin, timings=args.timings)
+        repeated, repeated_snapshot, repeated_schema, _, repeated_library, repeated_rules = produce(upstream, args.node, Path(temporary) / "second.db", args.pin)
+        if (expected, snapshot, schema, library, rules) != (repeated, repeated_snapshot, repeated_schema, repeated_library, repeated_rules):
             raise RuntimeError("producer logical output is nondeterministic after sanitation")
         if args.check:
             manifest = json.loads((FIXTURE / "manifest.json").read_text())
@@ -155,12 +156,14 @@ def main():
                     raise RuntimeError("full reference facts changed")
             if not facts_only and library != json.loads((FIXTURE / "library-expected.json").read_text()):
                 raise RuntimeError("library answers changed")
+            if rules != json.loads((FIXTURE / "producer-rules.json").read_text()):
+                raise RuntimeError("producer rules changed")
             if expected != json.loads((FIXTURE / "expected.json").read_text()):
                 raise RuntimeError("reference answers changed")
             if schema != (FIXTURE / "schema.sql").read_text():
                 raise RuntimeError("reference schema changed")
             if args.timings:
-                harness = [Path(__file__), Path(__file__).with_name("reference.mjs")]
+                harness = [Path(__file__), Path(__file__).with_name("reference.mjs"), Path(__file__).with_name("producer-rules.mjs")]
                 write_json(FIXTURE / "workflow-baseline.json", {
                     "scope": "five in-process runs on one warm portable CodeGraph; query plus JSON serialization; not GraphNest or transport/browser latency",
                     "producer": manifest["producer"],
@@ -182,10 +185,11 @@ def main():
         FIXTURE.mkdir(exist_ok=True)
         shutil.copyfile(first, FIXTURE / "reference.db")
         write_json(FIXTURE / "expected.json", expected)
+        write_json(FIXTURE / "producer-rules.json", rules)
         if facts_only:
             (FIXTURE / "schema.sql").write_text(schema)
             (FIXTURE / ".gitattributes").write_text("reference.db binary\n")
-            names = ["reference.db", "expected.json", "schema.sql"]
+            names = ["reference.db", "expected.json", "schema.sql", "producer-rules.json"]
             write_json(FIXTURE / "manifest.json", {
                 "fixture": "polyglot-core",
                 "capture": "facts-only",
@@ -209,7 +213,7 @@ def main():
         vocabulary["edges"] = [{"source": "synthetic:function", "target": "synthetic:class", "kind": kind} for kind in vocabulary["edge_kinds"]]
         write_json(FIXTURE / "synthetic-contract.json", vocabulary)
         write_json(FIXTURE / "baseline.json", {"scope": "pinned portable CodeGraph indexing, library getCallers, and separate direct SQLite call query; not GraphNest or browser latency", "runtime": runtime, "platform": os.uname().sysname + " " + os.uname().machine, **metrics})
-        names = ["reference.db", "expected.json", "library-expected.json", "schema.sql", "synthetic-contract.json"] + [str(path.relative_to(FIXTURE)) for path in sorted((FIXTURE / "source").rglob("*")) if path.is_file()]
+        names = ["reference.db", "expected.json", "producer-rules.json", "library-expected.json", "schema.sql", "synthetic-contract.json"] + [str(path.relative_to(FIXTURE)) for path in sorted((FIXTURE / "source").rglob("*")) if path.is_file()]
         write_json(FIXTURE / "manifest.json", {
             "fixture": "polyglot-core",
             "producer": {"repository": "https://github.com/colbymchenry/codegraph", "commit": COMMIT, "version": "1.6.0", "node": NODE, "mode": "portable", "kernel": False, "build": BUILD, "environment": PRODUCER_ENV, "home": "fresh empty temporary directory", "lockfile_sha256": hashlib.sha256((upstream / "package-lock.json").read_bytes()).hexdigest()},

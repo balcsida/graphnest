@@ -158,4 +158,23 @@ times remain outside oracle equality. Existing GraphNest 10% and future local
 exports, imports/publication, transports, cold startup and large-corpus results
 remain explicitly unmeasured.
 
+## Producer rules
+
+Both pins also write `producer-rules.json` into their fixture directory (listed in `manifest.json`).
+`producer-rules.mjs` captures it from the freshly built `dist/` after indexing, and `--check`
+compares a regeneration with the committed file. It records the producer's own answers, never a
+transcription of its source:
+
+- `extension_map` (`EXTENSION_MAP`) and `source_file_decisions` (`isSourceFile` over a fixed probe list).
+- `default_ignore_patterns` of `buildDefaultIgnore` on an empty directory (no `.gitignore` merged),
+  `ignore_case`, and `ignore_decisions` for every directory pattern plus fixed probes. The patterns come
+  from the npm `ignore` internals (`ig._rules._rules`); capture fails if that shape changes.
+- `max_source_file_size_bytes` and `oversize_hash` (the size-stamp hash, `null` for 1.6.0, which hashes
+  full content; its `MAX_FILE_SIZE` is not exported, so 1048576 is recorded with a source note).
+- `content_hash_vectors`: `hashContent` of `Buffer.toString('utf8')` for valid and invalid byte strings,
+  with the decoded code points.
+
+`internal/graphimport/codegraph-rules-*.json` are embedded copies; a Go test requires them to be
+byte-identical to these fixtures, so regenerate and copy together.
+
 The upstream schema is distributed under `../fixtures/codegraph/UPSTREAM-LICENSE`.

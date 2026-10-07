@@ -61,6 +61,7 @@
   "schema_version": 11,
   "sha256": {
     "expected.json": "2460d8f4fe7e52adb762a6762a535c8f1ffd13cfb0b2ebb40307f94278945036",
+    "producer-rules.json": "a4c1845b0e6a1e0bec3abe412e551ad6b7f1a0a0c09a167df1eda59bcda57876",
     "reference.db": "d48825b9f09d1e1acdbc05e576cfc07d1034a51cc0e783f8d5a517d356946dd1",
     "schema.sql": "066a2bea31f23a6cb5e165142b82ae163739369b9501f832463de433ce02bc1b"
   },

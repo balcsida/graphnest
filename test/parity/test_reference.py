@@ -11,6 +11,21 @@ NODE_KINDS = set("file module class struct interface trait protocol function met
 EDGE_KINDS = set("contains calls imports exports extends implements references type_of returns instantiates overrides decorates navigates".split())
 
 
+def check_producer_rules(test, root, manifest):
+    test.assertIn("producer-rules.json", manifest["sha256"])
+    rules = json.loads((root / "producer-rules.json").read_text())
+    test.assertIs(rules["ignore_case"], True)
+    test.assertGreaterEqual(len(rules["extension_map"]), 70)
+    directories = [p[:-1] for p in rules["default_ignore_patterns"] if p.endswith("/") and not p.startswith("!")]
+    test.assertTrue(directories)
+    for directory in directories:
+        for probe in (f"{directory}/x.ts", f"a/{directory}/x.ts"):
+            test.assertIs(rules["ignore_decisions"][probe], True, probe)
+    test.assertEqual(len(rules["content_hash_vectors"]), 16)
+    for vector in rules["content_hash_vectors"]:
+        test.assertEqual(len(vector["sha256"]), 64)
+
+
 class ReferenceTest(unittest.TestCase):
     def test_workflow_timings(self):
         path = ROOT / "workflow-baseline.json"
@@ -54,6 +69,8 @@ class ReferenceTest(unittest.TestCase):
         self.assertEqual(manifest["producer"]["home"], "fresh empty temporary directory")
         for name, digest in manifest["sha256"].items():
             self.assertEqual(hashlib.sha256((ROOT / name).read_bytes()).hexdigest(), digest, name)
+        check_producer_rules(self, ROOT, manifest)
+        self.assertIsNone(json.loads((ROOT / "producer-rules.json").read_text())["oversize_hash"])
         self.assertEqual({name for name in manifest["sha256"] if name.startswith("source/")}, {str(path.relative_to(ROOT)) for path in (ROOT / "source").rglob("*") if path.is_file()})
         expected = json.loads((ROOT / "expected.json").read_text())
         with sqlite3.connect(f"file:{ROOT / 'reference.db'}?mode=ro", uri=True) as db:
@@ -113,7 +130,11 @@ class SecondPinTest(unittest.TestCase):
         self.assertEqual(manifest["producer"]["version"], "1.6.2")
         self.assertEqual(manifest["producer"]["home"], "fresh empty temporary directory")
         self.assertEqual(manifest["schema_version"], 11)
-        self.assertEqual(set(manifest["sha256"]), {"reference.db", "expected.json", "schema.sql"})
+        self.assertEqual(set(manifest["sha256"]), {"reference.db", "expected.json", "schema.sql", "producer-rules.json"})
+        check_producer_rules(self, root, manifest)
+        oversize = json.loads((root / "producer-rules.json").read_text())["oversize_hash"]
+        self.assertEqual(oversize["input"], "codegraph:oversize:1048577")
+        self.assertEqual(oversize["sha256"], hashlib.sha256(oversize["input"].encode()).hexdigest())
         for name, digest in manifest["sha256"].items():
             self.assertEqual(hashlib.sha256((root / name).read_bytes()).hexdigest(), digest, name)
         self.assertEqual((root / ".gitattributes").read_text(), "reference.db binary\n")

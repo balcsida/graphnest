@@ -111,6 +111,7 @@
   "sha256": {
     "expected.json": "fa1929a78cc8d4dc00cc65d66f2b43e2e4767596247ff8cdc7b5f3553bd4dfd3",
     "library-expected.json": "e459ee27495c766903fc386dbb889b309808d7fe493702810c543f48809fd1f5",
+    "producer-rules.json": "6db250a38d2ec4bb66f07f6cb3b0867190b1144588e23e0eb8c95930e37dea8a",
     "reference.db": "c7a83a0aceb204e592bbd35dd8fdf5cd7231adde940fdda69777fd40eb4e1e43",
     "schema.sql": "7827ac9c08b04629e9427aa167e86ec23888b45dac2f89e5f139136b4221b693",
     "source/Model.java": "02a16031c03ee9f1902dc68d31850f7c5e3270e8deaf54d79c748a5e8350f0cf",
