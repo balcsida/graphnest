@@ -172,7 +172,7 @@ func NewWithLimits(services Services, limits Limits) *mcp.Server {
 		return structuredResult(), limited, err
 	})
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "get_repository_status", Description: "Inspect desired and indexed revisions before relying on search results.",
+		Name: "get_repository_status", Description: "Inspect desired and indexed revisions, SCIP navigation status and graph status before relying on search or graph tools.",
 		InputSchema: map[string]any{
 			"type": "object", "additionalProperties": false, "required": []string{"repository_id"},
 			"properties": map[string]any{

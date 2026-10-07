@@ -49,6 +49,12 @@ type SCIPIndexReader interface {
 	SCIPIndexCommit(context.Context, int64) (string, error)
 }
 
+// GraphGenerationReader returns a repository's active v2 graph generation, or nil
+// when none is active.
+type GraphGenerationReader interface {
+	ActiveGraphGeneration(context.Context, int64) (*api.GraphActiveGeneration, error)
+}
+
 type Service struct {
 	Store        ServiceStore
 	GitHub       ContentReader
@@ -56,6 +62,8 @@ type Service struct {
 	MaxLines     int
 	// SCIP is optional; when nil, status reports SCIPStatusUnknown.
 	SCIP SCIPIndexReader
+	// Graph is optional; when nil, status reports GraphStatusUnknown.
+	Graph GraphGenerationReader
 }
 
 func (service *Service) List(ctx context.Context, principal authn.Principal) ([]api.RepositorySummary, error) {
@@ -82,7 +90,34 @@ func (service *Service) Status(ctx context.Context, principal authn.Principal, r
 	if err != nil {
 		return api.RepositorySummary{}, err
 	}
-	return service.withSCIPStatus(ctx, repository, summary)
+	summary, err = service.withSCIPStatus(ctx, repository, summary)
+	if err != nil {
+		return api.RepositorySummary{}, err
+	}
+	return service.withGraphStatus(ctx, repository, summary)
+}
+
+func (service *Service) withGraphStatus(ctx context.Context, repo Repository, summary api.RepositorySummary) (api.RepositorySummary, error) {
+	summary.GraphStatus = api.GraphStatusUnknown
+	if service.Graph == nil {
+		return summary, nil
+	}
+	generation, err := service.Graph.ActiveGraphGeneration(ctx, repo.ID)
+	if err != nil {
+		return api.RepositorySummary{}, err
+	}
+	if generation == nil {
+		summary.GraphStatus = api.GraphStatusAbsent
+		return summary, nil
+	}
+	summary.GraphCommit = generation.Commit
+	summary.GraphProducer = generation.Producer
+	if generation.Commit == repo.IndexedSHA {
+		summary.GraphStatus = api.GraphStatusCurrent
+	} else {
+		summary.GraphStatus = api.GraphStatusStale
+	}
+	return summary, nil
 }
 
 func (service *Service) withSCIPStatus(ctx context.Context, repo Repository, summary api.RepositorySummary) (api.RepositorySummary, error) {
@@ -196,7 +231,7 @@ func summarize(repository Repository) (api.RepositorySummary, error) {
 		ID: repository.GitHubID, GitHubID: repository.GitHubID, Name: repository.Name, Branch: repository.Branch,
 		DesiredSHA: repository.DesiredSHA, IndexedSHA: repository.IndexedSHA, WebURL: repository.WebURL, Status: repository.Status,
 		ErrorCode: repository.ErrorCode, SearchNode: repository.SearchNode, LastIndexedAt: repository.LastIndexedAt,
-		SCIPStatus: api.SCIPStatusUnknown,
+		SCIPStatus: api.SCIPStatusUnknown, GraphStatus: api.GraphStatusUnknown,
 	}, nil
 }
 

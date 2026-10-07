@@ -29,6 +29,8 @@ export interface ErrorResponse {
 
 export type ScipStatus = 'current' | 'stale' | 'absent' | 'unknown'
 
+export type GraphStatus = 'current' | 'stale' | 'absent' | 'unknown'
+
 export interface RepositorySummary {
   id: number
   github_id: number
@@ -43,6 +45,9 @@ export interface RepositorySummary {
   last_indexed_at?: string
   scip_status: ScipStatus
   scip_commit?: string
+  graph_status: GraphStatus
+  graph_commit?: string
+  graph_producer?: string
 }
 
 export interface RepositoryList {

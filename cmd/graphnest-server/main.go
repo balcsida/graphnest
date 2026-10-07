@@ -437,7 +437,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 		return fail(err)
 	}
 	searchService := search.NewService(backend, authz.NewPostgres(store), searchLimits(settings))
-	repositoryService := &repository.Service{Store: store, GitHub: githubClient, SCIP: store}
+	repositoryService := &repository.Service{Store: store, GitHub: githubClient, SCIP: store, Graph: store}
 	scipService := &scipgraph.Service{Store: store, GitHub: githubClient, MaxResults: settings.Limits.MaxResults}
 	graphService := &graphingest.Service{Store: store, MaxUploadBytes: settings.Limits.GraphMaxUploadBytes}
 	graphQueries := &graphservice.Service{Store: store, Backend: &graphquery.Service{Store: store, Limits: backendGraphQueryLimits(settings.Graph)}, Files: repositoryService, Limits: graphQueryLimits(settings.Graph), Observe: metrics.ObserveGraphQuery}

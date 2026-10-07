@@ -41,5 +41,6 @@ export const repositoryFixture = (name: string, id: number, extra: object = {}) 
   error_code: '',
   search_node: '',
   scip_status: 'unknown',
+  graph_status: 'unknown',
   ...extra,
 })

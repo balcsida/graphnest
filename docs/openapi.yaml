@@ -1727,7 +1727,7 @@ components:
     RepositorySummary:
       type: object
       additionalProperties: false
-      required: [id, github_id, name, branch, desired_sha, indexed_sha, web_url, status, error_code, search_node, scip_status]
+      required: [id, github_id, name, branch, desired_sha, indexed_sha, web_url, status, error_code, search_node, scip_status, graph_status]
       properties:
         id: {type: integer, format: int64}
         github_id: {type: integer, format: int64}
@@ -1749,6 +1749,18 @@ components:
         scip_commit:
           type: string
           description: Commit of the most recent SCIP upload, when one exists.
+        graph_status:
+          type: string
+          enum: [current, stale, absent, unknown]
+          description: >-
+            Whether the active v2 graph generation is current with indexed_sha.
+            The graph tools fail unless it is "current".
+        graph_commit:
+          type: string
+          description: Commit of the active graph generation, when one exists.
+        graph_producer:
+          type: string
+          description: Producer of the active graph generation (for example scip or codegraph), when one exists.
     GraphStatus:
       type: object
       additionalProperties: false
