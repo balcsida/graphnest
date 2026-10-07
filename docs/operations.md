@@ -302,6 +302,20 @@ server state before and after (`indexed_sha`, `active_generation_before`,
 and the graph status with the publication preflight block. Credentials come
 from `GRAPHNEST_TOKEN` or `GRAPHNEST_TOKEN_FILE` only.
 
+#### Checking an import environment
+
+`graphnest doctor [--repo DIR] [--index FILE] [--repository-id N]` prints one
+JSON document of read-only checks, each `ok`, `warn` or `fail`, and exits 1
+when any failed: `git` runs, `repository` has a commit at HEAD, `index` is
+readable (schema, producer version, `index_state`, counts), `producer-rules`
+exist for the index's CodeGraph version, `index-state` is complete with no
+`-wal`/`-shm` sidecar (a CodeGraph process may still hold the file; reads stay
+consistent), `freshness` against HEAD, and `server`. The server check runs only
+when `GRAPHNEST_SERVER_URL` is set; with `--repository-id` it compares the
+server's `indexed_sha` with HEAD and reports whether the token may publish. It
+never installs, indexes or writes anything, and never prints the token. Run it
+before the first import and whenever an import is refused.
+
 ## Web console
 
 `graphnest-server` serves the browser console at `/`, `/repositories`,

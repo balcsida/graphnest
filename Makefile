@@ -3,13 +3,16 @@ STATICCHECK_VERSION := v0.8.1
 GOVULNCHECK_VERSION := v1.8.0
 POSTGRES_COMPOSE := docker compose -p graphnest-postgres
 GRAPHNEST_TEST_POSTGRES_DSN ?= $(GRAPHNEST_TEST_DATABASE_URL)
+VERSION ?= dev
+CLI_VERSION_FLAG = -X github.com/balcsida/graphnest/internal/cli.Version=$(VERSION)
+CLI_TARGETS = linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 IMAGE_PLATFORM ?= linux/amd64
 APPLICATION_IMAGE ?= graphnest-application:dev
 NODE_IMAGE ?= graphnest-node:dev
 WEB_INPUTS = web/package.json web/package-lock.json web/vite.config.ts web/index.html web/components.json \
 	$(wildcard web/tsconfig*.json) $(shell find web/src web/public -type f)
 
-.PHONY: brand-check fmt lint staticcheck govulncheck test test-race makefile-test scanner-build scanner-test scanner-vulncheck abi-test integration postgres-test postgres-integration e2e e2e-test tools build server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test tools-check ui-smoke ui ui-check ui-dev ui-screenshots
+.PHONY: brand-check fmt lint staticcheck govulncheck test test-race makefile-test scanner-build scanner-test scanner-vulncheck abi-test integration postgres-test postgres-integration e2e e2e-test tools build cli server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test tools-check ui-smoke ui ui-check ui-dev ui-screenshots
 
 brand-check:
 	@status=0; git grep -I -i -E 'grep[-_]?nest|graph[-_]nest' -- . || status=$$?; test $$status -eq 1
@@ -128,6 +131,18 @@ ui-screenshots: ui
 
 build: ui
 	go build ./cmd/...
+
+cli:
+	rm -rf dist/cli
+	mkdir -p dist/cli
+	@set -e; for target in $(CLI_TARGETS); do \
+		os=$${target%/*}; arch=$${target#*/}; \
+		echo "building graphnest $(VERSION) for $$os/$$arch"; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags="-s -w $(CLI_VERSION_FLAG)" \
+			-o dist/cli/graphnest_$(VERSION)_$${os}_$${arch} ./cmd/graphnest; \
+	done
+	cd dist/cli && shasum -a 256 graphnest_$(VERSION)_linux_* graphnest_$(VERSION)_darwin_* >graphnest_$(VERSION)_checksums.txt
+	go version -m dist/cli/graphnest_$(VERSION)_linux_amd64 >dist/cli/graphnest_$(VERSION)_dependencies.txt
 
 server: ui
 	go run ./cmd/graphnest-server

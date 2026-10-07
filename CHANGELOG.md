@@ -30,6 +30,16 @@ the compatibility and migration notes before upgrading.
 
 ### Added
 
+- `graphnest doctor` checks an import environment without changing it: git,
+  the repository commit, the CodeGraph index, the producer rules, the index
+  state, freshness against HEAD and, when `GRAPHNEST_SERVER_URL` is set, the
+  server and publication rights. `graphnest version` also prints the Go and
+  SQLite versions.
+- `--format text` for `graphnest graph import codegraph` and `graph upload`
+  prints a readable report ending in a next step; JSON stays the default.
+- Release binaries of `graphnest` for Linux and macOS (amd64 and arm64), with
+  checksums, a dependency inventory and build provenance attestations,
+  built with `make cli`.
 - `graphnest`, a command-line tool. `graphnest graph import codegraph
   --dry-run` reads an existing CodeGraph index (schema versions 9, 10 and
   11; CodeGraph 1.6.0 to 1.6.2) through a pure-Go SQLite reader in one

@@ -261,6 +261,21 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ steps.chart.outputs.archive }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.1"
+      - name: Build command-line tool
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          make cli VERSION="$VERSION"
+      - name: Attest command-line tool
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/cli/graphnest_*_linux_*
+            dist/cli/graphnest_*_darwin_*
       - name: Verify attestations
         env:
           GH_TOKEN: ${{ github.token }}
@@ -290,8 +305,10 @@ jobs:
           NODE: ${{ steps.images.outputs.node }}@${{ steps.images.outputs.node_digest }}
           CHART: ${{ steps.chart.outputs.reference }}
           CHART_ARCHIVE: ${{ steps.chart.outputs.archive }}
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
           set -euo pipefail
+          cli_files=(dist/cli/graphnest_"$VERSION"_*)
           tag_message=$(git for-each-ref --format='%(contents:subject)%0a%0a%(contents:body)' \
             "refs/tags/$GITHUB_REF_NAME")
 
@@ -306,13 +323,21 @@ jobs:
               "$NODE" "$GITHUB_REPOSITORY"
             printf 'gh attestation verify "%s" --repo "%s"\n' \
               "$(basename "$CHART_ARCHIVE")" "$GITHUB_REPOSITORY"
-            printf '```\n'
+            printf '```\n\n'
+            printf '## Command-line tool\n\n'
+            printf 'The `graphnest` command imports a local CodeGraph index without installing CodeGraph. '
+            printf 'Download the binary for your platform and `graphnest_%s_checksums.txt` from the release assets, then verify and run it:\n\n' "$VERSION"
+            printf '```sh\nsha256sum -c --ignore-missing graphnest_%s_checksums.txt\n' "$VERSION"
+            printf 'gh attestation verify graphnest_%s_<os>_<arch> --repo "%s"\n' "$VERSION" "$GITHUB_REPOSITORY"
+            printf 'chmod +x graphnest_%s_<os>_<arch>\n./graphnest_%s_<os>_<arch> doctor\n```\n' "$VERSION" "$VERSION"
           } >"$RUNNER_TEMP/release-notes.md"
 
-          gh release create "$GITHUB_REF_NAME" "$CHART_ARCHIVE" \
+          gh release create "$GITHUB_REF_NAME" "$CHART_ARCHIVE" "${cli_files[@]}" \
             --verify-tag --title "$GITHUB_REF_NAME" \
             --notes-file "$RUNNER_TEMP/release-notes.md" --generate-notes
           {
             printf '## Immutable release artifacts\n\n'
             printf -- "- \`%s\`\n- \`%s\`\n- \`%s\`\n" "$APPLICATION" "$NODE" "$CHART"
+            printf '\n## Command-line tool\n\n'
+            printf -- '- `%s`\n' "${cli_files[@]##*/}"
           } >>"$GITHUB_STEP_SUMMARY"
