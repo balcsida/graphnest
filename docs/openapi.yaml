@@ -1880,6 +1880,7 @@ components:
     GraphArtifactLocationV2:
       type: object
       additionalProperties: false
+      description: Zero-based line and UTF-16 column positions, except in SCIP-derived generations (producer scip), whose columns are the indexer's own code units (UTF-8 for scip-go); see docs/graph-artifact-v2.md.
       properties:
         path: {type: string}
         start: {$ref: '#/components/schemas/GraphArtifactPositionV2'}

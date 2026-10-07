@@ -127,6 +127,14 @@ UTF-8 source, rejects split surrogate pairs or out-of-line positions, preserves
 CR before LF, and handles the final empty line. It does not guess missing
 coordinates or normalize source text.
 
+SCIP-derived generations (producer `scip`, built by `FromSCIPV2` from a SCIP
+upload) are the exception. Their locations keep the indexer's zero-based lines
+and columns in the document's own position encoding, UTF-8 code units for
+scip-go, because SCIP carries no file contents to convert them with. The
+artifact records the encodings it saw under the `graphnest.scip` extension
+(`position_encodings`), once per artifact rather than per file. Do not resolve
+these columns with `SourceOffset` as if they were UTF-16.
+
 The committed `unicode.ts` fixture has CRLF plus accented/astral text before a
 real call. The roundtrip test resolves the actual database call coordinate to
 `normalize(` and proves its byte column differs from its UTF-16 column. Unit
