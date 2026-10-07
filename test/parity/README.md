@@ -23,6 +23,20 @@ python3 test/parity/generate_reference.py --upstream /tmp/codegraph-reference --
 make parity-reference
 ```
 
+A second, facts-only pin (CodeGraph 1.6.2, commit `6560052a6f856855d3f71eee838fd66ccfa4285d`, schema 11)
+indexes the same `source/` files into `test/fixtures/codegraph-1.6.2/`. Use a clone checked out at that
+commit and select it with `--pin 1.6.2` (default `1.6.0`); `--timings` is not available for it:
+
+```sh
+git -C /tmp/codegraph-reference checkout --detach 6560052a6f856855d3f71eee838fd66ccfa4285d
+python3 test/parity/generate_reference.py --upstream /tmp/codegraph-reference --pin 1.6.2
+python3 test/parity/generate_reference.py --upstream /tmp/codegraph-reference --pin 1.6.2 --check
+```
+
+It runs `reference-facts.mjs` (init, index, assert success and the excluded file absent) and
+adds `CODEGRAPH_NO_DAEMON`, `CODEGRAPH_NO_UPDATE_CHECK` and `CODEGRAPH_NO_WATCH` to its recorded
+environment. `make parity-reference` also validates it offline.
+
 `--node /path/to/node` selects the exact pinned runtime. The generator checks the
 Git commit, tracked-source cleanliness, runtime, source hashes, complete source
 file set, schema, full logical database facts, and real library query answers.

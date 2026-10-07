@@ -2,6 +2,19 @@
 
 Pinned producer: [`colbymchenry/codegraph@b9ca4b7981116909900368cc1686a1074cd4d4c1`](https://github.com/colbymchenry/codegraph/tree/b9ca4b7981116909900368cc1686a1074cd4d4c1), package version **1.6.0**, SQLite schema **9** (`src/db/migrations.ts:12`). This is a source baseline, not a claim that a released binary has these capabilities. The `Version 1` comment in `schema.sql` is not the current schema version.
 
+## Second pinned producer
+
+[`colbymchenry/codegraph@6560052a6f856855d3f71eee838fd66ccfa4285d`](https://github.com/colbymchenry/codegraph/tree/6560052a6f856855d3f71eee838fd66ccfa4285d) (the `v1.6.2` tag), package version **1.6.2**, SQLite schema **11** (`src/db/migrations.ts:12`). `test/fixtures/codegraph-1.6.2/` captures **facts only**: a sanitized `reference.db`, the same SQL `expected.json` queries, `schema.sql` and `manifest.json`, produced by indexing the same `test/fixtures/codegraph/source/` files (not copied) so the two pins are comparable. It does not capture library, MCP or viewer answers, `synthetic-contract.json`, or timings; the 1.6.0 answers stay tied to the 1.6.0 API and are not reproduced. Regenerate with:
+
+```sh
+python3 test/parity/generate_reference.py --upstream /tmp/codegraph-reference --pin 1.6.2 --node /path/to/node
+python3 test/parity/generate_reference.py --upstream /tmp/codegraph-reference --pin 1.6.2 --node /path/to/node --check
+```
+
+Schema differences from 9 in `schema.sql`: migration 10 adds the `synthesis_inputs` table (`file_path` primary key referencing `files(path)`, cascade delete), changes `idx_nodes_kind` from `nodes(kind)` to `nodes(kind, file_path, start_line, id)`, adds the guarded `idx_edges_synthesis_site` expression index on `edges` (`registeredAt`, only where `synthesizedBy` is set), and a `synthesis_pending` project-metadata key; migration 11 rebuilds that index. The 1.6.2 database also carries `indexed_at_commit` and `indexed_dirty_paths` metadata keys (empty here) and extraction version 27 (1.6.0: 26), so node and edge counts differ from the 1.6.0 fixture (69/92 against 68/93).
+
+The upstream `v1.6.0` tag is commit `dfccdf62547fcd76d343344d823a0e1998d3a89f`; this repository's 1.6.0 pin stays at `b9ca4b79…`. Both write schema 9.
+
 This inventory is the S1.01 acceptance backlog, based on command declarations, MCP schemas and handlers, library exports, viewer routing, extraction/resolution registries, database schema, and upstream regression tests. It does **not** declare GraphNest parity complete. Every `planned` row needs a runnable GraphNest comparison before its owning stage can pass. Upstream tests are evidence of intended behavior, not proof that GraphNest implements it.
 
 ## Scope and comparison rules

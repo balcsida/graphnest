@@ -1,0 +1,68 @@
+{
+  "capture": "facts-only",
+  "determinism": "two independent real producer runs; all logical non-FTS tables and schema compared",
+  "extracted_edge_kinds": [
+    "calls",
+    "contains",
+    "decorates",
+    "extends",
+    "implements",
+    "imports",
+    "instantiates",
+    "navigates",
+    "references"
+  ],
+  "extracted_node_kinds": [
+    "class",
+    "component",
+    "constant",
+    "enum",
+    "enum_member",
+    "field",
+    "file",
+    "function",
+    "import",
+    "interface",
+    "method",
+    "module",
+    "namespace",
+    "property",
+    "route",
+    "struct",
+    "trait",
+    "type_alias",
+    "union",
+    "variable"
+  ],
+  "fixture": "polyglot-core",
+  "producer": {
+    "build": "fresh git archive of pinned commit; npm ci --ignore-scripts --no-audit --no-fund; tsc; npm run copy-assets",
+    "commit": "6560052a6f856855d3f71eee838fd66ccfa4285d",
+    "environment": {
+      "CODEGRAPH_KERNEL": "0",
+      "CODEGRAPH_NO_DAEMON": "1",
+      "CODEGRAPH_NO_RELAUNCH": "1",
+      "CODEGRAPH_NO_UPDATE_CHECK": "1",
+      "CODEGRAPH_NO_WATCH": "1",
+      "DO_NOT_TRACK": "1",
+      "LANG": "C.UTF-8",
+      "LC_ALL": "C.UTF-8",
+      "TZ": "UTC"
+    },
+    "home": "fresh empty temporary directory",
+    "kernel": false,
+    "lockfile_sha256": "4658dc30e38cd12fda40e58a96541ec0cef639250d5454a699b5065711c23bc2",
+    "mode": "portable",
+    "node": "v24.13.0",
+    "repository": "https://github.com/colbymchenry/codegraph",
+    "version": "1.6.2"
+  },
+  "sanitation": "source mtimes and SQLite timestamp columns zero; temporary source root replaced by /fixture; backup checkpoint and VACUUM; oracle timestamps/timings zero or Unix epoch; trail author fixed to GraphNest fixture; no graph facts added",
+  "schema_version": 11,
+  "sha256": {
+    "expected.json": "2460d8f4fe7e52adb762a6762a535c8f1ffd13cfb0b2ebb40307f94278945036",
+    "reference.db": "d48825b9f09d1e1acdbc05e576cfc07d1034a51cc0e783f8d5a517d356946dd1",
+    "schema.sql": "066a2bea31f23a6cb5e165142b82ae163739369b9501f832463de433ce02bc1b"
+  },
+  "source": "test/fixtures/codegraph/source (shared with the 1.6.0 pin; not copied)"
+}
