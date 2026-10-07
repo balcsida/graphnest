@@ -5,6 +5,28 @@ Implementation, validation, draft publication, and release are separate states.
 
 ## Progress
 
+- 2026-10-07: S2.02 complete importer on `feat/codegraph/s2-02-codegraph`,
+  stacked on S2.01. A second pinned producer, CodeGraph 1.6.2 (commit
+  `6560052a`, schema 11), is captured facts-only into
+  `test/fixtures/codegraph-1.6.2/` by the same harness indexing the same
+  sources; both pins also capture `producer-rules.json` from their built
+  `dist/`: the extension map, `isSourceFile` answers, the default ignore
+  patterns of the npm `ignore` matcher with its case rule and 178 recorded
+  decisions, `hashContent` of Node's UTF-8 decoding for valid and invalid
+  byte strings, and the 1.6.1+ oversize stamp. The reader accepts schema 9,
+  10 and 11 and maps `synthesis_inputs` to a per-file extension.
+  `graphimport.Verify` streams `git archive` of the commit once, hashes every
+  indexed file with the producer's rule (a WHATWG UTF-8 decoder reproduces
+  Node byte for byte against the captured vectors), and reports modified,
+  not-in-commit, not-indexed and unverified paths; coverage uses the captured
+  patterns plus the commit's root `.gitignore` and `codegraph.json`, evaluated
+  by `git check-ignore` in a scratch repository, which reproduces all recorded
+  decisions. `graphnest graph import codegraph` reports the block and
+  `--output` writes the artifact only for a fresh, complete index.
+  - Not modelled: nested `.gitignore` files, `includeIgnored`, embedded
+    repositories, `.git/info/exclude` and `export-ignore`; these fail closed.
+    Symlinks and submodules at an indexed path make the index unverifiable.
+
 - 2026-10-07: S2.01 CLI foundation on `feat/codegraph/s2-01-cli`, based on
   `main` after PR #141. `internal/graphimport` reads a CodeGraph index
   without cgo (`modernc.org/sqlite`) through a `file:` URI in `mode=ro`
@@ -512,11 +534,20 @@ these tests.
   4.5 MB added to a stripped binary (ncruces/go-sqlite3: MIT, 5.7 MB, a
   re-implemented VFS). Only `cmd/graphnest` may link it. Measured on
   darwin/arm64 with `-ldflags='-s -w'`; `govulncheck` reports nothing.
-- Supported CodeGraph schema versions are 9 (the pinned 1.6.0 build) and,
-  with S2.02, 10 and 11 (CodeGraph 1.6.1 and 1.6.2; both migrations landed
-  in 1.6.1). Other versions fail with the version found and what to do. The
-  upstream `v1.6.0` tag is commit `dfccdf62`, not the repository's pin
-  `b9ca4b79`; both write schema 9 and the pin stays.
+- Supported CodeGraph schema versions are 9 (the pinned 1.6.0 build), 10
+  and 11 (CodeGraph 1.6.1 and 1.6.2; both migrations landed in 1.6.1). Other
+  versions fail with the version found and what to do. The upstream `v1.6.0`
+  tag is commit `dfccdf62`, not the repository's pin `b9ca4b79`; both write
+  schema 9 and the pin stays.
+- Freshness uses the producer's answers, not a transcription of its source:
+  the harness captures them from the built pinned `dist/` and Go embeds the
+  captured files, with tests that replay every recorded decision. CodeGraph
+  1.6.1 shares the 1.6.2 rules (same `file-limits`, extension map and
+  ignore patterns, checked in its source) without a fixture of its own.
+  `include` re-admits only files the root `.gitignore` dropped, never
+  default-ignored directories, and `exclude` always wins, as in the producer.
+- `--output` (artifact creation gated on freshness) ships with S2.02 because
+  it is the consumer of the freshness check; S2.03 adds publication.
 - Follow accepted ADR-0014 (PostgreSQL graph queries), which supersedes ADR-0012;
   preserve ADR-0008 shared services, ADR-0009 exact-SHA reads, ADR-0013 ephemeral
   archives, and ADR-0015 optional-enrichment isolation.
@@ -740,11 +771,12 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 
 ## Remaining gaps
 
-- S2.01 verifies nothing about freshness: the dry run reports `unverified`
-  until S2.02 compares the index's file manifest with the commit's content.
-  Schema versions 10 and 11, `--output`, `graphnest graph upload`, the
-  import reports' recovery hints and CLI distribution belong to S2.02 to
-  S2.04.
+- `graphnest graph upload`, publishing from `graph import`, the import
+  reports' recovery hints, `graphnest doctor` and CLI distribution belong to
+  S2.03 and S2.04. Freshness does not model nested `.gitignore` files,
+  `includeIgnored`, embedded repositories, `.git/info/exclude` or
+  `export-ignore`, and treats symlinks and submodules as unverifiable; a
+  CodeGraph version without captured rules is unverifiable too.
 - S1.06b1 type hierarchy is implemented at the service level only. Level
   ordering uses byte order where the pinned source uses locale comparison, and
   a subtype with both `extends` and `implements` counts as `extends` rather than
@@ -798,6 +830,7 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 | S1.08 publication policy | `feat/codegraph/s1-08-publish-policy` | Implemented; unit race, PostgreSQL integration race (apart from clock-skewed supply-chain claims that fail on `main` too), vet, staticcheck and OpenAPI checks pass; based on `main` | [PR #123](https://github.com/balcsida/graphnest/pull/123) |
 | S1.07 symbol tools | `feat/codegraph/s1-07-symbol-tools` | Implemented; oracle, unit race, PostgreSQL integration race, vet, staticcheck, OpenAPI and parity-reference checks pass; based on `main` | [PR #124](https://github.com/balcsida/graphnest/pull/124) |
 | S2.01 CLI foundation and import pipeline | `feat/codegraph/s2-01-cli` | Implemented; oracle, unit, live-WAL, boundary, vet, staticcheck and govulncheck checks pass; based on `main` after PR #141 | Pending submission as the first layer of the Stage 2 stack |
+| S2.02 complete CodeGraph importer | `feat/codegraph/s2-02-codegraph` | Implemented; both pins regenerated and checked, parity-reference, rule-decision replay, freshness, unit, vet and staticcheck checks pass; depends on S2.01 | Pending submission as the second layer |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
