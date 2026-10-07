@@ -20,7 +20,7 @@ import (
 
 var commitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
-const importUsage = "graphnest graph import codegraph [--dry-run | --output FILE] [--repo DIR] [--index FILE] [--repository-id N] [--commit SHA] [--expected-generation N] [--replace-producer] [--timeout D]"
+const importUsage = "graphnest graph import codegraph [--dry-run | --output FILE] [--repo DIR] [--index FILE] [--repository-id N] [--commit SHA] [--expected-generation N] [--replace-producer] [--timeout D] [--format json|text]"
 
 // importReport is the JSON document printed by graph import codegraph.
 type importReport struct {
@@ -90,7 +90,11 @@ func runImportCodeGraph(ctx context.Context, args []string, env Environment, std
 	replaceProducer := flags.Bool("replace-producer", false, "when publishing, replace a generation published by another producer")
 	commit := flags.String("commit", "", "commit SHA (default: git rev-parse HEAD in --repo)")
 	timeout := flags.Duration("timeout", defaultTimeout, "time limit for reading, converting and publishing")
+	format := addFormatFlag(flags)
 	if err := parse(flags, args); err != nil {
+		return err
+	}
+	if err := checkFormat(*format); err != nil {
 		return err
 	}
 	if *dryRun && *output != "" {
@@ -201,7 +205,7 @@ func runImportCodeGraph(ctx context.Context, args []string, env Environment, std
 			withErrors++
 		}
 	}
-	if err := writeJSON(stdout, importReport{
+	result := importReport{
 		Command: "graph import codegraph",
 		DryRun:  *dryRun,
 		Index: indexReport{Path: snapshot.Path, SchemaVersion: snapshot.SchemaVersion, Producer: producerReport{
@@ -219,8 +223,15 @@ func runImportCodeGraph(ctx context.Context, args []string, env Environment, std
 		Server:       server,
 		Publication:  publication,
 		Published:    publication != nil,
-	}); err != nil {
-		return err
+	}
+	var writeErr error
+	if *format == "text" {
+		_, writeErr = io.WriteString(stdout, formatImportReport(result, refusal))
+	} else {
+		writeErr = writeJSON(stdout, result)
+	}
+	if writeErr != nil {
+		return writeErr
 	}
 	return refusal
 }

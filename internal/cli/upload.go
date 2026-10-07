@@ -11,7 +11,7 @@ import (
 	"github.com/balcsida/graphnest/internal/graphartifact"
 )
 
-const uploadUsage = "graphnest graph upload ARTIFACT --repository-id N [--expected-generation N] [--replace-producer] [--timeout D]"
+const uploadUsage = "graphnest graph upload ARTIFACT --repository-id N [--expected-generation N] [--replace-producer] [--timeout D] [--format json|text]"
 
 // uploadReport is the JSON document printed by graph upload.
 type uploadReport struct {
@@ -40,6 +40,7 @@ func runGraphUpload(ctx context.Context, args []string, env Environment, stdout,
 	expected := flags.Int64("expected-generation", 0, "refuse unless the active published generation is `N` (0: none)")
 	replaceProducer := flags.Bool("replace-producer", false, "replace a generation published by another producer")
 	timeout := flags.Duration("timeout", defaultTimeout, "time limit for the whole upload")
+	format := addFormatFlag(flags)
 	// The artifact may come before or after the flags.
 	path := ""
 	for len(args) > 0 {
@@ -73,6 +74,9 @@ func runGraphUpload(ctx context.Context, args []string, env Environment, stdout,
 	if *timeout <= 0 {
 		return usageError{"--timeout must be positive"}
 	}
+	if err := checkFormat(*format); err != nil {
+		return err
+	}
 
 	data, err := env.ReadFile(path)
 	if err != nil {
@@ -103,7 +107,7 @@ func runGraphUpload(ctx context.Context, args []string, env Environment, stdout,
 	if err != nil {
 		return err
 	}
-	return writeJSON(stdout, uploadReport{
+	result := uploadReport{
 		Command:      "graph upload",
 		RepositoryID: *repositoryID,
 		Commit:       artifact.Commit,
@@ -112,5 +116,10 @@ func runGraphUpload(ctx context.Context, args []string, env Environment, stdout,
 		Server:      server,
 		Publication: publication,
 		Published:   true,
-	})
+	}
+	if *format == "text" {
+		_, err = io.WriteString(stdout, formatUploadReport(result))
+		return err
+	}
+	return writeJSON(stdout, result)
 }
