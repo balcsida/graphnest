@@ -19,6 +19,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -28,7 +30,10 @@ import (
 	"github.com/balcsida/graphnest/internal/authz"
 	"github.com/balcsida/graphnest/internal/cli"
 	"github.com/balcsida/graphnest/internal/githubapp"
+	"github.com/balcsida/graphnest/internal/graphartifact"
+	graphv2 "github.com/balcsida/graphnest/internal/graphartifact/v2"
 	"github.com/balcsida/graphnest/internal/graphingest"
+	"github.com/balcsida/graphnest/internal/graphprotocol"
 	"github.com/balcsida/graphnest/internal/graphquery"
 	"github.com/balcsida/graphnest/internal/graphservice"
 	"github.com/balcsida/graphnest/internal/httpapi"
@@ -60,6 +65,9 @@ const (
 //	GRAPHNEST_GATE_REPO         git repository to index (default: built from test/fixtures/codegraph/source)
 //	GRAPHNEST_GATE_COMMIT       commit to index (default: HEAD of that repository)
 //	GRAPHNEST_GATE_CODEGRAPH_DB CodeGraph index of that commit (default: test/fixtures/codegraph/reference.db)
+//	GRAPHNEST_GATE_CODEGRAPH_ANSWERS JSON file written by test/parity/gate-answers.mjs: the symbol, file and
+//	                            five CodeGraph answers to compare with GraphNest's; without it the answers
+//	                            stored in test/fixtures/codegraph/library-expected.json are used
 //	GRAPHNEST_GATE_TRANSCRIPT   Markdown file every step is appended to (default: t.Log)
 func TestCodeGraphImportGate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
@@ -72,6 +80,12 @@ func TestCodeGraphImportGate(t *testing.T) {
 	g.grantPublication()
 	g.dryRun()
 	g.status()
+	g.artifactOutput()
+	g.upload()
+	g.retryUpload()
+	g.questions()
+	g.refusedUpload()
+	g.serverState()
 }
 
 type gate struct {
@@ -85,6 +99,10 @@ type gate struct {
 	commit       string
 	checkoutPath string
 	indexPath    string
+	artifactPath string
+	// artifactFiles are the paths of the files in the artifact, the indexed truth for graph_files.
+	artifactFiles []string
+	generation    int64
 	// defaultFixture is true when neither the repository nor the index was overridden.
 	defaultFixture bool
 	transcript     transcript
@@ -135,14 +153,17 @@ func (g *gate) openTranscript() {
 	path := os.Getenv("GRAPHNEST_GATE_TRANSCRIPT")
 	if path == "" {
 		g.transcript = transcript{w: logWriter{g.t}}
-		return
+	} else {
+		file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			g.t.Fatal(err)
+		}
+		g.t.Cleanup(func() { file.Close() })
+		g.transcript = transcript{w: file}
 	}
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		g.t.Fatal(err)
-	}
-	g.t.Cleanup(func() { file.Close() })
-	g.transcript = transcript{w: file}
+	_, _ = io.WriteString(g.transcript.w, "# CodeGraph import gate\n\n"+
+		"The v1 graph job reports `enrichment_disabled`: this harness configures no scanner, which is also what a default deployment does. "+
+		"The imported v2 generation does not depend on it.\n\n")
 }
 
 func gateGit(t *testing.T, ctx context.Context, environment []string, args ...string) string {
@@ -325,7 +346,7 @@ func (g *gate) startServer() {
 		PerCategory: graphLimits.PerCategory, DefaultImpactDepth: graphLimits.DefaultImpactDepth, MaxDepth: graphLimits.MaxDepth,
 		DefaultTraceDepth: graphLimits.DefaultTraceDepth, MaxTraceDepth: graphLimits.MaxTraceDepth, MaxRows: graphLimits.MaxRows,
 		MaxNodes: graphLimits.MaxNodes, MaxEdges: graphLimits.MaxEdges, MaxFanout: graphLimits.MaxFanout,
-	}}, Limits: graphLimits}
+	}}, Files: repositoryService, Limits: graphLimits}
 	graphIngest := &graphingest.Service{Store: store, MaxUploadBytes: 64 << 20}
 	authorizer := authz.NewPostgres(store)
 	grants := &httpapi.UploadGrants{Set: store.SetGraphPublicationGrant, Resolve: func(ctx context.Context, principal authn.Principal, githubID int64) (int64, error) {
@@ -454,18 +475,25 @@ func (g *gate) grantPublication() {
 	g.transcript.step("Publication preflight", "GET "+path+"  (publisher)", json.RawMessage(raw))
 }
 
-// graphnest runs the command as the publisher and returns its stdout.
+// run executes the command as the holder of token and returns its exit code, stdout and stderr.
+func (g *gate) run(token string, args ...string) (int, []byte, []byte) {
+	environment := cli.OSEnvironment()
+	variables := map[string]string{"GRAPHNEST_SERVER_URL": g.serverURL, "GRAPHNEST_TOKEN": token}
+	environment.Getenv = func(name string) string { return variables[name] }
+	var stdout, stderr bytes.Buffer
+	code := cli.Run(g.ctx, args, environment, &stdout, &stderr)
+	return code, stdout.Bytes(), stderr.Bytes()
+}
+
+// graphnest runs the command as the publisher, which must succeed, and returns its stdout.
 func (g *gate) graphnest(args ...string) []byte {
 	t := g.t
 	t.Helper()
-	environment := cli.OSEnvironment()
-	variables := map[string]string{"GRAPHNEST_SERVER_URL": g.serverURL, "GRAPHNEST_TOKEN": gatePublisherToken}
-	environment.Getenv = func(name string) string { return variables[name] }
-	var stdout, stderr bytes.Buffer
-	if code := cli.Run(g.ctx, args, environment, &stdout, &stderr); code != 0 || stderr.Len() != 0 {
-		t.Fatalf("graphnest %v: exit %d\nstdout: %s\nstderr: %s", args, code, stdout.String(), stderr.String())
+	code, stdout, stderr := g.run(gatePublisherToken, args...)
+	if code != 0 || len(stderr) != 0 {
+		t.Fatalf("graphnest %v: exit %d\nstdout: %s\nstderr: %s", args, code, stdout, stderr)
 	}
-	return stdout.Bytes()
+	return stdout
 }
 
 func (g *gate) dryRun() {
@@ -507,31 +535,581 @@ func (transport tokenTransport) RoundTrip(request *http.Request) (*http.Response
 	return transport.base.RoundTrip(request)
 }
 
-func (g *gate) status() {
+// mcpSession connects an MCP client to the server as the holder of token.
+func (g *gate) mcpSession(token string) *mcp.ClientSession {
 	t := g.t
 	t.Helper()
 	client := *g.server.Client()
-	client.Transport = tokenTransport{base: client.Transport, token: gatePublisherToken}
+	client.Transport = tokenTransport{base: client.Transport, token: token}
 	session, err := mcp.NewClient(&mcp.Implementation{Name: "codegraph-gate", Version: "1"}, nil).Connect(g.ctx, &mcp.StreamableClientTransport{
 		Endpoint: g.serverURL + "/mcp", HTTPClient: &client, DisableStandaloneSSE: true,
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer session.Close()
-	arguments := map[string]any{"repository_id": g.githubID}
-	result, err := session.CallTool(g.ctx, &mcp.CallToolParams{Name: "get_repository_status", Arguments: arguments})
-	if err != nil || result.IsError {
-		t.Fatalf("MCP get_repository_status result=%#v err=%v", result, err)
+	t.Cleanup(func() { session.Close() })
+	return session
+}
+
+// tryTool calls an MCP tool and returns its structured content, or the error a client would see.
+func (g *gate) tryTool(session *mcp.ClientSession, name string, arguments map[string]any) (any, error) {
+	result, err := session.CallTool(g.ctx, &mcp.CallToolParams{Name: name, Arguments: arguments})
+	if err != nil {
+		return nil, err
 	}
+	if result.IsError {
+		var texts []string
+		for _, content := range result.Content {
+			if text, ok := content.(*mcp.TextContent); ok {
+				texts = append(texts, text.Text)
+			}
+		}
+		return nil, fmt.Errorf("tool error: %s", strings.Join(texts, " "))
+	}
+	return result.StructuredContent, nil
+}
+
+// callTool calls an MCP tool and returns its structured content; an error fails the test.
+func (g *gate) callTool(session *mcp.ClientSession, name string, arguments map[string]any) any {
+	g.t.Helper()
+	structured, err := g.tryTool(session, name, arguments)
+	if err != nil {
+		g.t.Fatalf("MCP %s: %v", name, err)
+	}
+	return structured
+}
+
+func mcpCommand(name string, arguments map[string]any, role string) string {
+	call, _ := json.Marshal(arguments)
+	return "MCP tools/call " + name + " " + string(call) + "  (" + role + ")"
+}
+
+func (g *gate) status() {
+	t := g.t
+	t.Helper()
+	arguments := map[string]any{"repository_id": g.githubID}
+	content := g.callTool(g.mcpSession(gatePublisherToken), "get_repository_status", arguments)
 	var summary api.RepositorySummary
-	decode(t, result.StructuredContent, &summary)
+	decode(t, content, &summary)
 	if summary.GraphStatus != api.GraphStatusAbsent {
 		t.Fatalf("MCP graph_status=%q, want %q", summary.GraphStatus, api.GraphStatusAbsent)
 	}
-	call, _ := json.Marshal(arguments)
-	g.transcript.step("MCP repository status", "MCP tools/call get_repository_status "+string(call)+"  (publisher)", result.StructuredContent)
+	g.transcript.step("MCP repository status", mcpCommand("get_repository_status", arguments, "publisher"), content)
 
 	args := []string{"graph", "status", "--repository-id", strconv.FormatInt(g.githubID, 10)}
 	g.transcript.step("graphnest graph status", "graphnest "+strings.Join(args, " "), json.RawMessage(g.graphnest(args...)))
+}
+
+// decodeOne decodes stdout, which must be exactly one JSON document.
+func (g *gate) decodeOne(stdout []byte, report any) {
+	g.t.Helper()
+	decoder := json.NewDecoder(bytes.NewReader(stdout))
+	if err := decoder.Decode(report); err != nil || decoder.More() {
+		g.t.Fatalf("output is not one JSON document: %v\n%s", err, stdout)
+	}
+}
+
+// activeGeneration reads the publication preflight as the publisher.
+func (g *gate) activeGeneration() (*api.GraphActiveGeneration, []byte) {
+	g.t.Helper()
+	var graphStatus api.GraphStatus
+	status, raw := g.request(http.MethodGet, fmt.Sprintf("/v1/graph/repositories/%d/status", g.githubID), gatePublisherToken, nil, &graphStatus)
+	if status != http.StatusOK || graphStatus.Publication == nil {
+		g.t.Fatalf("graph status=%d %s", status, raw)
+	}
+	return graphStatus.Publication.ActiveGeneration, raw
+}
+
+func (g *gate) artifactOutput() {
+	t := g.t
+	t.Helper()
+	g.artifactPath = filepath.Join(t.TempDir(), "graph.pb")
+	args := []string{"graph", "import", "codegraph", "--output", g.artifactPath, "--repo", g.checkoutPath, "--index", g.indexPath, "--repository-id", strconv.FormatInt(g.githubID, 10)}
+	stdout := g.graphnest(args...)
+	var report struct {
+		Freshness struct {
+			Status string `json:"status"`
+		} `json:"freshness"`
+		Output *struct {
+			Bytes int `json:"bytes"`
+		} `json:"output"`
+	}
+	g.decodeOne(stdout, &report)
+	info, err := os.Stat(g.artifactPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Freshness.Status != "fresh" || report.Output == nil || int64(report.Output.Bytes) != info.Size() {
+		t.Fatalf("artifact output report=%+v file size=%d, want freshness fresh and output.bytes equal to the size", report, info.Size())
+	}
+	data, err := os.ReadFile(g.artifactPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := graphartifact.ParseV2(data, graphartifact.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range artifact.Files {
+		g.artifactFiles = append(g.artifactFiles, file.Path)
+	}
+	slices.Sort(g.artifactFiles)
+	g.transcript.step("Artifact output", "graphnest "+strings.Join(args, " "), json.RawMessage(stdout))
+}
+
+type uploadResult struct {
+	Published   bool `json:"published"`
+	Publication *struct {
+		Attempts int                        `json:"attempts"`
+		Result   api.GraphPublicationResult `json:"result"`
+	} `json:"publication"`
+	Server *struct {
+		After *api.GraphActiveGeneration `json:"active_generation_after"`
+	} `json:"server"`
+}
+
+func (g *gate) upload() {
+	t := g.t
+	t.Helper()
+	args := []string{"graph", "upload", g.artifactPath, "--repository-id", strconv.FormatInt(g.githubID, 10)}
+	stdout := g.graphnest(args...)
+	var report uploadResult
+	g.decodeOne(stdout, &report)
+	if !report.Published || report.Publication == nil || report.Publication.Attempts != 1 || report.Server == nil || report.Server.After == nil || report.Server.After.Producer != "codegraph" {
+		t.Fatalf("upload report=%s, want published, one attempt, active generation after by codegraph", stdout)
+	}
+	g.generation = report.Publication.Result.Generation
+	g.transcript.step("Upload", "graphnest "+strings.Join(args, " ")+"  (publisher)", json.RawMessage(stdout))
+
+	arguments := map[string]any{"repository_id": g.githubID}
+	content := g.callTool(g.mcpSession(gateReaderToken), "get_repository_status", arguments)
+	var summary api.RepositorySummary
+	decode(t, content, &summary)
+	if summary.GraphStatus != api.GraphStatusCurrent || summary.GraphProducer != "codegraph" || summary.GraphCommit != g.commit {
+		t.Fatalf("MCP status graph_status=%q producer=%q commit=%q, want current/codegraph/%s", summary.GraphStatus, summary.GraphProducer, summary.GraphCommit, g.commit)
+	}
+	g.transcript.step("MCP repository status after upload", mcpCommand("get_repository_status", arguments, "reader"), content)
+
+	active, raw := g.activeGeneration()
+	if active == nil || active.ID != g.generation || active.Producer != "codegraph" {
+		t.Fatalf("preflight active generation=%+v, want %d by codegraph", active, g.generation)
+	}
+	g.transcript.step("Publication preflight after upload", fmt.Sprintf("GET /v1/graph/repositories/%d/status  (publisher)", g.githubID), json.RawMessage(raw))
+}
+
+func (g *gate) retryUpload() {
+	t := g.t
+	t.Helper()
+	args := []string{"graph", "upload", g.artifactPath, "--repository-id", strconv.FormatInt(g.githubID, 10)}
+	stdout := g.graphnest(args...)
+	var report uploadResult
+	g.decodeOne(stdout, &report)
+	if !report.Published || report.Publication == nil || !report.Publication.Result.Deduplicated || report.Publication.Result.Generation != g.generation {
+		t.Fatalf("retry report=%s, want deduplicated publication of generation %d", stdout, g.generation)
+	}
+	g.transcript.step("Idempotent retry", "graphnest "+strings.Join(args, " ")+"  (publisher)", json.RawMessage(stdout))
+}
+
+// refusedUpload shows the reader, who has no grant, cannot publish and changes nothing.
+func (g *gate) refusedUpload() {
+	t := g.t
+	t.Helper()
+	before, _ := g.activeGeneration()
+	args := []string{"graph", "upload", g.artifactPath, "--repository-id", strconv.FormatInt(g.githubID, 10)}
+	code, stdout, stderr := g.run(gateReaderToken, args...)
+	if code != 1 || len(stdout) != 0 || !strings.Contains(string(stderr), "grant") {
+		t.Fatalf("reader upload exit=%d stdout=%q stderr=%q, want exit 1, no stdout and a hint about the grant", code, stdout, stderr)
+	}
+	after, _ := g.activeGeneration()
+	if before == nil || after == nil || *before != *after || after.ID != g.generation {
+		t.Fatalf("active generation before=%+v after=%+v, want unchanged generation %d", before, after, g.generation)
+	}
+	g.transcript.step("Failure path", "graphnest "+strings.Join(args, " ")+"  (reader, no grant)",
+		map[string]any{"exit_code": code, "stdout": string(stdout), "stderr": string(stderr), "active_generation_unchanged": after})
+}
+
+func (g *gate) serverState() {
+	g.t.Helper()
+	_, raw := g.activeGeneration()
+	g.transcript.step("Server state: graph status", fmt.Sprintf("GET /v1/graph/repositories/%d/status  (publisher)", g.githubID), json.RawMessage(raw))
+	arguments := map[string]any{"repository_id": g.githubID}
+	g.transcript.step("Server state: repository status", mcpCommand("get_repository_status", arguments, "reader"),
+		g.callTool(g.mcpSession(gateReaderToken), "get_repository_status", arguments))
+}
+
+// gateQuestion is one question put to both CodeGraph and GraphNest. The keys
+// are what each answer names, sorted, so the answers can be compared as sets.
+type gateQuestion struct {
+	tool      string
+	arguments map[string]any
+	// upstream is CodeGraph's answer as recorded; upstreamKeys is what it names.
+	upstream     any
+	upstreamKeys []string
+	graphnest    func(t *testing.T, structured any) []string
+	// allowedExtra are keys GraphNest alone may name without failing the default fixture.
+	allowedExtra []string
+	// extraRule, when set, lets GraphNest name any further keys and is quoted in the difference summary.
+	extraRule string
+	// noCounterpart names what the CodeGraph answer carries that GraphNest has no field for, or the reverse.
+	noCounterpart string
+}
+
+const (
+	callsNote   = "CodeGraph's neighbor lines carry name, kind, path:line and a via label; the via label is not compared. Neighbors are keyed by name, kind and location because CodeGraph prints no qualified names for them; qualified names are compared in the definition headings."
+	impactNote  = "CodeGraph prints name:line per file; GraphNest also returns kind, depth and the connecting edges, which are not compared."
+	exploreNote = "CodeGraph's blast radius, symbol counts and source blocks are prose with no structured GraphNest counterpart, and GraphNest's per-file score, status, segments and relationships have none in CodeGraph's text. Only the sets of files are compared; source snippets are not. A file GraphNest returns without source is listed with the suffix [pointer]."
+	// exploreRule is why GraphNest's explore may name more files than CodeGraph's.
+	exploreRule = "GraphNest's answer is a superset by its own documented budget rule: docs/graph-exploration.md defines a 13,000 UTF-16 unit, four-file source budget below 150 indexed files, expanded for preferred named files, and pointer entries under the allocation cliff that consume no source slot. Every file CodeGraph showed with source must appear in GraphNest's answer with source; the extras are listed."
+	filesNote   = "CodeGraph lists language and symbol counts per file, GraphNest file facts carry their own metadata. Only the paths are compared."
+)
+
+// questions asks the five questions as the reader through MCP and records both answers side by side.
+func (g *gate) questions() {
+	t := g.t
+	t.Helper()
+	session := g.mcpSession(gateReaderToken)
+	asked := g.defaultQuestions()
+	answersPath := os.Getenv("GRAPHNEST_GATE_CODEGRAPH_ANSWERS")
+	if answersPath != "" {
+		asked = g.answeredQuestions(answersPath)
+	}
+	for _, q := range asked {
+		structured, err := g.tryTool(session, q.tool, q.arguments)
+		gap := ""
+		if err != nil && answersPath != "" && q.tool == "explore" {
+			// GraphNest's explore refuses an answer over its response budget instead of
+			// truncating it (graphquery.ErrQuerySize). On a real repository that is a gap
+			// to review, recorded here, and the question is asked again within
+			// CodeGraph-sized bounds so the selected files can still be compared.
+			gap = "with the default bounds GraphNest answered: " + err.Error()
+			q.arguments = map[string]any{"query": q.arguments["query"], "limit": 8, "candidate_limit": 32, "max_files": 4}
+			structured, err = g.tryTool(session, q.tool, q.arguments)
+		}
+		if err != nil {
+			// The answer of the other side is still recorded for review.
+			g.transcript.step("Question: "+q.tool, mcpCommand(q.tool, q.arguments, "reader"), map[string]any{"codegraph": q.upstream, "graphnest_error": err.Error(), "gap": gap})
+			t.Errorf("%s %v: %v", q.tool, q.arguments, err)
+			continue
+		}
+		if q.tool == "graph_files" {
+			structured = g.allFiles(session, q.arguments, structured)
+		}
+		got := q.graphnest(t, structured)
+		onlyCodeGraph, onlyGraphNest := setDifference(q.upstreamKeys, got), setDifference(got, q.upstreamKeys)
+		g.transcript.step("Question: "+q.tool, mcpCommand(q.tool, q.arguments, "reader"), map[string]any{
+			"codegraph": q.upstream,
+			"graphnest": structured,
+			"difference": map[string]any{
+				"codegraph_names": len(q.upstreamKeys), "graphnest_names": len(got),
+				"only_in_codegraph": onlyCodeGraph, "only_in_graphnest": onlyGraphNest,
+				"no_counterpart":  q.noCounterpart,
+				"documented_rule": q.extraRule,
+				"gap":             gap,
+			},
+		})
+		if answersPath != "" {
+			// A real repository's differences are reviewed from the transcript; GraphNest only has to answer.
+			if structured == nil {
+				t.Errorf("%s: no answer", q.tool)
+			}
+			continue
+		}
+		if len(onlyCodeGraph) != 0 || q.extraRule == "" && !subset(onlyGraphNest, q.allowedExtra) {
+			t.Errorf("%s %v: only in CodeGraph %v, only in GraphNest %v (allowed %v)", q.tool, q.arguments, onlyCodeGraph, onlyGraphNest, q.allowedExtra)
+		}
+	}
+}
+
+func subset(part, whole []string) bool {
+	for _, value := range part {
+		if !slices.Contains(whole, value) {
+			return false
+		}
+	}
+	return true
+}
+
+// setDifference returns the sorted values of a missing from b.
+func setDifference(a, b []string) []string {
+	missing := []string{}
+	for _, value := range a {
+		if !slices.Contains(b, value) && !slices.Contains(missing, value) {
+			missing = append(missing, value)
+		}
+	}
+	slices.Sort(missing)
+	return missing
+}
+
+// allFiles follows next_cursor so graph_files answers are complete.
+func (g *gate) allFiles(session *mcp.ClientSession, arguments map[string]any, first any) any {
+	t := g.t
+	t.Helper()
+	merged, ok := first.(map[string]any)
+	if !ok {
+		t.Fatalf("graph_files answer is %T", first)
+	}
+	page := merged
+	for pages := 0; ; pages++ {
+		cursor, _ := page["next_cursor"].(string)
+		if cursor == "" {
+			return merged
+		}
+		if pages > 100 {
+			t.Fatal("graph_files did not end")
+		}
+		next := map[string]any{"cursor": cursor}
+		for key, value := range arguments {
+			next[key] = value
+		}
+		var ok bool
+		if page, ok = g.callTool(session, "graph_files", next).(map[string]any); !ok {
+			t.Fatal("graph_files page is not an object")
+		}
+		files, _ := merged["files"].([]any)
+		more, _ := page["files"].([]any)
+		merged["files"] = append(files, more...)
+	}
+}
+
+// mcpText joins the text blocks of a recorded CodeGraph MCP answer.
+func mcpText(t *testing.T, raw json.RawMessage) string {
+	t.Helper()
+	var answer struct {
+		Content []struct {
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &answer); err != nil || len(answer.Content) == 0 {
+		t.Fatalf("CodeGraph answer %s: %v", raw, err)
+	}
+	var texts []string
+	for _, item := range answer.Content {
+		texts = append(texts, item.Text)
+	}
+	return strings.Join(texts, "\n")
+}
+
+// defaultQuestions are the inputs whose CodeGraph answers library-expected.json stores.
+//
+// Callers, callees and the depth-1 impact must agree exactly, as in
+// TestGraphSymbolToolsMatchCodeGraph (internal/postgres/graph_symbols_test.go).
+// Impact at depth 2 may also name the nodes that test lists as corrected:
+// GraphNest reports the shortest dependency depth where the pinned
+// depth-first walk omits them (docs/graph-analysis.md).
+//
+// Explore is not equal: no Stage 1 test established file-set equality, and
+// GraphNest applies its own source budget (docs/graph-exploration.md), so it
+// returns main.ts with source and consumer.test.ts as a pointer beside the
+// three files CodeGraph shows. The CodeGraph files must all appear with source.
+func (g *gate) defaultQuestions() []gateQuestion {
+	t := g.t
+	data, err := os.ReadFile(filepath.Join("..", "fixtures", "codegraph", "library-expected.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected map[string]json.RawMessage
+	if err := json.Unmarshal(data, &expected); err != nil {
+		t.Fatal(err)
+	}
+	answer := func(id string) (json.RawMessage, string) { return expected[id], mcpText(t, expected[id]) }
+	calls := func(id, tool, symbol string) gateQuestion {
+		raw, text := answer(id)
+		return gateQuestion{tool: tool, arguments: map[string]any{"symbol": symbol}, upstream: raw, upstreamKeys: codeGraphCalls(text), graphnest: graphNestCalls, noCounterpart: callsNote}
+	}
+	impact := func(id string, arguments map[string]any, extra ...string) gateQuestion {
+		raw, text := answer(id)
+		return gateQuestion{tool: "graph_impact_radius", arguments: arguments, upstream: raw, upstreamKeys: codeGraphImpact(text), graphnest: graphNestImpact, allowedExtra: extra, noCounterpart: impactNote}
+	}
+	exploreRaw, exploreText := answer("mcp-explore-source")
+	return []gateQuestion{
+		calls("mcp-callers-grouped", "graph_callers", "normalize"),
+		calls("mcp-callees-grouped", "graph_callees", "greet"),
+		impact("mcp-impact-grouped", map[string]any{"symbol": "identity"}),
+		impact("mcp-impact-depth", map[string]any{"symbol": "normalize", "file": "core.ts", "depth": 1}),
+		impact("mcp-impact-file", map[string]any{"symbol": "normalize", "file": "core.ts"}, "|consumer.ts|consumer.ts:1", "|consumer.ts|processGreeting:2"),
+		{tool: "explore", arguments: map[string]any{"query": "processGreeting"}, upstream: exploreRaw, upstreamKeys: codeGraphExploreFiles(exploreText), graphnest: graphNestExploreFiles, noCounterpart: exploreNote, extraRule: exploreRule},
+		{tool: "graph_files", arguments: map[string]any{"limit": 100}, upstream: map[string]any{"fixture_indexed_paths": g.artifactFiles}, upstreamKeys: g.artifactFiles, graphnest: graphNestFiles, noCounterpart: filesNote},
+	}
+}
+
+// answeredQuestions are the questions in a gate-answers.mjs file, with CodeGraph's answers from it.
+func (g *gate) answeredQuestions(path string) []gateQuestion {
+	t := g.t
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file struct {
+		Symbol  string                     `json:"symbol"`
+		File    string                     `json:"file"`
+		Answers map[string]json.RawMessage `json:"answers"`
+	}
+	if err := json.Unmarshal(data, &file); err != nil || file.Symbol == "" || file.File == "" {
+		t.Fatalf("%s: %v", path, err)
+	}
+	text := func(id string) string { return mcpText(t, file.Answers[id]) }
+	files := map[string]any{"limit": 100}
+	if directory := filepath.ToSlash(filepath.Dir(file.File)); directory != "." {
+		files["directory"] = directory
+	}
+	return []gateQuestion{
+		{tool: "graph_callers", arguments: map[string]any{"symbol": file.Symbol}, upstream: file.Answers["callers"], upstreamKeys: codeGraphCalls(text("callers")), graphnest: graphNestCalls, noCounterpart: callsNote},
+		{tool: "graph_callees", arguments: map[string]any{"symbol": file.Symbol}, upstream: file.Answers["callees"], upstreamKeys: codeGraphCalls(text("callees")), graphnest: graphNestCalls, noCounterpart: callsNote},
+		{tool: "graph_impact_radius", arguments: map[string]any{"symbol": file.Symbol, "depth": 2}, upstream: file.Answers["impact"], upstreamKeys: codeGraphImpact(text("impact")), graphnest: graphNestImpact, noCounterpart: impactNote},
+		{tool: "explore", arguments: map[string]any{"query": file.Symbol}, upstream: file.Answers["explore"], upstreamKeys: codeGraphExploreFiles(text("explore")), graphnest: graphNestExploreFiles, noCounterpart: exploreNote},
+		{tool: "graph_files", arguments: files, upstream: file.Answers["files"], upstreamKeys: codeGraphFiles(text("files")), graphnest: graphNestFiles, noCounterpart: filesNote},
+	}
+}
+
+var (
+	impactHeading = regexp.MustCompile(`^\*\*Impact: "(.*)" affects \d+ symbols\*\*$`)
+	fileHeading   = regexp.MustCompile(`^\*\*(.+):\*\*$`)
+	exploreFile   = regexp.MustCompile("(?m)^\\*\\*`([^`]+)`\\*\\*")
+	filesLine     = regexp.MustCompile(`^- (\S+) \(`)
+)
+
+// codeGraphCalls keys a callers or callees answer as "definition|neighbor".
+// The definition is empty when the symbol has a single definition.
+func codeGraphCalls(text string) []string {
+	multi := strings.Contains(text, "distinct definitions")
+	section := ""
+	keys := []string{}
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimRight(line, " ")
+		switch {
+		case multi && strings.HasPrefix(line, "**") && !strings.Contains(line, "distinct definitions"):
+			section = strings.ReplaceAll(line, "**", "")
+		case strings.HasPrefix(line, "- ") && !strings.HasPrefix(line, "- (no ") && !strings.HasPrefix(line, "- … +"):
+			neighbor, _, _ := strings.Cut(strings.TrimPrefix(line, "- "), " — via ")
+			keys = append(keys, section+"|"+neighbor)
+		}
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+// codeGraphImpact keys an impact answer as "definition|path|name:line".
+func codeGraphImpact(text string) []string {
+	multi := strings.Contains(text, "distinct definitions")
+	section, file := "", ""
+	keys := []string{}
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimRight(line, " ")
+		if match := impactHeading.FindStringSubmatch(line); match != nil {
+			section, file = "", ""
+			if multi {
+				section = match[1]
+			}
+		} else if match := fileHeading.FindStringSubmatch(line); match != nil {
+			file = match[1]
+		} else if line != "" && file != "" && !strings.HasPrefix(line, ">") {
+			for _, node := range strings.Split(line, ", ") {
+				keys = append(keys, section+"|"+file+"|"+node)
+			}
+		}
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+func codeGraphExploreFiles(text string) []string {
+	keys := []string{}
+	for _, match := range exploreFile.FindAllStringSubmatch(text, -1) {
+		keys = append(keys, match[1])
+	}
+	slices.Sort(keys)
+	return slices.Compact(keys)
+}
+
+func codeGraphFiles(text string) []string {
+	keys := []string{}
+	for _, line := range strings.Split(text, "\n") {
+		if match := filesLine.FindStringSubmatch(line); match != nil {
+			keys = append(keys, match[1])
+		}
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+// gateLine is the one-based start line CodeGraph prints; v2 positions are zero-based.
+func gateLine(node *graphv2.Node) int32 { return node.GetLocation().GetStart().GetLine() + 1 }
+
+// gateHeading is CodeGraph's heading of a definition: "qualified name (kind) — path:line".
+func gateHeading(node *graphv2.Node) string {
+	return fmt.Sprintf("%s (%v) — %s:%d", node.GetQualifiedName(), node.GetKind(), node.GetPath(), gateLine(node))
+}
+
+func graphNestCalls(t *testing.T, structured any) []string {
+	var response graphprotocol.SymbolResponse
+	decode(t, structured, &response)
+	keys := []string{}
+	for _, definition := range response.Definitions {
+		section := ""
+		if len(response.Definitions) > 1 && len(definition.Definitions) > 0 {
+			section = gateHeading(definition.Definitions[0].Fact)
+		}
+		for _, related := range definition.Related {
+			node := related.Entity.Fact
+			keys = append(keys, fmt.Sprintf("%s|%s (%v) - %s:%d", section, node.GetName(), node.GetKind(), node.GetPath(), gateLine(node)))
+		}
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+func graphNestImpact(t *testing.T, structured any) []string {
+	var response graphprotocol.SymbolResponse
+	decode(t, structured, &response)
+	keys := []string{}
+	for _, definition := range response.Definitions {
+		section := ""
+		if len(response.Definitions) > 1 && len(definition.Definitions) > 0 {
+			head := definition.Definitions[0].Fact
+			section = fmt.Sprintf("%s (%s:%d)", head.GetQualifiedName(), head.GetPath(), gateLine(head))
+		}
+		for _, entity := range definition.Entities {
+			node := entity.Fact
+			keys = append(keys, fmt.Sprintf("%s|%s|%s:%d", section, node.GetPath(), node.GetName(), gateLine(node)))
+		}
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+func graphNestExploreFiles(t *testing.T, structured any) []string {
+	var response struct {
+		Files []struct {
+			Path     string `json:"path"`
+			Status   string `json:"status"`
+			Mode     string `json:"mode"`
+			Segments []any  `json:"segments"`
+		} `json:"files"`
+	}
+	decode(t, structured, &response)
+	keys := []string{}
+	for _, file := range response.Files {
+		switch {
+		case file.Mode == "pointer" && len(file.Segments) == 0:
+			keys = append(keys, file.Path+" [pointer]")
+		case file.Status == "ok" && len(file.Segments) > 0:
+			keys = append(keys, file.Path)
+		default:
+			t.Errorf("explore file %s has status %q, mode %q and %d segments: neither source nor a pointer", file.Path, file.Status, file.Mode, len(file.Segments))
+		}
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+func graphNestFiles(t *testing.T, structured any) []string {
+	var response graphprotocol.FilesResponse
+	decode(t, structured, &response)
+	keys := []string{}
+	for _, file := range response.Files {
+		keys = append(keys, file.Fact.GetPath())
+	}
+	slices.Sort(keys)
+	return keys
 }
