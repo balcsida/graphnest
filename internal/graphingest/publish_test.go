@@ -105,6 +105,7 @@ func TestPublishMapsReplacementOutcomes(t *testing.T) {
 		{"different producer", postgres.ErrGraphProviderConflict, ErrProducerConflict},
 		{"invalid", graphartifact.ErrInvalidArtifact, ErrInvalidArtifact},
 		{"repository disabled", pgx.ErrNoRows, ErrNotIndexed},
+		{"repository unavailable", postgres.ErrGraphRepositoryUnavailable, ErrNotIndexed},
 		{"backend", errors.New("database password"), ErrUnavailable},
 	} {
 		t.Run(test.name, func(t *testing.T) {

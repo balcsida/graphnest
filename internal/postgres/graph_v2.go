@@ -19,6 +19,9 @@ import (
 var (
 	ErrGraphPrecondition     = errors.New("graph generation or indexed commit changed")
 	ErrGraphProviderConflict = errors.New("graph provider change requires explicit replacement")
+	// ErrGraphRepositoryUnavailable means the repository is disabled, archived
+	// or belongs to an inactive installation, so no generation can be published.
+	ErrGraphRepositoryUnavailable = errors.New("repository is unavailable for graph publication")
 )
 
 // GraphPublication is trusted publication context, separate from producer facts.
@@ -83,6 +86,9 @@ func replaceGraphV2(ctx context.Context, tx pgx.Tx, repositoryID int64, publicat
 	err := tx.QueryRow(ctx, `select coalesce(r.indexed_sha,''),r.github_id from repositories r
  join installations i on i.id=r.installation_id
  where r.id=$1 and r.enabled and not r.archived and i.status='active' for update of r`, repositoryID).Scan(&indexedSHA, &publicID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return GraphReplacement{}, ErrGraphRepositoryUnavailable
+	}
 	if err != nil {
 		return GraphReplacement{}, err
 	}

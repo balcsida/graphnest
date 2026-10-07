@@ -181,7 +181,7 @@ func publishSCIPGraphV2(ctx context.Context, tx pgx.Tx, repositoryID int64, gene
 		return err
 	}
 	_, err = replaceGraphV2(ctx, tx, repositoryID, GraphPublication{Publisher: graphartifact.SCIPProducer, Capabilities: graphartifact.SCIPCapabilities(), ExpectedActiveID: activeID}, GraphSourceSCIP, generation)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, ErrGraphRepositoryUnavailable) {
 		// A disabled, archived or suspended repository keeps its navigation data
 		// without a queryable generation, as before.
 		return nil

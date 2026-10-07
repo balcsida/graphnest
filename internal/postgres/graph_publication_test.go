@@ -132,6 +132,25 @@ func TestGraphPublicationRetriesCannotOverwriteTheWrongGeneration(t *testing.T) 
 	}
 }
 
+// A disabled, archived or suspended repository is reported by name rather
+// than by the driver's no-rows error, and a SCIP upload on it still lands its
+// navigation data without publishing a generation.
+func TestReplaceGraphV2RejectsAnUnavailableRepository(t *testing.T) {
+	s, id := readyGraphStore(t, testSHA('a'))
+	if _, err := s.pool.Exec(t.Context(), `update repositories set enabled=false where id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReplaceGraphV2(t.Context(), id, GraphPublication{Publisher: "api_token:42"}, storageV2Artifact()); !errors.Is(err, ErrGraphRepositoryUnavailable) {
+		t.Fatalf("disabled repository publish err=%v", err)
+	}
+	if err := s.ReplaceSCIP(t.Context(), id, testSHA('a'), uploadWith("a.go", globalSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	if all, err := s.ActiveGraphGenerations(t.Context(), id); err != nil || len(all) != 0 {
+		t.Fatalf("disabled repository generations=%#v err=%v", all, err)
+	}
+}
+
 func changedStorageArtifact(message string) *graphv2.Artifact {
 	a := proto.Clone(storageV2Artifact()).(*graphv2.Artifact)
 	a.Diagnostics[0].Message = message

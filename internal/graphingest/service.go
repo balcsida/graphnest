@@ -128,7 +128,7 @@ func (service *Service) Publish(ctx context.Context, principal authn.Principal, 
 		return api.GraphPublicationResult{}, ErrProducerConflict
 	case errors.Is(err, graphartifact.ErrInvalidArtifact):
 		return api.GraphPublicationResult{}, ErrInvalidArtifact
-	case errors.Is(err, pgx.ErrNoRows):
+	case errors.Is(err, pgx.ErrNoRows), errors.Is(err, postgres.ErrGraphRepositoryUnavailable):
 		return api.GraphPublicationResult{}, ErrNotIndexed
 	case err != nil:
 		return api.GraphPublicationResult{}, unavailable(err)
