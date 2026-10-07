@@ -27,6 +27,10 @@ the compatibility and migration notes before upgrading.
 - `context`, `impact` and `trace` no longer return one `graph_missing`
   boundary per unrelated authorized repository. Unrelated repositories without
   a graph collapse into one summary boundary per reason with a `count`.
+- `POST /v1/scip/uploads` for the commit GraphNest is still indexing now
+  returns retryable `409 index_pending` instead of final `409 not_indexed`, so
+  CI jobs that finish before indexing can retry the upload rather than lose the
+  index.
 
 ### Added
 

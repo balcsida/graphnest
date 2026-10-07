@@ -153,6 +153,8 @@ func classifySCIPError(err error) (int, string, string, bool) {
 		return http.StatusBadRequest, "invalid_request", "request is invalid", false
 	case errors.Is(err, scipgraph.ErrNotIndexed):
 		return http.StatusConflict, "not_indexed", "repository is not indexed", false
+	case errors.Is(err, scipgraph.ErrIndexPending):
+		return http.StatusConflict, "index_pending", "repository is being indexed for this commit; retry after indexing completes", true
 	case errors.Is(err, scipgraph.ErrStaleCommit):
 		return http.StatusConflict, "stale_commit", "requested commit is not the indexed revision", false
 	case errors.Is(err, scipgraph.ErrSCIPUnavailable):

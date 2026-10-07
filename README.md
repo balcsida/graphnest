@@ -211,7 +211,22 @@ curl --fail-with-body -X POST \
   --data-binary @index.scip
 ```
 
-The same upload derives the graph generation behind `graph_callers`, `graph_discover`, `explore` and the other graph tools; `get_repository_status` reports it as `graph_status`, and a graph tool called before the upload returns `graph_missing` (see [Operations](docs/operations.md#graph-operation-and-recovery)). Uploads for any commit other than the repository's exact indexed SHA are rejected. The upload is ingested synchronously and returns `204` only after the index is committed, so a large index can take minutes; any reverse proxy or ingress in front of GraphNest needs a matching response timeout (see the [Helm chart documentation](deploy/helm/graphnest/README.md#optional-integrations-and-networking)). Cross-repository navigation can use manually supplied package URLs or metadata refreshed from GitHub's dependency graph. The exact endpoints, limits, and response schemas are defined in the [OpenAPI contract](docs/openapi.yaml).
+The same upload derives the graph generation behind `graph_callers`, `graph_discover`, `explore` and the other graph tools; `get_repository_status` reports it as `graph_status`, and a graph tool called before the upload returns `graph_missing` (see [Operations](docs/operations.md#graph-operation-and-recovery)). Uploads for any commit other than the repository's exact indexed SHA are rejected. An upload for the commit GraphNest is still indexing returns `409` with code `index_pending` and `retryable: true`; CI usually finishes before the asynchronous index job, so retry until indexing completes:
+
+```sh
+for _ in $(seq 40); do  # every 30 seconds for up to 20 minutes
+  code=$(curl -s -o response.json -w '%{http_code}' -X POST \
+    "https://graphnest.example/v1/scip/uploads?repository_id=101&commit=$GITHUB_SHA" \
+    -H "Authorization: Bearer $GRAPHNEST_ADMIN_TOKEN" \
+    -H 'Content-Type: application/vnd.scip+protobuf' \
+    --data-binary @index.scip)
+  [ "$code" = 409 ] && grep -q '"index_pending"' response.json || break
+  sleep 30
+done
+[ "$code" = 204 ] || { cat response.json; exit 1; }
+```
+
+The upload is ingested synchronously and returns `204` only after the index is committed, so a large index can take minutes; any reverse proxy or ingress in front of GraphNest needs a matching response timeout (see the [Helm chart documentation](deploy/helm/graphnest/README.md#optional-integrations-and-networking)). Cross-repository navigation can use manually supplied package URLs or metadata refreshed from GitHub's dependency graph. The exact endpoints, limits, and response schemas are defined in the [OpenAPI contract](docs/openapi.yaml).
 
 A CI job should not hold a long-lived administrator token. Instead, a trusted broker that owns an administrator API token can delegate a narrower one per job with `POST /v1/admin/api-tokens`: the delegated token belongs to the same user, is restricted to a non-empty subset of the broker token's repository ceiling (typically the one repository being indexed), and must expire within one hour. Only administrator API tokens may delegate, and a delegated token cannot delegate again, so a leaked job token cannot renew itself past its own expiry; browser sessions keep using `/v1/account/api-tokens`.
 
