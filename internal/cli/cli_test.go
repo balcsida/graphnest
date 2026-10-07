@@ -225,7 +225,7 @@ func TestDryRunFailures(t *testing.T) {
 		{"malformed commit", failingGit, []string{"--index", fixture, "--commit", "ABC"}, 1, "commit must be 40 lowercase hexadecimal"},
 		{"missing index", failingGit, []string{"--index", missing, "--commit", sha}, 1, missing},
 		{"not codegraph", failingGit, []string{"--index", notDB, "--commit", sha}, 1, graphimport.ErrNotCodeGraph.Error()},
-		{"no dry run", failingGit, []string{"--index", fixture, "--commit", sha}, 2, "use --dry-run"},
+		{"no dry run", failingGit, []string{"--index", fixture, "--commit", sha}, 2, "publication need --repository-id"},
 		{"unknown flag", failingGit, []string{"--dry-run", "--bogus"}, 2, "bogus"},
 		{"bad repository id", failingGit, []string{"--dry-run", "--repository-id", "0", "--index", fixture, "--commit", sha}, 2, "--repository-id"},
 	} {

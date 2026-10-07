@@ -20,7 +20,7 @@ import (
 
 var commitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
-const importUsage = "graphnest graph import codegraph (--dry-run | --output FILE) [--repo DIR] [--index FILE] [--repository-id N] [--commit SHA] [--timeout D]"
+const importUsage = "graphnest graph import codegraph [--dry-run | --output FILE] [--repo DIR] [--index FILE] [--repository-id N] [--commit SHA] [--expected-generation N] [--replace-producer] [--timeout D]"
 
 // importReport is the JSON document printed by graph import codegraph.
 type importReport struct {
@@ -36,6 +36,8 @@ type importReport struct {
 	Artifact     artifactReport        `json:"artifact"`
 	Output       *outputReport         `json:"output"`
 	Diagnostics  diagnostics           `json:"diagnostics"`
+	Server       *serverReport         `json:"server"`
+	Publication  *publicationReport    `json:"publication"`
 	Published    bool                  `json:"published"`
 }
 
@@ -79,22 +81,22 @@ type diagnostics struct {
 
 func runImportCodeGraph(ctx context.Context, args []string, env Environment, stdout, stderr io.Writer) error {
 	flags := newFlags("import codegraph", importUsage, stderr)
-	dryRun := flags.Bool("dry-run", false, "convert and report without writing (exactly one of --dry-run and --output)")
+	dryRun := flags.Bool("dry-run", false, "convert and report without writing or publishing")
 	output := flags.String("output", "", "write the artifact to `FILE` after verifying the index is fresh and complete")
 	repo := flags.String("repo", ".", "repository directory")
 	index := flags.String("index", "", "CodeGraph index file (default <repo>/<CODEGRAPH_DIR or .codegraph>/codegraph.db)")
-	repositoryID := flags.Int64("repository-id", 0, "GraphNest repository ID")
+	repositoryID := flags.Int64("repository-id", 0, "GraphNest repository ID (required to write or publish)")
+	expected := flags.Int64("expected-generation", 0, "when publishing, refuse unless the active published generation is `N` (0: none)")
+	replaceProducer := flags.Bool("replace-producer", false, "when publishing, replace a generation published by another producer")
 	commit := flags.String("commit", "", "commit SHA (default: git rev-parse HEAD in --repo)")
-	timeout := flags.Duration("timeout", defaultTimeout, "time limit for reading and converting")
+	timeout := flags.Duration("timeout", defaultTimeout, "time limit for reading, converting and publishing")
 	if err := parse(flags, args); err != nil {
 		return err
 	}
-	switch {
-	case *dryRun && *output != "":
+	if *dryRun && *output != "" {
 		return usageError{"--dry-run and --output are mutually exclusive"}
-	case !*dryRun && *output == "":
-		return usageError{"publication follows in a later release; use --dry-run or --output"}
 	}
+	publishing := !*dryRun && *output == ""
 	if *timeout <= 0 {
 		return usageError{"--timeout must be positive"}
 	}
@@ -103,8 +105,16 @@ func runImportCodeGraph(ctx context.Context, args []string, env Environment, std
 	if idSet && *repositoryID <= 0 {
 		return usageError{"--repository-id must be a positive integer"}
 	}
-	if *output != "" && !idSet {
-		return usageError{"artifact output needs --repository-id, the identity the artifact is published under"}
+	if !*dryRun && !idSet {
+		return usageError{"artifact output and publication need --repository-id, the identity the artifact is published under"}
+	}
+	expectedSet := false
+	flags.Visit(func(f *flag.Flag) { expectedSet = expectedSet || f.Name == "expected-generation" })
+	if !publishing && (expectedSet || *replaceProducer) {
+		return usageError{"--expected-generation and --replace-producer apply only when publishing"}
+	}
+	if expectedSet && *expected < 0 {
+		return usageError{"--expected-generation must not be negative"}
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
@@ -164,6 +174,8 @@ func runImportCodeGraph(ctx context.Context, args []string, env Environment, std
 	var refusal error
 	if *output != "" {
 		refusal = outputRefusal(freshness, snapshot, *output, filepath.Join(*repo, dir))
+	} else if publishing {
+		refusal = outputRefusal(freshness, snapshot, "", "")
 	}
 	var written *outputReport
 	if *output != "" && refusal == nil {
@@ -171,6 +183,17 @@ func runImportCodeGraph(ctx context.Context, args []string, env Environment, std
 			return err
 		}
 		written = &outputReport{Path: *output, Bytes: len(encoded)}
+	}
+	var server *serverReport
+	var publication *publicationReport
+	if publishing && refusal == nil {
+		request := publishRequest{RepositoryID: *repositoryID, Commit: *commit, Producer: artifact.Producer.Name, Data: encoded, ReplaceProducer: *replaceProducer, Timeout: *timeout}
+		if expectedSet {
+			request.ExpectedGeneration = expected
+		}
+		if server, publication, err = publishArtifact(ctx, env, stderr, request); err != nil {
+			return err
+		}
 	}
 	withErrors := 0
 	for _, f := range snapshot.Files {
@@ -193,7 +216,9 @@ func runImportCodeGraph(ctx context.Context, args []string, env Environment, std
 		Artifact:     artifactReport{Repository: identity, Bytes: len(encoded), ContentHash: hex.EncodeToString(hash)},
 		Diagnostics:  diagnostics{UnresolvedReferences: report.Unresolved, FilesWithErrors: withErrors, RoundedTimestamps: snapshot.RoundedTimestamps, Dropped: []string{}},
 		Output:       written,
-		Published:    false,
+		Server:       server,
+		Publication:  publication,
+		Published:    publication != nil,
 	}); err != nil {
 		return err
 	}
@@ -211,7 +236,7 @@ func outputRefusal(freshness *graphimport.Freshness, snapshot *graphimport.Snaps
 		}
 		return fmt.Errorf("the index is not complete (index_state=%s); finish indexing with CodeGraph and retry", state)
 	}
-	if insideDir(output, dataDir) {
+	if output != "" && insideDir(output, dataDir) {
 		return errors.New("refusing to write into the CodeGraph data directory")
 	}
 	return nil

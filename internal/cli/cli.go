@@ -37,7 +37,8 @@ commands:
 const graphUsage = `usage: graphnest graph <command>
 
 commands:
-  import codegraph   convert a CodeGraph index (--dry-run or --output FILE)
+  import codegraph   convert a CodeGraph index and report it (--dry-run), write it (--output FILE) or publish it
+  upload             publish a v2 graph artifact file
   status             show the repository and graph status held by the server
 `
 
@@ -47,6 +48,8 @@ type Environment struct {
 	ReadFile func(string) ([]byte, error)
 	Git      func(ctx context.Context, dir string, args ...string) ([]byte, error) // runs the git binary; replaceable in tests
 	Now      func() time.Time
+	// Sleep waits between upload attempts; it returns early with the context's error.
+	Sleep func(context.Context, time.Duration) error
 	// Repository reads commits and evaluates ignore rules for freshness verification.
 	Repository graphimport.Git
 }
@@ -60,6 +63,7 @@ func OSEnvironment() Environment {
 			return exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...).Output()
 		},
 		Now:        time.Now,
+		Sleep:      sleepContext,
 		Repository: graphimport.ExecGit{},
 	}
 }
@@ -110,6 +114,8 @@ func dispatchGraph(ctx context.Context, args []string, env Environment, stdout, 
 		switch {
 		case args[0] == "status":
 			return runGraphStatus(ctx, args[1:], env, stdout, stderr)
+		case args[0] == "upload":
+			return runGraphUpload(ctx, args[1:], env, stdout, stderr)
 		case args[0] == "import" && len(args) > 1 && args[1] == "codegraph":
 			return runImportCodeGraph(ctx, args[2:], env, stdout, stderr)
 		case args[0] == "-h" || args[0] == "-help" || args[0] == "--help":
