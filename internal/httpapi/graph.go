@@ -12,12 +12,13 @@ import (
 
 	"github.com/balcsida/graphnest/internal/authn"
 	"github.com/balcsida/graphnest/internal/graphingest"
+	"github.com/balcsida/graphnest/pkg/api"
 	"github.com/jackc/pgx/v5"
 )
 
 const (
-	graphContentType   = "application/vnd.graphnest.graph.v1+protobuf"
-	graphV2ContentType = "application/vnd.graphnest.graph.v2+protobuf"
+	graphContentType   = api.GraphArtifactV1ContentType
+	graphV2ContentType = api.GraphArtifactV2ContentType
 )
 
 // RegisterGraphIngestion mounts graph uploads, status, and the
