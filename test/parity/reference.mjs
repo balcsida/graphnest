@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, utimesSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import assert from 'node:assert/strict';
+import { captureProducerRules } from './producer-rules.mjs';
 const [upstream, root, metrics, timingMode] = process.argv.slice(2);
 const require = createRequire(`${upstream}/package.json`);
 const { CodeGraph } = require(`${upstream}/dist/index.js`);
@@ -57,6 +58,7 @@ try {
   assert.ok(answers['lib-getFileDependencies'].includes('core.ts'));
   assert.ok(answers['lib-getCode'].includes('return name.trim()'));
   assert.equal(graph.getNodesByName('mustNotBeIndexed').length, 0);
+  writeFileSync(`${metrics}.rules`, JSON.stringify(captureProducerRules(upstream)));
   const tool = new ToolHandler(graph);
   answers['mcp-explore-source'] = await tool.execute('codegraph_explore', { query: 'processGreeting', projectPath: root });
   answers['mcp-explore-unmatched-fallback'] = await tool.execute('codegraph_explore', { query: 'MissingFixtureSymbol987', projectPath: root });

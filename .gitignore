@@ -17,3 +17,6 @@ test-results/
 *.pem
 *.p12
 *.pfx
+
+# command-line tool release builds
+dist/

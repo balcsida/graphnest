@@ -23,6 +23,20 @@ python3 test/parity/generate_reference.py --upstream /tmp/codegraph-reference --
 make parity-reference
 ```
 
+A second, facts-only pin (CodeGraph 1.6.2, commit `6560052a6f856855d3f71eee838fd66ccfa4285d`, schema 11)
+indexes the same `source/` files into `test/fixtures/codegraph-1.6.2/`. Use a clone checked out at that
+commit and select it with `--pin 1.6.2` (default `1.6.0`); `--timings` is not available for it:
+
+```sh
+git -C /tmp/codegraph-reference checkout --detach 6560052a6f856855d3f71eee838fd66ccfa4285d
+python3 test/parity/generate_reference.py --upstream /tmp/codegraph-reference --pin 1.6.2
+python3 test/parity/generate_reference.py --upstream /tmp/codegraph-reference --pin 1.6.2 --check
+```
+
+It runs `reference-facts.mjs` (init, index, assert success and the excluded file absent) and
+adds `CODEGRAPH_NO_DAEMON`, `CODEGRAPH_NO_UPDATE_CHECK` and `CODEGRAPH_NO_WATCH` to its recorded
+environment. `make parity-reference` also validates it offline.
+
 `--node /path/to/node` selects the exact pinned runtime. The generator checks the
 Git commit, tracked-source cleanliness, runtime, source hashes, complete source
 file set, schema, full logical database facts, and real library query answers.
@@ -144,4 +158,37 @@ times remain outside oracle equality. Existing GraphNest 10% and future local
 exports, imports/publication, transports, cold startup and large-corpus results
 remain explicitly unmeasured.
 
+## Producer rules
+
+Both pins also write `producer-rules.json` into their fixture directory (listed in `manifest.json`).
+`producer-rules.mjs` captures it from the freshly built `dist/` after indexing, and `--check`
+compares a regeneration with the committed file. It records the producer's own answers, never a
+transcription of its source:
+
+- `extension_map` (`EXTENSION_MAP`) and `source_file_decisions` (`isSourceFile` over a fixed probe list).
+- `default_ignore_patterns` of `buildDefaultIgnore` on an empty directory (no `.gitignore` merged),
+  `ignore_case`, and `ignore_decisions` for every directory pattern plus fixed probes. The patterns come
+  from the npm `ignore` internals (`ig._rules._rules`); capture fails if that shape changes.
+- `max_source_file_size_bytes` and `oversize_hash` (the size-stamp hash, `null` for 1.6.0, which hashes
+  full content; its `MAX_FILE_SIZE` is not exported, so 1048576 is recorded with a source note).
+- `content_hash_vectors`: `hashContent` of `Buffer.toString('utf8')` for valid and invalid byte strings,
+  with the decoded code points.
+
+`internal/graphimport/codegraph-rules-*.json` are embedded copies; a Go test requires them to be
+byte-identical to these fixtures, so regenerate and copy together.
+
 The upstream schema is distributed under `../fixtures/codegraph/UPSTREAM-LICENSE`.
+
+## Gate answers for a real repository
+
+`gate-answers.mjs` asks an already indexed repository the Stage 2 gate questions through the pinned
+CodeGraph `ToolHandler` and writes the raw tool results. It opens the existing index read-only and never indexes:
+
+```sh
+env -i PATH=<pinned node dir>:/usr/bin:/bin HOME="$(mktemp -d)" CODEGRAPH_KERNEL=0 CODEGRAPH_NO_RELAUNCH=1 \
+  DO_NOT_TRACK=1 CODEGRAPH_NO_DAEMON=1 CODEGRAPH_NO_WATCH=1 \
+  node test/parity/gate-answers.mjs <upstream-dir> <repo-root> <out.json> <symbol> <file>
+```
+
+`<file>` is a repository-relative path; `codegraph_files` is asked for its directory. Point
+`GRAPHNEST_GATE_CODEGRAPH_ANSWERS` at `<out.json>` when running `TestCodeGraphImportGate` (`test/e2e`).

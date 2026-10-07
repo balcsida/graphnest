@@ -30,6 +30,34 @@ the compatibility and migration notes before upgrading.
 
 ### Added
 
+- `graphnest doctor` checks an import environment without changing it: git,
+  the repository commit, the CodeGraph index, the producer rules, the index
+  state, freshness against HEAD and, when `GRAPHNEST_SERVER_URL` is set, the
+  server and publication rights. `graphnest version` also prints the Go and
+  SQLite versions.
+- `--format text` for `graphnest graph import codegraph` and `graph upload`
+  prints a readable report ending in a next step; JSON stays the default.
+- Release binaries of `graphnest` for Linux and macOS (amd64 and arm64), with
+  checksums, a dependency inventory and build provenance attestations,
+  built with `make cli`.
+- `graphnest`, a command-line tool. `graphnest graph import codegraph
+  --dry-run` reads an existing CodeGraph index (schema versions 9, 10 and
+  11; CodeGraph 1.6.0 to 1.6.2) through a pure-Go SQLite reader in one
+  read-only transaction, converts it to the v2 graph artifact and reports
+  counts by kind, diagnostics, the artifact hash and freshness as JSON.
+  Freshness compares the index with the commit's content through
+  `git archive`, using CodeGraph's own hashing, extension and ignore rules
+  captured from the pinned builds; a matching HEAD is not proof. `--output`
+  writes the artifact only for a fresh, complete index. `graphnest graph
+  status` shows the repository and graph state the server holds. Server
+  binaries do not link the SQLite reader. Without `--dry-run` or `--output`
+  the command publishes a fresh, complete index, and `graphnest graph
+  upload` publishes an artifact file: both run the publication preflight
+  (indexed commit, grant, expected generation, explicit producer
+  replacement), retry transport and server failures up to three times, and
+  rely on the server's content-hash deduplication for safe retries.
+- A second pinned CodeGraph reference, 1.6.2 (schema 11), under
+  `test/fixtures/codegraph-1.6.2/`, and `producer-rules.json` for both pins.
 - Repository status (`GET /v1/repositories/{id}`, MCP `get_repository_status`)
   reports `graph_status` (`current`, `stale`, `absent`, `unknown`),
   `graph_commit` and `graph_producer` next to `scip_status`, so a missing or

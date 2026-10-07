@@ -12,11 +12,19 @@ import tarfile
 import tempfile
 import time
 
-COMMIT = "b9ca4b7981116909900368cc1686a1074cd4d4c1"
 NODE = "v24.13.0"
 PRODUCER_ENV = {"CODEGRAPH_KERNEL": "0", "CODEGRAPH_NO_RELAUNCH": "1", "DO_NOT_TRACK": "1", "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "TZ": "UTC"}
 BUILD = "fresh git archive of pinned commit; npm ci --ignore-scripts --no-audit --no-fund; tsc; npm run copy-assets"
-FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "codegraph"
+SANITATION = "source mtimes and SQLite timestamp columns zero; temporary source root replaced by /fixture; backup checkpoint and VACUUM; oracle timestamps/timings zero or Unix epoch; trail author fixed to GraphNest fixture; no graph facts added"
+DETERMINISM = "two independent real producer runs; all logical non-FTS tables and schema compared"
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
+SOURCE = FIXTURES / "codegraph" / "source"
+# Both pins index the same sources so their facts stay comparable. 1.6.2 captures facts only: its
+# library/MCP/viewer APIs differ from the 1.6.0 answers in reference.mjs, which are not reproduced.
+PINS = {
+    "1.6.0": {"commit": "b9ca4b7981116909900368cc1686a1074cd4d4c1", "fixture": FIXTURES / "codegraph", "facts_only": False, "env": PRODUCER_ENV},
+    "1.6.2": {"commit": "6560052a6f856855d3f71eee838fd66ccfa4285d", "fixture": FIXTURES / "codegraph-1.6.2", "facts_only": True, "env": {**PRODUCER_ENV, "CODEGRAPH_NO_DAEMON": "1", "CODEGRAPH_NO_UPDATE_CHECK": "1", "CODEGRAPH_NO_WATCH": "1"}},
+}
 QUERIES = {
     "node-kinds": "SELECT kind,COUNT(*) FROM nodes GROUP BY kind ORDER BY kind",
     "relation-kinds": "SELECT kind,COUNT(*) FROM edges GROUP BY kind ORDER BY kind",
@@ -39,17 +47,17 @@ def logical_snapshot(db):
     return {table: sorted([list(row) for row in db.execute(f'SELECT * FROM "{table}"')], key=lambda row: json.dumps(row, sort_keys=True)) for table in tables}
 
 
-def produce(upstream, node, destination, timings=False):
+def produce(upstream, node, destination, pin, timings=False):
     with tempfile.TemporaryDirectory(prefix="graphnest-codegraph-reference-") as temporary:
         root = Path(temporary) / "source"
-        shutil.copytree(FIXTURE / "source", root)
+        shutil.copytree(SOURCE, root)
         for path in root.rglob("*"):
             os.utime(path, (0, 0))
         # Extraction must not read user config or inherit fact-changing feature flags.
         home = Path(temporary) / "home"
         home.mkdir()
-        env = {**PRODUCER_ENV, "HOME": str(home), "TMPDIR": temporary, "PATH": str(Path(node).parent) + ":/usr/bin:/bin:/usr/sbin:/sbin"}
-        command = [node, "--no-warnings", str(Path(__file__).with_name("reference.mjs")), str(upstream), str(root), str(Path(temporary) / "metrics.json")]
+        env = {**PINS[pin]["env"], "HOME": str(home), "TMPDIR": temporary, "PATH": str(Path(node).parent) + ":/usr/bin:/bin:/usr/sbin:/sbin"}
+        command = [node, "--no-warnings", str(Path(__file__).with_name("reference-facts.mjs" if PINS[pin]["facts_only"] else "reference.mjs")), str(upstream), str(root), str(Path(temporary) / "metrics.json")]
         subprocess.run(command + (["--timings"] if timings else []), env=env, check=True, timeout=120)
         databases = list(root.rglob("*.db"))
         if len(databases) != 1:
@@ -80,19 +88,25 @@ def produce(upstream, node, destination, timings=False):
                 timings.append((time.perf_counter_ns() - start) / 1e6)
         metrics = json.loads((Path(temporary) / "metrics.json").read_text())
         metrics["sqlite_warm_call_query_ms"] = {"samples": 100, "p50": sorted(timings[5:])[49], "p95": sorted(timings[5:])[94]}
-        library = json.loads((Path(temporary) / "metrics.json.answers").read_text())
-        return expected, snapshot, schema, metrics, library
+        library = None if PINS[pin]["facts_only"] else json.loads((Path(temporary) / "metrics.json.answers").read_text())
+        rules = json.loads((Path(temporary) / "metrics.json.rules").read_text())
+        return expected, snapshot, schema, metrics, library, rules
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--upstream", type=Path, required=True)
+    parser.add_argument("--pin", choices=sorted(PINS), default="1.6.0", help="CodeGraph producer version to capture")
     parser.add_argument("--node", default="node")
     parser.add_argument("--check", action="store_true", help="regenerate twice and compare to committed answers without writes")
     parser.add_argument("--timings", action="store_true", help="with --check, refresh only workflow-baseline.json after oracle verification")
     args = parser.parse_args()
     if args.timings and not args.check:
         parser.error("--timings requires --check so reference facts and answers remain unchanged")
+    pin = PINS[args.pin]
+    COMMIT, FIXTURE, facts_only, environment = pin["commit"], pin["fixture"], pin["facts_only"], pin["env"]
+    if facts_only and args.timings:
+        parser.error("--timings is only available for the full-capture pin")
     upstream = args.upstream.resolve()
     actual = subprocess.check_output(["git", "-C", str(upstream), "rev-parse", "HEAD"], text=True).strip()
     if actual != COMMIT:
@@ -116,15 +130,15 @@ def main():
         subprocess.run([args.node, "node_modules/typescript/bin/tsc"], cwd=upstream, env=build_env, check=True)
         subprocess.run(["npm", "run", "copy-assets"], cwd=upstream, env=build_env, check=True)
         first = Path(temporary) / "first.db"
-        expected, snapshot, schema, metrics, library = produce(upstream, args.node, first, timings=args.timings)
-        repeated, repeated_snapshot, repeated_schema, _, repeated_library = produce(upstream, args.node, Path(temporary) / "second.db")
-        if (expected, snapshot, schema, library) != (repeated, repeated_snapshot, repeated_schema, repeated_library):
+        expected, snapshot, schema, metrics, library, rules = produce(upstream, args.node, first, args.pin, timings=args.timings)
+        repeated, repeated_snapshot, repeated_schema, _, repeated_library, repeated_rules = produce(upstream, args.node, Path(temporary) / "second.db", args.pin)
+        if (expected, snapshot, schema, library, rules) != (repeated, repeated_snapshot, repeated_schema, repeated_library, repeated_rules):
             raise RuntimeError("producer logical output is nondeterministic after sanitation")
         if args.check:
             manifest = json.loads((FIXTURE / "manifest.json").read_text())
-            if manifest["reference_tasks"] != sorted(library):
+            if not facts_only and manifest["reference_tasks"] != sorted(library):
                 raise RuntimeError("manifest reference tasks differ from library answers")
-            if manifest["producer"]["build"] != BUILD or manifest["producer"]["environment"] != PRODUCER_ENV or manifest["producer"]["home"] != "fresh empty temporary directory":
+            if manifest["producer"]["build"] != BUILD or manifest["producer"]["environment"] != environment or manifest["producer"]["home"] != "fresh empty temporary directory":
                 raise RuntimeError("manifest producer build/environment mismatch")
             if manifest["producer"]["commit"] != actual or manifest["producer"]["node"] != runtime:
                 raise RuntimeError("manifest producer identity mismatch")
@@ -133,20 +147,23 @@ def main():
             for name, digest in manifest["sha256"].items():
                 if hashlib.sha256((FIXTURE / name).read_bytes()).hexdigest() != digest:
                     raise RuntimeError(f"manifest hash mismatch: {name}")
-            sources = {str(path.relative_to(FIXTURE)) for path in (FIXTURE / "source").rglob("*") if path.is_file()}
-            if sources != {name for name in manifest["sha256"] if name.startswith("source/")}:
-                raise RuntimeError("source file set changed")
+            if not facts_only:
+                sources = {str(path.relative_to(FIXTURE)) for path in (FIXTURE / "source").rglob("*") if path.is_file()}
+                if sources != {name for name in manifest["sha256"] if name.startswith("source/")}:
+                    raise RuntimeError("source file set changed")
             with sqlite3.connect(f"file:{FIXTURE / 'reference.db'}?mode=ro", uri=True) as committed:
                 if snapshot != logical_snapshot(committed):
                     raise RuntimeError("full reference facts changed")
-            if library != json.loads((FIXTURE / "library-expected.json").read_text()):
+            if not facts_only and library != json.loads((FIXTURE / "library-expected.json").read_text()):
                 raise RuntimeError("library answers changed")
+            if rules != json.loads((FIXTURE / "producer-rules.json").read_text()):
+                raise RuntimeError("producer rules changed")
             if expected != json.loads((FIXTURE / "expected.json").read_text()):
                 raise RuntimeError("reference answers changed")
             if schema != (FIXTURE / "schema.sql").read_text():
                 raise RuntimeError("reference schema changed")
             if args.timings:
-                harness = [Path(__file__), Path(__file__).with_name("reference.mjs")]
+                harness = [Path(__file__), Path(__file__).with_name("reference.mjs"), Path(__file__).with_name("producer-rules.mjs")]
                 write_json(FIXTURE / "workflow-baseline.json", {
                     "scope": "five in-process runs on one warm portable CodeGraph; query plus JSON serialization; not GraphNest or transport/browser latency",
                     "producer": manifest["producer"],
@@ -165,8 +182,28 @@ def main():
                 })
             print("Pinned producer regenerated twice; logical facts, schema and committed answers match.")
             return
+        FIXTURE.mkdir(exist_ok=True)
         shutil.copyfile(first, FIXTURE / "reference.db")
         write_json(FIXTURE / "expected.json", expected)
+        write_json(FIXTURE / "producer-rules.json", rules)
+        if facts_only:
+            (FIXTURE / "schema.sql").write_text(schema)
+            (FIXTURE / ".gitattributes").write_text("reference.db binary\n")
+            names = ["reference.db", "expected.json", "schema.sql", "producer-rules.json"]
+            write_json(FIXTURE / "manifest.json", {
+                "fixture": "polyglot-core",
+                "capture": "facts-only",
+                "source": "test/fixtures/codegraph/source (shared with the 1.6.0 pin; not copied)",
+                "schema_version": max(row[0] for row in snapshot["schema_versions"]),
+                "producer": {"repository": "https://github.com/colbymchenry/codegraph", "commit": COMMIT, "version": args.pin, "node": NODE, "mode": "portable", "kernel": False, "build": BUILD, "environment": environment, "home": "fresh empty temporary directory", "lockfile_sha256": hashlib.sha256((upstream / "package-lock.json").read_bytes()).hexdigest()},
+                "sanitation": SANITATION,
+                "determinism": DETERMINISM,
+                "sha256": {name: hashlib.sha256((FIXTURE / name).read_bytes()).hexdigest() for name in names},
+                "extracted_node_kinds": [row[0] for row in expected[0]["rows"]],
+                "extracted_edge_kinds": [row[0] for row in expected[1]["rows"]],
+            })
+            print("Generated real facts-only reference twice, verified deterministic logical output, wrote sanitized fixture.")
+            return
         write_json(FIXTURE / "library-expected.json", library)
         (FIXTURE / "schema.sql").write_text(schema)
         # Read vocabularies from the actual built producer; never claim these synthetic facts were extracted.
@@ -176,12 +213,12 @@ def main():
         vocabulary["edges"] = [{"source": "synthetic:function", "target": "synthetic:class", "kind": kind} for kind in vocabulary["edge_kinds"]]
         write_json(FIXTURE / "synthetic-contract.json", vocabulary)
         write_json(FIXTURE / "baseline.json", {"scope": "pinned portable CodeGraph indexing, library getCallers, and separate direct SQLite call query; not GraphNest or browser latency", "runtime": runtime, "platform": os.uname().sysname + " " + os.uname().machine, **metrics})
-        names = ["reference.db", "expected.json", "library-expected.json", "schema.sql", "synthetic-contract.json"] + [str(path.relative_to(FIXTURE)) for path in sorted((FIXTURE / "source").rglob("*")) if path.is_file()]
+        names = ["reference.db", "expected.json", "producer-rules.json", "library-expected.json", "schema.sql", "synthetic-contract.json"] + [str(path.relative_to(FIXTURE)) for path in sorted((FIXTURE / "source").rglob("*")) if path.is_file()]
         write_json(FIXTURE / "manifest.json", {
             "fixture": "polyglot-core",
             "producer": {"repository": "https://github.com/colbymchenry/codegraph", "commit": COMMIT, "version": "1.6.0", "node": NODE, "mode": "portable", "kernel": False, "build": BUILD, "environment": PRODUCER_ENV, "home": "fresh empty temporary directory", "lockfile_sha256": hashlib.sha256((upstream / "package-lock.json").read_bytes()).hexdigest()},
-            "sanitation": "source mtimes and SQLite timestamp columns zero; temporary source root replaced by /fixture; backup checkpoint and VACUUM; oracle timestamps/timings zero or Unix epoch; trail author fixed to GraphNest fixture; no graph facts added",
-            "determinism": "two independent real producer runs; all logical non-FTS tables and schema compared",
+            "sanitation": SANITATION,
+            "determinism": DETERMINISM,
             "sha256": {name: hashlib.sha256((FIXTURE / name).read_bytes()).hexdigest() for name in names},
             "extracted_node_kinds": [row[0] for row in expected[0]["rows"]],
             "extracted_edge_kinds": [row[0] for row in expected[1]["rows"]],

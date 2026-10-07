@@ -169,6 +169,21 @@ and a token-value budget of 32,768; decimal exponents are bounded to one million
 without allocating exponent-sized strings. Bounds are also checked for direct
 in-memory callers before cloning, hashing, or marshaling.
 
+## CodeGraph schema versions 10 and 11
+
+CodeGraph 1.6.1 and 1.6.2 write schema 11. Compared with the pinned schema 9,
+migration 10 adds `synthesis_inputs(file_path)`, a per-file verdict that the
+file fed dynamic synthesis; the importer records it as a `File` extension
+with namespace `codegraph.synthesis-input` and JSON `true`, and fails if the
+file row is missing, so no fact is dropped. The rebuilt `idx_nodes_kind` and
+the guarded `idx_edges_synthesis_site` indexes, the FTS tables and
+`name_segment_vocab` are derived data: GraphNest rebuilds its own projections
+and never copies them. New `project_metadata` keys (`synthesis_pending`,
+`indexed_at_commit`, `indexed_dirty_paths`) travel as ordinary metadata
+entries. Edge metadata that synthesis adds (`synthesizedBy`, `registeredAt`)
+stays inside the `codegraph.edge-metadata` extension. The pinned 1.6.2
+fixture under `test/fixtures/codegraph-1.6.2/` exercises all of this.
+
 ## Verification
 
 Tests read the actual committed `reference.db` through Python's standard

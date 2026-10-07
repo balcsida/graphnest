@@ -224,6 +224,98 @@ commit, verified content hash, and activation/retirement times in
 `graph_uploads`, which is the publication audit trail. Revoking a grant does
 not retire generations already published.
 
+### Importing a local CodeGraph index
+
+`graphnest graph import codegraph` (`cmd/graphnest`) converts a colleague's
+existing CodeGraph index into the v2 artifact. It is the only GraphNest binary
+that links a SQLite reader, the pure-Go `modernc.org/sqlite` (BSD-3-Clause,
+SQLite 3.53.4); a test fails the build if any server command depends on it,
+so the `CGO_ENABLED=0` server images are unchanged. The index is opened
+through a `file:` URI with `mode=ro` inside one read-only transaction: a live
+CodeGraph writer in WAL mode keeps working, committed WAL content is read,
+uncommitted content is not, and the database, `-wal` and `-shm` files are
+not modified. Schema versions 9, 10 and 11 (CodeGraph 1.6.0, 1.6.1 and
+1.6.2) are accepted; the version comes from `schema_versions` and the
+required columns, and other versions fail with the version found and what to
+do. Schema 10 and 11 add `synthesis_inputs`, which becomes a
+`codegraph.synthesis-input` extension on each file; indexes, FTS tables and
+`name_segment_vocab` are derived data, not facts.
+
+```sh
+graphnest graph import codegraph --dry-run --repo /path/to/checkout --repository-id 101
+graphnest graph import codegraph --output graph.pb --repo /path/to/checkout --repository-id 101
+```
+
+Neither form contacts the server. Both print the index and producer version,
+the commit, counts by kind, unresolved references and files with extraction
+errors, the artifact size and content hash, and a `freshness` block.
+Freshness compares the index with the content of the commit, never with the
+working tree: `git archive` of the commit is streamed once and every indexed
+file is hashed with the rules captured from the pinned CodeGraph builds
+(`test/fixtures/codegraph*/producer-rules.json`, embedded in the tool):
+SHA-256 of Node's UTF-8 decoding of the bytes, or from CodeGraph 1.6.1 the
+stamp `codegraph:oversize:<size>` above 1 MiB. The block lists `modified`
+files, indexed files `not_in_commit` (untracked or deleted content), and
+source files at the commit that CodeGraph would have indexed but the index
+lacks (`not_indexed`), using CodeGraph's extension map and default ignore
+patterns, the root `.gitignore` and the `exclude`, `include` and `extensions`
+of `codegraph.json`, all taken from the commit and evaluated with `git
+check-ignore` in a scratch repository. `status` is `fresh` only when all
+three lists are empty; `unverifiable` when the producer version has no
+captured rules, when an indexed path is a symlink or submodule at the commit,
+or when `--repo` is not a repository that has the commit. Nested `.gitignore`
+files, `includeIgnored`, embedded repositories, `.git/info/exclude` and
+`export-ignore` attributes are not modelled: files they affect appear as
+coverage gaps or as not in the commit, which fails closed.
+
+`--output FILE` writes the artifact, with its content hash set, only when the
+index is `fresh`, CodeGraph's `index_state` is `complete` and the file is not
+inside the CodeGraph data directory; otherwise the report is still printed,
+the reason goes to stderr and the exit code is 1.
+
+```sh
+graphnest graph import codegraph --repo /path/to/checkout --repository-id 101   # import and publish
+graphnest graph upload graph.pb --repository-id 101 [--expected-generation 7] [--replace-producer]
+```
+
+Publication follows the contract above from the command line. The preflight
+reads `GET /v1/repositories/{id}` and `GET /v1/graph/repositories/{id}/status`
+and refuses, before anything is uploaded, when the indexed commit differs
+from the artifact's commit (run CodeGraph on a checkout of the indexed commit
+and import again; there is no force flag), when `publication.permitted` is
+false (an administrator grants the token's user with `PUT
+/v1/graph/publication-grants`), when `--expected-generation` does not name
+the active published generation, or when that generation belongs to another
+producer and `--replace-producer` is absent. The upload names the observed
+generation as `expected_generation`. Transport errors and `5xx` answers are
+retried up to three times with a short pause; identical content is
+deduplicated by the server, so a retry after a lost response reports
+`deduplicated: true` instead of publishing twice. `409 generation_conflict`,
+`producer_conflict`, `not_indexed` and `403 forbidden` end the command with
+the matching hint on stderr and exit 1; the previous generation stays active
+and SCIP navigation is untouched. The JSON report lists the artifact, the
+server state before and after (`indexed_sha`, `active_generation_before`,
+`active_generation_after`), the publication (`expected_generation`,
+`replace_producer`, `attempts`, the server's result) and `published: true`.
+
+`graphnest graph status --repository-id 101` reads `GET /v1/repositories/{id}`
+and the graph status with the publication preflight block. Credentials come
+from `GRAPHNEST_TOKEN` or `GRAPHNEST_TOKEN_FILE` only.
+
+#### Checking an import environment
+
+`graphnest doctor [--repo DIR] [--index FILE] [--repository-id N]` prints one
+JSON document of read-only checks, each `ok`, `warn` or `fail`, and exits 1
+when any failed: `git` runs, `repository` has a commit at HEAD, `index` is
+readable (schema, producer version, `index_state`, counts), `producer-rules`
+exist for the index's CodeGraph version, `index-state` is complete with no
+`-wal`/`-shm` sidecar (a CodeGraph process may still hold the file; reads stay
+consistent), `freshness` against HEAD, and `server`. The server check runs only
+when `GRAPHNEST_SERVER_URL` is set; with `--repository-id` it compares the
+server's `indexed_sha` with HEAD and reports whether the token may publish. It
+never installs, indexes or writes anything, and never prints the token. Run it
+before the first import and whenever an import is refused.
+
 ## Web console
 
 `graphnest-server` serves the browser console at `/`, `/repositories`,

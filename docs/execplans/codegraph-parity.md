@@ -5,6 +5,97 @@ Implementation, validation, draft publication, and release are separate states.
 
 ## Progress
 
+- 2026-10-07: S2.04 import UX, distribution and gate on
+  `feat/codegraph/s2-04-import-gate`, stacked on S2.03. `graphnest doctor`
+  runs read-only checks (git, repository commit, index and schema, captured
+  producer rules, index state and WAL sidecars, freshness against HEAD, and
+  the server's indexed commit and publication rights); `--format text` gives
+  the import and upload reports a readable form that ends with the next step
+  or the recovery hint; `make cli` cross-builds the static command for Linux
+  and macOS on amd64 and arm64 with checksums and a module inventory, and
+  the release workflow attests and attaches them. `TestCodeGraphImportGate`
+  (e2e) indexes a repository through the fake GitHub, grants a
+  non-administrator token, runs the dry run, writes the artifact, uploads
+  it, repeats the upload to show the deduplicated retry, asks callers,
+  callees, impact, explore and files through MCP beside CodeGraph's own
+  answers, shows a reader's upload refused, and writes a Markdown transcript.
+  On the pinned fixture the answers agree as Stage 1 established (impact at
+  depth 2 adds the two documented shortest-depth nodes; explore is a
+  superset by the documented budget rule). On a scratch clone of this
+  repository at `32fa3ba2`, indexed by the pinned CodeGraph 1.6.0 and 1.6.2
+  builds (681 files, 12,727 and 13,367 nodes), both indexes verify fresh,
+  publish, and answer; callees, impact and files agree exactly, callers
+  agree apart from one entry each side under the 20-entry per-definition
+  cap, and explore differs twice: with default bounds GraphNest's answer
+  exceeds its 256 KiB response budget and is refused rather than truncated,
+  and the bounded re-ask (`limit` 8, `candidate_limit` 32, `max_files` 4)
+  ranks files differently, sharing two source files with CodeGraph's
+  selection, omitting the other five or six and adding thirteen pointer
+  entries. Both are recorded as gaps.
+  - The first real index exposed a reader defect the sanitized fixture could
+    not: fractional `mtimeMs` stored as SQLite REAL in INTEGER timestamp
+    columns. Fixed in S2.01 (`TestReadRoundsRealTimestamps`); the count of
+    rounded values is part of every report.
+
+- 2026-10-07: S2.03 publication on `feat/codegraph/s2-03-publish`, stacked
+  on S2.02. `graphnest graph upload ARTIFACT` and `graph import codegraph`
+  without `--dry-run`/`--output` share one publication path: preflight
+  through `GET /v1/repositories/{id}` and the graph status, refusing before
+  upload when the indexed commit differs from the artifact's, when the token
+  is not permitted, when `--expected-generation` does not match the active
+  published generation, or when another producer's generation needs an
+  explicit `--replace-producer`; the upload names the observed generation,
+  retries transport and server failures up to three times, and relies on the
+  server's content-hash deduplication for safe retries. Unit tests drive the
+  command against a scripted server; PostgreSQL integration tests run it
+  against the real publication routes for the S2.03 acceptance list: exact
+  commit, deduplicated retry, advanced indexed commit, revoked grant,
+  generation conflict raced in before the POST, producer replacement
+  refused and explicit, interrupted upload, and SCIP intact.
+
+- 2026-10-07: S2.02 complete importer on `feat/codegraph/s2-02-codegraph`,
+  stacked on S2.01. A second pinned producer, CodeGraph 1.6.2 (commit
+  `6560052a`, schema 11), is captured facts-only into
+  `test/fixtures/codegraph-1.6.2/` by the same harness indexing the same
+  sources; both pins also capture `producer-rules.json` from their built
+  `dist/`: the extension map, `isSourceFile` answers, the default ignore
+  patterns of the npm `ignore` matcher with its case rule and 178 recorded
+  decisions, `hashContent` of Node's UTF-8 decoding for valid and invalid
+  byte strings, and the 1.6.1+ oversize stamp. The reader accepts schema 9,
+  10 and 11 and maps `synthesis_inputs` to a per-file extension.
+  `graphimport.Verify` streams `git archive` of the commit once, hashes every
+  indexed file with the producer's rule (a WHATWG UTF-8 decoder reproduces
+  Node byte for byte against the captured vectors), and reports modified,
+  not-in-commit, not-indexed and unverified paths; coverage uses the captured
+  patterns plus the commit's root `.gitignore` and `codegraph.json`, evaluated
+  by `git check-ignore` in a scratch repository, which reproduces all recorded
+  decisions. `graphnest graph import codegraph` reports the block and
+  `--output` writes the artifact only for a fresh, complete index.
+  - Not modelled: nested `.gitignore` files, `includeIgnored`, embedded
+    repositories, `.git/info/exclude` and `export-ignore`; these fail closed.
+    Symlinks and submodules at an indexed path make the index unverifiable.
+
+- 2026-10-07: S2.01 CLI foundation on `feat/codegraph/s2-01-cli`, based on
+  `main` after PR #141. `internal/graphimport` reads a CodeGraph index
+  without cgo (`modernc.org/sqlite`) through a `file:` URI in `mode=ro`
+  inside one read-only transaction, detects the schema version from
+  `schema_versions` and the required columns, bounds row counts by the
+  artifact limits, and converts the facts to the v2 artifact with the rules
+  the S1.02 fixture oracle used. `TestImportMatchesOracle` reads the pinned
+  `reference.db` through the production path and reproduces the Python-bridge
+  oracle's artifact by `proto.Equal`, semantic hash and marshaled bytes. A
+  live WAL writer in another process, holding an uncommitted transaction, is
+  read consistently and left untouched before and after it is killed.
+  `internal/client` reads configuration from the environment only and reuses
+  the bounded HTTP client, so a token never follows a cross-origin redirect.
+  `cmd/graphnest` offers `graph import codegraph --dry-run` (JSON report on
+  stdout, diagnostics on stderr, exit codes 0/1/2) and `graph status`. A test
+  lists the dependencies of every server command and fails on the SQLite
+  module or the importer.
+  - Freshness is reported as `unverified`; `--output` and publication are the
+    next layers. The dry run without `--repository-id` hashes the artifact
+    for the identity `unassigned`, which the report states.
+
 - 2026-09-27: S1.07 symbol tools on `feat/codegraph/s1-07-symbol-tools`, based
   on `main`. The pinned harness now also runs the upstream `codegraph_callers`,
   `codegraph_callees`, and `codegraph_impact` handlers: eleven new real answers,
@@ -474,6 +565,51 @@ these tests.
 
 ## Decisions
 
+- Stage 2 starts from `main` after PR #141 (owner override of the Stage 1
+  gate order): S1.08 publication is the Stage 1 piece the importer needs.
+  One pull request per S2 step, stacked with `gh stack`.
+- PR #141 settled the interplay Stage 2 depends on: a generation published
+  through `POST /v1/graph/uploads` and the generation GraphNest derives from
+  a SCIP upload occupy separate v2 slots (migration 039). Readiness uses the
+  published generation when it is at the indexed commit and otherwise the
+  SCIP-derived one, `expected_generation` names the published slot only, a
+  SCIP upload never needs `replace_producer`, and the repository status
+  reports the generation the tools would use. No analyzer switches by
+  default; staleness is reported per generation.
+- The CGO-free SQLite reader is `modernc.org/sqlite` v1.60.1: BSD-3-Clause
+  with a published third-party licence inventory, SQLite 3.53.4 (past
+  CVE-2026-11822), SQLite's own unix locking and memory-mapped `-shm` index,
+  4.5 MB added to a stripped binary (ncruces/go-sqlite3: MIT, 5.7 MB, a
+  re-implemented VFS). Only `cmd/graphnest` may link it. Measured on
+  darwin/arm64 with `-ldflags='-s -w'`; `govulncheck` reports nothing.
+- Supported CodeGraph schema versions are 9 (the pinned 1.6.0 build), 10
+  and 11 (CodeGraph 1.6.1 and 1.6.2; both migrations landed in 1.6.1). Other
+  versions fail with the version found and what to do. The upstream `v1.6.0`
+  tag is commit `dfccdf62`, not the repository's pin `b9ca4b79`; both write
+  schema 9 and the pin stays.
+- Freshness uses the producer's answers, not a transcription of its source:
+  the harness captures them from the built pinned `dist/` and Go embeds the
+  captured files, with tests that replay every recorded decision. CodeGraph
+  1.6.1 shares the 1.6.2 rules (same `file-limits`, extension map and
+  ignore patterns, checked in its source) without a fixture of its own.
+  `include` re-admits only files the root `.gitignore` dropped, never
+  default-ignored directories, and `exclude` always wins, as in the producer.
+- `--output` (artifact creation gated on freshness) ships with S2.02 because
+  it is the consumer of the freshness check; S2.03 adds publication.
+- The Stage 2 gate runs in-process against the production packages with the
+  e2e suite's fake GitHub, real PostgreSQL and the pinned Zoekt binaries,
+  because the Compose durable stack needs a GitHub App installation that a
+  scratch clone cannot have (owner-approved). It runs on the pinned fixture
+  in CI and takes a repository, commit, index and CodeGraph answers from the
+  environment for the real demonstration; differences on a real repository
+  are reviewed from the transcript rather than asserted.
+- The command never guesses a precondition: the observed active generation
+  is the `expected_generation`, a stale `--expected-generation` is refused
+  locally, and replacing another producer's generation is only ever explicit.
+  Retries are bounded (three attempts) and safe only because the server
+  deduplicates identical content under the same expectation; a failed
+  publication prints nothing on stdout so scripts cannot mistake it for
+  success.
 - Follow accepted ADR-0014 (PostgreSQL graph queries), which supersedes ADR-0012;
   preserve ADR-0008 shared services, ADR-0009 exact-SHA reads, ADR-0013 ephemeral
   archives, and ADR-0015 optional-enrichment isolation.
@@ -697,6 +833,23 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 
 ## Remaining gaps
 
+- Gaps the Stage 2 gate recorded on a real repository: `explore` for a
+  widely referenced symbol (`ReplaceSCIP`, 25 callers) exceeds the 256 KiB
+  response budget with default bounds and is refused with
+  `graph query response is too large` instead of a truncated answer, while
+  pinned CodeGraph answers from its own smaller budget; the bounded re-ask
+  selects a different file set from CodeGraph's (two source files in
+  common), so exploration relevance on a real repository is not at parity;
+  `graph_callers`
+  and `codegraph_callers` both cap a definition at 20 neighbours but order
+  them differently, so one entry on each side falls outside the cap. The v1
+  graph job reports `enrichment_disabled` where no scanner is configured,
+  which is also a default deployment's state. The release workflow's CLI
+  steps are unexercised until the next tag. Publication has no MCP tool.
+  Freshness does not model nested `.gitignore` files,
+  `includeIgnored`, embedded repositories, `.git/info/exclude` or
+  `export-ignore`, and treats symlinks and submodules as unverifiable; a
+  CodeGraph version without captured rules is unverifiable too.
 - S1.06b1 type hierarchy is implemented at the service level only. Level
   ordering uses byte order where the pinned source uses locale comparison, and
   a subtype with both `extends` and `implements` counts as `extends` rather than
@@ -749,6 +902,10 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 | S1.06b1 type relations and hierarchy | `feat/codegraph/type-hierarchy` | Implemented; focused unit, service and PostgreSQL checks pass; based on `main` | [PR #119](https://github.com/balcsida/graphnest/pull/119) |
 | S1.08 publication policy | `feat/codegraph/s1-08-publish-policy` | Implemented; unit race, PostgreSQL integration race (apart from clock-skewed supply-chain claims that fail on `main` too), vet, staticcheck and OpenAPI checks pass; based on `main` | [PR #123](https://github.com/balcsida/graphnest/pull/123) |
 | S1.07 symbol tools | `feat/codegraph/s1-07-symbol-tools` | Implemented; oracle, unit race, PostgreSQL integration race, vet, staticcheck, OpenAPI and parity-reference checks pass; based on `main` | [PR #124](https://github.com/balcsida/graphnest/pull/124) |
+| S2.01 CLI foundation and import pipeline | `feat/codegraph/s2-01-cli` | Implemented; oracle, unit, live-WAL, boundary, vet, staticcheck and govulncheck checks pass; based on `main` after PR #141 | [PR #143](https://github.com/balcsida/graphnest/pull/143); native stack #147, position 1; based on PR #141 until it merges |
+| S2.02 complete CodeGraph importer | `feat/codegraph/s2-02-codegraph` | Implemented; both pins regenerated and checked, parity-reference, rule-decision replay, freshness, unit, vet and staticcheck checks pass; depends on S2.01 | [PR #144](https://github.com/balcsida/graphnest/pull/144); native stack #147, position 2 |
+| S2.03 publication and conflict recovery | `feat/codegraph/s2-03-publish` | Implemented; unit, PostgreSQL integration (eight acceptance scenarios), vet and staticcheck checks pass; depends on S2.02 | [PR #145](https://github.com/balcsida/graphnest/pull/145); native stack #147, position 3 |
+| S2.04 import UX, distribution and gate | `feat/codegraph/s2-04-import-gate` | Implemented; unit, e2e gate on the fixture and on two real indexes, makefile, vet and staticcheck checks pass; depends on S2.03 | [PR #146](https://github.com/balcsida/graphnest/pull/146); native stack #147, position 4 |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66

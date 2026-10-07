@@ -11,6 +11,21 @@ NODE_KINDS = set("file module class struct interface trait protocol function met
 EDGE_KINDS = set("contains calls imports exports extends implements references type_of returns instantiates overrides decorates navigates".split())
 
 
+def check_producer_rules(test, root, manifest):
+    test.assertIn("producer-rules.json", manifest["sha256"])
+    rules = json.loads((root / "producer-rules.json").read_text())
+    test.assertIs(rules["ignore_case"], True)
+    test.assertGreaterEqual(len(rules["extension_map"]), 70)
+    directories = [p[:-1] for p in rules["default_ignore_patterns"] if p.endswith("/") and not p.startswith("!")]
+    test.assertTrue(directories)
+    for directory in directories:
+        for probe in (f"{directory}/x.ts", f"a/{directory}/x.ts"):
+            test.assertIs(rules["ignore_decisions"][probe], True, probe)
+    test.assertEqual(len(rules["content_hash_vectors"]), 16)
+    for vector in rules["content_hash_vectors"]:
+        test.assertEqual(len(vector["sha256"]), 64)
+
+
 class ReferenceTest(unittest.TestCase):
     def test_workflow_timings(self):
         path = ROOT / "workflow-baseline.json"
@@ -54,6 +69,8 @@ class ReferenceTest(unittest.TestCase):
         self.assertEqual(manifest["producer"]["home"], "fresh empty temporary directory")
         for name, digest in manifest["sha256"].items():
             self.assertEqual(hashlib.sha256((ROOT / name).read_bytes()).hexdigest(), digest, name)
+        check_producer_rules(self, ROOT, manifest)
+        self.assertIsNone(json.loads((ROOT / "producer-rules.json").read_text())["oversize_hash"])
         self.assertEqual({name for name in manifest["sha256"] if name.startswith("source/")}, {str(path.relative_to(ROOT)) for path in (ROOT / "source").rglob("*") if path.is_file()})
         expected = json.loads((ROOT / "expected.json").read_text())
         with sqlite3.connect(f"file:{ROOT / 'reference.db'}?mode=ro", uri=True) as db:
@@ -100,6 +117,44 @@ class ReferenceTest(unittest.TestCase):
         self.assertTrue(library["ui-trails-reload"]["trails"][0]["intact"])
         self.assertEqual([hop["node"]["name"] for hop in library["ui-trails-open-flow"]["flows"][0]["hops"]], ["run", "normalize"])
         self.assertEqual(library["ui-trails-delete"]["trails"], [])
+
+
+class SecondPinTest(unittest.TestCase):
+    ROOT = ROOT.with_name("codegraph-1.6.2")
+
+    def test_facts_only_reference(self):
+        root = self.ROOT
+        manifest = json.loads((root / "manifest.json").read_text())
+        self.assertEqual(manifest["capture"], "facts-only")
+        self.assertEqual(manifest["producer"]["commit"], "6560052a6f856855d3f71eee838fd66ccfa4285d")
+        self.assertEqual(manifest["producer"]["version"], "1.6.2")
+        self.assertEqual(manifest["producer"]["home"], "fresh empty temporary directory")
+        self.assertEqual(manifest["schema_version"], 11)
+        self.assertEqual(set(manifest["sha256"]), {"reference.db", "expected.json", "schema.sql", "producer-rules.json"})
+        check_producer_rules(self, root, manifest)
+        oversize = json.loads((root / "producer-rules.json").read_text())["oversize_hash"]
+        self.assertEqual(oversize["input"], "codegraph:oversize:1048577")
+        self.assertEqual(oversize["sha256"], hashlib.sha256(oversize["input"].encode()).hexdigest())
+        for name, digest in manifest["sha256"].items():
+            self.assertEqual(hashlib.sha256((root / name).read_bytes()).hexdigest(), digest, name)
+        self.assertEqual((root / ".gitattributes").read_text(), "reference.db binary\n")
+        expected = json.loads((root / "expected.json").read_text())
+        with sqlite3.connect(f"file:{root / 'reference.db'}?mode=ro", uri=True) as db:
+            self.assertEqual(db.execute("PRAGMA integrity_check").fetchall(), [("ok",)])
+            self.assertEqual(db.execute("PRAGMA foreign_key_check").fetchall(), [])
+            for case in expected:
+                self.assertEqual([list(row) for row in db.execute(case["sql"])], case["rows"], case["id"])
+            schema = "\n".join(row[0] for row in db.execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type,name")) + "\n"
+            self.assertEqual(schema, (root / "schema.sql").read_text())
+            self.assertEqual(db.execute("SELECT MAX(version) FROM schema_versions").fetchone()[0], manifest["schema_version"])
+            self.assertEqual(db.execute("SELECT value FROM project_metadata WHERE key='indexed_with_version'").fetchone()[0], "1.6.2")
+            self.assertEqual(manifest["extracted_node_kinds"], [row[0] for row in db.execute("SELECT DISTINCT kind FROM nodes ORDER BY kind")])
+            self.assertEqual(manifest["extracted_edge_kinds"], [row[0] for row in db.execute("SELECT DISTINCT kind FROM edges ORDER BY kind")])
+            self.assertTrue(set(manifest["extracted_node_kinds"]) <= NODE_KINDS)
+            self.assertTrue(set(manifest["extracted_edge_kinds"]) <= EDGE_KINDS)
+            self.assertEqual(db.execute("SELECT name FROM nodes WHERE name='mustNotBeIndexed'").fetchall(), [])
+            indexed = {row[0] for row in db.execute("SELECT path FROM files")}
+            self.assertEqual(indexed, {str(path.relative_to(ROOT / "source")) for path in (ROOT / "source").rglob("*") if path.is_file() and path.suffix != ".json" and path.name != "excluded.ts"})
 
 
 if __name__ == "__main__":

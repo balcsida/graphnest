@@ -77,6 +77,7 @@ superseded design decisions.
 | REST API | `/v1/...` | Bearer token or, where supported, same-origin browser session |
 | Streamable HTTP MCP | `/mcp` | Bearer API token, or an OAuth access token obtained through the built-in authorization server |
 | Stdio MCP proxy | `graphnest-mcp` | Uses `GRAPHNEST_SERVER_URL` and `GRAPHNEST_TOKEN` |
+| Command-line tool | `graphnest` (`graph import codegraph`, `graph status`) | Uses `GRAPHNEST_SERVER_URL` and `GRAPHNEST_TOKEN` or `GRAPHNEST_TOKEN_FILE`; offline for a dry run |
 | Health and observability | `/healthz`, `/readyz`, `/metrics` | Intended for deployment health checks and monitoring |
 
 REST routes accept exactly one bearer credential or browser session; mixed credentials are rejected. MCP remains bearer-only; with `GRAPHNEST_MCP_OAUTH=true` MCP clients obtain that bearer token themselves through OAuth 2.1 (see [Operations](docs/operations.md#mcp-oauth-authorization-server)).
@@ -220,6 +221,33 @@ curl --fail-with-body -X POST "https://graphnest.example/v1/admin/api-tokens" \
   -H 'Content-Type: application/json' \
   -d '{"repository_ids":[101],"expires_at":"2026-08-01T00:15:00Z"}'
 ```
+
+## Importing a local CodeGraph index
+
+The `graphnest` command reads an existing [CodeGraph](https://github.com/colbymchenry/codegraph) index (`.codegraph/codegraph.db`, schema versions 9, 10 and 11 from CodeGraph 1.6.0 to 1.6.2) and converts it to the graph artifact that `POST /v1/graph/uploads` accepts, without re-indexing, without CodeGraph installed, and without cgo. The reader opens the database read-only inside one transaction, so a CodeGraph watcher or daemon that still has it open is left alone and nothing under `.codegraph/` is written.
+
+```sh
+go build ./cmd/graphnest
+./graphnest graph import codegraph --dry-run --repo . --repository-id 101
+./graphnest graph import codegraph --output graph.pb --repo . --repository-id 101
+```
+
+The dry run prints one JSON document on stdout: the index path, schema and producer version, the commit (`git rev-parse HEAD` in `--repo`, or `--commit`), counts by node and edge kind, unresolved-reference and extraction-error diagnostics, the artifact size and content hash, a `freshness` block, and `published: false`. Diagnostics go to stderr; the exit code is 0, 1 for a failed import and 2 for a usage error.
+
+Freshness is checked against the commit's own content, not the working tree: `graphnest` streams `git archive` of the commit and hashes every file the index covers the way CodeGraph does (SHA-256 of Node's UTF-8 decoding, or CodeGraph 1.6.1's size stamp above 1 MiB), then lists `modified` files, indexed files that are `not_in_commit` (untracked or deleted content), and source files at the commit that are `not_indexed` according to CodeGraph's own extension and ignore rules, the commit's root `.gitignore` and its `codegraph.json`. A matching `HEAD` or a clean checkout is not proof; only `status: fresh` is. Indexes from an unknown CodeGraph version, or whose files are symlinks or submodules at the commit, are `unverifiable`. `--output FILE` writes the artifact only when the index is fresh and CodeGraph reports it complete; otherwise it prints the same report, says why on stderr and exits 1. Without `--dry-run` or `--output`, the same command publishes a fresh, complete index: it reads the server's indexed commit and the publication preflight, refuses when the commit differs from the index's, when the token lacks publication rights, when `--expected-generation` does not name the active published generation, or when another producer's generation is active and `--replace-producer` is absent, then uploads with the observed generation as its precondition. `graphnest graph upload graph.pb --repository-id 101` publishes an artifact written earlier with the same checks. Transport and server failures are retried up to three times; the server deduplicates identical content, so a retry after a lost response is reported as `deduplicated` rather than published twice. A failed upload leaves the previous generation active, and SCIP navigation is never affected. `graphnest graph status --repository-id 101` shows the repository and graph state the server holds, using the same environment variables as `graphnest-mcp` (`GRAPHNEST_SERVER_URL`, and `GRAPHNEST_TOKEN` or a file named by `GRAPHNEST_TOKEN_FILE`; `GRAPHNEST_CA_FILE` adds a private CA). The token is never accepted on the command line and never follows a redirect to another host. See [Operations](docs/operations.md#importing-a-local-codegraph-index).
+
+#### Install the command-line tool
+
+Each GitHub release attaches `graphnest` binaries for `linux/amd64`, `linux/arm64`, `darwin/amd64` and `darwin/arm64` (`graphnest_<version>_<os>_<arch>`), `graphnest_<version>_checksums.txt` and `graphnest_<version>_dependencies.txt`, the module inventory of the Linux build. They are static, need no CodeGraph and no cgo, and are attested with build provenance. Download a binary and the checksums file, then verify and run it:
+
+```sh
+sha256sum -c --ignore-missing graphnest_<version>_checksums.txt   # shasum -a 256 -c on macOS
+gh attestation verify graphnest_<version>_<os>_<arch> --repo balcsida/graphnest
+chmod +x graphnest_<version>_<os>_<arch>
+./graphnest_<version>_<os>_<arch> doctor --repo /path/to/checkout
+```
+
+`graphnest doctor` is the first command to run: it checks, read-only, that git works, that `--repo` has a commit, that the CodeGraph index is readable and fresh, and, when `GRAPHNEST_SERVER_URL` is set, that the server accepts the token. `graph import codegraph` and `graph upload` take `--format text` for a readable report instead of JSON. `make cli VERSION=<version>` builds the same files into `dist/cli/`.
 
 ## Dependencies & Licenses (opt-in)
 
