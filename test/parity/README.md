@@ -178,3 +178,17 @@ transcription of its source:
 byte-identical to these fixtures, so regenerate and copy together.
 
 The upstream schema is distributed under `../fixtures/codegraph/UPSTREAM-LICENSE`.
+
+## Gate answers for a real repository
+
+`gate-answers.mjs` asks an already indexed repository the Stage 2 gate questions through the pinned
+CodeGraph `ToolHandler` and writes the raw tool results. It opens the existing index read-only and never indexes:
+
+```sh
+env -i PATH=<pinned node dir>:/usr/bin:/bin HOME="$(mktemp -d)" CODEGRAPH_KERNEL=0 CODEGRAPH_NO_RELAUNCH=1 \
+  DO_NOT_TRACK=1 CODEGRAPH_NO_DAEMON=1 CODEGRAPH_NO_WATCH=1 \
+  node test/parity/gate-answers.mjs <upstream-dir> <repo-root> <out.json> <symbol> <file>
+```
+
+`<file>` is a repository-relative path; `codegraph_files` is asked for its directory. Point
+`GRAPHNEST_GATE_CODEGRAPH_ANSWERS` at `<out.json>` when running `TestCodeGraphImportGate` (`test/e2e`).
