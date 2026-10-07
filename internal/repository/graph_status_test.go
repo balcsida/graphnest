@@ -11,12 +11,24 @@ import (
 )
 
 type graphGenerationReader struct {
-	generation *api.GraphActiveGeneration
-	err        error
+	generations []api.GraphActiveGeneration
+	err         error
 }
 
-func (reader *graphGenerationReader) ActiveGraphGeneration(context.Context, int64) (*api.GraphActiveGeneration, error) {
-	return reader.generation, reader.err
+func (reader *graphGenerationReader) ActiveGraphGenerations(context.Context, int64) ([]api.GraphActiveGeneration, error) {
+	return reader.generations, reader.err
+}
+
+func generations(values ...api.GraphActiveGeneration) *graphGenerationReader {
+	return &graphGenerationReader{generations: values}
+}
+
+func published(commit string) api.GraphActiveGeneration {
+	return api.GraphActiveGeneration{Commit: commit, Source: api.GraphSourceExternal, Producer: "codegraph"}
+}
+
+func derived(commit string) api.GraphActiveGeneration {
+	return api.GraphActiveGeneration{Commit: commit, Source: api.GraphSourceSCIP, Producer: "scip"}
 }
 
 func TestStatusReportsGraphGeneration(t *testing.T) {
@@ -33,8 +45,11 @@ func TestStatusReportsGraphGeneration(t *testing.T) {
 	}{
 		{"no reader wired", nil, api.GraphStatusUnknown, "", ""},
 		{"no active generation", &graphGenerationReader{}, api.GraphStatusAbsent, "", ""},
-		{"generation for an earlier commit", &graphGenerationReader{generation: &api.GraphActiveGeneration{Commit: older, Producer: "scip"}}, api.GraphStatusStale, older, "scip"},
-		{"matches indexed revision", &graphGenerationReader{generation: &api.GraphActiveGeneration{Commit: indexed, Producer: "codegraph"}}, api.GraphStatusCurrent, indexed, "codegraph"},
+		{"published current and SCIP-derived current", generations(published(indexed), derived(indexed)), api.GraphStatusCurrent, indexed, "codegraph"},
+		{"published stale and SCIP-derived current", generations(published(older), derived(indexed)), api.GraphStatusCurrent, indexed, "scip"},
+		{"published stale, no SCIP-derived", generations(published(older)), api.GraphStatusStale, older, "codegraph"},
+		{"SCIP-derived stale only", generations(derived(older)), api.GraphStatusStale, older, "scip"},
+		{"both stale", generations(published(older), derived(older)), api.GraphStatusStale, older, "codegraph"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			store := &serviceStore{repository: Repository{ID: 1, GitHubID: 101, Name: "acme/one", IndexedSHA: indexed, SearchNode: "node-a"}}

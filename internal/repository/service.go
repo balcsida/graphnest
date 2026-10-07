@@ -49,10 +49,10 @@ type SCIPIndexReader interface {
 	SCIPIndexCommit(context.Context, int64) (string, error)
 }
 
-// GraphGenerationReader returns a repository's active v2 graph generation, or nil
-// when none is active.
+// GraphGenerationReader returns a repository's active v2 graph generations: the
+// published one first, then the SCIP-derived one; empty when none is active.
 type GraphGenerationReader interface {
-	ActiveGraphGeneration(context.Context, int64) (*api.GraphActiveGeneration, error)
+	ActiveGraphGenerations(context.Context, int64) ([]api.GraphActiveGeneration, error)
 }
 
 type Service struct {
@@ -102,17 +102,26 @@ func (service *Service) withGraphStatus(ctx context.Context, repo Repository, su
 	if service.Graph == nil {
 		return summary, nil
 	}
-	generation, err := service.Graph.ActiveGraphGeneration(ctx, repo.ID)
+	generations, err := service.Graph.ActiveGraphGenerations(ctx, repo.ID)
 	if err != nil {
 		return api.RepositorySummary{}, err
 	}
-	if generation == nil {
+	if len(generations) == 0 {
 		summary.GraphStatus = api.GraphStatusAbsent
 		return summary, nil
 	}
-	summary.GraphCommit = generation.Commit
-	summary.GraphProducer = generation.Producer
-	if generation.Commit == repo.IndexedSHA {
+	// Report the generation the graph tools use: the first current one, else
+	// the published one (listed first).
+	chosen := generations[0]
+	for _, generation := range generations {
+		if generation.Commit == repo.IndexedSHA {
+			chosen = generation
+			break
+		}
+	}
+	summary.GraphCommit = chosen.Commit
+	summary.GraphProducer = chosen.Producer
+	if chosen.Commit == repo.IndexedSHA {
 		summary.GraphStatus = api.GraphStatusCurrent
 	} else {
 		summary.GraphStatus = api.GraphStatusStale

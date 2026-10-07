@@ -151,20 +151,17 @@ func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit stri
 }
 
 // publishSCIPGraphV2 activates the v2 generation derived from a SCIP upload,
-// which the entity, discovery, exploration and symbol workflows read. It only
-// ever replaces an absent or SCIP-derived generation: a generation another
-// producer published stays active. A nil generation (the derived graph did not
-// fit the generation limits) retires the previous SCIP-derived one, so the
-// repository status reports absent rather than an older index's content.
+// which the entity, discovery, exploration and symbol workflows read when no
+// published generation is current. It only ever reads, replaces or retires the
+// SCIP-derived slot; a publisher's generation is never touched. A nil
+// generation (the derived graph did not fit the generation limits) retires the
+// previous SCIP-derived one, so readiness falls back to the published
+// generation or reports absent rather than an older index's content.
 func publishSCIPGraphV2(ctx context.Context, tx pgx.Tx, repositoryID int64, generation *graphv2.Artifact) error {
 	var activeID int64
-	var source GraphSource
-	err := tx.QueryRow(ctx, `select id, source from graph_uploads where repository_id=$1 and active and schema_version=2`, repositoryID).Scan(&activeID, &source)
+	err := tx.QueryRow(ctx, `select id from graph_uploads where repository_id=$1 and active and schema_version=2 and source='scip'`, repositoryID).Scan(&activeID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return err
-	}
-	if activeID != 0 && source != GraphSourceSCIP {
-		return nil
 	}
 	if generation == nil {
 		if activeID == 0 {

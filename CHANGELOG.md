@@ -37,11 +37,18 @@ the compatibility and migration notes before upgrading.
 
 ### Changed
 
-- `graph_uploads` keeps one active generation per repository and artifact
-  version (migration 038). A v2 publication no longer retires the v1
-  generation that `context`, `impact` and `trace` read, `expected_generation`
-  names the active v2 generation, and replacing the SCIP-derived generation
-  needs `replace_producer=true` like any other producer change.
+- `graph_uploads` keeps one active v1 generation per repository (migration 038)
+  and two active v2 generations, a published one and a SCIP-derived one
+  (migration 039). A v2 publication no longer retires the v1 generation that
+  `context`, `impact` and `trace` read, and a SCIP upload never touches a
+  publisher's generation. `expected_generation` names the active published
+  generation, `replace_producer=true` is needed only when the published
+  generation's producer differs, and the graph tools use the published
+  generation when it is at the indexed commit, otherwise the SCIP-derived one,
+  so a stale publisher no longer causes `graph_missing`. Both migrations need
+  writers drained first, as [graph storage](docs/graph-storage.md#rollout-and-recovery)
+  describes, because old binaries cannot run against retained inactive
+  generations.
 - Release smoke tests, including the scan for fixable HIGH/CRITICAL
   vulnerabilities, now run on the amd64 images only. The arm64 images are
   still published with SBOMs and provenance, but are no longer smoke-tested or

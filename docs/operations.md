@@ -74,13 +74,13 @@ owner, transport secret, synchronization loop, or derived graph volume.
 
 ### What builds a graph
 
-A repository has up to two active graph generations, one per artifact version
-(see [graph storage](graph-storage.md)):
+A repository has up to three active graph generations: one v1 and, for v2, one
+published and one SCIP-derived (see [graph storage](graph-storage.md)):
 
 | Generation | Serves | Built by |
 | --- | --- | --- |
 | v1 | `context`, `impact`, `trace` (REST `/v1/graph/context`, `/impact`, `/trace`) | The indexer's optional `graphnest-scanner enrich` run (`GRAPHNEST_SCANNER_PATH`, source `managed`); an administrator's v1 artifact upload to `POST /v1/graph/uploads` (`external`); or a SCIP upload (`scip`, used when neither of the others exists). |
-| v2 | `graph_capabilities`, `graph_discover`, `graph_callers`, `graph_callees`, `graph_files`, `graph_impact_radius`, `explore` (REST `/v1/graph/capabilities`, `/discover`, `/callers`, `/callees`, `/files`, `/impact-radius`, `/explore`) | A SCIP upload to `POST /v1/scip/uploads` (producer `scip`), or a CodeGraph artifact published to `POST /v1/graph/uploads` with the v2 content type. |
+| v2 | `graph_capabilities`, `graph_discover`, `graph_callers`, `graph_callees`, `graph_files`, `graph_impact_radius`, `explore` (REST `/v1/graph/capabilities`, `/discover`, `/callers`, `/callees`, `/files`, `/impact-radius`, `/explore`) | Two slots: a SCIP upload to `POST /v1/scip/uploads` fills the SCIP-derived slot (producer `scip`), and a CodeGraph artifact published to `POST /v1/graph/uploads` with the v2 content type fills the published slot. The tools use the published generation when it is at the indexed commit, otherwise the SCIP-derived one. |
 
 Nothing else builds a v2 generation. A default deployment therefore has no
 graph for any repository until a SCIP index is uploaded for its indexed
@@ -90,6 +90,11 @@ tools report `graph_missing`. Every generation is pinned to the exact indexed
 commit, so each new default-branch commit needs a new SCIP upload (the CI job
 described in the README) before the graph tools answer again; until then the
 repository status reports `graph_status: stale`.
+
+The two v2 slots are independent. A SCIP upload never replaces, retires or
+needs permission to coexist with a publisher's generation, and a publication
+never touches the SCIP-derived one, so a publisher whose commit has gone stale
+does not stop the graph tools answering from the current SCIP upload.
 
 A SCIP-derived generation describes what the index records: entities at their
 definitions with the indexer's kind, documentation and signature; `references`
@@ -105,17 +110,22 @@ no file facts: `graph_files` lists nothing and `explore` returns graph facts
 without source excerpts; read source with `read_file`. A derived graph that
 does not fit a generation (500,000 entities, 2,000,000 edges or the 128 MiB
 artifact budget) is dropped: the SCIP navigation data is stored, the previous
-SCIP-derived generation is retired, and the repository status reports
-`graph_status: absent`.
+SCIP-derived generation is retired, and the repository status reports the
+published generation if there is one, otherwise `graph_status: absent`.
 
 ### Checking readiness
 
 `GET /v1/repositories/{id}` (MCP `get_repository_status`) reports
 `scip_status` and `graph_status` (`current`, `stale`, `absent` or `unknown`)
 with `graph_commit` and `graph_producer`; the graph tools need
-`graph_status: current`. `GET /v1/graph/repositories/{id}/status` reports the
-v1 state (`ready`, `fallback`, `pending`, `degraded` or `not_indexed`) and,
-under `publication`, the active v2 generation a publisher names.
+`graph_status: current`. `graph_*` describes the v2 generation the tools would
+use: the first current one (published, then SCIP-derived); if none is current,
+the published generation if present, else the SCIP-derived one; `absent` when
+there is none. `GET /v1/graph/repositories/{id}/status` reports the v1 state
+(`ready`, `fallback`, `pending`, `degraded` or `not_indexed`) and, under
+`publication`, `active_generation`, which is the published slot only. A
+publisher therefore sees its own generation go stale while the SCIP-derived
+generation keeps the tools answering.
 
 ### Troubleshooting graph errors
 
@@ -134,7 +144,7 @@ message "graph is not ready".
 ### Recovering existing repositories after an upgrade
 
 Generations are built when an index is uploaded; the migration that
-introduces per-version generations (038) adds none for existing uploads.
+introduces per-slot generations (038, 039) adds none for existing uploads.
 Repositories indexed with SCIP before the upgrade keep reporting
 `graph_missing` from the v2 tools until their SCIP index is uploaded again.
 Re-run the SCIP upload job for the current indexed commit (an upload for the
@@ -191,13 +201,13 @@ curl -X POST "$GRAPHNEST/v1/graph/uploads?repository_id=101&commit=$SHA&expected
   -H 'Content-Type: application/vnd.graphnest.graph.v2+protobuf' --data-binary @graph.pb
 ```
 
-`expected_generation` names the active v2 generation; use `0` when none is
-active. The v1 generation is a separate slot and is neither named nor retired
-by a v2 publication. Replacing a generation from another producer, such as
-the `scip` generation GraphNest derives from a SCIP upload, also needs
-`replace_producer=true`; later SCIP uploads then leave the published
-generation alone until it is replaced again. The token, grant and indexed commit are checked
-before the body is read and again after parsing. The expected generation and
+`expected_generation` names the active published generation; use `0` when none
+is active. The v1 generation and the `scip` generation GraphNest derives from a
+SCIP upload are separate slots, neither named nor retired by a v2 publication,
+and SCIP uploads leave the published generation alone. Replacing a published
+generation from another producer name needs `replace_producer=true`. The token,
+grant and indexed commit are checked before the body is read and again after
+parsing. The expected generation and
 commit are compared under the repository lock.
 
 | Response | Meaning | Publisher action |
@@ -206,7 +216,7 @@ commit are compared under the repository lock.
 | `200`, `deduplicated: true` | The active generation already holds this exact content (a retry) | None |
 | `409 not_indexed` | `commit` is not the indexed commit | Re-index at the new commit |
 | `409 generation_conflict` | Another publication or a new indexed commit landed since preflight | Read status again and decide |
-| `409 producer_conflict` | Active generation is from another producer | Retry with `replace_producer=true` if intended |
+| `409 producer_conflict` | Active published generation is from another producer | Retry with `replace_producer=true` if intended |
 | `403 forbidden` | No grant, or no publisher identity | Ask an administrator for a grant |
 
 Each generation records its publisher (`api_token:<user id>`), producer,

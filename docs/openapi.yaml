@@ -422,16 +422,16 @@ paths:
       description: >-
         Replace the repository's graph for its current indexed commit. A v1 artifact requires an administrator and answers 204.
         A v2 artifact requires an administrator or a repository publication grant on top of read access, names the active
-        generation it replaces (expected_generation, 0 when none is active; read it from the status publication block), and
-        answers 200 with the publication result. Replacing another producer's generation also requires replace_producer=true.
+        generation it replaces (expected_generation, 0 when none is published; the SCIP-derived generation is a separate slot; read it from the status publication block), and
+        answers 200 with the publication result. Replacing a published generation from another producer also requires replace_producer=true.
         An identical retry of the active v2 content succeeds with deduplicated=true whatever it expected. The credential,
         grant, and indexed commit are checked before the body is read and again after it is parsed.
       security: [{bearerAuth: []}]
       parameters:
         - {name: repository_id, in: query, required: true, schema: {type: integer, format: int64, minimum: 1}}
         - {name: commit, in: query, required: true, schema: {type: string, pattern: '^[0-9a-f]{40}$'}}
-        - {name: expected_generation, in: query, required: false, description: Required for v2 and rejected for v1., schema: {type: integer, format: int64, minimum: 0}}
-        - {name: replace_producer, in: query, required: false, description: v2 only., schema: {type: string, enum: ['true']}}
+        - {name: expected_generation, in: query, required: false, description: Required for v2 and rejected for v1. For v2 it names the active published generation (0 when none); the SCIP-derived generation is never named., schema: {type: integer, format: int64, minimum: 0}}
+        - {name: replace_producer, in: query, required: false, description: v2 only. Needed only when the active published generation's producer differs from the artifact's., schema: {type: string, enum: ['true']}}
       requestBody:
         required: true
         content:
@@ -459,7 +459,7 @@ paths:
         '403': {description: Graph publication is not permitted, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
         '404': {$ref: '#/components/responses/NotFound'}
         '405': {$ref: '#/components/responses/InvalidRequest'}
-        '409': {description: 'Commit is not the indexed commit (not_indexed), the active generation or indexed commit changed since preflight (generation_conflict), or the active generation came from another producer without replace_producer=true (producer_conflict)', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '409': {description: 'Commit is not the indexed commit (not_indexed), the active generation or indexed commit changed since preflight (generation_conflict), or the active published generation came from another producer without replace_producer=true (producer_conflict)', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
         '413': {$ref: '#/components/responses/InvalidRequest'}
         '415': {$ref: '#/components/responses/InvalidRequest'}
         '503': {$ref: '#/components/responses/Unavailable'}
@@ -1753,14 +1753,14 @@ components:
           type: string
           enum: [current, stale, absent, unknown]
           description: >-
-            Whether the active v2 graph generation is current with indexed_sha.
+            Whether the v2 graph generation the tools would use (published first, then SCIP-derived) is current with indexed_sha.
             The graph tools fail unless it is "current".
         graph_commit:
           type: string
-          description: Commit of the active graph generation, when one exists.
+          description: Commit of that graph generation, when one exists.
         graph_producer:
           type: string
-          description: Producer of the active graph generation (for example scip or codegraph), when one exists.
+          description: Producer of that graph generation (for example scip or codegraph), when one exists.
     GraphStatus:
       type: object
       additionalProperties: false
@@ -1777,7 +1777,7 @@ components:
     GraphPublication:
       type: object
       additionalProperties: false
-      description: Publisher preflight. permitted is true for administrators and repository publication grantees. Name active_generation.id as expected_generation, or 0 when it is absent.
+      description: Publisher preflight. permitted is true for administrators and repository publication grantees. active_generation is the published v2 generation only, not the SCIP-derived one the graph tools may use instead. Name active_generation.id as expected_generation, or 0 when it is absent.
       required: [upload_artifact_versions, max_upload_bytes, permitted]
       properties:
         upload_artifact_versions: {type: array, items: {type: integer, enum: [1, 2]}}

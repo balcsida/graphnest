@@ -46,7 +46,7 @@ func TestGraphPublicationGrants(t *testing.T) {
 	}
 }
 
-func TestActiveGraphGenerationDescribesTheV2Slot(t *testing.T) {
+func TestActiveGraphGenerationDescribesThePublishedSlot(t *testing.T) {
 	s, id := readyGraphStore(t, testSHA('a'))
 	if active, err := s.ActiveGraphGeneration(t.Context(), id); err != nil || active != nil {
 		t.Fatalf("empty repository active=%#v err=%v", active, err)
@@ -70,6 +70,22 @@ func TestActiveGraphGenerationDescribesTheV2Slot(t *testing.T) {
 	}
 	if status, err := s.GraphStatus(t.Context(), id); err != nil || status.State != api.GraphStateReady || status.Source != api.GraphSourceManaged {
 		t.Fatalf("v1 slot after v2 publication=%#v err=%v", status, err)
+	}
+}
+
+// The SCIP-derived generation is a separate slot: it is not what a publisher
+// names as its expected generation.
+func TestActiveGraphGenerationIgnoresTheSCIPDerivedSlot(t *testing.T) {
+	s, id := readyGraphStore(t, testSHA('a'))
+	if err := s.ReplaceSCIP(t.Context(), id, testSHA('a'), uploadWith("a.go", globalSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	if active, err := s.ActiveGraphGeneration(t.Context(), id); err != nil || active != nil {
+		t.Fatalf("published slot after SCIP upload=%#v err=%v", active, err)
+	}
+	all, err := s.ActiveGraphGenerations(t.Context(), id)
+	if err != nil || len(all) != 1 || all[0].Source != api.GraphSourceSCIP {
+		t.Fatalf("active generations=%#v err=%v", all, err)
 	}
 }
 
