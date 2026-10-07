@@ -30,6 +30,13 @@ the compatibility and migration notes before upgrading.
 
 ### Added
 
+- `graphnest`, a command-line tool. `graphnest graph import codegraph
+  --dry-run` reads an existing CodeGraph index (schema version 9, CodeGraph
+  1.6.0) through a pure-Go SQLite reader in one read-only transaction,
+  converts it to the v2 graph artifact and reports counts by kind,
+  diagnostics and the artifact hash as JSON; `graphnest graph status` shows
+  the repository and graph state the server holds. Server binaries do not
+  link the SQLite reader. Artifact output and publication follow.
 - Repository status (`GET /v1/repositories/{id}`, MCP `get_repository_status`)
   reports `graph_status` (`current`, `stale`, `absent`, `unknown`),
   `graph_commit` and `graph_producer` next to `scip_status`, so a missing or

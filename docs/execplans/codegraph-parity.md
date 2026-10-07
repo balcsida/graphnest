@@ -5,6 +5,27 @@ Implementation, validation, draft publication, and release are separate states.
 
 ## Progress
 
+- 2026-10-07: S2.01 CLI foundation on `feat/codegraph/s2-01-cli`, based on
+  `main` after PR #141. `internal/graphimport` reads a CodeGraph index
+  without cgo (`modernc.org/sqlite`) through a `file:` URI in `mode=ro`
+  inside one read-only transaction, detects the schema version from
+  `schema_versions` and the required columns, bounds row counts by the
+  artifact limits, and converts the facts to the v2 artifact with the rules
+  the S1.02 fixture oracle used. `TestImportMatchesOracle` reads the pinned
+  `reference.db` through the production path and reproduces the Python-bridge
+  oracle's artifact by `proto.Equal`, semantic hash and marshaled bytes. A
+  live WAL writer in another process, holding an uncommitted transaction, is
+  read consistently and left untouched before and after it is killed.
+  `internal/client` reads configuration from the environment only and reuses
+  the bounded HTTP client, so a token never follows a cross-origin redirect.
+  `cmd/graphnest` offers `graph import codegraph --dry-run` (JSON report on
+  stdout, diagnostics on stderr, exit codes 0/1/2) and `graph status`. A test
+  lists the dependencies of every server command and fails on the SQLite
+  module or the importer.
+  - Freshness is reported as `unverified`; `--output` and publication are the
+    next layers. The dry run without `--repository-id` hashes the artifact
+    for the identity `unassigned`, which the report states.
+
 - 2026-09-27: S1.07 symbol tools on `feat/codegraph/s1-07-symbol-tools`, based
   on `main`. The pinned harness now also runs the upstream `codegraph_callers`,
   `codegraph_callees`, and `codegraph_impact` handlers: eleven new real answers,
@@ -474,6 +495,28 @@ these tests.
 
 ## Decisions
 
+- Stage 2 starts from `main` after PR #141 (owner override of the Stage 1
+  gate order): S1.08 publication is the Stage 1 piece the importer needs.
+  One pull request per S2 step, stacked with `gh stack`.
+- PR #141 settled the interplay Stage 2 depends on: a generation published
+  through `POST /v1/graph/uploads` and the generation GraphNest derives from
+  a SCIP upload occupy separate v2 slots (migration 039). Readiness uses the
+  published generation when it is at the indexed commit and otherwise the
+  SCIP-derived one, `expected_generation` names the published slot only, a
+  SCIP upload never needs `replace_producer`, and the repository status
+  reports the generation the tools would use. No analyzer switches by
+  default; staleness is reported per generation.
+- The CGO-free SQLite reader is `modernc.org/sqlite` v1.60.1: BSD-3-Clause
+  with a published third-party licence inventory, SQLite 3.53.4 (past
+  CVE-2026-11822), SQLite's own unix locking and memory-mapped `-shm` index,
+  4.5 MB added to a stripped binary (ncruces/go-sqlite3: MIT, 5.7 MB, a
+  re-implemented VFS). Only `cmd/graphnest` may link it. Measured on
+  darwin/arm64 with `-ldflags='-s -w'`; `govulncheck` reports nothing.
+- Supported CodeGraph schema versions are 9 (the pinned 1.6.0 build) and,
+  with S2.02, 10 and 11 (CodeGraph 1.6.1 and 1.6.2; both migrations landed
+  in 1.6.1). Other versions fail with the version found and what to do. The
+  upstream `v1.6.0` tag is commit `dfccdf62`, not the repository's pin
+  `b9ca4b79`; both write schema 9 and the pin stays.
 - Follow accepted ADR-0014 (PostgreSQL graph queries), which supersedes ADR-0012;
   preserve ADR-0008 shared services, ADR-0009 exact-SHA reads, ADR-0013 ephemeral
   archives, and ADR-0015 optional-enrichment isolation.
@@ -697,6 +740,11 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 
 ## Remaining gaps
 
+- S2.01 verifies nothing about freshness: the dry run reports `unverified`
+  until S2.02 compares the index's file manifest with the commit's content.
+  Schema versions 10 and 11, `--output`, `graphnest graph upload`, the
+  import reports' recovery hints and CLI distribution belong to S2.02 to
+  S2.04.
 - S1.06b1 type hierarchy is implemented at the service level only. Level
   ordering uses byte order where the pinned source uses locale comparison, and
   a subtype with both `extends` and `implements` counts as `extends` rather than
@@ -749,6 +797,7 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 | S1.06b1 type relations and hierarchy | `feat/codegraph/type-hierarchy` | Implemented; focused unit, service and PostgreSQL checks pass; based on `main` | [PR #119](https://github.com/balcsida/graphnest/pull/119) |
 | S1.08 publication policy | `feat/codegraph/s1-08-publish-policy` | Implemented; unit race, PostgreSQL integration race (apart from clock-skewed supply-chain claims that fail on `main` too), vet, staticcheck and OpenAPI checks pass; based on `main` | [PR #123](https://github.com/balcsida/graphnest/pull/123) |
 | S1.07 symbol tools | `feat/codegraph/s1-07-symbol-tools` | Implemented; oracle, unit race, PostgreSQL integration race, vet, staticcheck, OpenAPI and parity-reference checks pass; based on `main` | [PR #124](https://github.com/balcsida/graphnest/pull/124) |
+| S2.01 CLI foundation and import pipeline | `feat/codegraph/s2-01-cli` | Implemented; oracle, unit, live-WAL, boundary, vet, staticcheck and govulncheck checks pass; based on `main` after PR #141 | Pending submission as the first layer of the Stage 2 stack |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66

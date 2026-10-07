@@ -224,6 +224,31 @@ commit, verified content hash, and activation/retirement times in
 `graph_uploads`, which is the publication audit trail. Revoking a grant does
 not retire generations already published.
 
+### Importing a local CodeGraph index
+
+`graphnest graph import codegraph` (`cmd/graphnest`) converts a colleague's
+existing CodeGraph index into the v2 artifact. It is the only GraphNest binary
+that links a SQLite reader, the pure-Go `modernc.org/sqlite` (BSD-3-Clause,
+SQLite 3.53.4); a test fails the build if any server command depends on it,
+so the `CGO_ENABLED=0` server images are unchanged. The index is opened
+through a `file:` URI with `mode=ro` inside one read-only transaction: a live
+CodeGraph writer in WAL mode keeps working, committed WAL content is read,
+uncommitted content is not, and the database, `-wal` and `-shm` files are
+not modified. Schema version 9 (CodeGraph 1.6.0) is accepted; other versions
+fail with the version found and what to do.
+
+```sh
+graphnest graph import codegraph --dry-run --repo /path/to/checkout --repository-id 101
+```
+
+The dry run never contacts the server. It prints the index and producer
+version, the commit, counts by kind, unresolved references and files with
+extraction errors, the artifact size and content hash, and a `freshness`
+block that is `unverified` in this release. `graphnest graph status
+--repository-id 101` reads `GET /v1/repositories/{id}` and the graph status
+with the publication preflight block. Credentials come from
+`GRAPHNEST_TOKEN` or `GRAPHNEST_TOKEN_FILE` only.
+
 ## Web console
 
 `graphnest-server` serves the browser console at `/`, `/repositories`,
