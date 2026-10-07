@@ -262,9 +262,14 @@ func TestDryRunWritesNothing(t *testing.T) {
 
 func TestVersion(t *testing.T) {
 	code, stdout, stderr := run(t, testEnv(nil), "version")
-	var out struct{ Version string }
-	if code != 0 || stderr != "" || json.Unmarshal([]byte(stdout), &out) != nil || out.Version == "" {
+	var out struct{ Version, Go, SQLite string }
+	if code != 0 || stderr != "" || json.Unmarshal([]byte(stdout), &out) != nil || out.Version == "" || !strings.HasPrefix(out.Go, "go") || out.SQLite == "" {
 		t.Fatalf("code %d stdout %q stderr %q", code, stdout, stderr)
+	}
+	Version = "1.2.3"
+	defer func() { Version = "" }()
+	if _, stdout, _ = run(t, testEnv(nil), "version"); !strings.Contains(stdout, `"version": "1.2.3"`) {
+		t.Fatalf("stdout %q", stdout)
 	}
 }
 

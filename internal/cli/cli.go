@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -27,10 +28,14 @@ const (
 
 const defaultTimeout = 2 * time.Minute
 
+// Version is set at build time with -ldflags "-X github.com/balcsida/graphnest/internal/cli.Version=<v>".
+var Version string
+
 const rootUsage = `usage: graphnest <command>
 
 commands:
   version   print the graphnest version
+  doctor    check the git, CodeGraph index and server setup for an import
   graph     import graph data and show graph status
 `
 
@@ -102,6 +107,8 @@ func dispatch(ctx context.Context, args []string, env Environment, stdout, stder
 		return nil
 	case "version":
 		return runVersion(args[1:], stdout, stderr)
+	case "doctor":
+		return runDoctor(ctx, args[1:], env, stdout, stderr)
 	case "graph":
 		return dispatchGraph(ctx, args[1:], env, stdout, stderr)
 	}
@@ -168,11 +175,24 @@ func runVersion(args []string, stdout, stderr io.Writer) error {
 	if err := parse(newFlags("version", "graphnest version", stderr), args); err != nil {
 		return err
 	}
-	version := "dev"
-	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
-		version = strings.TrimSpace(info.Main.Version)
+	version, sqlite := "dev", "unknown"
+	info, ok := debug.ReadBuildInfo()
+	if ok {
+		if info.Main.Version != "" && info.Main.Version != "(devel)" {
+			version = strings.TrimSpace(info.Main.Version)
+		}
+		for _, dep := range info.Deps {
+			if dep.Path == "modernc.org/sqlite" {
+				sqlite = dep.Version
+			}
+		}
+	}
+	if Version != "" {
+		version = Version
 	}
 	return writeJSON(stdout, struct {
 		Version string `json:"version"`
-	}{version})
+		Go      string `json:"go"`
+		SQLite  string `json:"sqlite"`
+	}{version, runtime.Version(), sqlite})
 }
