@@ -134,6 +134,7 @@ type GraphBoundary struct {
 	Repository   string `json:"repository,omitempty"`
 	Reason       string `json:"reason"`
 	Depth        int    `json:"depth,omitempty"`
+	Count        int    `json:"count,omitempty"`
 }
 
 type GraphContextRequest struct {

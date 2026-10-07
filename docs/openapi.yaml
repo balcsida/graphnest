@@ -2326,6 +2326,9 @@ components:
         repository: {type: string}
         reason: {type: string}
         depth: {type: integer}
+        count:
+          type: integer
+          description: Number of unrelated authorized repositories this summary stands for; absent on boundaries that name a repository or a depth.
     GraphContextResponse:
       oneOf:
         - {$ref: '#/components/schemas/GraphContextFoundResponse'}

@@ -174,13 +174,13 @@ func publicReference(value graphprotocol.Relationship, snapshots map[int64]Snaps
 }
 func publicBoundary(value graphprotocol.Boundary, snapshots map[int64]Snapshot) (api.GraphBoundary, error) {
 	if value.RepositoryID == 0 {
-		return api.GraphBoundary{Reason: value.Reason, Depth: value.Depth}, nil
+		return api.GraphBoundary{Reason: value.Reason, Depth: value.Depth, Count: value.Count}, nil
 	}
 	snapshot, ok := snapshots[value.RepositoryID]
 	if !ok {
 		return api.GraphBoundary{}, ErrGraphNotReady
 	}
-	return api.GraphBoundary{RepositoryID: snapshot.GitHubID, Repository: snapshot.Name, Reason: value.Reason, Depth: value.Depth}, nil
+	return api.GraphBoundary{RepositoryID: snapshot.GitHubID, Repository: snapshot.Name, Reason: value.Reason, Depth: value.Depth, Count: value.Count}, nil
 }
 func publicBoundaries(values []graphprotocol.Boundary, snapshots map[int64]Snapshot) ([]api.GraphBoundary, error) {
 	result := make([]api.GraphBoundary, 0, len(values))

@@ -249,6 +249,9 @@ func TestPublicIdentityRejectsUnknownBackendRepository(t *testing.T) {
 	if _, err := publicReference(graphprotocol.Relationship{SourceRepositoryID: 1, TargetRepositoryID: 2}, snapshots); !errors.Is(err, ErrGraphNotReady) {
 		t.Fatalf("publicReference() error = %v", err)
 	}
+	if got, err := publicBoundary(graphprotocol.Boundary{Reason: "graph_missing", Count: 3}, snapshots); err != nil || got != (api.GraphBoundary{Reason: "graph_missing", Count: 3}) {
+		t.Fatalf("publicBoundary() summary = %+v, %v", got, err)
+	}
 	if _, err := publicBoundary(graphprotocol.Boundary{RepositoryID: 2}, snapshots); !errors.Is(err, ErrGraphNotReady) {
 		t.Fatalf("publicBoundary() error = %v", err)
 	}
