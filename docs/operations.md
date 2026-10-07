@@ -69,16 +69,80 @@ docker compose -f deploy/compose/compose.yml down
 ## Graph operation and recovery
 
 PostgreSQL stores graph artifacts, upload metadata, job state, nodes, and
-edges. The server queries that state directly for context, impact, and trace;
-there is no separate graph owner, transport secret, synchronization loop, or
-derived graph volume.
+edges. The server queries that state directly; there is no separate graph
+owner, transport secret, synchronization loop, or derived graph volume.
 
-A graph answer is available only when the repository's current indexed SHA has
-a completed graph upload. Missing, stale, or failed graph state returns the
-documented graph status rather than falling back to another revision. Inspect
-repository status and graph jobs in PostgreSQL when diagnosing readiness.
+### What builds a graph
 
-Recovery uses the normal durable pipeline:
+A repository has up to two active graph generations, one per artifact version
+(see [graph storage](graph-storage.md)):
+
+| Generation | Serves | Built by |
+| --- | --- | --- |
+| v1 | `context`, `impact`, `trace` (REST `/v1/graph/context`, `/impact`, `/trace`) | The indexer's optional `graphnest-scanner enrich` run (`GRAPHNEST_SCANNER_PATH`, source `managed`); an administrator's v1 artifact upload to `POST /v1/graph/uploads` (`external`); or a SCIP upload (`scip`, used when neither of the others exists). |
+| v2 | `graph_capabilities`, `graph_discover`, `graph_callers`, `graph_callees`, `graph_files`, `graph_impact_radius`, `explore` (REST `/v1/graph/capabilities`, `/discover`, `/callers`, `/callees`, `/files`, `/impact-radius`, `/explore`) | A SCIP upload to `POST /v1/scip/uploads` (producer `scip`), or a CodeGraph artifact published to `POST /v1/graph/uploads` with the v2 content type. |
+
+Nothing else builds a v2 generation. A default deployment therefore has no
+graph for any repository until a SCIP index is uploaded for its indexed
+commit, and the native scanner only produces v1: with scanner enrichment
+alone, `context`, `impact` and `trace` work while the `graph_*` and `explore`
+tools report `graph_missing`. Every generation is pinned to the exact indexed
+commit, so each new default-branch commit needs a new SCIP upload (the CI job
+described in the README) before the graph tools answer again; until then the
+repository status reports `graph_status: stale`.
+
+A SCIP-derived generation describes what the index records: entities at their
+definitions with the indexer's kind, documentation and signature; `references`
+edges from the innermost definition whose enclosing range contains each
+reference occurrence (scip-go records enclosing ranges for functions and
+methods; an indexer that records none attributes references to the file); one
+`imports` edge per file and package; and `implements`, `type_of` and
+`references` edges from SCIP relationships. SCIP records references, not call
+expressions, so these generations contain no `calls` edges: `graph_callers`
+and `graph_callees` list references. Columns are the indexer's own code units
+(UTF-8 for scip-go), not UTF-16. SCIP carries no file contents, so there are
+no file facts: `graph_files` lists nothing and `explore` returns graph facts
+without source excerpts; read source with `read_file`. A derived graph that
+does not fit a generation (500,000 entities, 2,000,000 edges or the 128 MiB
+artifact budget) is dropped: the SCIP navigation data is stored, the previous
+SCIP-derived generation is retired, and the repository status reports
+`graph_status: absent`.
+
+### Checking readiness
+
+`GET /v1/repositories/{id}` (MCP `get_repository_status`) reports
+`scip_status` and `graph_status` (`current`, `stale`, `absent` or `unknown`)
+with `graph_commit` and `graph_producer`; the graph tools need
+`graph_status: current`. `GET /v1/graph/repositories/{id}/status` reports the
+v1 state (`ready`, `fallback`, `pending`, `degraded` or `not_indexed`) and,
+under `publication`, the active v2 generation a publisher names.
+
+### Troubleshooting graph errors
+
+REST answers `409` with one of these error codes; MCP tools return the same
+message. Earlier releases reported all of them as `graph_not_ready` with the
+message "graph is not ready".
+
+| Code | Meaning | What to do |
+| --- | --- | --- |
+| `not_indexed` | The repository has no indexed commit yet. | Wait for indexing; check `status` and `error_code` in the repository status. |
+| `graph_missing` | No generation is active for the indexed commit named in the message. Not retryable. | Upload a SCIP index for that commit, or publish a graph artifact; `graph_status` shows `absent` or `stale`. |
+| `generation_changed` | The repository was re-indexed or its graph replaced while the request ran. Retryable. | Retry. |
+| `discovery_unavailable` | The active v2 generation predates the current discovery projection. Not retryable. | Upload the SCIP index again or republish the artifact; a new generation carries the current projection. |
+| `graph_not_ready` | Graph state is inconsistent for the request: facts outside the authorized scope, or generation metadata that does not match the selected commit. Not retryable. | Compare `graph_commit` with `indexed_sha` in the repository status and upload again if they differ. |
+
+### Recovering existing repositories after an upgrade
+
+Generations are built when an index is uploaded; the migration that
+introduces per-version generations (038) adds none for existing uploads.
+Repositories indexed with SCIP before the upgrade keep reporting
+`graph_missing` from the v2 tools until their SCIP index is uploaded again.
+Re-run the SCIP upload job for the current indexed commit (an upload for the
+same commit replaces the previous one) or wait for the next default-branch
+push, which uploads a new index anyway. No Helm value or environment variable
+is involved.
+
+Recovery of lost graph state uses the normal durable pipeline:
 
 1. Restore PostgreSQL according to the database backup policy.
 2. Requeue indexing for repositories whose current indexed SHA has no completed
@@ -127,9 +191,12 @@ curl -X POST "$GRAPHNEST/v1/graph/uploads?repository_id=101&commit=$SHA&expected
   -H 'Content-Type: application/vnd.graphnest.graph.v2+protobuf' --data-binary @graph.pb
 ```
 
-Use `expected_generation=0` when no generation is active. Replacing a
-generation from another producer, such as the managed scanner, also needs
-`replace_producer=true`. The token, grant and indexed commit are checked
+`expected_generation` names the active v2 generation; use `0` when none is
+active. The v1 generation is a separate slot and is neither named nor retired
+by a v2 publication. Replacing a generation from another producer, such as
+the `scip` generation GraphNest derives from a SCIP upload, also needs
+`replace_producer=true`; later SCIP uploads then leave the published
+generation alone until it is replaced again. The token, grant and indexed commit are checked
 before the body is read and again after parsing. The expected generation and
 commit are compared under the repository lock.
 

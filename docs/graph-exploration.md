@@ -222,11 +222,15 @@ and are discarded if the credential, grant, indexed commit, or generation
 changes before delivery.
 
 Discovery and exploration require an artifact v2 generation with its discovery
-projection. Missing or stale data returns `graph_not_ready`; an empty ready
-result is never used to hide unavailable data. Capabilities report the selected
-generation and producer coverage separately from server workflows. v2
-generations are published through `POST /v1/graph/uploads` by administrators or
-repository publication grantees; see [operations](operations.md#publishing-v2-graph-generations).
+projection. A repository without one returns `graph_missing` (naming the
+indexed commit), a generation replaced mid-request returns
+`generation_changed`, and a generation without the current projection returns
+`discovery_unavailable`; an empty ready result is never used to hide
+unavailable data. Capabilities report the selected generation and producer
+coverage separately from server workflows. v2 generations are derived from
+SCIP uploads (producer `scip`) or published through `POST /v1/graph/uploads`
+by administrators or repository publication grantees; see
+[operations](operations.md#graph-operation-and-recovery).
 Session history, entity selectors, and qualified wildcard methods are not part
 of these public requests.
 

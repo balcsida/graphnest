@@ -90,6 +90,16 @@ using name overrides). Correct the database or migration problem before retrying
 `className`, `hosts`, and optional existing TLS Secret references. Keep the
 Zoekt Service internal: it is deliberately ClusterIP-only and has no Ingress.
 
+The graph tools (`graph_capabilities`, `graph_callers`, `explore` and the
+other `graph_*` tools, plus `context`, `impact` and `trace`) need a graph
+generation for the repository's indexed commit. The chart installs nothing
+that builds one: a SCIP index uploaded to `/v1/scip/uploads` for each indexed
+commit derives it, as does a published graph artifact. Until then those tools
+return `graph_missing` and the repository status reports `graph_status:
+absent`; see the [graph operation runbook](../../../docs/operations.md#graph-operation-and-recovery).
+The optional native scanner (`GRAPHNEST_SCANNER_PATH`) only serves `context`,
+`impact` and `trace`.
+
 SCIP uploads are ingested synchronously inside the request, so a large index
 can hold the connection open for minutes. Raise the ingress controller's
 response timeout above its default (often 30 or 60 seconds) with a

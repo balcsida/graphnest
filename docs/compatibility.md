@@ -24,9 +24,11 @@ pre-1.0 compatibility window, operators can explicitly use Docker's
 `GRAPHNEST_SCANNER_PATH=/usr/local/bin/graphnest-scanner` on the indexer. The
 indexer invokes its `enrich` subcommand on the same archive snapshot; it is not
 a standalone worker. The compatibility image is not published or selected
-automatically. Direct
-`.scip` uploads remain supported independently for code navigation and can
-supply exact-SHA graph data when native graph scanning is unavailable.
+automatically. The scanner produces v1 generations only, which serve
+`context`, `impact` and `trace`. Direct `.scip` uploads remain supported
+independently for code navigation and derive both the v1 fallback graph and
+the v2 generation the `graph_*` and `explore` tools read; without a SCIP
+upload or a published artifact those tools report `graph_missing`.
 
 `GRAPHNEST_ZOEKT_GIT_INDEX` remains a deprecated alias for
 `GRAPHNEST_ZOEKT_INDEX` when its basename is `zoekt-git-index`. New deployments
