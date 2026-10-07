@@ -114,7 +114,13 @@ type gate struct {
 }
 
 // transcript appends one Markdown section per step to w.
-type transcript struct{ w io.Writer }
+// transcript appends one Markdown section per step to w; maxLines > 0 cuts each
+// output block to that many lines (GRAPHNEST_GATE_TRANSCRIPT_LINES) for a
+// transcript that fits a pull request.
+type transcript struct {
+	w        io.Writer
+	maxLines int
+}
 
 type logWriter struct{ t *testing.T }
 
@@ -124,8 +130,12 @@ func (writer logWriter) Write(data []byte) (int, error) {
 }
 
 func (log transcript) step(name string, command, output any) {
+	pretty := prettyJSON(output)
+	if lines := strings.Split(pretty, "\n"); log.maxLines > 0 && len(lines) > log.maxLines {
+		pretty = strings.Join(lines[:log.maxLines], "\n") + fmt.Sprintf("\n... (%d more lines)", len(lines)-log.maxLines)
+	}
 	var section strings.Builder
-	fmt.Fprintf(&section, "## %s\n\n```\n%s\n```\n\n```json\n%s\n```\n\n", name, command, prettyJSON(output))
+	fmt.Fprintf(&section, "## %s\n\n```\n%s\n```\n\n```json\n%s\n```\n\n", name, command, pretty)
 	_, _ = io.WriteString(log.w, section.String())
 }
 
@@ -159,7 +169,8 @@ func (g *gate) openTranscript() {
 			g.t.Fatal(err)
 		}
 		g.t.Cleanup(func() { file.Close() })
-		g.transcript = transcript{w: file}
+		maxLines, _ := strconv.Atoi(os.Getenv("GRAPHNEST_GATE_TRANSCRIPT_LINES"))
+		g.transcript = transcript{w: file, maxLines: maxLines}
 	}
 	_, _ = io.WriteString(g.transcript.w, "# CodeGraph import gate\n\n"+
 		"The v1 graph job reports `enrichment_disabled`: this harness configures no scanner, which is also what a default deployment does. "+
