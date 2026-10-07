@@ -1282,7 +1282,7 @@ components:
     sessionCookie: {type: apiKey, in: cookie, name: __Host-graphnest_session, description: Browser session; unsafe methods require the exact configured public Origin.}
   responses:
     InvalidRequest: {description: Invalid request, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
-    GraphConflict: {description: Graph request conflict; error code is ambiguous, branch_not_indexed, or graph_not_ready, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+    GraphConflict: {description: 'Graph request conflict. Error codes: ambiguous (several authorized repositories match); branch_not_indexed; not_indexed (the repository has no indexed commit yet); graph_missing (no graph generation is active for the indexed commit named in the message; upload a SCIP index for that commit or publish a graph artifact, not retryable); generation_changed (the repository was re-indexed or its graph replaced during the request; retryable); discovery_unavailable (the active generation lacks the discovery projection; an operator must rebuild it); graph_not_ready (graph state is inconsistent for this request).', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     Unauthenticated: {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     Forbidden: {description: Administrator access required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
     AccountForbidden: {description: Account token request is not permitted for this durable principal or repository ceiling, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}

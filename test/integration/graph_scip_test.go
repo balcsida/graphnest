@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/balcsida/graphnest/internal/authn"
@@ -98,6 +99,28 @@ func TestSCIPUploadServesGraphTools(t *testing.T) {
 	}
 	if boundaries, _ := context["boundaries"].([]any); len(boundaries) > 0 {
 		t.Fatalf("context boundaries=%#v", boundaries)
+	}
+
+	// An indexed repository without any graph names what is missing and what
+	// to do, and is not reported as retryable.
+	other := h.seedRepository(t, 10, 102)
+	setGraphCommit(t, h, other, scipDemoSHA)
+	authorized := authn.NewStatic(map[string]authn.Principal{"user": {Subject: "user", InstallationID: 10, RepositoryIDs: []int64{101, 102}}})
+	missing := http.NewServeMux()
+	httpapi.RegisterGraphQueries(missing, authorized, service, 64<<10, 256<<10)
+	request := httptest.NewRequest(http.MethodPost, "/v1/graph/capabilities", strings.NewReader(`{"repo":102}`))
+	request.Header.Set("Authorization", "Bearer user")
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	missing.ServeHTTP(recorder, request)
+	var failure struct {
+		Error struct {
+			Code, Message string
+			Retryable     bool
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &failure); err != nil || recorder.Code != http.StatusConflict || failure.Error.Code != "graph_missing" || failure.Error.Retryable || !strings.Contains(failure.Error.Message, scipDemoSHA) || !strings.Contains(failure.Error.Message, "SCIP") {
+		t.Fatalf("repository without graph: status=%d body=%s err=%v", recorder.Code, recorder.Body.String(), err)
 	}
 }
 

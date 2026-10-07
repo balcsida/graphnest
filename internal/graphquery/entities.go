@@ -17,8 +17,27 @@ import (
 	"github.com/balcsida/graphnest/internal/graphprotocol"
 )
 
-var ErrGenerationChanged = errors.New("graph generation is unavailable or changed")
+// ErrGenerationChanged means the generation a request started on was retired
+// or replaced while the request ran; the same request can succeed on retry.
+var ErrGenerationChanged = errors.New("graph generation changed during the request")
+
+// ErrGraphMissing means no generation is active for the repository at the
+// indexed commit the request resolved. Retrying cannot help: a SCIP index for
+// that commit must be uploaded or a graph artifact published first. A
+// repository re-indexed between scope resolution and the query reports the
+// same thing, because its new commit has no generation until the next upload.
+var ErrGraphMissing = errors.New("no graph generation is active")
 var ErrQuerySize = errors.New("graph query response exceeds byte limit")
+
+// MissingGenerationError is ErrGraphMissing with the indexed commit that has
+// no generation, so transports can name it without parsing error text.
+type MissingGenerationError struct{ Commit string }
+
+func (e *MissingGenerationError) Error() string {
+	return ErrGraphMissing.Error() + " for indexed commit " + e.Commit
+}
+
+func (e *MissingGenerationError) Is(target error) bool { return target == ErrGraphMissing }
 
 // MaxEntityQueryBytes bounds entity responses and each store result batch.
 const MaxEntityQueryBytes = 4 << 20
@@ -76,7 +95,7 @@ func (service *Service) readyEntities(ctx context.Context, scope graphprotocol.S
 		return entityReady{}, err
 	}
 	if len(generations) != len(ready.snapshots) {
-		return entityReady{}, ErrGenerationChanged
+		return entityReady{}, missingGeneration(ready.snapshots, generations)
 	}
 	for i, g := range generations {
 		snap := &ready.snapshots[i]
@@ -90,6 +109,21 @@ func (service *Service) readyEntities(ctx context.Context, scope graphprotocol.S
 	}
 	ready.generations = generations
 	return ready, nil
+}
+
+// missingGeneration names the first snapshot without an active generation at
+// its indexed commit; callers see which commit needs a graph.
+func missingGeneration(snapshots []QuerySnapshot, generations []graphprotocol.Generation) error {
+	present := make(map[int64]bool, len(generations))
+	for _, g := range generations {
+		present[g.RepositoryID] = true
+	}
+	for _, snapshot := range snapshots {
+		if !present[snapshot.RepositoryID] {
+			return &MissingGenerationError{Commit: snapshot.Commit}
+		}
+	}
+	return ErrGenerationChanged
 }
 
 func (ready entityReady) current(ctx context.Context) error {
