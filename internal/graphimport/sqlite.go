@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/balcsida/graphnest/internal/graphartifact"
 	_ "modernc.org/sqlite"
@@ -23,9 +24,20 @@ type Snapshot struct {
 	Files         []File
 	Unresolved    []UnresolvedRef
 	Metadata      []MetadataEntry
+	// SynthesisInputs are the file paths of the synthesis_inputs table (schema 10 and 11); nil for schema 9.
+	SynthesisInputs []string
 	// RoundedTimestamps counts timestamp values CodeGraph stored as fractional
 	// milliseconds (Node's mtimeMs kept as SQLite REAL) that were rounded.
 	RoundedTimestamps int
+}
+
+// MetadataValue returns the project_metadata value stored under key.
+func (s *Snapshot) MetadataValue(key string) (string, bool) {
+	i := slices.IndexFunc(s.Metadata, func(m MetadataEntry) bool { return m.Key == key })
+	if i < 0 {
+		return "", false
+	}
+	return s.Metadata[i].Value, true
 }
 
 // millis scans a CodeGraph timestamp column. The columns are declared INTEGER,
@@ -140,18 +152,23 @@ func readSnapshot(ctx context.Context, tx *sql.Tx, limits graphartifact.Limits) 
 	if err != nil {
 		return nil, err
 	}
-	if err = checkTables(ctx, tx); err != nil {
+	if err = checkTables(ctx, tx, version); err != nil {
 		return nil, err
 	}
-	for _, c := range []struct {
+	type counted struct {
 		table      string
 		limit, def int
-	}{
+	}
+	tables := []counted{
 		{"nodes", limits.MaxNodes, graphartifact.DefaultMaxNodes},
 		{"edges", limits.MaxEdges, graphartifact.DefaultMaxEdges},
 		{"files", limits.MaxFiles, graphartifact.DefaultMaxFiles},
 		{"unresolved_refs", limits.MaxUnresolved, graphartifact.DefaultMaxUnresolved},
-	} {
+	}
+	if version >= 10 {
+		tables = append(tables, counted{"synthesis_inputs", limits.MaxFiles, graphartifact.DefaultMaxFiles})
+	}
+	for _, c := range tables {
 		if c.limit == 0 {
 			c.limit = c.def
 		}
@@ -197,6 +214,13 @@ func readSnapshot(ctx context.Context, tx *sql.Tx, limits graphartifact.Limits) 
 		return err
 	}); err != nil {
 		return nil, err
+	}
+	if version >= 10 {
+		if s.SynthesisInputs, err = scanRows(ctx, tx, `select file_path from synthesis_inputs order by rowid`, func(r *sql.Rows, p *string) error {
+			return r.Scan(p)
+		}); err != nil {
+			return nil, err
+		}
 	}
 	return s, nil
 }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -16,8 +17,9 @@ var (
 	ErrIndexTooLarge     = errors.New("CodeGraph index exceeds import limits")
 )
 
-// SupportedSchemaVersions lists the CodeGraph schema versions this reader accepts (9 = CodeGraph 1.6.0).
-var SupportedSchemaVersions = []int{9}
+// SupportedSchemaVersions lists the CodeGraph schema versions this reader accepts
+// (9 = CodeGraph 1.6.0; 10 and 11 = 1.6.1 and 1.6.2).
+var SupportedSchemaVersions = []int{9, 10, 11}
 
 // requiredColumns are the tables and columns of schema version 9 that Read selects.
 var requiredColumns = map[string][]string{
@@ -27,6 +29,9 @@ var requiredColumns = map[string][]string{
 	"unresolved_refs":  {"id", "from_node_id", "reference_name", "reference_kind", "line", "col", "candidates", "file_path", "language", "status", "name_tail"},
 	"project_metadata": {"key", "value", "updated_at"},
 }
+
+// synthesisInputsColumns are the tables and columns schema versions 10 and 11 add.
+var synthesisInputsColumns = map[string][]string{"synthesis_inputs": {"file_path"}}
 
 // notCodeGraph reports whether a driver error means the file is not a CodeGraph database.
 func notCodeGraph(err error) bool {
@@ -56,8 +61,12 @@ func schemaVersion(ctx context.Context, tx *sql.Tx) (int, error) {
 	return 0, fmt.Errorf("%w: CodeGraph schema version %d is older than this graphnest supports (%d); re-index with CodeGraph 1.6.0 or newer", ErrUnsupportedSchema, v, SupportedSchemaVersions[0])
 }
 
-func checkTables(ctx context.Context, tx *sql.Tx) error {
-	for table, want := range requiredColumns {
+func checkTables(ctx context.Context, tx *sql.Tx, version int) error {
+	required := maps.Clone(requiredColumns)
+	if version >= 10 {
+		maps.Copy(required, synthesisInputsColumns)
+	}
+	for table, want := range required {
 		have := map[string]bool{}
 		rows, err := tx.QueryContext(ctx, `select name from pragma_table_info(?)`, table)
 		if err != nil {

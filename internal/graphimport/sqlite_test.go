@@ -273,3 +273,70 @@ func fileSize(t *testing.T, path string) int64 {
 	}
 	return info.Size()
 }
+
+const fixturePath162 = "../../test/fixtures/codegraph-1.6.2/reference.db"
+
+func copyFixture162(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile(fixturePath162)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "codegraph.db")
+	if err = os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func checkCounts162(t *testing.T, s *Snapshot, version int) {
+	t.Helper()
+	if s.SchemaVersion != version || len(s.Nodes) != 69 || len(s.Edges) != 92 || len(s.Files) != 13 || len(s.Unresolved) != 7 || len(s.Metadata) != 7 || len(s.SynthesisInputs) != 8 {
+		t.Fatalf("counts: v%d %d/%d/%d/%d/%d/%d", s.SchemaVersion, len(s.Nodes), len(s.Edges), len(s.Files), len(s.Unresolved), len(s.Metadata), len(s.SynthesisInputs))
+	}
+}
+
+func TestRead162Fixture(t *testing.T) {
+	ctx := context.Background()
+	s, err := Read(ctx, fixturePath162, graphartifact.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkCounts162(t, s, 11)
+	if v, ok := s.MetadataValue("indexed_with_version"); !ok || v != "1.6.2" {
+		t.Fatalf("indexed_with_version %q %v", v, ok)
+	}
+	if _, ok := s.MetadataValue("no_such_key"); ok {
+		t.Fatal("missing key found")
+	}
+
+	old, err := Read(ctx, fixturePath, graphartifact.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if old.SynthesisInputs != nil {
+		t.Fatalf("schema 9 synthesis inputs: %v", old.SynthesisInputs)
+	}
+	for i, f := range old.Files {
+		if s.Files[i].Path != f.Path || s.Files[i].ContentHash != f.ContentHash {
+			t.Fatalf("file %d: %s %s vs %s %s", i, s.Files[i].Path, s.Files[i].ContentHash, f.Path, f.ContentHash)
+		}
+	}
+
+	v10 := copyFixture162(t)
+	execCopy(t, v10, `update schema_versions set version = 10 where version = 11`)
+	s10, err := Read(ctx, v10, graphartifact.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkCounts162(t, s10, 10)
+
+	dropped := copyFixture162(t)
+	execCopy(t, dropped, `drop table synthesis_inputs`)
+	if _, err = Read(ctx, dropped, graphartifact.Limits{}); !errors.Is(err, ErrNotCodeGraph) || !strings.Contains(err.Error(), "synthesis_inputs") {
+		t.Fatalf("dropped table: %v", err)
+	}
+	if _, err = Read(ctx, fixturePath162, graphartifact.Limits{MaxFiles: 5}); !errors.Is(err, ErrIndexTooLarge) {
+		t.Fatalf("limit: %v", err)
+	}
+}

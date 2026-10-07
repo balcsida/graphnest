@@ -25,11 +25,13 @@ type Options struct {
 
 // Report counts what Convert produced.
 type Report struct {
-	Nodes, Edges, Files, Unresolved, Metadata int
-	NodeKinds, EdgeKinds                      map[string]int
+	Nodes, Edges, Files, Unresolved, Metadata, SynthesisInputs int
+	NodeKinds, EdgeKinds                                       map[string]int
 }
 
 // Convert maps a CodeGraph snapshot to a v2 artifact without altering any fact.
+// Each synthesis input becomes a "codegraph.synthesis-input" extension on its file.
+// Indexes, FTS tables and name_segment_vocab are derived data and are deliberately not facts.
 // The artifact content hash is left empty.
 func Convert(s *Snapshot, options Options) (*graphv2.Artifact, *Report, error) {
 	producer := options.Producer
@@ -120,6 +122,17 @@ func Convert(s *Snapshot, options Options) (*graphv2.Artifact, *Report, error) {
 		}
 		a.Files = append(a.Files, f)
 	}
+	files := make(map[string]*graphv2.File, len(a.Files))
+	for _, f := range a.Files {
+		files[f.Path] = f
+	}
+	for _, path := range s.SynthesisInputs {
+		f, ok := files[path]
+		if !ok {
+			return nil, nil, fmt.Errorf("synthesis input %q has no file row", path)
+		}
+		f.Extensions = append(f.Extensions, &graphv2.Extension{Namespace: "codegraph.synthesis-input", Json: []byte("true")})
+	}
 
 	ordinals = map[string]int{}
 	for _, r := range s.Unresolved {
@@ -140,7 +153,7 @@ func Convert(s *Snapshot, options Options) (*graphv2.Artifact, *Report, error) {
 	for _, r := range s.Metadata {
 		a.Metadata = append(a.Metadata, &graphv2.MetadataEntry{Key: r.Key, Value: r.Value, UpdatedAt: proto.Int64(r.UpdatedAt)})
 	}
-	report.Nodes, report.Edges, report.Files, report.Unresolved, report.Metadata = len(a.Nodes), len(a.Edges), len(a.Files), len(a.Unresolved), len(a.Metadata)
+	report.Nodes, report.Edges, report.Files, report.Unresolved, report.Metadata, report.SynthesisInputs = len(a.Nodes), len(a.Edges), len(a.Files), len(a.Unresolved), len(a.Metadata), len(s.SynthesisInputs)
 	return a, report, nil
 }
 

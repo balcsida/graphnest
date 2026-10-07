@@ -1,6 +1,8 @@
 package graphimport
 
 import (
+	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -34,5 +36,37 @@ func TestConvertDefaultsProducerFromMetadata(t *testing.T) {
 	at := int64(7)
 	if a, _, _ = Convert(s, Options{Repository: "r", ImportedAt: &at}); a.ImportedAt != 7 {
 		t.Fatal("ImportedAt ignored")
+	}
+}
+
+func TestConvert162SynthesisInputs(t *testing.T) {
+	s, err := Read(context.Background(), fixturePath162, graphartifact.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, report, err := Convert(s, Options{Repository: "r", Commit: strings.Repeat("a", 40)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.EdgeKinds) != 9 || report.SynthesisInputs != 8 {
+		t.Fatalf("report %+v", report)
+	}
+	marked := 0
+	for _, f := range a.Files {
+		for _, e := range f.Extensions {
+			if e.Namespace == "codegraph.synthesis-input" && string(e.Json) == "true" {
+				marked++
+				if !slices.Contains(s.SynthesisInputs, f.Path) {
+					t.Fatalf("unexpected mark on %s", f.Path)
+				}
+			}
+		}
+	}
+	if marked != 8 {
+		t.Fatalf("%d files marked", marked)
+	}
+	s.SynthesisInputs = append(s.SynthesisInputs, "missing.ts")
+	if _, _, err = Convert(s, Options{Repository: "r"}); err == nil || !strings.Contains(err.Error(), "missing.ts") {
+		t.Fatalf("missing file row: %v", err)
 	}
 }
