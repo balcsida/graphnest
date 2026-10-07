@@ -71,6 +71,7 @@ type artifactReport struct {
 type diagnostics struct {
 	UnresolvedReferences int      `json:"unresolved_references"`
 	FilesWithErrors      int      `json:"files_with_errors"`
+	RoundedTimestamps    int      `json:"rounded_timestamps"` // fractional-millisecond timestamps rounded on import
 	Dropped              []string `json:"dropped"`
 }
 
@@ -162,7 +163,7 @@ func runImportCodeGraph(ctx context.Context, args []string, env Environment, std
 		NodeKinds:    report.NodeKinds,
 		EdgeKinds:    report.EdgeKinds,
 		Artifact:     artifactReport{Repository: identity, Bytes: len(encoded), ContentHash: hex.EncodeToString(hash)},
-		Diagnostics:  diagnostics{UnresolvedReferences: report.Unresolved, FilesWithErrors: withErrors, Dropped: []string{}},
+		Diagnostics:  diagnostics{UnresolvedReferences: report.Unresolved, FilesWithErrors: withErrors, RoundedTimestamps: snapshot.RoundedTimestamps, Dropped: []string{}},
 		Published:    false,
 	})
 }

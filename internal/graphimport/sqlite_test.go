@@ -141,6 +141,23 @@ func TestReadRejectsBadInput(t *testing.T) {
 	}
 }
 
+// CodeGraph stores Node's fractional mtimeMs in its INTEGER timestamp columns, which
+// SQLite keeps as REAL; a live index therefore holds values like 1791391674004.1074.
+func TestReadRoundsRealTimestamps(t *testing.T) {
+	path := copyFixture(t)
+	execCopy(t, path, `update files set modified_at = 1791391674004.1074`, `update nodes set updated_at = updated_at + 0.5 where rowid = 1`)
+	s, err := Read(context.Background(), path, graphartifact.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.RoundedTimestamps != 14 || s.Files[0].ModifiedAt != 1791391674004 || s.Nodes[0].UpdatedAt != 1 {
+		t.Fatalf("rounded=%d modified_at=%d updated_at=%d", s.RoundedTimestamps, s.Files[0].ModifiedAt, s.Nodes[0].UpdatedAt)
+	}
+	if whole, err := Read(context.Background(), fixturePath, graphartifact.Limits{}); err != nil || whole.RoundedTimestamps != 0 {
+		t.Fatalf("fixture rounded=%d err=%v", whole.RoundedTimestamps, err)
+	}
+}
+
 func TestReadLimitsAndCancellation(t *testing.T) {
 	if _, err := Read(context.Background(), fixturePath, graphartifact.Limits{MaxNodes: 10}); !errors.Is(err, ErrIndexTooLarge) || !strings.Contains(err.Error(), "nodes") || !strings.Contains(err.Error(), "68") {
 		t.Fatalf("limit: %v", err)

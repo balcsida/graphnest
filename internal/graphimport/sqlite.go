@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -22,6 +23,32 @@ type Snapshot struct {
 	Files         []File
 	Unresolved    []UnresolvedRef
 	Metadata      []MetadataEntry
+	// RoundedTimestamps counts timestamp values CodeGraph stored as fractional
+	// milliseconds (Node's mtimeMs kept as SQLite REAL) that were rounded.
+	RoundedTimestamps int
+}
+
+// millis scans a CodeGraph timestamp column. The columns are declared INTEGER,
+// but CodeGraph stores Node's fractional mtimeMs unchanged and SQLite keeps
+// such values as REAL; they are rounded to the nearest millisecond and counted.
+type millis struct {
+	value   int64
+	rounded *int
+}
+
+func (m *millis) Scan(src any) error {
+	switch v := src.(type) {
+	case int64:
+		m.value = v
+	case float64:
+		if v != math.Trunc(v) {
+			*m.rounded++
+		}
+		m.value = int64(math.Round(v))
+	default:
+		return fmt.Errorf("timestamp column holds %T, want an integer or real number", src)
+	}
+	return nil
 }
 
 // Node mirrors the nodes table of schema 9.
@@ -138,7 +165,10 @@ func readSnapshot(ctx context.Context, tx *sql.Tx, limits graphartifact.Limits) 
 	}
 	s := &Snapshot{SchemaVersion: version}
 	if s.Nodes, err = scanRows(ctx, tx, `select id, kind, name, qualified_name, file_path, language, start_line, end_line, start_column, end_column, docstring, signature, visibility, is_exported, is_async, is_static, is_abstract, decorators, type_parameters, return_type, updated_at from nodes order by rowid`, func(r *sql.Rows, n *Node) error {
-		return r.Scan(&n.ID, &n.Kind, &n.Name, &n.QualifiedName, &n.FilePath, &n.Language, &n.StartLine, &n.EndLine, &n.StartColumn, &n.EndColumn, &n.Docstring, &n.Signature, &n.Visibility, &n.IsExported, &n.IsAsync, &n.IsStatic, &n.IsAbstract, &n.Decorators, &n.TypeParameters, &n.ReturnType, &n.UpdatedAt)
+		updated := millis{rounded: &s.RoundedTimestamps}
+		err := r.Scan(&n.ID, &n.Kind, &n.Name, &n.QualifiedName, &n.FilePath, &n.Language, &n.StartLine, &n.EndLine, &n.StartColumn, &n.EndColumn, &n.Docstring, &n.Signature, &n.Visibility, &n.IsExported, &n.IsAsync, &n.IsStatic, &n.IsAbstract, &n.Decorators, &n.TypeParameters, &n.ReturnType, &updated)
+		n.UpdatedAt = updated.value
+		return err
 	}); err != nil {
 		return nil, err
 	}
@@ -148,7 +178,10 @@ func readSnapshot(ctx context.Context, tx *sql.Tx, limits graphartifact.Limits) 
 		return nil, err
 	}
 	if s.Files, err = scanRows(ctx, tx, `select path, content_hash, language, size, modified_at, indexed_at, node_count, errors, generated from files order by rowid`, func(r *sql.Rows, f *File) error {
-		return r.Scan(&f.Path, &f.ContentHash, &f.Language, &f.Size, &f.ModifiedAt, &f.IndexedAt, &f.NodeCount, &f.Errors, &f.Generated)
+		modified, indexed := millis{rounded: &s.RoundedTimestamps}, millis{rounded: &s.RoundedTimestamps}
+		err := r.Scan(&f.Path, &f.ContentHash, &f.Language, &f.Size, &modified, &indexed, &f.NodeCount, &f.Errors, &f.Generated)
+		f.ModifiedAt, f.IndexedAt = modified.value, indexed.value
+		return err
 	}); err != nil {
 		return nil, err
 	}
@@ -158,7 +191,10 @@ func readSnapshot(ctx context.Context, tx *sql.Tx, limits graphartifact.Limits) 
 		return nil, err
 	}
 	if s.Metadata, err = scanRows(ctx, tx, `select key, value, updated_at from project_metadata order by rowid`, func(r *sql.Rows, m *MetadataEntry) error {
-		return r.Scan(&m.Key, &m.Value, &m.UpdatedAt)
+		updated := millis{rounded: &s.RoundedTimestamps}
+		err := r.Scan(&m.Key, &m.Value, &updated)
+		m.UpdatedAt = updated.value
+		return err
 	}); err != nil {
 		return nil, err
 	}
