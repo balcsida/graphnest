@@ -78,6 +78,7 @@ func (service *Service) ready(ctx context.Context, scope graphprotocol.Scope) (r
 	ready := readyScope{commits: map[string]string{}}
 	seen := map[int64]struct{}{}
 	selectedExists := scope.SelectedRepositoryID == 0
+	var missing, notReady int
 	for _, snapshot := range scope.Repositories {
 		if snapshot.ID <= 0 || snapshot.Commit == "" {
 			return readyScope{}, ErrInvalidRequest
@@ -96,9 +97,15 @@ func (service *Service) ready(ctx context.Context, scope graphprotocol.Scope) (r
 			if !ok {
 				reason = "graph_missing"
 			}
-			ready.boundaries = append(ready.boundaries, graphprotocol.Boundary{
-				RepositoryID: snapshot.ID, Repository: snapshot.Name, Reason: reason,
-			})
+			if scope.SelectedRepositoryID == snapshot.ID {
+				ready.boundaries = append(ready.boundaries, graphprotocol.Boundary{
+					RepositoryID: snapshot.ID, Repository: snapshot.Name, Reason: reason,
+				})
+			} else if reason == "graph_missing" {
+				missing++
+			} else {
+				notReady++
+			}
 			continue
 		}
 		ready.snapshots = append(ready.snapshots, snapshot)
@@ -112,6 +119,12 @@ func (service *Service) ready(ctx context.Context, scope graphprotocol.Scope) (r
 	}
 	if !selectedExists {
 		return readyScope{}, ErrInvalidRequest
+	}
+	if missing > 0 {
+		ready.boundaries = append(ready.boundaries, graphprotocol.Boundary{Reason: "graph_missing", Count: missing})
+	}
+	if notReady > 0 {
+		ready.boundaries = append(ready.boundaries, graphprotocol.Boundary{Reason: "graph_not_ready", Count: notReady})
 	}
 	sort.Slice(ready.snapshots, func(left, right int) bool {
 		return ready.snapshots[left].ID < ready.snapshots[right].ID

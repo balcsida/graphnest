@@ -328,7 +328,7 @@ func TestGraphEntityScopeAndBlockedNeighbors(t *testing.T) {
 	if _, err = s.pool.Exec(t.Context(), `update repositories set indexed_sha=$2 where id=$1`, id, testSHA('b')); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = service.Traverse(t.Context(), request); !errors.Is(err, graphquery.ErrGenerationChanged) {
+	if _, err = service.Traverse(t.Context(), request); !errors.Is(err, graphquery.ErrGraphMissing) {
 		t.Fatalf("stale indexed SHA=%v", err)
 	}
 }

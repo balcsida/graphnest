@@ -5,8 +5,50 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+### Fixed
+
+- `graph_capabilities`, `graph_discover`, `graph_callers`, `graph_callees`,
+  `graph_files`, `graph_impact_radius` and `explore` failed with "graph is not
+  ready" for every repository indexed with SCIP: they read only v2 graph
+  generations, a SCIP upload built only the v1 fallback graph, and nothing in
+  a default deployment published a v2 generation. A SCIP upload now also
+  derives the v2 generation (producer `scip`): entities at their definitions
+  with the indexer's kind, documentation and signature, `references` edges
+  attributed to the enclosing definition, and `imports`, `implements` and
+  `type_of` edges. The v1 fallback graph gains the same references, so
+  `context`, `impact` and `trace` return relations instead of a bare symbol.
+  Repositories indexed before this release need their SCIP index uploaded
+  again for the current indexed commit.
+- Graph readiness failures now say what happened instead of a single
+  retryable `graph_not_ready`: `not_indexed`, `graph_missing` (names the
+  indexed commit and what to upload; not retryable), `generation_changed`
+  (retryable), `discovery_unavailable` and `graph_not_ready`, over REST and
+  MCP alike.
+- `context`, `impact` and `trace` no longer return one `graph_missing`
+  boundary per unrelated authorized repository. Unrelated repositories without
+  a graph collapse into one summary boundary per reason with a `count`.
+
+### Added
+
+- Repository status (`GET /v1/repositories/{id}`, MCP `get_repository_status`)
+  reports `graph_status` (`current`, `stale`, `absent`, `unknown`),
+  `graph_commit` and `graph_producer` next to `scip_status`, so a missing or
+  stale graph generation is visible without calling a graph tool.
+
 ### Changed
 
+- `graph_uploads` keeps one active v1 generation per repository (migration 038)
+  and two active v2 generations, a published one and a SCIP-derived one
+  (migration 039). A v2 publication no longer retires the v1 generation that
+  `context`, `impact` and `trace` read, and a SCIP upload never touches a
+  publisher's generation. `expected_generation` names the active published
+  generation, `replace_producer=true` is needed only when the published
+  generation's producer differs, and the graph tools use the published
+  generation when it is at the indexed commit, otherwise the SCIP-derived one,
+  so a stale publisher no longer causes `graph_missing`. Both migrations need
+  writers drained first, as [graph storage](docs/graph-storage.md#rollout-and-recovery)
+  describes, because old binaries cannot run against retained inactive
+  generations.
 - Release smoke tests, including the scan for fixable HIGH/CRITICAL
   vulnerabilities, now run on the amd64 images only. The arm64 images are
   still published with SBOMs and provenance, but are no longer smoke-tested or

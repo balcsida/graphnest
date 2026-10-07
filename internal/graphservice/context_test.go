@@ -10,6 +10,7 @@ import (
 
 	"github.com/balcsida/graphnest/internal/authn"
 	"github.com/balcsida/graphnest/internal/graphprotocol"
+	"github.com/balcsida/graphnest/internal/graphquery"
 	"github.com/balcsida/graphnest/internal/repository"
 	"github.com/balcsida/graphnest/pkg/api"
 )
@@ -84,7 +85,7 @@ func TestContextReauthorizesAfterBackend(t *testing.T) {
 	backend := &fakeBackend{context: emptyContext, after: func() { store.repositories[0].IndexedSHA = strings.Repeat("b", 40) }}
 	service := Service{Store: store, Backend: backend, Limits: testLimits()}
 	_, err := service.Context(t.Context(), principalFor(101), api.GraphContextRequest{Repo: api.GraphRepositorySelector{ID: 101}, GraphSymbolSelector: api.GraphSymbolSelector{UID: "symbol:a"}})
-	if !errors.Is(err, ErrGraphNotReady) {
+	if !errors.Is(err, graphquery.ErrGenerationChanged) {
 		t.Fatalf("err=%v", err)
 	}
 }
@@ -156,7 +157,7 @@ func TestContextObservesFinalPublicOutcome(t *testing.T) {
 	}
 	store := &fakeRepositoryStore{repositories: []repository.Repository{readyRepository("a")}}
 	service := &Service{Store: store, Backend: &fakeBackend{context: emptyContext, after: func() { store.repositories[0].IndexedSHA = strings.Repeat("b", 40) }}, Observe: observe}
-	if _, err := service.Context(t.Context(), principalFor(101), api.GraphContextRequest{Repo: api.GraphRepositorySelector{ID: 101}, GraphSymbolSelector: api.GraphSymbolSelector{UID: "symbol:a"}}); !errors.Is(err, ErrGraphNotReady) {
+	if _, err := service.Context(t.Context(), principalFor(101), api.GraphContextRequest{Repo: api.GraphRepositorySelector{ID: 101}, GraphSymbolSelector: api.GraphSymbolSelector{UID: "symbol:a"}}); !errors.Is(err, graphquery.ErrGenerationChanged) {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(results, []string{"error", "error"}) {
@@ -170,7 +171,7 @@ func TestContextCapsPaginationAndRejectsBackendCommitMismatch(t *testing.T) {
 	}}
 	service := &Service{Store: &fakeRepositoryStore{repositories: []repository.Repository{readyRepository("a")}}, Backend: backend, Limits: Limits{PerCategory: 2}}
 	_, err := service.Context(t.Context(), principalFor(101), api.GraphContextRequest{Repo: api.GraphRepositorySelector{ID: 101}, GraphSymbolSelector: api.GraphSymbolSelector{UID: "x"}, PerCategoryLimit: 99, PerCategoryOffset: 7})
-	if !errors.Is(err, ErrGraphNotReady) || backend.contextRequest.PerCategoryLimit != 2 || backend.contextRequest.PerCategoryOffset != 7 {
+	if !errors.Is(err, graphquery.ErrGenerationChanged) || backend.contextRequest.PerCategoryLimit != 2 || backend.contextRequest.PerCategoryOffset != 7 {
 		t.Fatalf("err=%v request=%#v", err, backend.contextRequest)
 	}
 }
@@ -247,6 +248,9 @@ func TestPublicIdentityRejectsUnknownBackendRepository(t *testing.T) {
 	}
 	if _, err := publicReference(graphprotocol.Relationship{SourceRepositoryID: 1, TargetRepositoryID: 2}, snapshots); !errors.Is(err, ErrGraphNotReady) {
 		t.Fatalf("publicReference() error = %v", err)
+	}
+	if got, err := publicBoundary(graphprotocol.Boundary{Reason: "graph_missing", Count: 3}, snapshots); err != nil || got != (api.GraphBoundary{Reason: "graph_missing", Count: 3}) {
+		t.Fatalf("publicBoundary() summary = %+v, %v", got, err)
 	}
 	if _, err := publicBoundary(graphprotocol.Boundary{RepositoryID: 2}, snapshots); !errors.Is(err, ErrGraphNotReady) {
 		t.Fatalf("publicBoundary() error = %v", err)

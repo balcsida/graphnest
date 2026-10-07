@@ -1,9 +1,15 @@
 # PostgreSQL graph generations
 
-Migration 027 retains immutable graph generations in `graph_uploads`. A partial
-unique index permits one active generation per internal repository ID. Each
-publication locks the repository, checks its indexed SHA, and writes all facts
-plus activation in one transaction. Failure, cancellation, or a failed graph-job
+Migration 027 retains immutable graph generations in `graph_uploads`. Since
+migrations 038 and 039, partial unique indexes permit one active v1 generation
+per internal repository ID and two active v2 generations, one per source: the
+v1 generation serves `context`, `impact` and `trace`, the v2 generations serve
+the entity, discovery, exploration and symbol workflows, and no write retires
+a generation in another slot. A SCIP upload publishes the v1 generation and
+the SCIP-derived v2 generation (see [Versions and
+publication](#versions-and-publication)). Each publication locks the
+repository, checks its indexed SHA, and writes all facts plus activation in
+one transaction. Failure, cancellation, or a failed graph-job
 completion rolls back retirement and all copied facts. A repository's older
 SHA is not selected as current, but its existing generation remains readable
 through its pinned upload ID. Existing `graphquery.QuerySnapshot` triples need
@@ -12,18 +18,45 @@ no interface change.
 ## Versions and publication
 
 V1 keeps its existing native node/edge tables and managed > SCIP precedence;
-external wins over managed and SCIP. New v1 writes cannot replace a v2 active
-generation, even after indexed SHA advances. The legacy manifest and artifact
-readers never advertise or decode v2. The old production upload, scanner and
-queue APIs remain v1; S1.03 does not enable v2 production uploads.
+external wins over managed and SCIP. The legacy manifest and artifact readers
+never advertise or decode v2. The old production upload, scanner and queue
+APIs remain v1.
 
-`postgres.ReplaceGraphV2` is a storage entry point for later importer/publication
-layers. It uses the generated v2 messages directly. Its trusted
+V2 has two independent slots, so two producers never compete. `POST /v1/graph/uploads` publishes an external
+artifact (`source = external`, producer named by the artifact). A SCIP upload
+derives a generation from the index (`source = scip`, producer `scip`,
+`graphartifact.FromSCIPV2`): every non-local symbol is an entity at its
+definition, each reference occurrence is a `references` edge from the innermost
+definition whose `enclosing_range` contains it (or from the file entity when
+the indexer recorded no enclosing range), package qualifiers become one
+`imports` edge per file, and SCIP relationships become `implements`, `type_of`
+and `references` edges. SCIP carries no file contents, so these generations
+have no File facts.
+
+The **published** slot (`source = external`) is read and replaced only by
+`POST /v1/graph/uploads`; the **SCIP-derived** slot (`source = scip`) only by
+SCIP uploads. A SCIP upload never reads, replaces or retires the published
+slot, and never needs or triggers `replace_producer`. A publication's
+`expected_generation` names the active published generation (0 when none), and
+`replace_producer=true` is needed only when that generation's producer differs
+from the artifact's; the SCIP-derived generation never counts as another
+producer. Retry deduplication by content hash applies within the slot being
+written. A derived graph that does not fit retires only the SCIP-derived slot.
+
+Readiness picks, per repository and indexed commit, the published generation
+when one is active at that commit, otherwise the SCIP-derived generation at
+that commit, otherwise nothing (`graph_missing`). A publisher whose generation
+goes stale therefore no longer blocks the SCIP-derived generation from
+answering, and a publisher that catches up takes precedence again.
+
+`postgres.ReplaceGraphV2` is the storage entry point for external publication;
+`ReplaceSCIP` publishes SCIP-derived generations through the same transactional
+writer. It uses the generated v2 messages directly. Its trusted
 `GraphPublication` context supplies the publisher, capability strings, expected
 active upload ID, and explicit permission to switch producer/source. Expected
 ID zero means no active generation. Every publication compares the expected
 ID and exact indexed SHA under the repository lock. A different active
-producer/source requires `AllowProviderChange`; changing a producer version or
+producer requires `AllowProviderChange`; changing a producer version or
 configuration is still subject to the expected-generation check. An unavailable
 repository is rejected. Authentication/authorization and capability claims
 belong to the later publication service, not artifact-provided metadata.
@@ -113,9 +146,12 @@ This is a **drained rollout**, not a mixed-binary rolling upgrade. Retained v1
 generations alone make old binaries unsafe: their queries do not filter active
 rows. Before migration, pause all graph/SCIP/index completion writers and drain
 in-flight requests/jobs. Apply migrations, deploy compatible readers and writers
-across the fleet, then resume writers. Keep v2 production publication disabled
-until the later query and publication layers are deployed and verified.
-Migration 019's Go SCIP backfill now runs after all additive DDL within the same
+across the fleet, then resume writers. V2 generations are written in
+production by every SCIP upload and by `POST /v1/graph/uploads`, so a
+rollback to a binary without v2 readers is not supported once writers resume.
+Migration 039 supersedes the index migration 038 created: it replaces the
+single per-version index with one for v1 and one per source for v2, so the
+drain applies to it as well. Migration 019's Go SCIP backfill now runs after all additive DDL within the same
 migration transaction, so the current writer can safely handle historical data.
 
 Failed publication leaves the previous active generation intact. A stale or

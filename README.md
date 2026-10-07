@@ -174,7 +174,7 @@ MCP clients that support Streamable HTTP can connect directly to:
 http://127.0.0.1:8080/mcp
 ```
 
-Send the same bearer token in the `Authorization` header. The core tools include code search and file discovery; durable mode additionally exposes symbol navigation and graph-backed analysis.
+Send the same bearer token in the `Authorization` header. The core tools include code search and file discovery; durable mode additionally exposes symbol navigation and graph-backed analysis, which answer for a repository once a SCIP index has been uploaded for its indexed commit (see [SCIP code navigation](#scip-code-navigation)).
 
 For a stdio-only MCP client, build the proxy:
 
@@ -210,7 +210,7 @@ curl --fail-with-body -X POST \
   --data-binary @index.scip
 ```
 
-Uploads for any commit other than the repository's exact indexed SHA are rejected. The upload is ingested synchronously and returns `204` only after the index is committed, so a large index can take minutes; any reverse proxy or ingress in front of GraphNest needs a matching response timeout (see the [Helm chart documentation](deploy/helm/graphnest/README.md#optional-integrations-and-networking)). Cross-repository navigation can use manually supplied package URLs or metadata refreshed from GitHub's dependency graph. The exact endpoints, limits, and response schemas are defined in the [OpenAPI contract](docs/openapi.yaml).
+The same upload derives the graph generation behind `graph_callers`, `graph_discover`, `explore` and the other graph tools; `get_repository_status` reports it as `graph_status`, and a graph tool called before the upload returns `graph_missing` (see [Operations](docs/operations.md#graph-operation-and-recovery)). Uploads for any commit other than the repository's exact indexed SHA are rejected. The upload is ingested synchronously and returns `204` only after the index is committed, so a large index can take minutes; any reverse proxy or ingress in front of GraphNest needs a matching response timeout (see the [Helm chart documentation](deploy/helm/graphnest/README.md#optional-integrations-and-networking)). Cross-repository navigation can use manually supplied package URLs or metadata refreshed from GitHub's dependency graph. The exact endpoints, limits, and response schemas are defined in the [OpenAPI contract](docs/openapi.yaml).
 
 A CI job should not hold a long-lived administrator token. Instead, a trusted broker that owns an administrator API token can delegate a narrower one per job with `POST /v1/admin/api-tokens`: the delegated token belongs to the same user, is restricted to a non-empty subset of the broker token's repository ceiling (typically the one repository being indexed), and must expire within one hour. Only administrator API tokens may delegate, and a delegated token cannot delegate again, so a leaked job token cannot renew itself past its own expiry; browser sessions keep using `/v1/account/api-tokens`.
 

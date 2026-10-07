@@ -22,6 +22,7 @@ import (
 	"github.com/balcsida/graphnest/internal/graphingest"
 	"github.com/balcsida/graphnest/internal/httpapi"
 	"github.com/balcsida/graphnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/scipgraph"
 	"github.com/balcsida/graphnest/pkg/api"
 )
 
@@ -202,18 +203,41 @@ func TestGraphPublicationPolicy(t *testing.T) {
 		t.Fatalf("concurrent outcomes=%v", outcomes)
 	}
 
-	// Another producer's generation needs explicit replacement.
+	// The v2 generation GraphNest derives from a SCIP upload is a separate slot:
+	// it is not the publisher's precondition and never a producer conflict. The
+	// v1 generation is a third slot.
 	if _, err := h.store.ReplaceGraph(t.Context(), internal[103], postgres.GraphSourceManaged, contractArtifact(internal[103], publicationSHA, false)); err != nil {
 		t.Fatal(err)
 	}
+	if err := h.store.ReplaceSCIP(t.Context(), internal[103], publicationSHA, scipgraph.Upload{IndexerName: "scip-go", Occurrences: []scipgraph.Occurrence{{Path: "a.go", Symbol: "scip-go gomod example.com/acme v1 `example.com/acme`/A#", EndCharacter: 1, PositionEncoding: 1, Roles: 1}}}); err != nil {
+		t.Fatal(err)
+	}
 	grant(103, publisherID, true)
-	managed := status(publisher, 103).ActiveGeneration
+	if derived := status(publisher, 103).ActiveGeneration; derived != nil {
+		t.Fatalf("preflight reported the SCIP-derived generation: %#v", derived)
+	}
 	for103 := publicationArtifact(t, "103", publicationSHA, "codegraph")
-	if response := publish(publisher, 103, publicationSHA, managed.ID, "", for103); response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "producer_conflict") {
+	if first103 := result(publish(publisher, 103, publicationSHA, 0, "", for103)); first103.ReplacedGeneration != 0 {
+		t.Fatalf("first publication=%#v", first103)
+	}
+	codegraph := status(publisher, 103).ActiveGeneration
+	if codegraph == nil || codegraph.Producer != "codegraph" {
+		t.Fatalf("preflight after publication=%#v", codegraph)
+	}
+	// Another producer's published generation needs explicit replacement.
+	other := publicationArtifactFor(t, "103", publicationSHA, "other", "other")
+	if response := publish(publisher, 103, publicationSHA, codegraph.ID, "", other); response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "producer_conflict") {
 		t.Fatalf("producer change=%d %s", response.Code, response.Body.String())
 	}
-	if takeover := result(publish(publisher, 103, publicationSHA, managed.ID, "&replace_producer=true", for103)); takeover.ReplacedGeneration != managed.ID {
+	if takeover := result(publish(publisher, 103, publicationSHA, codegraph.ID, "&replace_producer=true", other)); takeover.ReplacedGeneration != codegraph.ID {
 		t.Fatalf("takeover=%#v", takeover)
+	}
+	// A later SCIP upload leaves the published generation alone.
+	if err := h.store.ReplaceSCIP(t.Context(), internal[103], publicationSHA, scipgraph.Upload{IndexerName: "scip-go", Occurrences: []scipgraph.Occurrence{{Path: "b.go", Symbol: "scip-go gomod example.com/acme v1 `example.com/acme`/B#", EndCharacter: 1, PositionEncoding: 1, Roles: 1}}}); err != nil {
+		t.Fatal(err)
+	}
+	if after := status(publisher, 103).ActiveGeneration; after == nil || after.Producer != "other" {
+		t.Fatalf("SCIP upload replaced the publisher's generation: %#v", after)
 	}
 
 	// An advancing indexed SHA rejects the old commit before the body is read.
@@ -262,8 +286,13 @@ func (reader *revokingReader) Read(data []byte) (int, error) {
 
 func publicationArtifact(t *testing.T, repository, commit, label string) []byte {
 	t.Helper()
+	return publicationArtifactFor(t, repository, commit, label, "codegraph")
+}
+
+func publicationArtifactFor(t *testing.T, repository, commit, label, producer string) []byte {
+	t.Helper()
 	data, err := graphartifact.MarshalV2(&graphv2.Artifact{SchemaVersion: 2, Repository: repository, Commit: commit,
-		Producer: &graphv2.Producer{Name: "codegraph", Version: "0.7.0", Configuration: "portable"},
+		Producer: &graphv2.Producer{Name: producer, Version: "0.7.0", Configuration: "portable"},
 		Nodes:    []*graphv2.Node{{SourceId: "a", Occurrence: "declaration:1", Kind: "function", Name: label}, {SourceId: "b", Occurrence: "declaration:2", Kind: "class"}}}, graphartifact.Limits{})
 	if err != nil {
 		t.Fatal(err)

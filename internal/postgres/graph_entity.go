@@ -19,20 +19,22 @@ var _ graphquery.EntityStore = (*Store)(nil)
 // Payload CASE expressions return a sentinel for oversized facts. Do not turn
 // them into WHERE filters: dropping facts would falsely report complete answers.
 // Only the caller's authorized repository set is inspected. The repository's
-// current indexed SHA and active generation are checked together in one query.
+// current indexed SHA and active generation are checked together in one query;
+// the published generation wins over the SCIP-derived one when both are active
+// at that commit.
 func (s *Store) EntityGenerations(ctx context.Context, snapshots []graphquery.QuerySnapshot) ([]graphprotocol.Generation, error) {
 	ctx, cancel := s.graphQueryContext(ctx)
 	defer cancel()
 	ids, _, commits := graphScope(snapshots)
 	rows, err := s.pool.Query(ctx, `with scope as (
  select * from unnest($1::bigint[],$2::text[]) as v(repository_id,commit)
- ) select u.repository_id,u.id,u.commit,case when octet_length(u.artifact_header)<=$3 then u.artifact_header end,u.capabilities,u.node_count,u.edge_count,r.github_id,u.publisher,
+ ) select distinct on (u.repository_id) u.repository_id,u.id,u.commit,case when octet_length(u.artifact_header)<=$3 then u.artifact_header end,u.capabilities,u.node_count,u.edge_count,r.github_id,u.publisher,
  (select count(*) from graph_v2_unresolved where upload_id=u.id),
  (select count(*) from graph_v2_diagnostics where upload_id=u.id)
  from scope join repositories r on r.id=scope.repository_id and r.indexed_sha=scope.commit and r.enabled and not r.archived
  join installations i on i.id=r.installation_id and i.status='active'
  join graph_uploads u on u.repository_id=r.id and u.commit=scope.commit and u.active and u.schema_version=2
- order by u.repository_id`, ids, commits, graphquery.MaxEntityQueryBytes)
+ order by u.repository_id,case when u.source='external' then 0 else 1 end`, ids, commits, graphquery.MaxEntityQueryBytes)
 	if err != nil {
 		return nil, err
 	}

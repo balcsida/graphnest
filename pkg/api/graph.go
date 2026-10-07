@@ -134,6 +134,7 @@ type GraphBoundary struct {
 	Repository   string `json:"repository,omitempty"`
 	Reason       string `json:"reason"`
 	Depth        int    `json:"depth,omitempty"`
+	Count        int    `json:"count,omitempty"`
 }
 
 type GraphContextRequest struct {
@@ -212,6 +213,8 @@ type GraphSource string
 const (
 	GraphSourceManaged  GraphSource = "managed"
 	GraphSourceExternal GraphSource = "external"
+	// GraphSourceSCIP marks a generation GraphNest derived from a SCIP upload.
+	GraphSourceSCIP GraphSource = "scip"
 )
 
 type GraphJobState string

@@ -46,29 +46,46 @@ func TestGraphPublicationGrants(t *testing.T) {
 	}
 }
 
-func TestActiveGraphGenerationDescribesAnySchema(t *testing.T) {
+func TestActiveGraphGenerationDescribesThePublishedSlot(t *testing.T) {
 	s, id := readyGraphStore(t, testSHA('a'))
 	if active, err := s.ActiveGraphGeneration(t.Context(), id); err != nil || active != nil {
 		t.Fatalf("empty repository active=%#v err=%v", active, err)
 	}
-	managed, err := s.ReplaceGraph(t.Context(), id, GraphSourceManaged, artifactFor(id, testSHA('a'), "managed"))
-	if err != nil {
+	// A v1 generation is not what a v2 publisher names as its precondition.
+	if _, err := s.ReplaceGraph(t.Context(), id, GraphSourceManaged, artifactFor(id, testSHA('a'), "managed")); err != nil {
 		t.Fatal(err)
 	}
-	active, err := s.ActiveGraphGeneration(t.Context(), id)
-	want := api.GraphActiveGeneration{ID: managed.Upload.ID, Commit: testSHA('a'), SchemaVersion: 1, Source: api.GraphSourceManaged, Producer: "managed", ProducerVersion: "1", ContentHash: hex.EncodeToString(artifactFor(id, testSHA('a'), "").ContentHash)}
-	if err != nil || active == nil || *active != want {
-		t.Fatalf("v1 active=%#v err=%v", active, err)
+	if active, err := s.ActiveGraphGeneration(t.Context(), id); err != nil || active != nil {
+		t.Fatalf("v1 generation reported as v2 slot=%#v err=%v", active, err)
 	}
 	artifact := storageV2Artifact()
-	published, err := s.ReplaceGraphV2(t.Context(), id, GraphPublication{Publisher: "api_token:42", ExpectedActiveID: managed.Upload.ID, AllowProviderChange: true}, artifact)
-	if err != nil || published.ReplacedID != managed.Upload.ID {
+	published, err := s.ReplaceGraphV2(t.Context(), id, GraphPublication{Publisher: "api_token:42"}, artifact)
+	if err != nil || published.ReplacedID != 0 {
 		t.Fatalf("publish=%#v err=%v", published, err)
 	}
-	active, err = s.ActiveGraphGeneration(t.Context(), id)
-	want = api.GraphActiveGeneration{ID: published.Upload.ID, Commit: testSHA('a'), SchemaVersion: 2, Source: api.GraphSourceExternal, Producer: "codegraph", ProducerVersion: "pinned", ContentHash: hex.EncodeToString(artifact.ContentHash)}
+	active, err := s.ActiveGraphGeneration(t.Context(), id)
+	want := api.GraphActiveGeneration{ID: published.Upload.ID, Commit: testSHA('a'), SchemaVersion: 2, Source: api.GraphSourceExternal, Producer: "codegraph", ProducerVersion: "pinned", ContentHash: hex.EncodeToString(artifact.ContentHash)}
 	if err != nil || active == nil || *active != want {
 		t.Fatalf("v2 active=%#v err=%v", active, err)
+	}
+	if status, err := s.GraphStatus(t.Context(), id); err != nil || status.State != api.GraphStateReady || status.Source != api.GraphSourceManaged {
+		t.Fatalf("v1 slot after v2 publication=%#v err=%v", status, err)
+	}
+}
+
+// The SCIP-derived generation is a separate slot: it is not what a publisher
+// names as its expected generation.
+func TestActiveGraphGenerationIgnoresTheSCIPDerivedSlot(t *testing.T) {
+	s, id := readyGraphStore(t, testSHA('a'))
+	if err := s.ReplaceSCIP(t.Context(), id, testSHA('a'), uploadWith("a.go", globalSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	if active, err := s.ActiveGraphGeneration(t.Context(), id); err != nil || active != nil {
+		t.Fatalf("published slot after SCIP upload=%#v err=%v", active, err)
+	}
+	all, err := s.ActiveGraphGenerations(t.Context(), id)
+	if err != nil || len(all) != 1 || all[0].Source != api.GraphSourceSCIP {
+		t.Fatalf("active generations=%#v err=%v", all, err)
 	}
 }
 
@@ -112,6 +129,25 @@ func TestGraphPublicationRetriesCannotOverwriteTheWrongGeneration(t *testing.T) 
 	var active int64
 	if err := s.pool.QueryRow(t.Context(), `select id from graph_uploads where repository_id=$1 and active`, id).Scan(&active); err != nil || active != replaced.Upload.ID {
 		t.Fatalf("active=%d err=%v", active, err)
+	}
+}
+
+// A disabled, archived or suspended repository is reported by name rather
+// than by the driver's no-rows error, and a SCIP upload on it still lands its
+// navigation data without publishing a generation.
+func TestReplaceGraphV2RejectsAnUnavailableRepository(t *testing.T) {
+	s, id := readyGraphStore(t, testSHA('a'))
+	if _, err := s.pool.Exec(t.Context(), `update repositories set enabled=false where id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReplaceGraphV2(t.Context(), id, GraphPublication{Publisher: "api_token:42"}, storageV2Artifact()); !errors.Is(err, ErrGraphRepositoryUnavailable) {
+		t.Fatalf("disabled repository publish err=%v", err)
+	}
+	if err := s.ReplaceSCIP(t.Context(), id, testSHA('a'), uploadWith("a.go", globalSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	if all, err := s.ActiveGraphGenerations(t.Context(), id); err != nil || len(all) != 0 {
+		t.Fatalf("disabled repository generations=%#v err=%v", all, err)
 	}
 }
 

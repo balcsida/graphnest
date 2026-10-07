@@ -239,14 +239,16 @@ func replaceGraph(ctx context.Context, tx pgx.Tx, repositoryID int64, source Gra
 	if err := tx.QueryRow(ctx, `select coalesce(indexed_sha, '') from repositories where id=$1 for update`, repositoryID).Scan(&indexedSHA); err != nil {
 		return GraphReplacement{}, err
 	}
+	// Each artifact version has its own active generation; a v2 generation
+	// never blocks or is retired by a v1 write.
 	var current GraphUpload
 	err := tx.QueryRow(ctx, `select id, repository_id, commit, schema_version, source, node_count, edge_count
-		from graph_uploads where repository_id=$1 and active for update`, repositoryID).Scan(
+		from graph_uploads where repository_id=$1 and active and schema_version=1 for update`, repositoryID).Scan(
 		&current.ID, &current.RepositoryID, &current.Commit, &current.SchemaVersion, &current.Source, &current.NodeCount, &current.EdgeCount)
 	if err != nil && err != pgx.ErrNoRows {
 		return GraphReplacement{}, err
 	}
-	if current.SchemaVersion == 2 || artifact.Commit != indexedSHA || current.Commit == indexedSHA &&
+	if artifact.Commit != indexedSHA || current.Commit == indexedSHA &&
 		(current.Source == GraphSourceExternal && source != GraphSourceExternal || current.Source == GraphSourceManaged && source == GraphSourceSCIP) {
 		return GraphReplacement{Upload: current}, nil
 	}

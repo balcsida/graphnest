@@ -14,7 +14,14 @@ var (
 	ErrRepositoryRequired        = errors.New("repository_required")
 	ErrInvalidRepositorySelector = errors.New("invalid_repository_selector")
 	ErrBranchNotIndexed          = errors.New("branch_not_indexed")
-	ErrGraphNotReady             = errors.New("graph_not_ready")
+	// ErrNotIndexed means the repository has no indexed commit yet, so no graph
+	// can exist for it; indexing must finish first.
+	ErrNotIndexed = errors.New("repository_not_indexed")
+	// ErrGraphNotReady means the graph state GraphNest holds for the request is
+	// inconsistent: facts outside the authorized scope, generation metadata
+	// that does not match the selected commit, or a backend without graph
+	// support. Retrying does not help by itself.
+	ErrGraphNotReady = errors.New("graph_not_ready")
 )
 
 type RepositoryStore interface {
@@ -67,7 +74,7 @@ func ResolveRepository(ctx context.Context, store RepositoryStore, principal aut
 		return Snapshot{}, ErrBranchNotIndexed
 	}
 	if selected.IndexedSHA == "" {
-		return Snapshot{}, ErrGraphNotReady
+		return Snapshot{}, ErrNotIndexed
 	}
 	return Snapshot{ID: selected.ID, GitHubID: selected.GitHubID, Name: selected.Name, Branch: selected.Branch, Commit: selected.IndexedSHA}, nil
 }

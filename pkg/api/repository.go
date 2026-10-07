@@ -19,6 +19,13 @@ type RepositorySummary struct {
 	// callers need this to tell why navigation tools fail on an indexed repository.
 	SCIPStatus string `json:"scip_status"`
 	SCIPCommit string `json:"scip_commit,omitempty"`
+	// GraphStatus reports whether the v2 graph generation the tools would use (the
+	// current published one, else the current SCIP-derived one) is usable:
+	// "current", "stale", "absent", or "unknown". The graph tools fail unless it
+	// is "current", so callers need this to tell why they fail on an indexed repository.
+	GraphStatus   string `json:"graph_status"`
+	GraphCommit   string `json:"graph_commit,omitempty"`
+	GraphProducer string `json:"graph_producer,omitempty"`
 }
 
 const (
@@ -26,4 +33,11 @@ const (
 	SCIPStatusStale   = "stale"
 	SCIPStatusAbsent  = "absent"
 	SCIPStatusUnknown = "unknown"
+)
+
+const (
+	GraphStatusCurrent = "current"
+	GraphStatusStale   = "stale"
+	GraphStatusAbsent  = "absent"
+	GraphStatusUnknown = "unknown"
 )

@@ -78,7 +78,7 @@ func TestResolveRepositoryRequiresUnambiguousAuthorizedRepository(t *testing.T) 
 func TestResolveRepositoryRequiresIndexedSHA(t *testing.T) {
 	store := &resolverStore{repositories: []repository.Repository{{ID: 1, GitHubID: 101, Name: "acme/one", Branch: "main"}}}
 	_, err := ResolveRepository(t.Context(), store, authn.Principal{}, api.GraphRepositorySelector{ID: 101}, "")
-	if !errors.Is(err, ErrGraphNotReady) {
+	if !errors.Is(err, ErrNotIndexed) {
 		t.Fatalf("ResolveRepository() error = %v", err)
 	}
 }

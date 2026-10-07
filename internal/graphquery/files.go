@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"path"
 	"regexp"
 	"strings"
@@ -210,6 +211,11 @@ func (service *Service) ValidateGenerations(ctx context.Context, scope graphprot
 	ctx, cancel := service.entityContext(ctx)
 	defer cancel()
 	ready, err := service.readyEntities(ctx, scope)
+	if errors.Is(err, ErrGraphMissing) {
+		// The generation was there when the composition started; its absence
+		// now is a change, not a missing graph.
+		return ErrGenerationChanged
+	}
 	if err != nil {
 		return err
 	}

@@ -94,7 +94,7 @@ func backfillLegacySCIPGraphs(ctx context.Context, tx pgx.Tx) error {
 	rows, err := tx.Query(ctx, `select scip.repository_id, scip.id, scip.commit
 		from scip_uploads scip
 		join repositories on repositories.id=scip.repository_id and repositories.indexed_sha=scip.commit
-		left join graph_uploads graph on graph.repository_id=scip.repository_id and graph.active
+		left join graph_uploads graph on graph.repository_id=scip.repository_id and graph.active and graph.schema_version=1
 		where graph.id is null or graph.source='scip'
 		order by scip.repository_id`)
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/balcsida/graphnest/internal/authn"
 	"github.com/balcsida/graphnest/internal/graphprotocol"
+	"github.com/balcsida/graphnest/internal/graphquery"
 	"github.com/balcsida/graphnest/pkg/api"
 )
 
@@ -83,13 +84,15 @@ func (s *Service) reauthorize(ctx context.Context, principal authn.Principal, se
 	if err != nil {
 		return err
 	}
+	// Anything that moved since the query started is a change the caller can
+	// retry on, not an unready graph.
 	if current.ID != selected.ID || current.Commit != selected.Commit {
-		return ErrGraphNotReady
+		return graphquery.ErrGenerationChanged
 	}
 	for name, commit := range commits {
 		snapshot, err := ResolveRepository(ctx, s.Store, principal, api.GraphRepositorySelector{Name: name}, "")
 		if err != nil || snapshot.Commit != commit {
-			return ErrGraphNotReady
+			return graphquery.ErrGenerationChanged
 		}
 	}
 	return nil
@@ -171,13 +174,13 @@ func publicReference(value graphprotocol.Relationship, snapshots map[int64]Snaps
 }
 func publicBoundary(value graphprotocol.Boundary, snapshots map[int64]Snapshot) (api.GraphBoundary, error) {
 	if value.RepositoryID == 0 {
-		return api.GraphBoundary{Reason: value.Reason, Depth: value.Depth}, nil
+		return api.GraphBoundary{Reason: value.Reason, Depth: value.Depth, Count: value.Count}, nil
 	}
 	snapshot, ok := snapshots[value.RepositoryID]
 	if !ok {
 		return api.GraphBoundary{}, ErrGraphNotReady
 	}
-	return api.GraphBoundary{RepositoryID: snapshot.GitHubID, Repository: snapshot.Name, Reason: value.Reason, Depth: value.Depth}, nil
+	return api.GraphBoundary{RepositoryID: snapshot.GitHubID, Repository: snapshot.Name, Reason: value.Reason, Depth: value.Depth, Count: value.Count}, nil
 }
 func publicBoundaries(values []graphprotocol.Boundary, snapshots map[int64]Snapshot) ([]api.GraphBoundary, error) {
 	result := make([]api.GraphBoundary, 0, len(values))

@@ -83,7 +83,7 @@ func TestRepositoryListBoundsWireResponse(t *testing.T) {
 	}
 	service := repositoryHTTPService()
 	service.Store = &repositoryHTTPStore{repositories: items}
-	first := api.RepositorySummary{ID: 101, GitHubID: 101, Name: items[0].Name, Branch: "main", DesiredSHA: items[0].DesiredSHA, IndexedSHA: items[0].IndexedSHA, Status: "ready", SearchNode: "node-a", SCIPStatus: api.SCIPStatusUnknown}
+	first := api.RepositorySummary{ID: 101, GitHubID: 101, Name: items[0].Name, Branch: "main", DesiredSHA: items[0].DesiredSHA, IndexedSHA: items[0].IndexedSHA, Status: "ready", SearchNode: "node-a", SCIPStatus: api.SCIPStatusUnknown, GraphStatus: api.GraphStatusUnknown}
 	// The budget covers the whole truncated envelope, cursor included.
 	budgetBody, err := json.Marshal(struct {
 		Repositories []api.RepositorySummary `json:"repositories"`

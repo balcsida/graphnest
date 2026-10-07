@@ -3,10 +3,12 @@ package postgres
 import (
 	"context"
 	"errors"
+	"strconv"
 
 	"github.com/balcsida/graphnest/internal/admin"
 	"github.com/balcsida/graphnest/internal/authn"
 	"github.com/balcsida/graphnest/internal/graphartifact"
+	graphv2 "github.com/balcsida/graphnest/internal/graphartifact/v2"
 	"github.com/balcsida/graphnest/internal/scipgraph"
 	"github.com/jackc/pgx/v5"
 	"github.com/scip-code/scip/bindings/go/scip"
@@ -73,6 +75,27 @@ func (s *Store) AdminSCIPDependencies(ctx context.Context, installationID int64,
 }
 
 func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit string, upload scipgraph.Upload) error {
+	// Both derived graphs are built before the repository row is locked.
+	artifact, err := graphartifact.FromSCIP(graphartifact.SCIPRepository{ID: repositoryID, Commit: commit}, upload.Occurrences, upload.Relationships)
+	if err != nil {
+		return err
+	}
+	var publicID int64
+	if err := s.pool.QueryRow(ctx, `select github_id from repositories where id=$1`, repositoryID).Scan(&publicID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return scipgraph.ErrStaleIndex
+		}
+		return err
+	}
+	// A derived graph the generation cannot hold, or producer text the
+	// contract rejects, is dropped: the navigation upload must still land.
+	generation, err := graphartifact.FromSCIPV2(strconv.FormatInt(publicID, 10), commit, upload, s.scipGraphLimits)
+	dropped := err
+	if errors.Is(err, graphartifact.ErrGraphTooLarge) || errors.Is(err, graphartifact.ErrInvalidArtifact) {
+		generation = nil
+	} else if err != nil {
+		return err
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -119,14 +142,51 @@ func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit stri
 		})); err != nil {
 		return err
 	}
-	artifact, err := graphartifact.FromSCIP(graphartifact.SCIPRepository{ID: repositoryID, Commit: commit}, upload.Occurrences, upload.Relationships)
-	if err != nil {
-		return err
-	}
 	if _, err := replaceGraph(ctx, tx, repositoryID, GraphSourceSCIP, artifact); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err := publishSCIPGraphV2(ctx, tx, repositoryID, generation); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	if generation == nil && s.Logger != nil {
+		s.Logger.Warn("SCIP-derived graph generation dropped; the navigation upload landed",
+			"repository_id", repositoryID, "commit", commit, "reason", dropped.Error(),
+			"occurrences", len(upload.Occurrences), "relationships", len(upload.Relationships))
+	}
+	return nil
+}
+
+// publishSCIPGraphV2 activates the v2 generation derived from a SCIP upload,
+// which the entity, discovery, exploration and symbol workflows read when no
+// published generation is current. It only ever reads, replaces or retires the
+// SCIP-derived slot; a publisher's generation is never touched. A nil
+// generation (the derived graph did not fit the generation limits) retires the
+// previous SCIP-derived one, so readiness falls back to the published
+// generation or reports absent rather than an older index's content.
+func publishSCIPGraphV2(ctx context.Context, tx pgx.Tx, repositoryID int64, generation *graphv2.Artifact) error {
+	var activeID int64
+	err := tx.QueryRow(ctx, `select id from graph_uploads where repository_id=$1 and active and schema_version=2 and source='scip'`, repositoryID).Scan(&activeID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if generation == nil {
+		if activeID == 0 {
+			return nil
+		}
+		// ponytail: nothing records why; add a graph_uploads note if operators need the reason without re-uploading.
+		_, err := tx.Exec(ctx, `update graph_uploads set active=false, retired_at=now() where id=$1`, activeID)
+		return err
+	}
+	_, err = replaceGraphV2(ctx, tx, repositoryID, GraphPublication{Publisher: graphartifact.SCIPProducer, Capabilities: graphartifact.SCIPCapabilities(), ExpectedActiveID: activeID}, GraphSourceSCIP, generation)
+	if errors.Is(err, ErrGraphRepositoryUnavailable) {
+		// A disabled, archived or suspended repository keeps its navigation data
+		// without a queryable generation, as before.
+		return nil
+	}
+	return err
 }
 
 func (s *Store) ReplacePackages(ctx context.Context, repositoryID int64, source string, mappings []scipgraph.PackageMapping) error {

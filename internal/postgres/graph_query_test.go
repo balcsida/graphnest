@@ -82,7 +82,7 @@ func TestSCIPGraphMaterializationRespectsExplicitUploadPrecedence(t *testing.T) 
 		t.Fatal(err)
 	}
 	var source GraphSource
-	if err := store.pool.QueryRow(t.Context(), `select source from graph_uploads where repository_id=$1 and active`, repositoryID).Scan(&source); err != nil || source != GraphSourceSCIP {
+	if err := store.pool.QueryRow(t.Context(), `select source from graph_uploads where repository_id=$1 and active and schema_version=1`, repositoryID).Scan(&source); err != nil || source != GraphSourceSCIP {
 		t.Fatalf("initial source=%q err=%v", source, err)
 	}
 
@@ -94,7 +94,7 @@ func TestSCIPGraphMaterializationRespectsExplicitUploadPrecedence(t *testing.T) 
 		t.Fatal(err)
 	}
 	var uploadID int64
-	if err := store.pool.QueryRow(t.Context(), `select id, source from graph_uploads where repository_id=$1 and active`, repositoryID).Scan(&uploadID, &source); err != nil || uploadID != explicit.Upload.ID || source != GraphSourceManaged {
+	if err := store.pool.QueryRow(t.Context(), `select id, source from graph_uploads where repository_id=$1 and active and schema_version=1`, repositoryID).Scan(&uploadID, &source); err != nil || uploadID != explicit.Upload.ID || source != GraphSourceManaged {
 		t.Fatalf("current explicit upload id=%d source=%q err=%v", uploadID, source, err)
 	}
 
@@ -104,7 +104,7 @@ func TestSCIPGraphMaterializationRespectsExplicitUploadPrecedence(t *testing.T) 
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('b'), uploadWith("current.go", globalSymbol, definitionRole)); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.pool.QueryRow(t.Context(), `select source from graph_uploads where repository_id=$1 and active`, repositoryID).Scan(&source); err != nil || source != GraphSourceSCIP {
+	if err := store.pool.QueryRow(t.Context(), `select source from graph_uploads where repository_id=$1 and active and schema_version=1`, repositoryID).Scan(&source); err != nil || source != GraphSourceSCIP {
 		t.Fatalf("replacement source=%q err=%v", source, err)
 	}
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('b'), uploadWith("refreshed.go", implementationSymbol, definitionRole)); err != nil {

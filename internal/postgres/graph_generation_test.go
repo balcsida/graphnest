@@ -72,14 +72,22 @@ func TestGraphV2RoundTripAndPublicationPreconditions(t *testing.T) {
 		t.Fatal(err)
 	}
 	artifact := storageV2Artifact()
+	// The v1 generation lives in its own slot: it is not the expected v2
+	// generation, and publishing v2 neither needs to replace it nor retires it.
 	options := GraphPublication{Publisher: "user:42", Capabilities: []string{"calls", "metadata"}, ExpectedActiveID: v1.Upload.ID}
-	if _, err := s.ReplaceGraphV2(t.Context(), id, options, artifact); !errors.Is(err, ErrGraphProviderConflict) {
-		t.Fatalf("provider change=%v", err)
+	if _, err := s.ReplaceGraphV2(t.Context(), id, options, artifact); !errors.Is(err, ErrGraphPrecondition) {
+		t.Fatalf("v1 generation named as v2 precondition=%v", err)
 	}
-	options.AllowProviderChange = true
+	options.ExpectedActiveID = 0
 	result, err := s.ReplaceGraphV2(t.Context(), id, options, artifact)
-	if err != nil || !result.Applied {
+	if err != nil || !result.Applied || result.ReplacedID != 0 {
 		t.Fatalf("publish=%#v err=%v", result, err)
+	}
+	other := proto.Clone(artifact).(*graphv2.Artifact)
+	other.Producer.Name = "other"
+	other.ContentHash = nil
+	if _, err := s.ReplaceGraphV2(t.Context(), id, GraphPublication{Publisher: "user:42", ExpectedActiveID: result.Upload.ID}, other); !errors.Is(err, ErrGraphProviderConflict) {
+		t.Fatalf("provider change=%v", err)
 	}
 	loaded, err := s.LoadGraphV2(t.Context(), id, result.Upload.ID)
 	if err != nil || !proto.Equal(artifact, loaded) {
@@ -96,12 +104,15 @@ func TestGraphV2RoundTripAndPublicationPreconditions(t *testing.T) {
 		t.Fatalf("v1 reader accepted v2: %v", err)
 	}
 	manifests, err := s.GraphManifests(t.Context())
-	if err != nil || len(manifests) != 0 {
-		t.Fatalf("legacy manifest exposed v2=%v %v", manifests, err)
+	if err != nil || len(manifests) != 1 || manifests[0].UploadID != v1.Upload.ID {
+		t.Fatalf("legacy manifest=%v %v", manifests, err)
 	}
 	legacy, err := s.ReplaceGraph(t.Context(), id, GraphSourceExternal, artifactFor(id, testSHA('a'), "legacy"))
-	if err != nil || legacy.Applied {
-		t.Fatalf("v1 replaced v2: %v %v", legacy, err)
+	if err != nil || !legacy.Applied {
+		t.Fatalf("v1 slot replacement: %v %v", legacy, err)
+	}
+	if active, err := s.ActiveGraphGeneration(t.Context(), id); err != nil || active == nil || active.ID != result.Upload.ID {
+		t.Fatalf("v1 write disturbed the v2 slot: %#v %v", active, err)
 	}
 	var publisher string
 	var caps []string
@@ -165,7 +176,7 @@ func TestGraphV2CopyFailurePreservesGeneration(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			options := GraphPublication{Publisher: "user:42", ExpectedActiveID: old.Upload.ID, AllowProviderChange: true}
+			options := GraphPublication{Publisher: "user:42"}
 			ctx := t.Context()
 			if mode == "constraint" {
 				if _, err := s.pool.Exec(ctx, `alter table graph_v2_edges add check (occurrence <> 'call-2')`); err != nil {

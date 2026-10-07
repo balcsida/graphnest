@@ -337,7 +337,7 @@ func TestGraphEntityImpactScopeGenerationAndLimits(t *testing.T) {
 	if _, err = store.pool.Exec(t.Context(), `update repositories set indexed_sha=$2 where id=$1`, snapshot.RepositoryID, strings.Repeat("c", 40)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = service.ImpactRadius(t.Context(), graphprotocol.EntityImpactRequest{Scope: scope, Occurrence: fixture.IDs.Service}); !errors.Is(err, graphquery.ErrGenerationChanged) {
+	if _, err = service.ImpactRadius(t.Context(), graphprotocol.EntityImpactRequest{Scope: scope, Occurrence: fixture.IDs.Service}); !errors.Is(err, graphquery.ErrGraphMissing) {
 		t.Fatalf("generation drift=%v", err)
 	}
 }

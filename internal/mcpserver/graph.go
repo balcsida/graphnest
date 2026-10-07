@@ -80,8 +80,8 @@ func graphError(err error) error {
 		return errors.New("repository selection is ambiguous")
 	case errors.Is(err, graphservice.ErrBranchNotIndexed):
 		return errors.New("branch is not indexed")
-	case errors.Is(err, graphservice.ErrGraphNotReady), errors.Is(err, graphquery.ErrGenerationChanged), errors.Is(err, graphquery.ErrDiscoveryUnavailable):
-		return errors.New("graph is not ready")
+	case errors.Is(err, graphservice.ErrNotIndexed), errors.Is(err, graphquery.ErrGraphMissing), errors.Is(err, graphquery.ErrGenerationChanged), errors.Is(err, graphquery.ErrDiscoveryUnavailable), errors.Is(err, graphservice.ErrGraphNotReady):
+		return errors.New(httpapi.GraphStateMessage(err))
 	case errors.Is(err, graphquery.ErrQuerySize):
 		return errors.New("graph query response is too large")
 	case errors.Is(err, context.DeadlineExceeded):

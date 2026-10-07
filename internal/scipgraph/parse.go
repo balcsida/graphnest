@@ -26,8 +26,27 @@ const (
 
 type Upload struct {
 	ProjectRoot, IndexerName, IndexerVersion string
+	Documents                                []Document
 	Occurrences                              []Occurrence
 	Relationships                            []Relationship
+	Symbols                                  []SymbolInformation
+}
+
+// Document is one indexed source file in index order.
+type Document struct {
+	Path, Language   string
+	PositionEncoding int32
+}
+
+// Range is a zero-based source extent in the document's position encoding.
+type Range struct {
+	StartLine, StartCharacter, EndLine, EndCharacter int32
+}
+
+// SymbolInformation is the producer's description of one symbol: its SCIP
+// kind name, display name, joined documentation and signature text.
+type SymbolInformation struct {
+	Symbol, Kind, DisplayName, Documentation, Signature string
 }
 
 type Occurrence struct {
@@ -36,6 +55,9 @@ type Occurrence struct {
 	PositionEncoding                                 int32
 	Roles                                            int32
 	Local                                            bool
+	// Enclosing is the producer's enclosing_range of a definition: the whole
+	// declaration, not just its name token. Nil when the producer omits it.
+	Enclosing *Range
 }
 
 type Relationship struct {
@@ -79,24 +101,32 @@ func Parse(data []byte) (Upload, error) {
 			// same assumption.
 			encoding = scip.PositionEncoding_UTF8CodeUnitOffsetFromLineStart
 		}
+		upload.Documents = append(upload.Documents, Document{Path: document.RelativePath, Language: document.Language, PositionEncoding: int32(encoding)})
 		for _, occurrence := range document.Occurrences {
 			sourceRange, ok := occurrence.SourceRange()
 			if !ok || sourceRange.Validate() != nil || !validSymbol(occurrence.Symbol) {
 				return Upload{}, ErrInvalidIndex
 			}
-			upload.Occurrences = append(upload.Occurrences, Occurrence{
+			value := Occurrence{
 				Path: document.RelativePath, Symbol: occurrence.Symbol,
 				StartLine: sourceRange.Start.Line, StartCharacter: sourceRange.Start.Character,
 				EndLine: sourceRange.End.Line, EndCharacter: sourceRange.End.Character,
 				PositionEncoding: int32(encoding),
 				Roles:            occurrence.SymbolRoles, Local: scip.IsLocalSymbol(occurrence.Symbol),
-			})
+			}
+			// A malformed enclosing range is optional evidence, not a reason to
+			// reject navigation data; it is simply absent.
+			if enclosing, ok := occurrence.EnclosingSourceRange(); ok && enclosing.Validate() == nil {
+				value.Enclosing = &Range{StartLine: enclosing.Start.Line, StartCharacter: enclosing.Start.Character, EndLine: enclosing.End.Line, EndCharacter: enclosing.End.Character}
+			}
+			upload.Occurrences = append(upload.Occurrences, value)
 		}
 
 		for _, symbol := range document.Symbols {
 			if !validSymbol(symbol.Symbol) {
 				return Upload{}, ErrInvalidIndex
 			}
+			upload.Symbols = append(upload.Symbols, symbolInformation(symbol))
 			for _, relationship := range symbol.Relationships {
 				if !validSymbol(relationship.Symbol) {
 					return Upload{}, ErrInvalidIndex
@@ -109,7 +139,20 @@ func Parse(data []byte) (Upload, error) {
 			}
 		}
 	}
+	for _, symbol := range index.ExternalSymbols {
+		if !validSymbol(symbol.Symbol) {
+			return Upload{}, ErrInvalidIndex
+		}
+		upload.Symbols = append(upload.Symbols, symbolInformation(symbol))
+	}
 	return upload, nil
+}
+
+func symbolInformation(symbol *scip.SymbolInformation) SymbolInformation {
+	return SymbolInformation{
+		Symbol: symbol.Symbol, Kind: symbol.Kind.String(), DisplayName: symbol.DisplayName,
+		Documentation: strings.Join(symbol.Documentation, "\n\n"), Signature: symbol.SignatureDocumentation.GetText(),
+	}
 }
 
 type wireCounts struct {
