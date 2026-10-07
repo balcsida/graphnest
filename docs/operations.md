@@ -271,10 +271,36 @@ coverage gaps or as not in the commit, which fails closed.
 `--output FILE` writes the artifact, with its content hash set, only when the
 index is `fresh`, CodeGraph's `index_state` is `complete` and the file is not
 inside the CodeGraph data directory; otherwise the report is still printed,
-the reason goes to stderr and the exit code is 1. `graphnest graph status
---repository-id 101` reads `GET /v1/repositories/{id}` and the graph status
-with the publication preflight block. Credentials come from
-`GRAPHNEST_TOKEN` or `GRAPHNEST_TOKEN_FILE` only.
+the reason goes to stderr and the exit code is 1.
+
+```sh
+graphnest graph import codegraph --repo /path/to/checkout --repository-id 101   # import and publish
+graphnest graph upload graph.pb --repository-id 101 [--expected-generation 7] [--replace-producer]
+```
+
+Publication follows the contract above from the command line. The preflight
+reads `GET /v1/repositories/{id}` and `GET /v1/graph/repositories/{id}/status`
+and refuses, before anything is uploaded, when the indexed commit differs
+from the artifact's commit (run CodeGraph on a checkout of the indexed commit
+and import again; there is no force flag), when `publication.permitted` is
+false (an administrator grants the token's user with `PUT
+/v1/graph/publication-grants`), when `--expected-generation` does not name
+the active published generation, or when that generation belongs to another
+producer and `--replace-producer` is absent. The upload names the observed
+generation as `expected_generation`. Transport errors and `5xx` answers are
+retried up to three times with a short pause; identical content is
+deduplicated by the server, so a retry after a lost response reports
+`deduplicated: true` instead of publishing twice. `409 generation_conflict`,
+`producer_conflict`, `not_indexed` and `403 forbidden` end the command with
+the matching hint on stderr and exit 1; the previous generation stays active
+and SCIP navigation is untouched. The JSON report lists the artifact, the
+server state before and after (`indexed_sha`, `active_generation_before`,
+`active_generation_after`), the publication (`expected_generation`,
+`replace_producer`, `attempts`, the server's result) and `published: true`.
+
+`graphnest graph status --repository-id 101` reads `GET /v1/repositories/{id}`
+and the graph status with the publication preflight block. Credentials come
+from `GRAPHNEST_TOKEN` or `GRAPHNEST_TOKEN_FILE` only.
 
 ## Web console
 

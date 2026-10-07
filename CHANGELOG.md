@@ -40,7 +40,12 @@ the compatibility and migration notes before upgrading.
   captured from the pinned builds; a matching HEAD is not proof. `--output`
   writes the artifact only for a fresh, complete index. `graphnest graph
   status` shows the repository and graph state the server holds. Server
-  binaries do not link the SQLite reader. Publication follows.
+  binaries do not link the SQLite reader. Without `--dry-run` or `--output`
+  the command publishes a fresh, complete index, and `graphnest graph
+  upload` publishes an artifact file: both run the publication preflight
+  (indexed commit, grant, expected generation, explicit producer
+  replacement), retry transport and server failures up to three times, and
+  rely on the server's content-hash deduplication for safe retries.
 - A second pinned CodeGraph reference, 1.6.2 (schema 11), under
   `test/fixtures/codegraph-1.6.2/`, and `producer-rules.json` for both pins.
 - Repository status (`GET /v1/repositories/{id}`, MCP `get_repository_status`)

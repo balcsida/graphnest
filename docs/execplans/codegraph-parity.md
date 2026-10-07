@@ -5,6 +5,22 @@ Implementation, validation, draft publication, and release are separate states.
 
 ## Progress
 
+- 2026-10-07: S2.03 publication on `feat/codegraph/s2-03-publish`, stacked
+  on S2.02. `graphnest graph upload ARTIFACT` and `graph import codegraph`
+  without `--dry-run`/`--output` share one publication path: preflight
+  through `GET /v1/repositories/{id}` and the graph status, refusing before
+  upload when the indexed commit differs from the artifact's, when the token
+  is not permitted, when `--expected-generation` does not match the active
+  published generation, or when another producer's generation needs an
+  explicit `--replace-producer`; the upload names the observed generation,
+  retries transport and server failures up to three times, and relies on the
+  server's content-hash deduplication for safe retries. Unit tests drive the
+  command against a scripted server; PostgreSQL integration tests run it
+  against the real publication routes for the S2.03 acceptance list: exact
+  commit, deduplicated retry, advanced indexed commit, revoked grant,
+  generation conflict raced in before the POST, producer replacement
+  refused and explicit, interrupted upload, and SCIP intact.
+
 - 2026-10-07: S2.02 complete importer on `feat/codegraph/s2-02-codegraph`,
   stacked on S2.01. A second pinned producer, CodeGraph 1.6.2 (commit
   `6560052a`, schema 11), is captured facts-only into
@@ -548,6 +564,13 @@ these tests.
   default-ignored directories, and `exclude` always wins, as in the producer.
 - `--output` (artifact creation gated on freshness) ships with S2.02 because
   it is the consumer of the freshness check; S2.03 adds publication.
+- The command never guesses a precondition: the observed active generation
+  is the `expected_generation`, a stale `--expected-generation` is refused
+  locally, and replacing another producer's generation is only ever explicit.
+  Retries are bounded (three attempts) and safe only because the server
+  deduplicates identical content under the same expectation; a failed
+  publication prints nothing on stdout so scripts cannot mistake it for
+  success.
 - Follow accepted ADR-0014 (PostgreSQL graph queries), which supersedes ADR-0012;
   preserve ADR-0008 shared services, ADR-0009 exact-SHA reads, ADR-0013 ephemeral
   archives, and ADR-0015 optional-enrichment isolation.
@@ -771,9 +794,9 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 
 ## Remaining gaps
 
-- `graphnest graph upload`, publishing from `graph import`, the import
-  reports' recovery hints, `graphnest doctor` and CLI distribution belong to
-  S2.03 and S2.04. Freshness does not model nested `.gitignore` files,
+- Human-readable import reports, `graphnest doctor`, CLI distribution with
+  checksums and attestations, and the Stage 2 gate demonstration belong to
+  S2.04. Publication has no MCP tool. Freshness does not model nested `.gitignore` files,
   `includeIgnored`, embedded repositories, `.git/info/exclude` or
   `export-ignore`, and treats symlinks and submodules as unverifiable; a
   CodeGraph version without captured rules is unverifiable too.
@@ -831,6 +854,7 @@ The rebased sessions layer also passes the exact two-call restoration comparison
 | S1.07 symbol tools | `feat/codegraph/s1-07-symbol-tools` | Implemented; oracle, unit race, PostgreSQL integration race, vet, staticcheck, OpenAPI and parity-reference checks pass; based on `main` | [PR #124](https://github.com/balcsida/graphnest/pull/124) |
 | S2.01 CLI foundation and import pipeline | `feat/codegraph/s2-01-cli` | Implemented; oracle, unit, live-WAL, boundary, vet, staticcheck and govulncheck checks pass; based on `main` after PR #141 | Pending submission as the first layer of the Stage 2 stack |
 | S2.02 complete CodeGraph importer | `feat/codegraph/s2-02-codegraph` | Implemented; both pins regenerated and checked, parity-reference, rule-decision replay, freshness, unit, vet and staticcheck checks pass; depends on S2.01 | Pending submission as the second layer |
+| S2.03 publication and conflict recovery | `feat/codegraph/s2-03-publish` | Implemented; unit, PostgreSQL integration (eight acceptance scenarios), vet and staticcheck checks pass; depends on S2.02 | Pending submission as the third layer |
 
 The first one-branch submission created a draft PR without a remote stack.
 Submitting the second real dependent layer created native stack #66
