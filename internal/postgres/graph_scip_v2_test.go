@@ -3,7 +3,11 @@
 package postgres
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/balcsida/graphnest/internal/graphartifact"
@@ -188,4 +192,34 @@ func TestReplaceSCIPRollsBackWhenTheDerivedGenerationCannotBeStored(t *testing.T
 		t.Fatalf("generation after rollback=%#v err=%v", after, err)
 	}
 	assertActiveCount(t, store, repositoryID, 2)
+}
+
+// A derived graph that does not fit the generation limits is dropped: the
+// navigation upload still lands, the previous SCIP-derived generation is
+// retired, and the store logs what was lost and why.
+func TestReplaceSCIPLogsADroppedGeneration(t *testing.T) {
+	store, repositoryID := readyGraphStore(t, testSHA('a'))
+	var log bytes.Buffer
+	store.Logger = slog.New(slog.NewTextHandler(&log, nil))
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("a.go", globalSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	if log.Len() != 0 {
+		t.Fatalf("published generation logged: %s", log.String())
+	}
+	store.scipGraphLimits = graphartifact.Limits{MaxNodes: 1}
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("b.go", globalSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	if generation, err := scipGeneration(t, store, repositoryID); err != nil || generation != nil {
+		t.Fatalf("dropped generation still active: %#v err=%v", generation, err)
+	}
+	if occurrence, err := store.OccurrenceAt(t.Context(), repositoryID, testSHA('a'), "b.go", 0, occurrencePosition(1)); err != nil || occurrence.Path != "b.go" {
+		t.Fatalf("navigation rows=%#v err=%v", occurrence, err)
+	}
+	for _, want := range []string{"dropped", "commit=" + testSHA('a'), "exceeds generation limits", fmt.Sprint("repository_id=", repositoryID)} {
+		if !strings.Contains(log.String(), want) {
+			t.Fatalf("log %q lacks %q", log.String(), want)
+		}
+	}
 }

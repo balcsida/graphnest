@@ -35,7 +35,7 @@ func demoUpload(t *testing.T) scipgraph.Upload {
 
 func TestFromSCIPV2DerivesEntitiesAndReferences(t *testing.T) {
 	upload := demoUpload(t)
-	artifact, err := FromSCIPV2("101", demoCommit, upload)
+	artifact, err := FromSCIPV2("101", demoCommit, upload, Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestFromSCIPV2DerivesEntitiesAndReferences(t *testing.T) {
 			t.Fatalf("unexpected edge %s", key)
 		}
 	}
-	again, err := FromSCIPV2("101", demoCommit, upload)
+	again, err := FromSCIPV2("101", demoCommit, upload, Limits{})
 	if err != nil || !proto.Equal(artifact, again) {
 		t.Fatalf("conversion is not deterministic: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestFromSCIPV2WithoutEnclosingRangesAttributesReferencesToFiles(t *testing.
 		{Path: "a.go", Symbol: symbol, StartLine: 1, StartCharacter: 5, EndLine: 1, EndCharacter: 9, Roles: 1},
 		{Path: "b.go", Symbol: symbol, StartLine: 3, StartCharacter: 0, EndLine: 3, EndCharacter: 4, Roles: 8},
 	}}
-	artifact, err := FromSCIPV2("7", demoCommit, upload)
+	artifact, err := FromSCIPV2("7", demoCommit, upload, Limits{})
 	if err != nil || len(artifact.Nodes) != 3 || len(artifact.Edges) != 2 {
 		t.Fatalf("artifact=%v err=%v", artifact, err)
 	}
@@ -142,7 +142,7 @@ func TestFromSCIPV2BoundsProducerTextAndReportsOversizedGraphs(t *testing.T) {
 		{Path: "a.go", Symbol: long, EndCharacter: 1, Roles: 1},
 		{Path: "a.go", Symbol: longer, StartLine: 1, EndLine: 1, EndCharacter: 1, Roles: 1},
 	}, Symbols: []scipgraph.SymbolInformation{{Symbol: long, Documentation: strings.Repeat("d", 300<<10), Signature: strings.Repeat("s", 20<<10), DisplayName: strings.Repeat("n", 20<<10)}}}
-	artifact, err := FromSCIPV2("7", demoCommit, upload)
+	artifact, err := FromSCIPV2("7", demoCommit, upload, Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,10 +167,10 @@ func TestFromSCIPV2BoundsProducerTextAndReportsOversizedGraphs(t *testing.T) {
 	if contains != 1 {
 		t.Fatalf("contains edges=%d", contains)
 	}
-	if _, err := fromSCIPV2("101", demoCommit, demoUpload(t), Limits{MaxArtifactBytes: 2 << 10}); !errors.Is(err, ErrGraphTooLarge) {
+	if _, err := FromSCIPV2("101", demoCommit, demoUpload(t), Limits{MaxArtifactBytes: 2 << 10}); !errors.Is(err, ErrGraphTooLarge) {
 		t.Fatalf("budget=%v", err)
 	}
-	if _, err := fromSCIPV2("101", demoCommit, demoUpload(t), Limits{MaxEdges: 1}); !errors.Is(err, ErrGraphTooLarge) {
+	if _, err := FromSCIPV2("101", demoCommit, demoUpload(t), Limits{MaxEdges: 1}); !errors.Is(err, ErrGraphTooLarge) {
 		t.Fatalf("edge limit=%v", err)
 	}
 }

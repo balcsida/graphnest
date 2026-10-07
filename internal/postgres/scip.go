@@ -89,7 +89,8 @@ func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit stri
 	}
 	// A derived graph the generation cannot hold, or producer text the
 	// contract rejects, is dropped: the navigation upload must still land.
-	generation, err := graphartifact.FromSCIPV2(strconv.FormatInt(publicID, 10), commit, upload)
+	generation, err := graphartifact.FromSCIPV2(strconv.FormatInt(publicID, 10), commit, upload, s.scipGraphLimits)
+	dropped := err
 	if errors.Is(err, graphartifact.ErrGraphTooLarge) || errors.Is(err, graphartifact.ErrInvalidArtifact) {
 		generation = nil
 	} else if err != nil {
@@ -147,7 +148,15 @@ func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit stri
 	if err := publishSCIPGraphV2(ctx, tx, repositoryID, generation); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	if generation == nil && s.Logger != nil {
+		s.Logger.Warn("SCIP-derived graph generation dropped; the navigation upload landed",
+			"repository_id", repositoryID, "commit", commit, "reason", dropped.Error(),
+			"occurrences", len(upload.Occurrences), "relationships", len(upload.Relationships))
+	}
+	return nil
 }
 
 // publishSCIPGraphV2 activates the v2 generation derived from a SCIP upload,

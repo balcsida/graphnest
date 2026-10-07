@@ -46,12 +46,9 @@ func SCIPCapabilities() []string {
 // entity at its definition; each reference occurrence becomes a references
 // edge from the innermost definition whose enclosing range holds it, or from
 // the file when the producer gave no enclosing range. SCIP carries no file
-// contents or hashes, so the artifact has no File facts.
-func FromSCIPV2(repository, commit string, upload scipgraph.Upload) (*graphv2.Artifact, error) {
-	return fromSCIPV2(repository, commit, upload, Limits{})
-}
-
-func fromSCIPV2(repository, commit string, upload scipgraph.Upload, limits Limits) (*graphv2.Artifact, error) {
+// contents or hashes, so the artifact has no File facts. limits bounds the
+// derived generation; zero values use the defaults.
+func FromSCIPV2(repository, commit string, upload scipgraph.Upload, limits Limits) (*graphv2.Artifact, error) {
 	limits, ok := normalizedV2Limits(limits)
 	if !ok {
 		return nil, ErrInvalidArtifact
