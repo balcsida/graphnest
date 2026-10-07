@@ -125,3 +125,31 @@ func TestFromSCIPDerivesNameAndKindFromSymbol(t *testing.T) {
 		}
 	}
 }
+
+func TestFromSCIPAttributesReferencesToEnclosingDefinitions(t *testing.T) {
+	upload := demoUpload(t)
+	artifact, err := FromSCIP(SCIPRepository{ID: 101, Commit: demoCommit}, upload.Occurrences, upload.Relationships)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fromMain, fromGreet int
+	for _, edge := range artifact.Edges {
+		if edge.Kind != EdgeReferences || edge.TargetUID != "symbol:"+demoHello {
+			continue
+		}
+		switch edge.SourceUID {
+		case "symbol:" + demoMain:
+			fromMain++
+			if edge.Path != "main.go" || edge.Range != (Range{9, 19, 9, 24}) || edge.ResolutionReason != "scip" {
+				t.Fatalf("edge=%+v", edge)
+			}
+		case "symbol:" + demoGreet + "Impl#Greet().":
+			fromGreet++
+		default:
+			t.Fatalf("unexpected source %s", edge.SourceUID)
+		}
+	}
+	if fromMain != 1 || fromGreet != 1 {
+		t.Fatalf("references to Hello: main=%d greet=%d", fromMain, fromGreet)
+	}
+}

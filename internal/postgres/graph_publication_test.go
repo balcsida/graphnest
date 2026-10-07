@@ -46,29 +46,30 @@ func TestGraphPublicationGrants(t *testing.T) {
 	}
 }
 
-func TestActiveGraphGenerationDescribesAnySchema(t *testing.T) {
+func TestActiveGraphGenerationDescribesTheV2Slot(t *testing.T) {
 	s, id := readyGraphStore(t, testSHA('a'))
 	if active, err := s.ActiveGraphGeneration(t.Context(), id); err != nil || active != nil {
 		t.Fatalf("empty repository active=%#v err=%v", active, err)
 	}
-	managed, err := s.ReplaceGraph(t.Context(), id, GraphSourceManaged, artifactFor(id, testSHA('a'), "managed"))
-	if err != nil {
+	// A v1 generation is not what a v2 publisher names as its precondition.
+	if _, err := s.ReplaceGraph(t.Context(), id, GraphSourceManaged, artifactFor(id, testSHA('a'), "managed")); err != nil {
 		t.Fatal(err)
 	}
-	active, err := s.ActiveGraphGeneration(t.Context(), id)
-	want := api.GraphActiveGeneration{ID: managed.Upload.ID, Commit: testSHA('a'), SchemaVersion: 1, Source: api.GraphSourceManaged, Producer: "managed", ProducerVersion: "1", ContentHash: hex.EncodeToString(artifactFor(id, testSHA('a'), "").ContentHash)}
-	if err != nil || active == nil || *active != want {
-		t.Fatalf("v1 active=%#v err=%v", active, err)
+	if active, err := s.ActiveGraphGeneration(t.Context(), id); err != nil || active != nil {
+		t.Fatalf("v1 generation reported as v2 slot=%#v err=%v", active, err)
 	}
 	artifact := storageV2Artifact()
-	published, err := s.ReplaceGraphV2(t.Context(), id, GraphPublication{Publisher: "api_token:42", ExpectedActiveID: managed.Upload.ID, AllowProviderChange: true}, artifact)
-	if err != nil || published.ReplacedID != managed.Upload.ID {
+	published, err := s.ReplaceGraphV2(t.Context(), id, GraphPublication{Publisher: "api_token:42"}, artifact)
+	if err != nil || published.ReplacedID != 0 {
 		t.Fatalf("publish=%#v err=%v", published, err)
 	}
-	active, err = s.ActiveGraphGeneration(t.Context(), id)
-	want = api.GraphActiveGeneration{ID: published.Upload.ID, Commit: testSHA('a'), SchemaVersion: 2, Source: api.GraphSourceExternal, Producer: "codegraph", ProducerVersion: "pinned", ContentHash: hex.EncodeToString(artifact.ContentHash)}
+	active, err := s.ActiveGraphGeneration(t.Context(), id)
+	want := api.GraphActiveGeneration{ID: published.Upload.ID, Commit: testSHA('a'), SchemaVersion: 2, Source: api.GraphSourceExternal, Producer: "codegraph", ProducerVersion: "pinned", ContentHash: hex.EncodeToString(artifact.ContentHash)}
 	if err != nil || active == nil || *active != want {
 		t.Fatalf("v2 active=%#v err=%v", active, err)
+	}
+	if status, err := s.GraphStatus(t.Context(), id); err != nil || status.State != api.GraphStateReady || status.Source != api.GraphSourceManaged {
+		t.Fatalf("v1 slot after v2 publication=%#v err=%v", status, err)
 	}
 }
 

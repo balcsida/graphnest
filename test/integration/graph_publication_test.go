@@ -22,6 +22,7 @@ import (
 	"github.com/balcsida/graphnest/internal/graphingest"
 	"github.com/balcsida/graphnest/internal/httpapi"
 	"github.com/balcsida/graphnest/internal/postgres"
+	"github.com/balcsida/graphnest/internal/scipgraph"
 	"github.com/balcsida/graphnest/pkg/api"
 )
 
@@ -202,18 +203,33 @@ func TestGraphPublicationPolicy(t *testing.T) {
 		t.Fatalf("concurrent outcomes=%v", outcomes)
 	}
 
-	// Another producer's generation needs explicit replacement.
+	// Another producer's generation needs explicit replacement: here the v2
+	// generation GraphNest derived from a SCIP upload. The v1 generation is a
+	// separate slot and never the named precondition.
 	if _, err := h.store.ReplaceGraph(t.Context(), internal[103], postgres.GraphSourceManaged, contractArtifact(internal[103], publicationSHA, false)); err != nil {
 		t.Fatal(err)
 	}
+	if err := h.store.ReplaceSCIP(t.Context(), internal[103], publicationSHA, scipgraph.Upload{IndexerName: "scip-go", Occurrences: []scipgraph.Occurrence{{Path: "a.go", Symbol: "scip-go gomod example.com/acme v1 `example.com/acme`/A#", EndCharacter: 1, PositionEncoding: 1, Roles: 1}}}); err != nil {
+		t.Fatal(err)
+	}
 	grant(103, publisherID, true)
-	managed := status(publisher, 103).ActiveGeneration
+	derived := status(publisher, 103).ActiveGeneration
+	if derived == nil || derived.Producer != "scip" || derived.SchemaVersion != 2 {
+		t.Fatalf("derived generation=%#v", derived)
+	}
 	for103 := publicationArtifact(t, "103", publicationSHA, "codegraph")
-	if response := publish(publisher, 103, publicationSHA, managed.ID, "", for103); response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "producer_conflict") {
+	if response := publish(publisher, 103, publicationSHA, derived.ID, "", for103); response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "producer_conflict") {
 		t.Fatalf("producer change=%d %s", response.Code, response.Body.String())
 	}
-	if takeover := result(publish(publisher, 103, publicationSHA, managed.ID, "&replace_producer=true", for103)); takeover.ReplacedGeneration != managed.ID {
+	if takeover := result(publish(publisher, 103, publicationSHA, derived.ID, "&replace_producer=true", for103)); takeover.ReplacedGeneration != derived.ID {
 		t.Fatalf("takeover=%#v", takeover)
+	}
+	// A later SCIP upload leaves the publisher's generation alone.
+	if err := h.store.ReplaceSCIP(t.Context(), internal[103], publicationSHA, scipgraph.Upload{IndexerName: "scip-go", Occurrences: []scipgraph.Occurrence{{Path: "b.go", Symbol: "scip-go gomod example.com/acme v1 `example.com/acme`/B#", EndCharacter: 1, PositionEncoding: 1, Roles: 1}}}); err != nil {
+		t.Fatal(err)
+	}
+	if after := status(publisher, 103).ActiveGeneration; after == nil || after.Producer != "codegraph" {
+		t.Fatalf("SCIP upload replaced the publisher's generation: %#v", after)
 	}
 
 	// An advancing indexed SHA rejects the old commit before the body is read.

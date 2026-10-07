@@ -70,6 +70,26 @@ func FromSCIP(repository SCIPRepository, occurrences []scipgraph.Occurrence, rel
 			}
 		}
 	}
+	// A reference inside a definition's enclosing range is a relationship from
+	// that definition; SCIP records no call expressions, so it is a reference.
+	// They are added only while the artifact stays within its edge limit, so an
+	// index that already fills it keeps its navigation-only graph.
+	definitions := scipgraph.Upload{Occurrences: occurrences}.Definitions()
+	references := map[string]Edge{}
+	for _, occurrence := range occurrences {
+		if occurrence.Local || occurrence.Definition() {
+			continue
+		}
+		if definition, ok := definitions.Enclosing(occurrence); ok {
+			edge := Edge{SourceUID: "symbol:" + definition.Symbol, TargetUID: "symbol:" + occurrence.Symbol, Kind: EdgeReferences, Path: occurrence.Path, Range: Range{occurrence.StartLine, occurrence.StartCharacter, occurrence.EndLine, occurrence.EndCharacter}, Confidence: 1, ResolutionReason: "scip"}
+			references[fallbackEdgeKey(edge)] = edge
+		}
+	}
+	if len(edges)+len(references) <= DefaultMaxEdges {
+		for key, edge := range references {
+			edges[key] = edge
+		}
+	}
 	for _, node := range nodes {
 		artifact.Nodes = append(artifact.Nodes, node)
 	}

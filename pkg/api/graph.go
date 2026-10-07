@@ -212,6 +212,8 @@ type GraphSource string
 const (
 	GraphSourceManaged  GraphSource = "managed"
 	GraphSourceExternal GraphSource = "external"
+	// GraphSourceSCIP marks a generation GraphNest derived from a SCIP upload.
+	GraphSourceSCIP GraphSource = "scip"
 )
 
 type GraphJobState string
