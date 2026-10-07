@@ -58,6 +58,8 @@ const (
 const (
 	DefaultMaxNodes           = 500_000
 	DefaultMaxEdges           = 2_000_000
+	DefaultMaxFiles           = 100_000
+	DefaultMaxUnresolved      = DefaultMaxEdges
 	HardMaxNodes              = 2_000_000
 	HardMaxEdges              = 10_000_000
 	DefaultMaxPathBytes       = 4_096
