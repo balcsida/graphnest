@@ -253,6 +253,8 @@ Freshness is checked against the commit's own content, not the working tree: `gr
 
 #### Install the command-line tool
 
+On macOS or Linux with Homebrew, `brew install balcsida/tap/graphnest` installs the release binary; the tap updates its formula after each release.
+
 Each GitHub release attaches `graphnest` binaries for `linux/amd64`, `linux/arm64`, `darwin/amd64` and `darwin/arm64` (`graphnest_<version>_<os>_<arch>`), `graphnest_<version>_checksums.txt` and `graphnest_<version>_dependencies.txt`, the module inventory of the Linux build. They are static, need no CodeGraph and no cgo, and are attested with build provenance. Download a binary and the checksums file, then verify and run it:
 
 ```sh
