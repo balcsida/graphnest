@@ -799,13 +799,18 @@ or altered continuations require restarting that authorization.
 
 Access tokens (`gno_…`) carry the user's repository read access, including
 GitHub-derived grants, without administrative privileges. They authenticate
-only `/mcp` and cannot create or manage credentials. Users see and disconnect
+`/mcp` and the routes the `graphnest` CLI calls (`GET /v1/repositories`,
+`GET /v1/repositories/{id}`, `POST /v1/graph/uploads` and
+`GET /v1/graph/repositories/{id}/status`), and cannot create or manage
+credentials. Publishing a graph also needs the `graph:write` scope and the
+repository publication grant; tokens without the scope can read but never
+publish. Users see and disconnect
 clients under **Account → Connected MCP clients** at `/account`
 (`GET`/`DELETE /v1/account/oauth-grants`); administrators' "revoke
-credentials" also revokes grants. `scope` is accepted, persisted and echoed but
-not yet enforced, so finer scopes can be introduced later with a
-`WWW-Authenticate: Bearer error="insufficient_scope"` step-up rather than a
-migration.
+credentials" also revokes grants. `graph:write` is the only scope enforced, and
+the consent page lists it when requested; other `scope` values are still
+accepted, persisted and echoed but ignored. `scopes_supported` in the metadata
+stays empty.
 
 With `GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC`, every new authorization requires a
 fresh GitHub sign-in, including users with an existing GraphNest session. Each

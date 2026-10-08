@@ -1220,7 +1220,7 @@ paths:
         - {name: code_challenge, in: query, required: true, schema: {type: string, minLength: 43, maxLength: 43}}
         - {name: code_challenge_method, in: query, required: true, schema: {type: string, enum: [S256]}}
         - {name: state, in: query, required: false, schema: {type: string, maxLength: 1024}}
-        - {name: scope, in: query, required: false, schema: {type: string, maxLength: 256}}
+        - {name: scope, in: query, required: false, description: 'Space-separated scopes. graph:write lets the access token publish code graphs where the user holds a publication grant and is listed on the consent page; other values are stored and ignored.', schema: {type: string, maxLength: 256}}
         - {name: resource, in: query, required: false, schema: {type: string, format: uri, description: Must equal the /mcp URL of this origin when present.}}
       responses:
         '200': {description: Consent page (HTML)}
@@ -1278,7 +1278,7 @@ paths:
         '200': {description: Prometheus metrics, content: {text/plain: {schema: {type: string}}}}
 components:
   securitySchemes:
-    bearerAuth: {type: http, scheme: bearer}
+    bearerAuth: {type: http, scheme: bearer, description: 'API token. OAuth access tokens (gno_...) are also accepted on GET /v1/repositories, GET /v1/repositories/{id}, POST /v1/graph/uploads and GET /v1/graph/repositories/{id}/status; publishing with one needs the graph:write scope and the repository publication grant.'}
     sessionCookie: {type: apiKey, in: cookie, name: __Host-graphnest_session, description: Browser session; unsafe methods require the exact configured public Origin.}
   responses:
     InvalidRequest: {description: Invalid request, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}

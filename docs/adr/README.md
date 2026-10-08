@@ -24,6 +24,7 @@ topology is not rendered.
 | [0013](0013-ephemeral-exact-sha-archives.md) | Ephemeral exact-SHA archives | Accepted |
 | [0014](0014-postgresql-graph-queries.md) | PostgreSQL graph queries | Accepted |
 | [0015](0015-isolate-optional-enrichment.md) | Optional enrichment boundaries | Accepted |
-| [0016](0016-mcp-oauth-authorization-server.md) | MCP OAuth authorization server | Accepted |
+| [0016](0016-mcp-oauth-authorization-server.md) | MCP OAuth authorization server | Accepted; amended by 0019 |
 | [0017](0017-supply-chain-inventory.md) | Supply-chain inventory from preserved SBOM observations | Accepted |
 | [0018](0018-react-shadcn-web-console.md) | React and shadcn/ui web console | Accepted |
+| [0019](0019-cli-oauth-login.md) | CLI OAuth login | Accepted |
