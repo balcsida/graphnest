@@ -319,7 +319,7 @@ The login is a `0600` file under `graphnest/credentials/` in the user
 configuration directory (`os.UserConfigDir`: `~/Library/Application Support` on
 macOS, `$XDG_CONFIG_HOME` or `~/.config` on Linux, `%AppData%` on Windows), one
 file per server origin. Every server command (`graph status`, `graph upload`,
-`graph import codegraph --publish`, `doctor`) uses it when neither
+`graph import codegraph`, `doctor`) uses it when neither
 `GRAPHNEST_TOKEN` nor `GRAPHNEST_TOKEN_FILE` is set; those variables always take
 precedence, and `login` prints a note when one is set. `doctor` reports which
 credential it used. The CLI refreshes the access token with the refresh token

@@ -19,8 +19,10 @@ the compatibility and migration notes before upgrading.
 
 - OAuth access tokens now authenticate `GET /v1/repositories`,
   `GET /v1/repositories/{id}`, `GET /v1/graph/repositories/{id}/status` and
-  `POST /v1/graph/uploads`; every other REST route still accepts only API
-  tokens and sessions. Publication by an OAuth token needs the `graph:write`
+  `POST /v1/graph/uploads`. The other routes mounted beside graph ingestion
+  (the v1 uploads and `PUT /v1/graph/publication-grants`) also see OAuth tokens
+  but stay administrator-only, and OAuth principals are never administrators;
+  all remaining REST routes accept only API tokens and sessions. Publication by an OAuth token needs the `graph:write`
   scope in addition to the repository publication grant, and the consent page
   lists that capability.
 - A 401 from the server now suggests `graphnest login` as well as checking the

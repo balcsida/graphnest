@@ -1278,7 +1278,7 @@ paths:
         '200': {description: Prometheus metrics, content: {text/plain: {schema: {type: string}}}}
 components:
   securitySchemes:
-    bearerAuth: {type: http, scheme: bearer, description: 'API token. OAuth access tokens (gno_...) are also accepted on GET /v1/repositories, GET /v1/repositories/{id}, POST /v1/graph/uploads and GET /v1/graph/repositories/{id}/status; publishing with one needs the graph:write scope and the repository publication grant.'}
+    bearerAuth: {type: http, scheme: bearer, description: 'API token. OAuth access tokens (gno_...) are also accepted on GET /v1/repositories, GET /v1/repositories/{id}, POST /v1/graph/uploads and GET /v1/graph/repositories/{id}/status; publishing with one needs the graph:write scope and the repository publication grant. Other routes mounted beside graph ingestion (v1 uploads, PUT /v1/graph/publication-grants) also see OAuth tokens but stay administrator-only, and OAuth principals are never administrators; all remaining routes accept only API tokens and sessions.'}
     sessionCookie: {type: apiKey, in: cookie, name: __Host-graphnest_session, description: Browser session; unsafe methods require the exact configured public Origin.}
   responses:
     InvalidRequest: {description: Invalid request, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}

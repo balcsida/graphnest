@@ -13,7 +13,10 @@ dynamically for each login.
 OAuth access tokens (`gno_…`) now also authenticate the routes the CLI calls:
 `GET /v1/repositories`, `GET /v1/repositories/{id}`, and the graph ingestion
 routes (`POST /v1/graph/uploads`, `GET /v1/graph/repositories/{id}/status`).
-Every other REST route still accepts only API tokens and sessions.
+The other routes mounted beside graph ingestion (the v1 uploads and
+`PUT /v1/graph/publication-grants`) also see OAuth tokens but stay
+administrator-only, and OAuth principals are never administrators. All
+remaining REST routes accept only API tokens and sessions.
 
 Publication by an OAuth principal needs the `graph:write` scope in addition to
 the repository publication grant it already needed; the scope never replaces
@@ -36,6 +39,7 @@ a second check on every route, for no gain over the scope.
 
 This amends ADR-0016, where an access token "authenticates only `/mcp`".
 Existing MCP tokens can now read the repository routes and the graph status, but
-they never carry `graph:write` and so can never publish. A token cannot mint or
+they carry `graph:write` only if their user consented to it, and MCP clients
+are not offered it because `scopes_supported` stays empty. A token cannot mint or
 manage credentials. The CLI keeps its credentials in a 0600 file per server.
 Headless machines and CI keep using API tokens, since the flow needs a browser.
