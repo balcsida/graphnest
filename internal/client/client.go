@@ -11,42 +11,30 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/balcsida/graphnest/internal/httpclient"
 	"github.com/balcsida/graphnest/pkg/api"
 )
 
 const defaultTimeout = 2 * time.Minute
 
-// Config comes from the environment only; a token never comes from arguments.
+// Config comes from the environment and the stored login only; a token never comes from arguments.
 type Config struct {
 	ServerURL string        // GRAPHNEST_SERVER_URL, required, http or https
-	Token     string        // GRAPHNEST_TOKEN, or the trimmed contents of the file named by GRAPHNEST_TOKEN_FILE; exactly one must be set
+	Token     string        // GRAPHNEST_TOKEN, or the trimmed contents of the file named by GRAPHNEST_TOKEN_FILE; at most one may be set; without either, Login supplies the credential
 	CAPEM     []byte        // contents of GRAPHNEST_CA_FILE when set
 	Timeout   time.Duration // whole-request timeout; zero means 2 minutes
+	Login     *Login        // stored OAuth login used instead of Token
+	Logins    Logins        // where a refreshed Login is saved
+	Source    string        // where the credential came from: "GRAPHNEST_TOKEN", "GRAPHNEST_TOKEN_FILE" or "stored login"
 }
 
-// FromEnv reads Config from environment variables. Errors name variables, never values.
-func FromEnv(getenv func(string) string, readFile func(string) ([]byte, error)) (Config, error) {
-	config := Config{ServerURL: getenv("GRAPHNEST_SERVER_URL"), Token: getenv("GRAPHNEST_TOKEN")}
+// ServerFromEnv reads the server URL and optional CA file. Errors name variables, never values.
+func ServerFromEnv(getenv func(string) string, readFile func(string) ([]byte, error)) (Config, error) {
+	config := Config{ServerURL: getenv("GRAPHNEST_SERVER_URL")}
 	if config.ServerURL == "" {
 		return Config{}, errors.New("GRAPHNEST_SERVER_URL is required")
-	}
-	tokenFile := getenv("GRAPHNEST_TOKEN_FILE")
-	switch {
-	case config.Token != "" && tokenFile != "":
-		return Config{}, errors.New("set only one of GRAPHNEST_TOKEN and GRAPHNEST_TOKEN_FILE")
-	case config.Token == "" && tokenFile == "":
-		return Config{}, errors.New("GRAPHNEST_TOKEN or GRAPHNEST_TOKEN_FILE is required")
-	case tokenFile != "":
-		data, err := readFile(tokenFile)
-		if err != nil {
-			return Config{}, errors.New("GRAPHNEST_TOKEN_FILE cannot be read")
-		}
-		if config.Token = strings.TrimSpace(string(data)); config.Token == "" {
-			return Config{}, errors.New("GRAPHNEST_TOKEN_FILE is empty")
-		}
 	}
 	if caFile := getenv("GRAPHNEST_CA_FILE"); caFile != "" {
 		data, err := readFile(caFile)
@@ -58,11 +46,53 @@ func FromEnv(getenv func(string) string, readFile func(string) ([]byte, error)) 
 	return config, nil
 }
 
+// FromEnv reads Config from environment variables, falling back to the stored login for the server.
+// Errors name variables, never values.
+func FromEnv(getenv func(string) string, readFile func(string) ([]byte, error), logins Logins) (Config, error) {
+	config, err := ServerFromEnv(getenv, readFile)
+	if err != nil {
+		return Config{}, err
+	}
+	config.Logins = logins
+	config.Token = getenv("GRAPHNEST_TOKEN")
+	tokenFile := getenv("GRAPHNEST_TOKEN_FILE")
+	switch {
+	case config.Token != "" && tokenFile != "":
+		return Config{}, errors.New("set only one of GRAPHNEST_TOKEN and GRAPHNEST_TOKEN_FILE")
+	case config.Token != "":
+		config.Source = "GRAPHNEST_TOKEN"
+	case tokenFile != "":
+		data, err := readFile(tokenFile)
+		if err != nil {
+			return Config{}, errors.New("GRAPHNEST_TOKEN_FILE cannot be read")
+		}
+		if config.Token = strings.TrimSpace(string(data)); config.Token == "" {
+			return Config{}, errors.New("GRAPHNEST_TOKEN_FILE is empty")
+		}
+		config.Source = "GRAPHNEST_TOKEN_FILE"
+	default:
+		const missing = "GRAPHNEST_TOKEN or GRAPHNEST_TOKEN_FILE is required, or run graphnest login"
+		origin, err := Origin(config.ServerURL)
+		if err != nil {
+			return Config{}, errors.New(missing)
+		}
+		login, ok, err := logins.Load(origin)
+		if err != nil {
+			return Config{}, fmt.Errorf("the stored login for %s cannot be read: %w", origin, err)
+		}
+		if !ok {
+			return Config{}, errors.New(missing)
+		}
+		config.Login, config.Source = &login, "stored login"
+	}
+	return config, nil
+}
+
 // Client talks to a GraphNest server with a bearer token.
 type Client struct {
-	http  *http.Client
-	base  string
-	token string
+	http   *http.Client
+	base   string
+	bearer func(context.Context) (string, error)
 }
 
 // New validates config and builds a client that refuses cross-origin redirects.
@@ -71,18 +101,87 @@ func New(config Config) (*Client, error) {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return nil, errors.New("GRAPHNEST_SERVER_URL must be an http or https URL")
 	}
-	if config.Token == "" {
+	if config.Token == "" && config.Login == nil {
 		return nil, errors.New("token is required")
 	}
-	httpClient, err := httpclient.New(config.CAPEM)
+	httpClient, err := newHTTPClient(config)
 	if err != nil {
 		return nil, err
 	}
-	httpClient.Timeout = config.Timeout
-	if httpClient.Timeout == 0 {
-		httpClient.Timeout = defaultTimeout
+	c := &Client{http: httpClient, base: strings.TrimRight(config.ServerURL, "/")}
+	if config.Login != nil {
+		source := &loginSource{http: httpClient, logins: config.Logins, login: *config.Login}
+		c.bearer = source.token
+	} else {
+		token := config.Token
+		c.bearer = func(context.Context) (string, error) { return token, nil }
 	}
-	return &Client{http: httpClient, base: strings.TrimRight(config.ServerURL, "/"), token: config.Token}, nil
+	return c, nil
+}
+
+// loginSource hands out the access token of a stored login, refreshing it before it runs short.
+type loginSource struct {
+	mu     sync.Mutex
+	http   *http.Client
+	logins Logins
+	login  Login
+}
+
+// fresh reports whether login outlives a request (the HTTP timeout) plus 30 seconds.
+func (s *loginSource) fresh(login Login) bool {
+	return time.Until(login.ExpiresAt) >= s.http.Timeout+30*time.Second
+}
+
+func (s *loginSource) token(ctx context.Context) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.fresh(s.login) {
+		return s.login.AccessToken, nil
+	}
+	next, err := s.refresh(ctx, s.login)
+	if isInvalidGrant(err) {
+		// Another graphnest process may have rotated the tokens already.
+		stored, ok, loadErr := s.logins.Load(s.login.Server)
+		if loadErr != nil {
+			return "", loadErr
+		}
+		if !ok || stored.RefreshToken == s.login.RefreshToken {
+			return "", s.expired()
+		}
+		s.login = stored
+		if s.fresh(stored) {
+			return stored.AccessToken, nil
+		}
+		next, err = s.refresh(ctx, stored)
+		if isInvalidGrant(err) {
+			return "", s.expired()
+		}
+	}
+	if err != nil {
+		return "", err
+	}
+	if err = s.logins.Save(next); err != nil {
+		return "", err
+	}
+	s.login = next
+	return next.AccessToken, nil
+}
+
+func (s *loginSource) expired() error {
+	return fmt.Errorf("the stored login for %s has expired or was revoked; run graphnest login", s.login.Server)
+}
+
+func (s *loginSource) refresh(ctx context.Context, login Login) (Login, error) {
+	tokens, err := postTokenForm(ctx, s.http, login.TokenEndpoint, url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {login.RefreshToken},
+		"client_id":     {login.ClientID},
+	})
+	if err != nil {
+		return Login{}, err
+	}
+	login.AccessToken, login.RefreshToken, login.ExpiresAt = tokens.AccessToken, tokens.RefreshToken, tokens.expiresAt
+	return login, nil
 }
 
 // Error is the server's error envelope for a non-2xx response.
@@ -138,7 +237,11 @@ func (c *Client) do(ctx context.Context, method, path, rawQuery, contentType str
 	if err != nil {
 		return errors.New("build request failed")
 	}
-	request.Header.Set("Authorization", "Bearer "+c.token)
+	token, err := c.bearer(ctx)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Accept", "application/json")
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)

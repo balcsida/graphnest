@@ -29,7 +29,7 @@ func runGraphStatus(ctx context.Context, args []string, env Environment, stdout,
 	if *timeout <= 0 {
 		return usageError{"--timeout must be positive"}
 	}
-	config, err := client.FromEnv(env.Getenv, env.ReadFile)
+	config, err := client.FromEnv(env.Getenv, env.ReadFile, client.Logins{})
 	if err != nil {
 		return err
 	}
