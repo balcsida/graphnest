@@ -207,6 +207,7 @@ func TestSCIPErrorClassification(t *testing.T) {
 		{"invalid index", scipgraph.ErrInvalidIndex, http.StatusBadRequest, "invalid_request", "request is invalid", false},
 		{"not indexed", scipgraph.ErrNotIndexed, http.StatusConflict, "not_indexed", "repository is not indexed", false},
 		{"stale index", scipgraph.ErrStaleIndex, http.StatusConflict, "not_indexed", "repository is not indexed", true},
+		{"index pending", scipgraph.ErrIndexPending, http.StatusConflict, "index_pending", "repository is being indexed for this commit; retry after indexing completes", true},
 		{"missing repository", pgx.ErrNoRows, http.StatusNotFound, "not_found", "repository not found", false},
 		{"backend", errors.New("secret backend"), http.StatusServiceUnavailable, "unavailable", "SCIP service is unavailable", true},
 	} {

@@ -114,6 +114,47 @@ func TestUploadMapsStaleReplacementOnly(t *testing.T) {
 	}
 }
 
+func TestUploadForCommitBeingIndexedIsPending(t *testing.T) {
+	shaB, shaC := strings.Repeat("b", 40), strings.Repeat("c", 40)
+	pending := repository.Repository{ID: 1, GitHubID: 101, IndexedSHA: serviceSHA, DesiredSHA: shaB, Status: "pending"}
+	failed := pending
+	failed.Status = "failed"
+	firstIndex := repository.Repository{ID: 1, GitHubID: 101, DesiredSHA: shaB, Status: "pending"}
+	for _, test := range []struct {
+		name       string
+		repository repository.Repository
+		commit     string
+		want       error
+	}{
+		{"desired commit while pending", pending, shaB, ErrIndexPending},
+		{"unrelated commit while pending", pending, shaC, ErrNotIndexed},
+		{"indexed commit while pending", pending, serviceSHA, nil},
+		{"desired commit after failure", failed, shaB, ErrNotIndexed},
+		{"desired commit during first index", firstIndex, shaB, ErrIndexPending},
+		{"any commit before first index", firstIndex, shaC, ErrNotIndexed},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := &fakeStore{repositories: map[int64]repository.Repository{101: test.repository}}
+			err := (&Service{Store: store}).ValidateUpload(t.Context(), adminPrincipal, 101, test.commit)
+			if !errors.Is(err, test.want) || (test.want == nil && err != nil) {
+				t.Fatalf("ValidateUpload() error = %v, want %v", err, test.want)
+			}
+		})
+	}
+
+	t.Run("replacement loses race to indexing", func(t *testing.T) {
+		data := marshalIndex(t, &scip.Index{Metadata: &scip.Metadata{ToolInfo: &scip.ToolInfo{Name: "test"}}})
+		store := &fakeStore{repositories: map[int64]repository.Repository{101: serviceRepository}, replaceErr: ErrStaleIndex}
+		store.beforeReplace = func() {
+			store.repositories[101] = repository.Repository{ID: 1, GitHubID: 101, IndexedSHA: shaB, DesiredSHA: serviceSHA, Status: "pending"}
+		}
+		err := (&Service{Store: store}).Upload(t.Context(), adminPrincipal, 101, serviceSHA, data)
+		if !errors.Is(err, ErrIndexPending) {
+			t.Fatalf("Upload() error = %v, want %v", err, ErrIndexPending)
+		}
+	})
+}
+
 func TestNavigateValidatesRequestAndUsesZeroBasedStorageLine(t *testing.T) {
 	store := &fakeStore{repositories: map[int64]repository.Repository{101: serviceRepository}, origin: StoredOccurrence{RepositoryID: 1, Commit: serviceSHA}}
 	service := Service{Store: store, MaxResults: 7}
@@ -375,6 +416,7 @@ type fakeStore struct {
 	globalAuthorizationCalls     int
 	locationsPrincipal           authn.Principal
 	replacePackagesCalls         int
+	beforeReplace                func()
 }
 
 type authorizationCall struct {
@@ -407,6 +449,9 @@ func (store *fakeStore) AnyAuthorizedRepository(_ context.Context, repositoryID 
 
 func (store *fakeStore) ReplaceSCIP(_ context.Context, repositoryID int64, commit string, _ Upload) error {
 	store.replacedRepositoryID, store.replacedCommit = repositoryID, commit
+	if store.beforeReplace != nil {
+		store.beforeReplace()
+	}
 	return store.replaceErr
 }
 

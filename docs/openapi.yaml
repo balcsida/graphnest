@@ -413,7 +413,7 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '405': {$ref: '#/components/responses/InvalidRequest'}
-        '409': {$ref: '#/components/responses/Conflict'}
+        '409': {description: 'Commit is not the indexed commit (not_indexed), or GraphNest is still indexing that commit and the upload can be retried (index_pending, retryable)', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
         '413': {$ref: '#/components/responses/InvalidRequest'}
         '415': {$ref: '#/components/responses/InvalidRequest'}
         '503': {$ref: '#/components/responses/Unavailable'}

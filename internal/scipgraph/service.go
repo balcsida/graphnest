@@ -22,6 +22,7 @@ var (
 	ErrForbidden      = errors.New("forbidden")
 	ErrInvalidRequest = errors.New("invalid_request")
 	ErrNotIndexed     = errors.New("not_indexed")
+	ErrIndexPending   = errors.New("index_pending")
 	// Navigate used to collapse all four conditions below into ErrNotIndexed, which
 	// reported a healthy, search-indexed repository as unindexed. They are distinct
 	// causes with distinct operator remedies, so they get distinct sentinels.
@@ -116,6 +117,10 @@ func (service *Service) Upload(ctx context.Context, principal authn.Principal, r
 	}
 	err = service.Store.ReplaceSCIP(ctx, repository.ID, commit, upload)
 	if errors.Is(err, ErrStaleIndex) {
+		// The in-transaction recheck lost a race; indexing may have just reached this commit.
+		if _, recheckErr := service.validateUpload(ctx, principal, repositoryID, commit); errors.Is(recheckErr, ErrIndexPending) {
+			return ErrIndexPending
+		}
 		return ErrNotIndexed
 	}
 	return err
@@ -134,10 +139,13 @@ func (service *Service) validateUpload(ctx context.Context, principal authn.Prin
 	if err != nil {
 		return repository, err
 	}
-	if repository.IndexedSHA == "" || commit != repository.IndexedSHA {
-		return repository, ErrNotIndexed
+	if commit == repository.IndexedSHA && commit != "" {
+		return repository, nil
 	}
-	return repository, nil
+	if commit == repository.DesiredSHA && repository.Status == "pending" {
+		return repository, ErrIndexPending
+	}
+	return repository, ErrNotIndexed
 }
 
 func (service *Service) Navigate(ctx context.Context, principal authn.Principal, request api.SCIPNavigationRequest) (api.SCIPNavigationResponse, error) {
