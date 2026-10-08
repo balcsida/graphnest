@@ -77,7 +77,7 @@ superseded design decisions.
 | REST API | `/v1/...` | Bearer token or, where supported, same-origin browser session |
 | Streamable HTTP MCP | `/mcp` | Bearer API token, or an OAuth access token obtained through the built-in authorization server |
 | Stdio MCP proxy | `graphnest-mcp` | Uses `GRAPHNEST_SERVER_URL` and `GRAPHNEST_TOKEN` |
-| Command-line tool | `graphnest` (`graph import codegraph`, `graph status`) | Uses `GRAPHNEST_SERVER_URL` and `GRAPHNEST_TOKEN` or `GRAPHNEST_TOKEN_FILE`; offline for a dry run |
+| Command-line tool | `graphnest` (`login`, `logout`, `graph import codegraph`, `graph status`) | Uses `GRAPHNEST_SERVER_URL` and `GRAPHNEST_TOKEN`, `GRAPHNEST_TOKEN_FILE` or a browser sign-in with `graphnest login`; offline for a dry run |
 | Health and observability | `/healthz`, `/readyz`, `/metrics` | Intended for deployment health checks and monitoring |
 
 REST routes accept exactly one bearer credential or browser session; mixed credentials are rejected. MCP remains bearer-only; with `GRAPHNEST_MCP_OAUTH=true` MCP clients obtain that bearer token themselves through OAuth 2.1 (see [Operations](docs/operations.md#mcp-oauth-authorization-server)).
