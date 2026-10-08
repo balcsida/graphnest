@@ -15,6 +15,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/balcsida/graphnest/internal/client"
 )
 
 // doctorRepo copies the fixture index to <repo>/.codegraph/codegraph.db, optionally changing project_metadata.
@@ -221,6 +224,22 @@ func TestDoctorServer(t *testing.T) {
 		if checks["server"].Status != tc.want || !strings.Contains(checks["server"].Detail, tc.text) {
 			t.Errorf("%s: %+v", tc.name, checks["server"])
 		}
+	}
+
+	s := newPublishServer(t, sha, nil)
+	env := doctorEnv(map[string]string{"GRAPHNEST_SERVER_URL": s.URL, "GRAPHNEST_TOKEN": token}, good, fakeGit(nil, nil))
+	if checks := runDoctorChecks(t, env, 0, "--repo", repo, "--repository-id", "42"); !strings.Contains(checks["server"].Detail, "credentials: GRAPHNEST_TOKEN; ") {
+		t.Errorf("%+v", checks["server"])
+	}
+	config := t.TempDir()
+	login := client.Login{Server: s.URL, ClientID: "gnc", AccessToken: token, RefreshToken: "gnr", ExpiresAt: time.Now().Add(time.Hour), TokenEndpoint: s.URL + "/oauth/token"}
+	if err := (client.Logins{Dir: filepath.Join(config, "graphnest", "credentials")}).Save(login); err != nil {
+		t.Fatal(err)
+	}
+	env = doctorEnv(map[string]string{"GRAPHNEST_SERVER_URL": s.URL}, good, fakeGit(nil, nil))
+	env.ConfigDir = func() (string, error) { return config, nil }
+	if checks := runDoctorChecks(t, env, 0, "--repo", repo, "--repository-id", "42"); !strings.Contains(checks["server"].Detail, "credentials: stored login; ") {
+		t.Errorf("%+v", checks["server"])
 	}
 
 	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

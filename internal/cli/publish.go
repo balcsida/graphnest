@@ -46,7 +46,7 @@ const grantHint = "an administrator can grant it with PUT /v1/graph/publication-
 // publishArtifact runs the preflight, uploads with retries and reads the status again.
 // It prints nothing on stdout; a refusal or failure is returned as an error.
 func publishArtifact(ctx context.Context, env Environment, stderr io.Writer, req publishRequest) (*serverReport, *publicationReport, error) {
-	config, err := client.FromEnv(env.Getenv, env.ReadFile, client.Logins{})
+	config, err := client.FromEnv(env.Getenv, env.ReadFile, storedLogins(env))
 	if err != nil {
 		return nil, nil, err
 	}

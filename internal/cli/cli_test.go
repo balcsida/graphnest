@@ -340,6 +340,15 @@ func TestGraphStatusServerError(t *testing.T) {
 	}
 }
 
+func TestGraphStatusUnauthorizedHint(t *testing.T) {
+	_, vars := statusServer(t, false)
+	vars["GRAPHNEST_TOKEN"] = "wrong"
+	code, _, stderr := run(t, testEnv(vars), "graph", "status", "--repository-id", "9")
+	if code != 1 || !strings.Contains(stderr, "check the token or run graphnest login") || strings.Contains(stderr, "wrong") {
+		t.Fatalf("code %d stderr %q", code, stderr)
+	}
+}
+
 func TestGraphStatusConfiguration(t *testing.T) {
 	code, _, stderr := run(t, testEnv(map[string]string{"GRAPHNEST_TOKEN": token}), "graph", "status", "--repository-id", "9")
 	if code != 1 || !strings.Contains(stderr, "GRAPHNEST_SERVER_URL") || strings.Contains(stderr, token) {
