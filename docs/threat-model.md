@@ -79,6 +79,28 @@ all clients appear as one source.
 - REST rejects mixed bearer/session credentials, while MCP remains bearer-only
   and rejects browser-session cookies.
 
+## CLI OAuth login controls
+
+- `graphnest login` stores the access and refresh tokens in a `0600` file in a
+  `0700` directory under the user configuration directory, written atomically.
+  Any process of the same OS user can read it, as with an API token in the
+  environment or a token file; the refresh token is revocable under Account →
+  Connected MCP clients and by `graphnest logout`;
+- the loopback callback listens on an IP literal (`127.0.0.1`, else `[::1]`)
+  on an ephemeral port, never a hostname, and answers only `GET /callback`.
+  A 32-byte random `state` is compared in constant time, so a forged or stale
+  request is rejected and cannot change the result; only the first valid
+  callback counts. The listener closes before the code is exchanged and when
+  the wait times out, so the port is single-use;
+- PKCE S256 binds the code to the CLI process; a client registered per login
+  holds only that loopback redirect URI, and the issuer in the server's
+  metadata must equal the configured origin;
+- the `graph:write` scope is shown on the consent page and, for publication,
+  is required in addition to the repository publication grant; it never
+  replaces the grant, and OAuth tokens reach only the CLI's repository, graph
+  status and graph upload routes (ADR-0019); and
+- tokens, codes and verifiers never appear in output, errors or logs.
+
 ## Milestone 2 controls
 
 - webhook HMAC is checked over bounded untouched bytes before JSON decoding;

@@ -173,9 +173,10 @@ func createOAuthGrant(ctx context.Context, queryer principalQuerier, grant authn
 // access, without delegating administrative or write privileges.
 func (s *Store) OAuthPrincipal(ctx context.Context, accessHash [32]byte, now time.Time) (authn.Principal, error) {
 	var userID int64
+	var scope string
 	if err := s.pool.QueryRow(ctx, `update oauth_grants set last_used_at=$2
 		from users where oauth_grants.access_hash=$1 and oauth_grants.access_expires_at > $2 and `+liveOAuthGrantSQL+`
-		returning oauth_grants.user_id`, accessHash[:], now).Scan(&userID); err != nil {
+		returning oauth_grants.user_id, oauth_grants.scope`, accessHash[:], now).Scan(&userID, &scope); err != nil {
 		return authn.Principal{}, err
 	}
 	principal, err := s.UserPrincipal(ctx, userID, nil)
@@ -192,7 +193,7 @@ func (s *Store) OAuthPrincipal(ctx context.Context, accessHash [32]byte, now tim
 		}
 		principal.Administrator = false
 	}
-	principal.Method = authn.ProviderOAuthToken
+	principal.Method, principal.Scope = authn.ProviderOAuthToken, scope
 	return principal, nil
 }
 

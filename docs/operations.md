@@ -300,7 +300,36 @@ server state before and after (`indexed_sha`, `active_generation_before`,
 
 `graphnest graph status --repository-id 101` reads `GET /v1/repositories/{id}`
 and the graph status with the publication preflight block. Credentials come
-from `GRAPHNEST_TOKEN` or `GRAPHNEST_TOKEN_FILE` only.
+from `GRAPHNEST_TOKEN` or `GRAPHNEST_TOKEN_FILE`, or from the login stored by
+`graphnest login` when neither is set.
+
+#### Signing in
+
+With the MCP OAuth server enabled (`GRAPHNEST_MCP_OAUTH`), `graphnest login`
+signs a person in without an API token. It reads `GRAPHNEST_SERVER_URL` (and
+`GRAPHNEST_CA_FILE`), checks the server's OAuth metadata, listens on a loopback
+port (`127.0.0.1`, or `[::1]` when IPv4 is unavailable), registers a public
+client named `graphnest CLI` for that redirect, prints the authorization URL and
+opens it in the system browser. The consent page lists the `graph:write`
+capability, which publication needs in addition to the repository publication
+grant. The command waits for the browser up to `--timeout` (default `5m`), then
+exchanges the code with PKCE (S256) and stores the login.
+
+The login is a `0600` file under `graphnest/credentials/` in the user
+configuration directory (`os.UserConfigDir`: `~/Library/Application Support` on
+macOS, `$XDG_CONFIG_HOME` or `~/.config` on Linux, `%AppData%` on Windows), one
+file per server origin. Every server command (`graph status`, `graph upload`,
+`graph import codegraph`, `doctor`) uses it when neither
+`GRAPHNEST_TOKEN` nor `GRAPHNEST_TOKEN_FILE` is set; those variables always take
+precedence, and `login` prints a note when one is set. `doctor` reports which
+credential it used. The CLI refreshes the access token with the refresh token
+when it expires, so the grant lasts until it expires (30 days after consent) or
+is revoked. Signing in again revokes the previous grant for that server.
+
+`graphnest logout` revokes the stored refresh token (RFC 7009) and deletes the
+file. If the server cannot be reached, the file is still deleted and the command
+exits 1; disconnect `graphnest CLI` under **Account → Connected MCP clients**.
+A machine without a browser (CI, a remote shell) keeps using an API token.
 
 #### Checking an import environment
 
@@ -799,13 +828,18 @@ or altered continuations require restarting that authorization.
 
 Access tokens (`gno_…`) carry the user's repository read access, including
 GitHub-derived grants, without administrative privileges. They authenticate
-only `/mcp` and cannot create or manage credentials. Users see and disconnect
+`/mcp` and the routes the `graphnest` CLI calls (`GET /v1/repositories`,
+`GET /v1/repositories/{id}`, `POST /v1/graph/uploads` and
+`GET /v1/graph/repositories/{id}/status`), and cannot create or manage
+credentials. Publishing a graph also needs the `graph:write` scope and the
+repository publication grant; tokens without the scope can read but never
+publish. Users see and disconnect
 clients under **Account → Connected MCP clients** at `/account`
 (`GET`/`DELETE /v1/account/oauth-grants`); administrators' "revoke
-credentials" also revokes grants. `scope` is accepted, persisted and echoed but
-not yet enforced, so finer scopes can be introduced later with a
-`WWW-Authenticate: Bearer error="insufficient_scope"` step-up rather than a
-migration.
+credentials" also revokes grants. `graph:write` is the only scope enforced, and
+the consent page lists it when requested; other `scope` values are still
+accepted, persisted and echoed but ignored. `scopes_supported` in the metadata
+stays empty.
 
 With `GRAPHNEST_OAUTH_GITHUB_ACCESS_SYNC`, every new authorization requires a
 fresh GitHub sign-in, including users with an existing GraphNest session. Each

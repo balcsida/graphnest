@@ -176,6 +176,9 @@ func (service *Service) mayPublish(ctx context.Context, principal authn.Principa
 	if principal.Subject == "" {
 		return false, nil
 	}
+	if principal.Method == authn.ProviderOAuthToken && !principal.HasScope(authn.ScopeGraphWrite) {
+		return false, nil
+	}
 	if principal.Administrator {
 		return true, nil
 	}

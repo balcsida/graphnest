@@ -1,6 +1,6 @@
 # ADR-0016: MCP OAuth Authorization Server
 
-- Status: Accepted
+- Status: Accepted; amended by ADR-0019
 - Date: 2026-09-04
 
 ## Decision

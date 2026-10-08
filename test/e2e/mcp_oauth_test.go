@@ -159,9 +159,9 @@ func TestMCPOAuthAuthorizationCodeFlow(t *testing.T) {
 		t.Fatalf("tokens=%v", tokens)
 	}
 
-	// 6. The access token drives MCP as the user (repository 101 only).
+	// 6. The access token drives MCP and the CLI's repository route as the user (repository 101 only).
 	assertMCPRepositoryAccess(t, public, access)
-	assertBearerStatus(t, public.Client(), base, access, "/v1/repositories/101", http.StatusUnauthorized)
+	assertBearerStatus(t, public.Client(), base, access, "/v1/repositories/101", http.StatusOK)
 	// ...but cannot manage credentials.
 	assertBearerStatus(t, public.Client(), base, access, "/v1/account/api-tokens", http.StatusUnauthorized)
 
@@ -318,7 +318,10 @@ func newMCPOAuthServer(t *testing.T, database milestoneDatabase, github *githubO
 	}
 	mux := http.NewServeMux()
 	httpapi.RegisterAuth(mux, false, false, true, []sso.Provider{provider}, requestAuth, sessions, nil)
-	httpapi.RegisterRepositories(mux, requestAuth, repositories, 64<<10, 10, 64<<10)
+	inventoryAuth := requestAuth
+	inventoryAuth.Bearer = bearer
+	httpapi.RegisterRepositoryInventory(mux, inventoryAuth, repositories, 10, 64<<10)
+	httpapi.RegisterFileReads(mux, requestAuth, repositories, 64<<10, 64<<10)
 	httpapi.RegisterSearch(mux, requestAuth, searchService, 64<<10, 64<<10)
 	httpapi.RegisterAccount(mux, requestAuth, newAccountService(database), 64<<10, 64<<10)
 	authorizationServer.Register(mux)

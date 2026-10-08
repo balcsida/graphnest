@@ -155,11 +155,12 @@ func runDoctor(ctx context.Context, args []string, env Environment, stdout, stde
 
 // checkServer reads the repository (with an ID) and the graph status; the first error ends it as a failure.
 func checkServer(ctx context.Context, env Environment, repositoryID int64, head string) (string, string) {
-	config, err := client.FromEnv(env.Getenv, env.ReadFile)
+	config, err := client.FromEnv(env.Getenv, env.ReadFile, storedLogins(env))
 	if err == nil {
 		var server *client.Client
 		if server, err = client.New(config); err == nil {
-			return serverChecks(ctx, server, repositoryID, head)
+			status, detail := serverChecks(ctx, server, repositoryID, head)
+			return status, "credentials: " + config.Source + "; " + detail
 		}
 	}
 	return statusFail, "configuration: " + err.Error()

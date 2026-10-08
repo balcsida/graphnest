@@ -6,6 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -39,13 +42,13 @@ func TestFromEnv(t *testing.T) {
 		want string // variable named in the error; empty means success
 	}{
 		{"missing url", map[string]string{"GRAPHNEST_TOKEN": testToken}, "GRAPHNEST_SERVER_URL"},
-		{"no token", map[string]string{"GRAPHNEST_SERVER_URL": "http://h"}, "GRAPHNEST_TOKEN"},
+		{"no token", map[string]string{"GRAPHNEST_SERVER_URL": "http://h"}, "graphnest login"},
 		{"both tokens", map[string]string{"GRAPHNEST_SERVER_URL": "http://h", "GRAPHNEST_TOKEN": testToken, "GRAPHNEST_TOKEN_FILE": "tok"}, "GRAPHNEST_TOKEN_FILE"},
 		{"unreadable token file", map[string]string{"GRAPHNEST_SERVER_URL": "http://h", "GRAPHNEST_TOKEN_FILE": "missing"}, "GRAPHNEST_TOKEN_FILE"},
 		{"unreadable ca", map[string]string{"GRAPHNEST_SERVER_URL": "http://h", "GRAPHNEST_TOKEN": testToken, "GRAPHNEST_CA_FILE": "missing"}, "GRAPHNEST_CA_FILE"},
 		{"token file", map[string]string{"GRAPHNEST_SERVER_URL": "http://h", "GRAPHNEST_TOKEN_FILE": "tok"}, ""},
 	} {
-		config, err := FromEnv(env(tc.env), read)
+		config, err := FromEnv(env(tc.env), read, Logins{})
 		if tc.want == "" {
 			if err != nil || config.Token != "filetoken" {
 				t.Fatalf("%s: %+v %v", tc.name, config, err)
@@ -185,5 +188,218 @@ func TestContextCancellation(t *testing.T) {
 	cancel()
 	if _, err := newClient(t, server.URL).GraphStatus(ctx, 1); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err %v", err)
+	}
+}
+
+func fromEnvMap(m map[string]string) func(string) string {
+	return func(k string) string { return m[k] }
+}
+
+func TestFromEnvPrecedence(t *testing.T) {
+	logins := Logins{Dir: t.TempDir()}
+	stored := Login{Server: "http://h", ClientID: "c", AccessToken: testAccess, RefreshToken: testRefresh, ExpiresAt: time.Now().Add(time.Hour), TokenEndpoint: "http://h/token"}
+	if err := logins.Save(stored); err != nil {
+		t.Fatal(err)
+	}
+	read := func(string) ([]byte, error) { return []byte("filetoken"), nil }
+	config, err := FromEnv(fromEnvMap(map[string]string{"GRAPHNEST_SERVER_URL": "http://h"}), read, logins)
+	if err != nil || config.Source != "stored login" || config.Login == nil || config.Login.RefreshToken != testRefresh || config.Token != "" {
+		t.Fatalf("%+v %v", config, err)
+	}
+	config, err = FromEnv(fromEnvMap(map[string]string{"GRAPHNEST_SERVER_URL": "http://h", "GRAPHNEST_TOKEN": "envtoken"}), read, logins)
+	if err != nil || config.Source != "GRAPHNEST_TOKEN" || config.Login != nil || config.Token != "envtoken" {
+		t.Fatalf("%+v %v", config, err)
+	}
+	config, err = FromEnv(fromEnvMap(map[string]string{"GRAPHNEST_SERVER_URL": "http://h", "GRAPHNEST_TOKEN_FILE": "f"}), read, logins)
+	if err != nil || config.Source != "GRAPHNEST_TOKEN_FILE" || config.Login != nil || config.Token != "filetoken" {
+		t.Fatalf("%+v %v", config, err)
+	}
+	// A corrupt login file fails without echoing its contents.
+	if err = os.WriteFile(filepath.Join(logins.Dir, loginFileName("http://h")), []byte("not json "+testRefresh), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = FromEnv(fromEnvMap(map[string]string{"GRAPHNEST_SERVER_URL": "http://h"}), read, logins)
+	noSecrets(t, err)
+	if !strings.HasSuffix(err.Error(), "; run graphnest login") {
+		t.Fatal(err)
+	}
+}
+
+// refreshFixture is a server that answers token-endpoint calls and records them.
+type refreshFixture struct {
+	server *httptest.Server
+	forms  []url.Values
+	auths  []string
+	reply  func(form url.Values) (int, string)
+	logins Logins
+	stale  Login
+}
+
+func newRefreshFixture(t *testing.T, expiresIn time.Duration) *refreshFixture {
+	t.Helper()
+	f := &refreshFixture{logins: Logins{Dir: t.TempDir()}}
+	f.reply = func(url.Values) (int, string) {
+		return 200, `{"access_token":"rotated-s3cret","token_type":"Bearer","expires_in":3600,"refresh_token":"rotated-refresh","scope":"graph:write"}`
+	}
+	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/token" {
+			r.ParseForm()
+			f.forms = append(f.forms, r.PostForm)
+			status, body := f.reply(r.PostForm)
+			w.WriteHeader(status)
+			w.Write([]byte(body))
+			return
+		}
+		f.auths = append(f.auths, r.Header.Get("Authorization"))
+		w.Write([]byte(`{"id":1,"name":"r"}`))
+	}))
+	t.Cleanup(f.server.Close)
+	f.stale = Login{Server: f.server.URL, ClientID: "cid", AccessToken: testAccess, RefreshToken: testRefresh,
+		ExpiresAt: time.Now().Add(expiresIn), TokenEndpoint: f.server.URL + "/token"}
+	return f
+}
+
+func (f *refreshFixture) client(t *testing.T) *Client {
+	t.Helper()
+	login := f.stale
+	c, err := New(Config{ServerURL: f.server.URL, Login: &login, Logins: f.logins})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func TestClientRefreshesStoredLogin(t *testing.T) {
+	f := newRefreshFixture(t, time.Minute)
+	if _, err := f.client(t).Repository(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.forms) != 1 || f.forms[0].Get("grant_type") != "refresh_token" || f.forms[0].Get("refresh_token") != testRefresh || f.forms[0].Get("client_id") != "cid" {
+		t.Fatalf("%v", f.forms)
+	}
+	if len(f.auths) != 1 || f.auths[0] != "Bearer rotated-s3cret" {
+		t.Fatalf("%v", f.auths)
+	}
+	saved, ok, err := f.logins.Load(f.server.URL)
+	if err != nil || !ok || saved.RefreshToken != "rotated-refresh" || saved.AccessToken != "rotated-s3cret" || saved.ClientID != "cid" {
+		t.Fatalf("%+v %v %v", saved, ok, err)
+	}
+
+	f = newRefreshFixture(t, time.Hour)
+	if _, err = f.client(t).Repository(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.forms) != 0 || len(f.auths) != 1 || f.auths[0] != "Bearer "+testAccess {
+		t.Fatalf("%v %v", f.forms, f.auths)
+	}
+}
+
+func TestClientAdoptsTokensRotatedByAnotherProcess(t *testing.T) {
+	f := newRefreshFixture(t, time.Minute)
+	rotated := f.stale
+	rotated.AccessToken, rotated.RefreshToken, rotated.ExpiresAt = "rotated-s3cret", "rotated-refresh", time.Now().Add(time.Hour)
+	f.reply = func(url.Values) (int, string) {
+		// Another process rotates the login while this refresh is in flight.
+		if err := f.logins.Save(rotated); err != nil {
+			t.Error(err)
+		}
+		return 400, `{"error":"invalid_grant"}`
+	}
+	if _, err := f.client(t).Repository(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.forms) != 1 || len(f.auths) != 1 || f.auths[0] != "Bearer rotated-s3cret" {
+		t.Fatalf("%v %v", f.forms, f.auths)
+	}
+}
+
+func TestClientReportsExpiredLogin(t *testing.T) {
+	f := newRefreshFixture(t, time.Minute)
+	f.reply = func(url.Values) (int, string) { return 400, `{"error":"invalid_grant"}` }
+	if err := f.logins.Save(f.stale); err != nil {
+		t.Fatal(err)
+	}
+	_, err := f.client(t).Repository(context.Background(), 1)
+	want := "the stored login for " + f.server.URL + " has expired or was revoked; run graphnest login"
+	if err == nil || err.Error() != want || len(f.auths) != 0 {
+		t.Fatalf("%v", err)
+	}
+	noSecrets(t, err)
+
+	// A newer, soon-to-expire login is adopted before refreshing; its invalid_grant is expired.
+	f = newRefreshFixture(t, time.Minute)
+	f.reply = func(url.Values) (int, string) { return 400, `{"error":"invalid_grant"}` }
+	newer := f.stale
+	newer.RefreshToken, newer.ExpiresAt = "rotated-refresh", time.Now().Add(time.Minute)
+	if err = f.logins.Save(newer); err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.client(t).Repository(context.Background(), 1)
+	noSecrets(t, err)
+	if len(f.forms) != 1 || err.Error() != "the stored login for "+f.server.URL+" has expired or was revoked; run graphnest login" {
+		t.Fatalf("%v %v", f.forms, err)
+	}
+}
+
+func TestClientAdoptsNewerStoredLoginBeforeRefreshing(t *testing.T) {
+	f := newRefreshFixture(t, time.Minute)
+	newer := f.stale
+	newer.AccessToken, newer.RefreshToken, newer.ExpiresAt = "A2", "R2", time.Now().Add(time.Hour)
+	if err := f.logins.Save(newer); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.client(t).Repository(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.forms) != 0 || len(f.auths) != 1 || f.auths[0] != "Bearer A2" {
+		t.Fatalf("%v %v", f.forms, f.auths)
+	}
+}
+
+func TestClientRetriesOnceAfterAnotherProcessRotated(t *testing.T) {
+	var auths []string
+	var logins Logins
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auths = append(auths, r.Header.Get("Authorization"))
+		if len(auths) == 1 {
+			newer := Login{Server: server.URL, ClientID: "cid", AccessToken: "A2", RefreshToken: "R2", ExpiresAt: time.Now().Add(time.Hour), TokenEndpoint: server.URL + "/token"}
+			if err := logins.Save(newer); err != nil {
+				t.Error(err)
+			}
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Write([]byte(`{"id":1,"name":"r"}`))
+	}))
+	defer server.Close()
+	logins = Logins{Dir: t.TempDir()}
+	login := Login{Server: server.URL, ClientID: "cid", AccessToken: "A1", RefreshToken: "R1", ExpiresAt: time.Now().Add(time.Hour), TokenEndpoint: server.URL + "/token"}
+	c, err := New(Config{ServerURL: server.URL, Login: &login, Logins: logins})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = c.Repository(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if len(auths) != 2 || auths[0] != "Bearer A1" || auths[1] != "Bearer A2" {
+		t.Fatalf("%v", auths)
+	}
+
+	// With an unchanged store the 401 is returned without a retry.
+	f := newRefreshFixture(t, time.Hour)
+	unauthorized := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.auths = append(f.auths, r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer unauthorized.Close()
+	login = f.stale
+	c, err = New(Config{ServerURL: unauthorized.URL, Login: &login, Logins: f.logins})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var apiErr *Error
+	if _, err = c.Repository(context.Background(), 1); !errors.As(err, &apiErr) || apiErr.Status != 401 || len(f.auths) != 1 {
+		t.Fatalf("%v %v", err, f.auths)
 	}
 }

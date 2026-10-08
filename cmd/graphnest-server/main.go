@@ -635,11 +635,13 @@ func newAPIHandler(settings config.Config, metrics *observability.Metrics, authe
 func newAPIHandlerWithMCP(settings config.Config, metrics *observability.Metrics, authenticator authn.RequestAuthenticator, service *search.Service, repositories *repository.Service, scipGraph *scipgraph.Service, graph *graphingest.Service, graphQueries *graphservice.Service, webhookSecret []byte, processor webhook.Processor, adminService *admin.Service, checker httpapi.ReadyChecker, providers []sso.Provider, sessions *authn.SessionManager, provisioning *authn.ProvisioningAuthenticator, scimService *scim.Service, mcpOAuth *oauthas.Server, supplyChainMCP mcpserver.SupplyChainServices, extras ...func(*http.ServeMux)) http.Handler {
 	mux := http.NewServeMux()
 	var challenge httpapi.BearerChallenge
-	mcpBearer := authenticator.Bearer
+	// ADR-0019: OAuth access tokens also reach /mcp and the CLI's repository
+	// inventory and graph ingestion routes; every other route stays API-token only.
+	oauthBearer := authenticator.Bearer
 	if mcpOAuth != nil {
 		mcpOAuth.Register(mux)
 		challenge = mcpOAuth.Challenge
-		mcpBearer = authn.BearerRouter{APITokens: authenticator.Bearer, OAuth: authn.OAuthTokenAuthenticator{Store: mcpOAuth.Store}}
+		oauthBearer = authn.BearerRouter{APITokens: authenticator.Bearer, OAuth: authn.OAuthTokenAuthenticator{Store: mcpOAuth.Store}}
 	}
 	fileReads := repositories != nil && repositories.GitHub != nil
 	httpapi.RegisterAuth(mux, true, settings.SSO.BreakGlass, fileReads, providers, authenticator, sessions, metrics)
@@ -652,7 +654,9 @@ func newAPIHandlerWithMCP(settings config.Config, metrics *observability.Metrics
 		}
 	}
 	if repositories != nil {
-		httpapi.RegisterRepositoryInventory(mux, authenticator, repositories, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
+		inventoryAuth := authenticator
+		inventoryAuth.Bearer = oauthBearer
+		httpapi.RegisterRepositoryInventory(mux, inventoryAuth, repositories, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
 		if fileReads {
 			httpapi.RegisterFileReads(mux, authenticator, repositories, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
 		}
@@ -669,7 +673,7 @@ func newAPIHandlerWithMCP(settings config.Config, metrics *observability.Metrics
 				return repo.ID, err
 			}}
 		}
-		httpapi.RegisterGraphIngestion(mux, authenticator.Bearer, graph, grants, settings.Limits.GraphMaxUploadBytes, settings.Limits.MaxResponseBytes)
+		httpapi.RegisterGraphIngestion(mux, oauthBearer, graph, grants, settings.Limits.GraphMaxUploadBytes, settings.Limits.MaxResponseBytes)
 	}
 	if graphQueries != nil {
 		httpapi.RegisterGraphQueries(mux, authenticator.Bearer, graphQueries, settings.Graph.MaxRequestBytes, settings.Graph.MaxResponseBytes)
@@ -689,7 +693,7 @@ func newAPIHandlerWithMCP(settings config.Config, metrics *observability.Metrics
 		MaxItems: settings.Limits.MaxResults, MaxOutputBytes: settings.Limits.MaxResponseBytes, GraphMaxOutputBytes: settings.Graph.MaxResponseBytes,
 	})
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer }, nil)
-	mux.Handle("/mcp", httpapi.AuthenticateBearerWithChallenge(mcpBearer, challenge, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	mux.Handle("/mcp", httpapi.AuthenticateBearerWithChallenge(oauthBearer, challenge, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		request.Body = http.MaxBytesReader(writer, request.Body, settings.Limits.MaxRequestBytes)
 		mcpHandler.ServeHTTP(writer, request)
 	})))

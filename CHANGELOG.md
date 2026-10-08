@@ -5,6 +5,35 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+### Added
+
+- `graphnest login` signs in through the browser (RFC 8252: loopback redirect
+  on `127.0.0.1`, PKCE S256, a client registered per login) and stores the
+  login in a `0600` file under the user configuration directory. Every server
+  command uses it when `GRAPHNEST_TOKEN` and `GRAPHNEST_TOKEN_FILE` are unset
+  and refreshes it when it expires. `graphnest logout` revokes the grant and
+  deletes the file. `graphnest doctor` reports which credential it used. See
+  ADR-0019.
+
+### Changed
+
+- OAuth access tokens now authenticate `GET /v1/repositories`,
+  `GET /v1/repositories/{id}`, `GET /v1/graph/repositories/{id}/status` and
+  `POST /v1/graph/uploads`. The other routes mounted beside graph ingestion
+  (the v1 uploads and `PUT /v1/graph/publication-grants`) also see OAuth tokens
+  but stay administrator-only, and OAuth principals are never administrators;
+  all remaining REST routes accept only API tokens and sessions. Publication by an OAuth token needs the `graph:write`
+  scope in addition to the repository publication grant, and the consent page
+  lists that capability.
+- A 401 from the server now suggests `graphnest login` as well as checking the
+  token.
+
+### Security
+
+- The login file is readable by the same OS user, like an API token file; the
+  loopback callback accepts only the first response carrying the expected
+  `state`. See the threat model.
+
 ## [0.10.0] - 2026-10-08
 
 This release adds `graphnest`, a command-line tool that imports an existing

@@ -10,8 +10,10 @@ import (
 var ErrUnauthenticated = errors.New("unauthenticated")
 
 type Principal struct {
-	Subject       string
-	Method        string
+	Subject string
+	Method  string
+	// Scope is the space-delimited OAuth grant scope; empty for every other credential.
+	Scope         string
 	Administrator bool
 	// DelegationOnly marks an administrator API token that may only mint
 	// narrowed, short-lived tokens (POST /v1/admin/api-tokens) for any active

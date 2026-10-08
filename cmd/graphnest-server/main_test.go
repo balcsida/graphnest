@@ -1240,7 +1240,7 @@ func TestMCPOAuthWiresDurableRequestLimits(t *testing.T) {
 	}
 }
 
-func TestMCPOAuthBearerOnlyAuthenticatesMCP(t *testing.T) {
+func TestOAuthBearerReachesOnlyMCPAndCLIRoutes(t *testing.T) {
 	settings, endpoints, httpClient := authRuntimeSettings(t)
 	settings.SSO.OIDC.Enabled = false
 	settings.SSO.MCPOAuth.Enabled = true
@@ -1257,21 +1257,25 @@ func TestMCPOAuthBearerOnlyAuthenticatesMCP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := newAPIHandler(settings, observability.New(), runtime.requestAuth, nil, nil, nil, nil, nil, nil, nil, nil, nil, runtime.providers, runtime.sessions, nil, nil, runtime.mcpOAuth)
+	handler := newAPIHandler(settings, observability.New(), runtime.requestAuth, nil, &repository.Service{Store: repositoryStoreStub{}}, nil, &graphingest.Service{}, nil, nil, nil, nil, nil, runtime.providers, runtime.sessions, nil, nil, runtime.mcpOAuth)
 	for _, test := range []struct {
-		name, path, token string
-		want              int
+		name, method, path, token string
+		want                      int
 	}{
-		{"OAuth REST", "/v1/auth/session", oauthToken, http.StatusUnauthorized},
-		{"OAuth MCP", "/mcp", oauthToken, http.StatusUnsupportedMediaType},
-		{"PAT REST", "/v1/auth/session", pat, http.StatusOK},
-		{"PAT MCP", "/mcp", pat, http.StatusUnsupportedMediaType},
+		{"OAuth session", http.MethodGet, "/v1/auth/session", oauthToken, http.StatusUnauthorized},
+		{"OAuth search", http.MethodPost, "/v1/search", oauthToken, http.StatusUnauthorized},
+		{"OAuth MCP", http.MethodPost, "/mcp", oauthToken, http.StatusUnsupportedMediaType},
+		{"OAuth repository", http.MethodGet, "/v1/repositories/42", oauthToken, http.StatusServiceUnavailable},
+		{"OAuth graph status", http.MethodGet, "/v1/graph/repositories/x/status", oauthToken, http.StatusBadRequest},
+		{"OAuth graph upload", http.MethodPost, "/v1/graph/uploads", oauthToken, http.StatusUnsupportedMediaType},
+		{"PAT session", http.MethodGet, "/v1/auth/session", pat, http.StatusOK},
+		{"PAT MCP", http.MethodPost, "/mcp", pat, http.StatusUnsupportedMediaType},
+		{"PAT repository", http.MethodGet, "/v1/repositories/42", pat, http.StatusServiceUnavailable},
+		{"PAT graph status", http.MethodGet, "/v1/graph/repositories/x/status", pat, http.StatusBadRequest},
+		{"PAT graph upload", http.MethodPost, "/v1/graph/uploads", pat, http.StatusUnsupportedMediaType},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodPost, test.path, nil)
-			if test.path == "/v1/auth/session" {
-				request.Method = http.MethodGet
-			}
+			request := httptest.NewRequest(test.method, test.path, nil)
 			request.Header.Set("Authorization", "Bearer "+test.token)
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)

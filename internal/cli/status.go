@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 
 	"github.com/balcsida/graphnest/internal/client"
 	"github.com/balcsida/graphnest/pkg/api"
@@ -29,7 +30,7 @@ func runGraphStatus(ctx context.Context, args []string, env Environment, stdout,
 	if *timeout <= 0 {
 		return usageError{"--timeout must be positive"}
 	}
-	config, err := client.FromEnv(env.Getenv, env.ReadFile)
+	config, err := client.FromEnv(env.Getenv, env.ReadFile, storedLogins(env))
 	if err != nil {
 		return err
 	}
@@ -50,12 +51,21 @@ func runGraphStatus(ctx context.Context, args []string, env Environment, stdout,
 
 func describeServerError(err error) error {
 	var serverErr *client.Error
-	if !errors.As(err, &serverErr) || serverErr.Code == "" {
+	if !errors.As(err, &serverErr) {
+		return err
+	}
+	if serverErr.Code == "" {
+		if serverErr.Status == http.StatusUnauthorized {
+			return fmt.Errorf("%w; check the token or run graphnest login", err)
+		}
 		return err
 	}
 	text := fmt.Sprintf("server error: code=%s message=%q", serverErr.Code, serverErr.Message)
 	if serverErr.Retryable {
 		text += " (retryable)"
+	}
+	if serverErr.Status == http.StatusUnauthorized {
+		text += "; check the token or run graphnest login"
 	}
 	return errors.New(text)
 }

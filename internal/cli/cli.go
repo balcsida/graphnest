@@ -35,6 +35,8 @@ const rootUsage = `usage: graphnest <command>
 
 commands:
   version   print the graphnest version
+  login     sign in to GRAPHNEST_SERVER_URL in the browser and store the login
+  logout    revoke and forget the stored login for GRAPHNEST_SERVER_URL
   doctor    check the git, CodeGraph index and server setup for an import
   graph     import graph data and show graph status
 `
@@ -57,6 +59,10 @@ type Environment struct {
 	Sleep func(context.Context, time.Duration) error
 	// Repository reads commits and evaluates ignore rules for freshness verification.
 	Repository graphimport.Git
+	// ConfigDir returns the user configuration directory that holds stored logins; nil means there is none.
+	ConfigDir func() (string, error)
+	// OpenBrowser opens a URL in the system browser; nil leaves the printed URL to the user.
+	OpenBrowser func(url string) error
 }
 
 // OSEnvironment is the real process environment.
@@ -67,10 +73,30 @@ func OSEnvironment() Environment {
 		Git: func(ctx context.Context, dir string, args ...string) ([]byte, error) {
 			return exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...).Output()
 		},
-		Now:        time.Now,
-		Sleep:      sleepContext,
-		Repository: graphimport.ExecGit{},
+		Now:         time.Now,
+		Sleep:       sleepContext,
+		Repository:  graphimport.ExecGit{},
+		ConfigDir:   os.UserConfigDir,
+		OpenBrowser: openBrowser,
 	}
+}
+
+// openBrowser starts the platform's URL opener without a shell and reaps it in the background.
+func openBrowser(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		cmd = exec.Command("xdg-open", url)
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go cmd.Wait()
+	return nil
 }
 
 // usageError marks a mistake in how the command was invoked.
@@ -107,6 +133,10 @@ func dispatch(ctx context.Context, args []string, env Environment, stdout, stder
 		return nil
 	case "version":
 		return runVersion(args[1:], stdout, stderr)
+	case "login":
+		return runLogin(ctx, args[1:], env, stdout, stderr)
+	case "logout":
+		return runLogout(ctx, args[1:], env, stdout, stderr)
 	case "doctor":
 		return runDoctor(ctx, args[1:], env, stdout, stderr)
 	case "graph":

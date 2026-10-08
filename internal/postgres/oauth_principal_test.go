@@ -65,3 +65,27 @@ func TestOAuthAdministratorPrincipalIsReadOnly(t *testing.T) {
 		t.Fatalf("SCIP refresh error=%v, want forbidden", err)
 	}
 }
+
+func TestOAuthPrincipalCarriesGrantScope(t *testing.T) {
+	store := migratedStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	client := seedOAuthClient(t, store, now)
+	for i, scope := range []string{"graph:write", ""} {
+		grant := authn.OAuthGrant{
+			ClientID: client.ID, UserID: insertIdentityUser(t, store, "oauth-scope-"+scope, "ada"+scope), Scope: scope,
+			AccessHash: [32]byte{20, byte(i)}, AccessExpiresAt: now.Add(2 * time.Hour),
+			RefreshHash: [32]byte{21, byte(i)}, GitHubTokenCiphertext: []byte("ciphertext"),
+			CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour),
+		}
+		if _, err := store.CreateOAuthGrant(t.Context(), grant); err != nil {
+			t.Fatal(err)
+		}
+		principal, err := store.OAuthPrincipal(t.Context(), grant.AccessHash, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if principal.Scope != scope {
+			t.Fatalf("principal scope=%q, want %q", principal.Scope, scope)
+		}
+	}
+}
