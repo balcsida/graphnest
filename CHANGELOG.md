@@ -5,6 +5,12 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+### Added
+
+- `brew install balcsida/tap/graphnest` installs the command-line tool. After
+  publishing a release, the Release workflow asks the tap to update its formula
+  (with the `TAP_DISPATCH_TOKEN` secret; see `docs/release-process.md`).
+
 ## [0.11.0] - 2026-10-08
 
 This release lets `graphnest` sign in through the browser with OAuth instead of

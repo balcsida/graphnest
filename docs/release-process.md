@@ -26,3 +26,12 @@ GitHub Release only after that work succeeds.
 
 Rerun a tagged release only before its GitHub Release exists. Once it exists,
 the workflow refuses to republish that tag.
+
+After the GitHub Release exists, the `homebrew` job asks
+[balcsida/homebrew-tap](https://github.com/balcsida/homebrew-tap) to move its
+`graphnest` formula to the new version (`repository_dispatch` event
+`update-graphnest`). The tap takes each binary's SHA-256 from the release's
+checksums file and installs and tests the formula before publishing it. The job
+needs the `TAP_DISPATCH_TOKEN` secret: a fine-grained token with Contents: write
+on `balcsida/homebrew-tap` only. Without it the job leaves a notice and the
+tap's daily check picks up the release; if the job fails, rerun only that job.
