@@ -81,7 +81,11 @@ func runLogin(ctx context.Context, args []string, env Environment, stdout, stder
 
 	results := make(chan callbackResult, 1)
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET "+callbackPath, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(callbackPath, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
 		query := r.URL.Query()
 		if subtle.ConstantTimeCompare([]byte(query.Get("state")), []byte(state)) != 1 {
 			http.Error(w, "This response does not belong to the running graphnest login.", http.StatusBadRequest)

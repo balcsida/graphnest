@@ -239,6 +239,41 @@ func TestLoginIgnoresForgedCallback(t *testing.T) {
 	}
 }
 
+func TestLoginServesOnlyGetCallback(t *testing.T) {
+	var statuses []int
+	open := func(u string) error {
+		go func() {
+			redirect, _ := url.Parse(u)
+			callback := redirect.Query().Get("redirect_uri")
+			state := redirect.Query().Get("state")
+			post, err := http.Post(callback+"?code=evil&state="+state, "text/plain", nil)
+			if err == nil {
+				post.Body.Close()
+				statuses = append(statuses, post.StatusCode)
+			}
+			base, _ := url.Parse(callback)
+			base.Path = "/other"
+			other, err := http.Get(base.String())
+			if err == nil {
+				other.Body.Close()
+				statuses = append(statuses, other.StatusCode)
+			}
+			if response, err := http.Get(u); err == nil {
+				io.Copy(io.Discard, response.Body)
+				response.Body.Close()
+			}
+		}()
+		return nil
+	}
+	s := newLoginSetup(t, nil, open)
+	if code, _, stderr := run(t, s.env, "login"); code != 0 {
+		t.Fatalf("code %d stderr %q", code, stderr)
+	}
+	if len(statuses) != 2 || statuses[0] != 404 || statuses[1] != 404 {
+		t.Errorf("statuses %v", statuses)
+	}
+}
+
 func TestLoginReportsDeniedAuthorization(t *testing.T) {
 	s := newLoginSetup(t, nil, browser(nil))
 	s.auth.deny = true
