@@ -980,3 +980,34 @@ func TestResolveRedirectRebuildsTargetFromRegistration(t *testing.T) {
 		}
 	}
 }
+
+func TestConsentListsGraphWriteOnlyWhenRequested(t *testing.T) {
+	h := newHarness(t)
+	h.server.GitHub, h.server.GitHubTokens = nil, nil
+	redirect := "http://127.0.0.1:7777/callback"
+	clientID := h.registerClient(t, redirect)
+	_, challenge := pkce()
+	const item = "publish code graphs to repositories where you hold a publication grant"
+	for _, test := range []struct {
+		scope string
+		want  bool
+	}{{"graph:write", true}, {"", false}} {
+		target := authorizeURL(clientID, redirect, challenge)
+		if test.scope != "" {
+			target += "&scope=" + url.QueryEscape(test.scope)
+		}
+		request := httptest.NewRequest(http.MethodGet, target, nil)
+		request.AddCookie(&http.Cookie{Name: authn.SessionCookieName, Value: sessionTokenValue})
+		response := h.do(request)
+		body := response.Body.String()
+		if response.Code != http.StatusOK {
+			t.Fatalf("scope %q: status=%d body=%s", test.scope, response.Code, body)
+		}
+		if strings.Contains(body, item) != test.want || strings.Contains(body, "change anything else or create further credentials") != test.want {
+			t.Fatalf("scope %q: consent page mismatch: %s", test.scope, body)
+		}
+		if !test.want && !strings.Contains(body, "It will not be able to change anything or create further credentials.") {
+			t.Fatalf("scope %q: default sentence missing", test.scope)
+		}
+	}
+}

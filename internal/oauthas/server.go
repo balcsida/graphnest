@@ -834,8 +834,8 @@ button.allow{background:var(--accent);border-color:var(--accent);color:#0b0e14;f
 <h1>Authorize <strong>{{.ClientName}}</strong>?</h1>
 <p><strong>{{.ClientName}}</strong> wants to use GraphNest as <strong>{{.UserName}}</strong>.</p>
 <p>It will be able to:</p>
-<ul><li>search code, read files and navigate symbols in every repository you can access in GraphNest</li><li>keep that access for up to 30 days, or until you revoke it from your account</li></ul>
-<p>It will not be able to change anything or create further credentials.</p>
+<ul><li>search code, read files and navigate symbols in every repository you can access in GraphNest</li>{{if .GraphWrite}}<li>publish code graphs to repositories where you hold a publication grant</li>{{end}}<li>keep that access for up to 30 days, or until you revoke it from your account</li></ul>
+<p>It will not be able to change anything{{if .GraphWrite}} else{{end}} or create further credentials.</p>
 <p>After you allow, your browser is sent to <code>{{.RedirectTarget}}</code>. Deny if you did not start this from a tool you trust.</p>
 <form method="post" action="/oauth/authorize">
 <input type="hidden" name="request_id" value="{{.RequestID}}">
@@ -858,9 +858,10 @@ func (server *Server) consent(writer http.ResponseWriter, request *http.Request,
 	writer.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' "+target.Scheme+"://"+target.Host+"; frame-ancestors 'none'")
 	writer.Header().Set("X-Frame-Options", "DENY")
 	writer.WriteHeader(http.StatusOK)
-	_ = consentTemplate.Execute(writer, map[string]string{
+	_ = consentTemplate.Execute(writer, map[string]any{
 		"ClientName": client.Name, "UserName": name, "RequestID": requestID,
 		"RedirectTarget": target.Scheme + "://" + target.Host,
+		"GraphWrite":     authn.Principal{Scope: pending.Scope}.HasScope(authn.ScopeGraphWrite),
 	})
 }
 

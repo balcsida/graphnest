@@ -134,6 +134,8 @@ func TestStatusReportsPublicationPreflight(t *testing.T) {
 		{"reader", readerPrincipal("42", 101), nil, false},
 		{"grantee", readerPrincipal("42", 101), map[string]bool{"42": true}, true},
 		{"administrator", adminPrincipal(101), nil, true},
+		{"OAuth grantee without graph:write", oauthPrincipal("42", 101, ""), map[string]bool{"42": true}, false},
+		{"OAuth grantee with graph:write", oauthPrincipal("42", 101, "graph:write"), map[string]bool{"42": true}, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			store := &fakeStore{repository: readyRepository(101, testCommit), status: api.GraphStatus{RepositoryID: 101, Commit: testCommit, State: api.GraphStatePending}, active: active, granted: test.granted}
@@ -148,6 +150,23 @@ func TestStatusReportsPublicationPreflight(t *testing.T) {
 	store := &fakeStore{repository: readyRepository(101, testCommit), activeErr: errors.New("database password")}
 	if _, err := (&Service{Store: store}).Status(t.Context(), adminPrincipal(101), 101); !errors.Is(err, ErrUnavailable) || strings.Contains(err.Error(), "password") {
 		t.Fatalf("active generation error=%v", err)
+	}
+}
+
+func oauthPrincipal(subject string, repositoryID int64, scope string) authn.Principal {
+	principal := readerPrincipal(subject, repositoryID)
+	principal.Method, principal.Scope = authn.ProviderOAuthToken, scope
+	return principal
+}
+
+func TestOAuthPublicationNeedsGraphWriteScope(t *testing.T) {
+	store := &fakeStore{repository: readyRepository(101, testCommit), granted: map[string]bool{"42": true}}
+	service := &Service{Store: store}
+	if _, err := service.Publish(t.Context(), oauthPrincipal("42", 101, ""), 101, testCommit, validV2Bytes(t, "101"), Publication{}); !errors.Is(err, ErrForbidden) || store.grantCalls != 0 {
+		t.Fatalf("unscoped OAuth published: err=%v grantCalls=%d", err, store.grantCalls)
+	}
+	if _, err := service.Publish(t.Context(), oauthPrincipal("42", 101, "graph:write"), 101, testCommit, validV2Bytes(t, "101"), Publication{}); err != nil || store.publication.Publisher != "oauth_token:42" {
+		t.Fatalf("scoped OAuth publish: err=%v publisher=%q", err, store.publication.Publisher)
 	}
 }
 

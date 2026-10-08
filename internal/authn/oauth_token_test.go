@@ -73,3 +73,11 @@ func TestBearerRouterDispatchesByShape(t *testing.T) {
 		t.Fatal("api token without an api authenticator must be rejected")
 	}
 }
+
+func TestPrincipalHasScope(t *testing.T) {
+	for scope, want := range map[string]bool{"graph:write": true, "openid graph:write": true, "graph:writer": false, "": false} {
+		if got := (Principal{Scope: scope}).HasScope("graph:write"); got != want {
+			t.Errorf("Scope %q: HasScope=%v, want %v", scope, got, want)
+		}
+	}
+}

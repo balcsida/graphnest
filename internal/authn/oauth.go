@@ -3,6 +3,7 @@ package authn
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/balcsida/graphnest/internal/audit"
@@ -13,6 +14,19 @@ import (
 // deliberately not an interactive method: such principals act as the user but
 // may not mint further credentials.
 const ProviderOAuthToken = "oauth_token"
+
+// ScopeGraphWrite lets an OAuth access token publish code graphs.
+const ScopeGraphWrite = "graph:write"
+
+// HasScope reports whether the grant scope contains scope as a whole token.
+func (p Principal) HasScope(scope string) bool {
+	for _, granted := range strings.Fields(p.Scope) {
+		if granted == scope {
+			return true
+		}
+	}
+	return false
+}
 
 // ErrOAuthReplay reports that a rotated refresh token was presented again
 // outside the grace window. The store revokes the whole grant when this happens.
