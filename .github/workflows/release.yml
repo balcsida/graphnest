@@ -341,3 +341,21 @@ jobs:
             printf '\n## Command-line tool\n\n'
             printf -- '- `%s`\n' "${cli_files[@]##*/}"
           } >>"$GITHUB_STEP_SUMMARY"
+
+  homebrew:
+    needs: [validate, publish]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Ask the Homebrew tap to update its formula
+        env:
+          GH_TOKEN: ${{ secrets.TAP_DISPATCH_TOKEN }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::notice::TAP_DISPATCH_TOKEN is not set; the tap's daily check will pick up v$VERSION"
+            exit 0
+          fi
+          gh api repos/balcsida/homebrew-tap/dispatches \
+            -f event_type=update-graphnest -f "client_payload[version]=$VERSION"
