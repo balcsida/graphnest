@@ -31,6 +31,8 @@ type fakeAuth struct {
 	mu          sync.Mutex
 	deny        bool
 	badIssuer   bool
+	foreignAuth bool
+	denyText    string // error_description sent when denying; empty means "user said no"
 	revokeCode  int
 	authorize   url.Values
 	challenge   string
@@ -48,8 +50,12 @@ func newFakeAuth(t *testing.T) *fakeAuth {
 		if f.badIssuer {
 			issuer = "https://elsewhere.example"
 		}
+		authorize := f.URL + "/oauth/authorize"
+		if f.foreignAuth {
+			authorize = "https://evil.example/authorize"
+		}
 		json.NewEncoder(w).Encode(map[string]any{
-			"issuer": issuer, "authorization_endpoint": f.URL + "/oauth/authorize", "token_endpoint": f.URL + "/oauth/token",
+			"issuer": issuer, "authorization_endpoint": authorize, "token_endpoint": f.URL + "/oauth/token",
 			"registration_endpoint": f.URL + "/oauth/register", "revocation_endpoint": f.URL + "/oauth/revoke",
 			"code_challenge_methods_supported": []string{"S256"},
 		})
@@ -80,6 +86,9 @@ func newFakeAuth(t *testing.T) *fakeAuth {
 		if f.deny {
 			out.Set("error", "access_denied")
 			out.Set("error_description", "user said no")
+			if f.denyText != "" {
+				out.Set("error_description", f.denyText)
+			}
 		} else {
 			out.Set("code", issuedCode)
 		}
@@ -212,7 +221,7 @@ func TestLoginStoresTokensAndCommandsUseThem(t *testing.T) {
 }
 
 func TestLoginIgnoresForgedCallback(t *testing.T) {
-	var forged string
+	forgedCh := make(chan string, 1)
 	open := func(u string) error {
 		go func() {
 			parsed, _ := url.Parse(u)
@@ -221,7 +230,7 @@ func TestLoginIgnoresForgedCallback(t *testing.T) {
 			if err == nil {
 				body, _ := io.ReadAll(response.Body)
 				response.Body.Close()
-				forged = response.Status + " " + string(body)
+				forgedCh <- response.Status + " " + string(body)
 			}
 			if response, err = http.Get(u); err == nil {
 				io.Copy(io.Discard, response.Body)
@@ -234,13 +243,19 @@ func TestLoginIgnoresForgedCallback(t *testing.T) {
 	if code, _, stderr := run(t, s.env, "login"); code != 0 {
 		t.Fatalf("code %d stderr %q", code, stderr)
 	}
+	var forged string
+	select {
+	case forged = <-forgedCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the browser recorded no forged response")
+	}
 	if !strings.HasPrefix(forged, "400") || !strings.Contains(forged, "This response does not belong to the running graphnest login.") {
 		t.Errorf("forged response %q", forged)
 	}
 }
 
 func TestLoginServesOnlyGetCallback(t *testing.T) {
-	var statuses []int
+	statusCh := make(chan int, 2)
 	open := func(u string) error {
 		go func() {
 			redirect, _ := url.Parse(u)
@@ -249,14 +264,14 @@ func TestLoginServesOnlyGetCallback(t *testing.T) {
 			post, err := http.Post(callback+"?code=evil&state="+state, "text/plain", nil)
 			if err == nil {
 				post.Body.Close()
-				statuses = append(statuses, post.StatusCode)
+				statusCh <- post.StatusCode
 			}
 			base, _ := url.Parse(callback)
 			base.Path = "/other"
 			other, err := http.Get(base.String())
 			if err == nil {
 				other.Body.Close()
-				statuses = append(statuses, other.StatusCode)
+				statusCh <- other.StatusCode
 			}
 			if response, err := http.Get(u); err == nil {
 				io.Copy(io.Discard, response.Body)
@@ -269,8 +284,15 @@ func TestLoginServesOnlyGetCallback(t *testing.T) {
 	if code, _, stderr := run(t, s.env, "login"); code != 0 {
 		t.Fatalf("code %d stderr %q", code, stderr)
 	}
-	if len(statuses) != 2 || statuses[0] != 404 || statuses[1] != 404 {
-		t.Errorf("statuses %v", statuses)
+	for range 2 {
+		select {
+		case status := <-statusCh:
+			if status != 404 {
+				t.Errorf("status %d", status)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("the browser recorded too few statuses")
+		}
 	}
 }
 
@@ -308,6 +330,25 @@ func TestLoginRejectsIssuerMismatch(t *testing.T) {
 	code, _, stderr := run(t, s.env, "login")
 	if code != 1 || opened || !strings.Contains(stderr, "issuer") {
 		t.Fatalf("code %d opened %v stderr %q", code, opened, stderr)
+	}
+}
+
+func TestLoginRejectsForeignAuthorizationEndpoint(t *testing.T) {
+	opened := false
+	s := newLoginSetup(t, nil, func(string) error { opened = true; return nil })
+	s.auth.foreignAuth = true
+	code, _, stderr := run(t, s.env, "login")
+	if code != 1 || opened || !strings.Contains(stderr, `authorization server endpoint "https://evil.example/authorize" is not on `+s.auth.URL) {
+		t.Fatalf("code %d opened %v stderr %q", code, opened, stderr)
+	}
+}
+
+func TestLoginStripsControlCharactersFromAuthorizationError(t *testing.T) {
+	s := newLoginSetup(t, nil, browser(nil))
+	s.auth.deny, s.auth.denyText = true, "no\x1b[2Jway"
+	code, _, stderr := run(t, s.env, "login")
+	if code != 1 || strings.ContainsRune(stderr, 0x1b) || !strings.Contains(stderr, "authorization failed: access_denied: no[2Jway") {
+		t.Fatalf("code %d stderr %q", code, stderr)
 	}
 }
 
@@ -373,6 +414,30 @@ func TestLogout(t *testing.T) {
 	}
 	if _, ok, _ := s.logins().Load(s.auth.URL); ok {
 		t.Error("login still stored after failed revocation")
+	}
+	assertNoSecrets(t, stderr)
+}
+
+func TestLogoutDeletesUnreadableLogin(t *testing.T) {
+	s := newLoginSetup(t, nil, nil)
+	if err := os.MkdirAll(s.logins().Dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.logins().Save(client.Login{Server: s.auth.URL, RefreshToken: "gnr_old"}); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := os.ReadDir(s.logins().Dir)
+	file := filepath.Join(s.logins().Dir, entries[0].Name())
+	if err := os.WriteFile(file, []byte("not json gnr_old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := run(t, s.env, "logout")
+	want := "the stored login for " + s.auth.URL + ` was unreadable and has been deleted; disconnect "graphnest CLI" under Account → Connected MCP clients`
+	if code != 1 || !strings.Contains(stderr, want) {
+		t.Fatalf("code %d stderr %q", code, stderr)
+	}
+	if _, err := os.Stat(file); !os.IsNotExist(err) {
+		t.Errorf("unreadable login not deleted: %v", err)
 	}
 	assertNoSecrets(t, stderr)
 }

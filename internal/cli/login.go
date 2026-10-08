@@ -91,7 +91,7 @@ func runLogin(ctx context.Context, args []string, env Environment, stdout, stder
 			http.Error(w, "This response does not belong to the running graphnest login.", http.StatusBadRequest)
 			return
 		}
-		result := callbackResult{code: query.Get("code"), errCode: query.Get("error"), errDescription: query.Get("error_description")}
+		result := callbackResult{code: query.Get("code"), errCode: client.StripControl(query.Get("error")), errDescription: client.StripControl(query.Get("error_description"))}
 		if result.code == "" && result.errCode == "" {
 			result.errCode = "invalid_response"
 		}
@@ -182,7 +182,10 @@ func runLogout(ctx context.Context, args []string, env Environment, stdout, stde
 	}
 	login, found, err := logins.Load(origin)
 	if err != nil {
-		return err
+		if deleteErr := logins.Delete(origin); deleteErr != nil {
+			return deleteErr
+		}
+		return fmt.Errorf(`the stored login for %s was unreadable and has been deleted; disconnect "graphnest CLI" under Account → Connected MCP clients`, origin)
 	}
 	if !found {
 		fmt.Fprintf(stderr, "Not signed in to %s.\n", origin)

@@ -1,10 +1,12 @@
 package client
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -62,4 +64,36 @@ func TestLoginsRoundTrip(t *testing.T) {
 	if (Logins{}).Save(login) == nil {
 		t.Fatal("zero value saved")
 	}
+}
+
+func TestLoginsKeepOSErrorReasons(t *testing.T) {
+	dir := t.TempDir()
+	logins := Logins{Dir: dir}
+	if err := os.WriteFile(filepath.Join(dir, loginFileName("https://h")), []byte("{not json "+testRefresh), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := logins.Load("https://h")
+	noSecrets(t, err)
+	if err.Error() != "login file is not valid JSON" {
+		t.Fatal(err)
+	}
+	// A directory in place of the file makes ReadFile fail with an OS error that stays in the chain.
+	if err = os.Mkdir(filepath.Join(dir, loginFileName("https://d")), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = logins.Load("https://d")
+	var pathErr *os.PathError
+	if err == nil || !errors.As(err, &pathErr) || !strings.HasPrefix(err.Error(), "login file cannot be read: ") {
+		t.Fatalf("%v", err)
+	}
+	// A file where the directory should be makes Save fail with an OS error.
+	blocked := filepath.Join(dir, "blocked")
+	if err = os.WriteFile(blocked, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = Logins{Dir: blocked}.Save(Login{Server: "https://h", RefreshToken: testRefresh})
+	if err == nil || !errors.As(err, &pathErr) || !strings.HasPrefix(err.Error(), "login directory cannot be created: ") {
+		t.Fatalf("%v", err)
+	}
+	noSecrets(t, err)
 }

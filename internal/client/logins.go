@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -40,7 +41,7 @@ func (l Logins) Load(origin string) (Login, bool, error) {
 		return Login{}, false, nil
 	}
 	if err != nil {
-		return Login{}, false, errors.New("login file cannot be read")
+		return Login{}, false, fmt.Errorf("login file cannot be read: %w", err)
 	}
 	var login Login
 	if json.Unmarshal(data, &login) != nil {
@@ -62,11 +63,11 @@ func (l Logins) Save(login Login) error {
 		return errors.New("login cannot be encoded")
 	}
 	if err = os.MkdirAll(l.Dir, 0o700); err != nil {
-		return errors.New("login directory cannot be created")
+		return fmt.Errorf("login directory cannot be created: %w", err)
 	}
 	temp, err := os.CreateTemp(l.Dir, ".login-*")
 	if err != nil {
-		return errors.New("login file cannot be written")
+		return fmt.Errorf("login file cannot be written: %w", err)
 	}
 	defer os.Remove(temp.Name()) // no-op after a successful rename
 	if _, err = temp.Write(data); err == nil {
@@ -79,7 +80,7 @@ func (l Logins) Save(login Login) error {
 		err = os.Rename(temp.Name(), filepath.Join(l.Dir, loginFileName(login.Server)))
 	}
 	if err != nil {
-		return errors.New("login file cannot be written")
+		return fmt.Errorf("login file cannot be written: %w", err)
 	}
 	return nil
 }
@@ -90,7 +91,7 @@ func (l Logins) Delete(origin string) error {
 		return nil
 	}
 	if err := os.Remove(filepath.Join(l.Dir, loginFileName(origin))); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return errors.New("login file cannot be removed")
+		return fmt.Errorf("login file cannot be removed: %w", err)
 	}
 	return nil
 }
