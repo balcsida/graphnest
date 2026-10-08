@@ -5,6 +5,15 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-08
+
+This release adds `graphnest`, a command-line tool that imports an existing
+CodeGraph index, checks it against the commit's content and publishes it as a
+v2 graph generation, and makes every SCIP upload build the v2 graph generation
+that the graph tools read. Migrations 038 and 039 need a drained rollout (see
+Changed), and repositories indexed before this release need their SCIP index
+uploaded again.
+
 ### Fixed
 
 - `graph_capabilities`, `graph_discover`, `graph_callers`, `graph_callees`,
@@ -18,32 +27,23 @@ the compatibility and migration notes before upgrading.
   `type_of` edges. The v1 fallback graph gains the same references, so
   `context`, `impact` and `trace` return relations instead of a bare symbol.
   Repositories indexed before this release need their SCIP index uploaded
-  again for the current indexed commit.
+  again for the current indexed commit. ([#141])
 - Graph readiness failures now say what happened instead of a single
   retryable `graph_not_ready`: `not_indexed`, `graph_missing` (names the
   indexed commit and what to upload; not retryable), `generation_changed`
   (retryable), `discovery_unavailable` and `graph_not_ready`, over REST and
-  MCP alike.
+  MCP alike. ([#141])
 - `context`, `impact` and `trace` no longer return one `graph_missing`
   boundary per unrelated authorized repository. Unrelated repositories without
   a graph collapse into one summary boundary per reason with a `count`.
+  ([#141])
 - `POST /v1/scip/uploads` for the commit GraphNest is still indexing now
   returns retryable `409 index_pending` instead of final `409 not_indexed`, so
   CI jobs that finish before indexing can retry the upload rather than lose the
-  index.
+  index. ([#142])
 
 ### Added
 
-- `graphnest doctor` checks an import environment without changing it: git,
-  the repository commit, the CodeGraph index, the producer rules, the index
-  state, freshness against HEAD and, when `GRAPHNEST_SERVER_URL` is set, the
-  server and publication rights. `graphnest version` also prints the Go and
-  SQLite versions.
-- `--format text` for `graphnest graph import codegraph` and `graph upload`
-  prints a readable report ending in a next step; JSON stays the default.
-- Release binaries of `graphnest` for Linux and macOS (amd64 and arm64), with
-  checksums, a dependency inventory and build provenance attestations,
-  built with `make cli`.
 - `graphnest`, a command-line tool. `graphnest graph import codegraph
   --dry-run` reads an existing CodeGraph index (schema versions 9, 10 and
   11; CodeGraph 1.6.0 to 1.6.2) through a pure-Go SQLite reader in one
@@ -60,12 +60,25 @@ the compatibility and migration notes before upgrading.
   (indexed commit, grant, expected generation, explicit producer
   replacement), retry transport and server failures up to three times, and
   rely on the server's content-hash deduplication for safe retries.
+  ([#143], [#144], [#145])
+- `graphnest doctor` checks an import environment without changing it: git,
+  the repository commit, the CodeGraph index, the producer rules, the index
+  state, freshness against HEAD and, when `GRAPHNEST_SERVER_URL` is set, the
+  server and publication rights. `graphnest version` also prints the Go and
+  SQLite versions. ([#146])
+- `--format text` for `graphnest graph import codegraph` and `graph upload`
+  prints a readable report ending in a next step; JSON stays the default.
+  ([#146])
+- Release binaries of `graphnest` for Linux and macOS (amd64 and arm64), with
+  checksums, a dependency inventory and build provenance attestations,
+  built with `make cli`. ([#146])
 - A second pinned CodeGraph reference, 1.6.2 (schema 11), under
   `test/fixtures/codegraph-1.6.2/`, and `producer-rules.json` for both pins.
+  ([#144])
 - Repository status (`GET /v1/repositories/{id}`, MCP `get_repository_status`)
   reports `graph_status` (`current`, `stale`, `absent`, `unknown`),
   `graph_commit` and `graph_producer` next to `scip_status`, so a missing or
-  stale graph generation is visible without calling a graph tool.
+  stale graph generation is visible without calling a graph tool. ([#141])
 
 ### Changed
 
@@ -80,11 +93,11 @@ the compatibility and migration notes before upgrading.
   so a stale publisher no longer causes `graph_missing`. Both migrations need
   writers drained first, as [graph storage](docs/graph-storage.md#rollout-and-recovery)
   describes, because old binaries cannot run against retained inactive
-  generations.
+  generations. ([#141])
 - Release smoke tests, including the scan for fixable HIGH/CRITICAL
   vulnerabilities, now run on the amd64 images only. The arm64 images are
   still published with SBOMs and provenance, but are no longer smoke-tested or
-  scanned before publishing.
+  scanned before publishing. ([#140])
 
 ## [0.9.2] - 2026-10-06
 
@@ -560,7 +573,8 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
-[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/balcsida/graphnest/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/balcsida/graphnest/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/balcsida/graphnest/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/balcsida/graphnest/compare/v0.8.0...v0.9.0
@@ -613,3 +627,10 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
 [#130]: https://github.com/balcsida/graphnest/pull/130
 [#136]: https://github.com/balcsida/graphnest/pull/136
 [#138]: https://github.com/balcsida/graphnest/pull/138
+[#140]: https://github.com/balcsida/graphnest/pull/140
+[#141]: https://github.com/balcsida/graphnest/pull/141
+[#142]: https://github.com/balcsida/graphnest/pull/142
+[#143]: https://github.com/balcsida/graphnest/pull/143
+[#144]: https://github.com/balcsida/graphnest/pull/144
+[#145]: https://github.com/balcsida/graphnest/pull/145
+[#146]: https://github.com/balcsida/graphnest/pull/146
