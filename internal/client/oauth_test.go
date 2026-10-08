@@ -220,3 +220,51 @@ func TestRevokeLogin(t *testing.T) {
 	login.RevocationEndpoint = ""
 	noSecrets(t, RevokeLogin(context.Background(), Config{ServerURL: server.URL}, login))
 }
+
+func TestDiscoverOAuthRequiresEndpointsOnOrigin(t *testing.T) {
+	serve := func(overrides map[string]string) *httptest.Server {
+		var server *httptest.Server
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			metadata := map[string]any{
+				"issuer": server.URL, "authorization_endpoint": server.URL + "/authorize", "token_endpoint": server.URL + "/token",
+				"registration_endpoint": server.URL + "/register", "revocation_endpoint": server.URL + "/revoke",
+				"code_challenge_methods_supported": []string{"S256"},
+			}
+			for k, v := range overrides {
+				if v == "" {
+					delete(metadata, k)
+				} else {
+					metadata[k] = v
+				}
+			}
+			json.NewEncoder(w).Encode(metadata)
+		}))
+		t.Cleanup(server.Close)
+		return server
+	}
+	for key, foreign := range map[string]string{
+		"authorization_endpoint": "file:///Applications/Calculator.app",
+		"token_endpoint":         "https://evil.example/token",
+		"revocation_endpoint":    "https://evil.example/revoke",
+	} {
+		server := serve(map[string]string{key: foreign})
+		_, err := DiscoverOAuth(context.Background(), Config{ServerURL: server.URL})
+		if want := `authorization server endpoint "` + foreign + `" is not on ` + server.URL; err == nil || err.Error() != want {
+			t.Fatalf("%s: %v, want %s", key, err, want)
+		}
+	}
+	server := serve(map[string]string{"revocation_endpoint": ""})
+	if _, err := DiscoverOAuth(context.Background(), Config{ServerURL: server.URL}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStripControlKeepsEscapeOutOfTokenErrors(t *testing.T) {
+	if got := StripControl("a\x1b[31mb\n\x7fc"); got != "a[31mbc" {
+		t.Fatalf("%q", got)
+	}
+	err := &oauthError{Code: "bad\x1b", Description: "evil \x1b[2J text"}
+	if strings.ContainsRune(err.Error(), 0x1b) || err.Error() != "token endpoint: bad: evil [2J text" {
+		t.Fatalf("%q", err)
+	}
+}

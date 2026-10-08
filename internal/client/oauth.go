@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/balcsida/graphnest/internal/httpclient"
 )
@@ -107,6 +108,14 @@ func DiscoverOAuth(ctx context.Context, config Config) (*OAuth, error) {
 	}
 	if metadata.AuthorizationEndpoint == "" || metadata.TokenEndpoint == "" || metadata.RegistrationEndpoint == "" {
 		return nil, errors.New("authorization server metadata lacks authorization, token or registration endpoint")
+	}
+	for _, endpoint := range []string{metadata.AuthorizationEndpoint, metadata.TokenEndpoint, metadata.RegistrationEndpoint, metadata.RevocationEndpoint} {
+		if endpoint == "" {
+			continue // only the revocation endpoint can be empty here
+		}
+		if u, err := url.Parse(endpoint); err != nil || !u.IsAbs() || u.Scheme+"://"+strings.ToLower(u.Host) != origin {
+			return nil, fmt.Errorf("authorization server endpoint %q is not on %s", endpoint, origin)
+		}
 	}
 	return &OAuth{http: httpClient, origin: origin, authorizationEndpoint: metadata.AuthorizationEndpoint, tokenEndpoint: metadata.TokenEndpoint,
 		registrationEndpoint: metadata.RegistrationEndpoint, revocationEndpoint: metadata.RevocationEndpoint}, nil
@@ -209,9 +218,19 @@ type oauthError struct{ Code, Description string }
 
 func (e *oauthError) Error() string {
 	if e.Description == "" {
-		return "token endpoint: " + e.Code
+		return "token endpoint: " + StripControl(e.Code)
 	}
-	return "token endpoint: " + e.Code + ": " + e.Description
+	return "token endpoint: " + StripControl(e.Code) + ": " + StripControl(e.Description)
+}
+
+// StripControl drops control characters from server-provided text before it reaches a terminal.
+func StripControl(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 func isInvalidGrant(err error) bool {
