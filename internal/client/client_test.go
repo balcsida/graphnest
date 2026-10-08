@@ -220,6 +220,9 @@ func TestFromEnvPrecedence(t *testing.T) {
 	}
 	_, err = FromEnv(fromEnvMap(map[string]string{"GRAPHNEST_SERVER_URL": "http://h"}), read, logins)
 	noSecrets(t, err)
+	if !strings.HasSuffix(err.Error(), "; run graphnest login") {
+		t.Fatal(err)
+	}
 }
 
 // refreshFixture is a server that answers token-endpoint calls and records them.
@@ -293,11 +296,14 @@ func TestClientRefreshesStoredLogin(t *testing.T) {
 
 func TestClientAdoptsTokensRotatedByAnotherProcess(t *testing.T) {
 	f := newRefreshFixture(t, time.Minute)
-	f.reply = func(url.Values) (int, string) { return 400, `{"error":"invalid_grant"}` }
 	rotated := f.stale
 	rotated.AccessToken, rotated.RefreshToken, rotated.ExpiresAt = "rotated-s3cret", "rotated-refresh", time.Now().Add(time.Hour)
-	if err := f.logins.Save(rotated); err != nil {
-		t.Fatal(err)
+	f.reply = func(url.Values) (int, string) {
+		// Another process rotates the login while this refresh is in flight.
+		if err := f.logins.Save(rotated); err != nil {
+			t.Error(err)
+		}
+		return 400, `{"error":"invalid_grant"}`
 	}
 	if _, err := f.client(t).Repository(context.Background(), 1); err != nil {
 		t.Fatal(err)
@@ -320,7 +326,7 @@ func TestClientReportsExpiredLogin(t *testing.T) {
 	}
 	noSecrets(t, err)
 
-	// A second invalid_grant after adopting a newer, soon-to-expire login is also expired.
+	// A newer, soon-to-expire login is adopted before refreshing; its invalid_grant is expired.
 	f = newRefreshFixture(t, time.Minute)
 	f.reply = func(url.Values) (int, string) { return 400, `{"error":"invalid_grant"}` }
 	newer := f.stale
@@ -330,7 +336,70 @@ func TestClientReportsExpiredLogin(t *testing.T) {
 	}
 	_, err = f.client(t).Repository(context.Background(), 1)
 	noSecrets(t, err)
-	if len(f.forms) != 2 || err.Error() != "the stored login for "+f.server.URL+" has expired or was revoked; run graphnest login" {
+	if len(f.forms) != 1 || err.Error() != "the stored login for "+f.server.URL+" has expired or was revoked; run graphnest login" {
 		t.Fatalf("%v %v", f.forms, err)
+	}
+}
+
+func TestClientAdoptsNewerStoredLoginBeforeRefreshing(t *testing.T) {
+	f := newRefreshFixture(t, time.Minute)
+	newer := f.stale
+	newer.AccessToken, newer.RefreshToken, newer.ExpiresAt = "A2", "R2", time.Now().Add(time.Hour)
+	if err := f.logins.Save(newer); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.client(t).Repository(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.forms) != 0 || len(f.auths) != 1 || f.auths[0] != "Bearer A2" {
+		t.Fatalf("%v %v", f.forms, f.auths)
+	}
+}
+
+func TestClientRetriesOnceAfterAnotherProcessRotated(t *testing.T) {
+	var auths []string
+	var logins Logins
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auths = append(auths, r.Header.Get("Authorization"))
+		if len(auths) == 1 {
+			newer := Login{Server: server.URL, ClientID: "cid", AccessToken: "A2", RefreshToken: "R2", ExpiresAt: time.Now().Add(time.Hour), TokenEndpoint: server.URL + "/token"}
+			if err := logins.Save(newer); err != nil {
+				t.Error(err)
+			}
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Write([]byte(`{"id":1,"name":"r"}`))
+	}))
+	defer server.Close()
+	logins = Logins{Dir: t.TempDir()}
+	login := Login{Server: server.URL, ClientID: "cid", AccessToken: "A1", RefreshToken: "R1", ExpiresAt: time.Now().Add(time.Hour), TokenEndpoint: server.URL + "/token"}
+	c, err := New(Config{ServerURL: server.URL, Login: &login, Logins: logins})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = c.Repository(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if len(auths) != 2 || auths[0] != "Bearer A1" || auths[1] != "Bearer A2" {
+		t.Fatalf("%v", auths)
+	}
+
+	// With an unchanged store the 401 is returned without a retry.
+	f := newRefreshFixture(t, time.Hour)
+	unauthorized := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.auths = append(f.auths, r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer unauthorized.Close()
+	login = f.stale
+	c, err = New(Config{ServerURL: unauthorized.URL, Login: &login, Logins: f.logins})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var apiErr *Error
+	if _, err = c.Repository(context.Background(), 1); !errors.As(err, &apiErr) || apiErr.Status != 401 || len(f.auths) != 1 {
+		t.Fatalf("%v %v", err, f.auths)
 	}
 }

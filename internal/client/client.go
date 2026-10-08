@@ -78,7 +78,7 @@ func FromEnv(getenv func(string) string, readFile func(string) ([]byte, error), 
 		}
 		login, ok, err := logins.Load(origin)
 		if err != nil {
-			return Config{}, fmt.Errorf("the stored login for %s cannot be read: %w", origin, err)
+			return Config{}, fmt.Errorf("the stored login for %s cannot be read: %w; run graphnest login", origin, err)
 		}
 		if !ok {
 			return Config{}, errors.New(missing)
@@ -93,6 +93,7 @@ type Client struct {
 	http   *http.Client
 	base   string
 	bearer func(context.Context) (string, error)
+	stored bool // bearer reads a stored login, so a 401 may mean another process rotated it
 }
 
 // New validates config and builds a client that refuses cross-origin redirects.
@@ -111,7 +112,7 @@ func New(config Config) (*Client, error) {
 	c := &Client{http: httpClient, base: strings.TrimRight(config.ServerURL, "/")}
 	if config.Login != nil {
 		source := &loginSource{http: httpClient, logins: config.Logins, login: *config.Login}
-		c.bearer = source.token
+		c.bearer, c.stored = source.token, true
 	} else {
 		token := config.Token
 		c.bearer = func(context.Context) (string, error) { return token, nil }
@@ -135,6 +136,10 @@ func (s *loginSource) fresh(login Login) bool {
 func (s *loginSource) token(ctx context.Context) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Another graphnest process may have rotated the tokens; never send a refresh token it superseded.
+	if stored, ok, loadErr := s.logins.Load(s.login.Server); loadErr == nil && ok && stored.RefreshToken != s.login.RefreshToken {
+		s.login = stored
+	}
 	if s.fresh(s.login) {
 		return s.login.AccessToken, nil
 	}
@@ -233,29 +238,22 @@ func (c *Client) do(ctx context.Context, method, path, rawQuery, contentType str
 	if rawQuery != "" {
 		target += "?" + rawQuery
 	}
-	request, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(body))
-	if err != nil {
-		return errors.New("build request failed")
-	}
 	token, err := c.bearer(ctx)
 	if err != nil {
 		return err
 	}
-	request.Header.Set("Authorization", "Bearer "+token)
-	request.Header.Set("Accept", "application/json")
-	if contentType != "" {
-		request.Header.Set("Content-Type", contentType)
-	}
-	response, err := c.http.Do(request)
+	response, err := c.send(ctx, method, path, target, contentType, token, body)
 	if err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
+		return err
+	}
+	if response.StatusCode == http.StatusUnauthorized && c.stored {
+		// Another graphnest process may have rotated the login, which invalidates the token just used.
+		if again, tokenErr := c.bearer(ctx); tokenErr == nil && again != token {
+			response.Body.Close()
+			if response, err = c.send(ctx, method, path, target, contentType, again, body); err != nil {
+				return err
+			}
 		}
-		var urlErr *url.Error
-		if errors.As(err, &urlErr) {
-			err = urlErr.Err // drop the URL from the message
-		}
-		return fmt.Errorf("%s %s: %w", method, path, err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode > 299 {
@@ -278,4 +276,29 @@ func (c *Client) do(ctx context.Context, method, path, rawQuery, contentType str
 		return fmt.Errorf("%s %s: invalid response: %w", method, path, err)
 	}
 	return nil
+}
+
+// send performs one authenticated request; errors never contain the URL or the token.
+func (c *Client) send(ctx context.Context, method, path, target, contentType, token string, body []byte) (*http.Response, error) {
+	request, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(body))
+	if err != nil {
+		return nil, errors.New("build request failed")
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Accept", "application/json")
+	if contentType != "" {
+		request.Header.Set("Content-Type", contentType)
+	}
+	response, err := c.http.Do(request)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			err = urlErr.Err // drop the URL from the message
+		}
+		return nil, fmt.Errorf("%s %s: %w", method, path, err)
+	}
+	return response, nil
 }
