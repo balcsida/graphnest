@@ -5,15 +5,23 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-08
+
+This release lets `graphnest` sign in through the browser with OAuth instead of
+a hand-copied API token, and lets that sign-in publish graphs. OAuth access
+tokens now reach four REST routes (see Changed). No migration or configuration
+change is required; signing in needs `GRAPHNEST_MCP_OAUTH` on the server.
+
 ### Added
 
-- `graphnest login` signs in through the browser (RFC 8252: loopback redirect
-  on `127.0.0.1`, PKCE S256, a client registered per login) and stores the
-  login in a `0600` file under the user configuration directory. Every server
-  command uses it when `GRAPHNEST_TOKEN` and `GRAPHNEST_TOKEN_FILE` are unset
-  and refreshes it when it expires. `graphnest logout` revokes the grant and
-  deletes the file. `graphnest doctor` reports which credential it used. See
-  ADR-0019.
+- `graphnest login` signs in through the browser following RFC 8252: a
+  loopback redirect on `127.0.0.1` (or `[::1]`), PKCE S256, `state`, and a
+  public client registered per login. It stores the login in a `0600` file per
+  server under the user configuration directory. Every server command uses it
+  when `GRAPHNEST_TOKEN` and `GRAPHNEST_TOKEN_FILE` are unset, refreshes it
+  before it expires and picks up tokens another `graphnest` process rotated.
+  `graphnest logout` revokes the grant and deletes the file, and
+  `graphnest doctor` reports which credential it used. See ADR-0019. ([#149])
 
 ### Changed
 
@@ -22,17 +30,22 @@ the compatibility and migration notes before upgrading.
   `POST /v1/graph/uploads`. The other routes mounted beside graph ingestion
   (the v1 uploads and `PUT /v1/graph/publication-grants`) also see OAuth tokens
   but stay administrator-only, and OAuth principals are never administrators;
-  all remaining REST routes accept only API tokens and sessions. Publication by an OAuth token needs the `graph:write`
-  scope in addition to the repository publication grant, and the consent page
-  lists that capability.
+  all remaining REST routes accept only API tokens and sessions. Publication by
+  an OAuth token needs the new `graph:write` scope in addition to the
+  repository publication grant, and the consent page lists that capability.
+  MCP clients are not offered the scope, so their grants can read these routes
+  but not publish. ([#149])
 - A 401 from the server now suggests `graphnest login` as well as checking the
-  token.
+  token. ([#149])
 
 ### Security
 
-- The login file is readable by the same OS user, like an API token file; the
-  loopback callback accepts only the first response carrying the expected
-  `state`. See the threat model.
+- The login file is readable by the same OS user, like an API token file. The
+  loopback callback serves only `GET /callback` and accepts only the first
+  response carrying the expected `state`; the authorization server's endpoints
+  must be on the server's own origin before a browser opens; server-provided
+  error text is printed without control characters. See the threat model.
+  ([#149])
 
 ## [0.10.0] - 2026-10-08
 
@@ -602,7 +615,8 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
-[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/balcsida/graphnest/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/balcsida/graphnest/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/balcsida/graphnest/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/balcsida/graphnest/compare/v0.9.0...v0.9.1
@@ -663,3 +677,4 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
 [#144]: https://github.com/balcsida/graphnest/pull/144
 [#145]: https://github.com/balcsida/graphnest/pull/145
 [#146]: https://github.com/balcsida/graphnest/pull/146
+[#149]: https://github.com/balcsida/graphnest/pull/149
