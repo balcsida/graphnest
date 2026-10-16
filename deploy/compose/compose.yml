@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:18.6@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
+    image: postgres:18.6@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
     environment:
       POSTGRES_DB: graphnest
       POSTGRES_PASSWORD: graphnest
@@ -16,7 +16,7 @@ services:
 
   zoekt-index:
     profiles: [fixture]
-    image: ghcr.io/sourcegraph/zoekt@sha256:f19dac0fa75e51a6c37fb619983d2ad026b951cb67d6ef837c31696605d75461
+    image: ghcr.io/sourcegraph/zoekt@sha256:ac04037e2029d06a6b140ee8e7bcfce7fca214b95bc6310ed794409ca3dff3a5
     platform: linux/amd64
     entrypoint: ["/bin/sh", "-ec"]
     command:
@@ -37,7 +37,7 @@ services:
 
   zoekt:
     profiles: [fixture]
-    image: ghcr.io/sourcegraph/zoekt@sha256:f19dac0fa75e51a6c37fb619983d2ad026b951cb67d6ef837c31696605d75461
+    image: ghcr.io/sourcegraph/zoekt@sha256:ac04037e2029d06a6b140ee8e7bcfce7fca214b95bc6310ed794409ca3dff3a5
     platform: linux/amd64
     entrypoint: ["zoekt-webserver"]
     command: ["-index", "/data/index", "-listen", ":6070", "-rpc", "-html=false"]
@@ -54,7 +54,7 @@ services:
 
   zoekt-durable:
     profiles: [durable]
-    image: ghcr.io/sourcegraph/zoekt@sha256:f19dac0fa75e51a6c37fb619983d2ad026b951cb67d6ef837c31696605d75461
+    image: ghcr.io/sourcegraph/zoekt@sha256:ac04037e2029d06a6b140ee8e7bcfce7fca214b95bc6310ed794409ca3dff3a5
     platform: linux/amd64
     entrypoint: ["zoekt-webserver"]
     command: ["-index", "/data/index", "-listen", ":6070", "-rpc", "-html=false"]
