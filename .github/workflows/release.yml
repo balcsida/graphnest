@@ -24,7 +24,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.3"
       - run: make tools-check scanner-test
       - id: validate
         env:
@@ -263,7 +263,7 @@ jobs:
           subject-path: ${{ steps.chart.outputs.archive }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.3"
       - name: Build command-line tool
         env:
           VERSION: ${{ needs.validate.outputs.version }}
