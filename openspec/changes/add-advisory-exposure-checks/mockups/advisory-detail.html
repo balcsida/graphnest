@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Advisory detail (option A was chosen)</title>
+  <style>
+    /*
+     * BRAINSTORM COMPANION FRAME TEMPLATE
+     *
+     * This template provides a consistent frame with:
+     * - OS-aware light/dark theming
+     * - Header branding and connection status
+     * - Scrollable main content area
+     * - CSS helpers for common UI patterns
+     *
+     * Content is injected via placeholder comment in #frame-content.
+     */
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+
+    /* ===== THEME VARIABLES ===== */
+    :root {
+      --bg-primary: #f5f5f7;
+      --bg-secondary: #ffffff;
+      --bg-tertiary: #e5e5e7;
+      --border: #d1d1d6;
+      --text-primary: #1d1d1f;
+      --text-secondary: #86868b;
+      --text-tertiary: #aeaeb2;
+      --accent: #0071e3;
+      --accent-hover: #0077ed;
+      --success: #34c759;
+      --warning: #ff9f0a;
+      --error: #ff3b30;
+      --selected-bg: #e8f4fd;
+      --selected-border: #0071e3;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-primary: #1d1d1f;
+        --bg-secondary: #2d2d2f;
+        --bg-tertiary: #3d3d3f;
+        --border: #424245;
+        --text-primary: #f5f5f7;
+        --text-secondary: #86868b;
+        --text-tertiary: #636366;
+        --accent: #0a84ff;
+        --accent-hover: #409cff;
+        --selected-bg: rgba(10, 132, 255, 0.15);
+        --selected-border: #0a84ff;
+      }
+    }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      display: flex;
+      flex-direction: column;
+      line-height: 1.5;
+    }
+
+    /* ===== FRAME STRUCTURE ===== */
+    .brand { display: flex; align-items: center; min-width: 0; overflow: hidden; color: var(--text-secondary); line-height: 1; }
+    .brand a { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 0.5rem; min-width: 0; max-width: 100%; line-height: 1; }
+    .brand-copy { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1; transform: translateY(-1px); }
+    .brand-logo { display: block; height: 1em; width: auto; max-width: 180px; flex-shrink: 0; filter: invert(1); }
+    @media (prefers-color-scheme: dark) {
+      .brand-logo { filter: none; }
+    }
+    .status { font-size: 0.7rem; color: var(--status-color, var(--success)); display: flex; align-items: center; gap: 0.4rem; justify-self: end; white-space: nowrap; line-height: 1; }
+    .status::before { content: ''; width: 6px; height: 6px; background: var(--status-color, var(--success)); border-radius: 50%; }
+
+    .main { flex: 1; overflow-y: auto; }
+    #frame-content { padding: 2rem; min-height: 100%; }
+
+    .header {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 0.5rem 1.5rem;
+      flex-shrink: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 1rem;
+      min-height: 42px;
+    }
+    .header .brand { justify-self: start; width: 100%; font-size: 0.75rem; line-height: 1; }
+    .header .status { grid-column: 2; line-height: 1; }
+    .header span {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+    .header .selected-text {
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    /* ===== TYPOGRAPHY ===== */
+    h2 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem; }
+    h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.25rem; }
+    .subtitle { color: var(--text-secondary); margin-bottom: 1.5rem; }
+    .section { margin-bottom: 2rem; }
+    .label { font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+
+    /* ===== OPTIONS (for A/B/C choices) ===== */
+    .options { display: flex; flex-direction: column; gap: 0.75rem; }
+    .option {
+      background: var(--bg-secondary);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+    .option:hover { border-color: var(--accent); }
+    .option.selected { background: var(--selected-bg); border-color: var(--selected-border); }
+    .option .letter {
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+      width: 1.75rem; height: 1.75rem;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 600; font-size: 0.85rem; flex-shrink: 0;
+    }
+    .option.selected .letter { background: var(--accent); color: white; }
+    .option .content { flex: 1; }
+    .option .content h3 { font-size: 0.95rem; margin-bottom: 0.15rem; }
+    .option .content p { color: var(--text-secondary); font-size: 0.85rem; margin: 0; }
+
+    /* ===== CARDS (for showing designs/mockups) ===== */
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+    .card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    .card.selected { border-color: var(--selected-border); border-width: 2px; }
+    .card-image { background: var(--bg-tertiary); aspect-ratio: 16/10; display: flex; align-items: center; justify-content: center; }
+    .card-body { padding: 1rem; }
+    .card-body h3 { margin-bottom: 0.25rem; }
+    .card-body p { color: var(--text-secondary); font-size: 0.85rem; }
+
+    /* ===== MOCKUP CONTAINER ===== */
+    .mockup {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 1.5rem;
+    }
+    .mockup-header {
+      background: var(--bg-tertiary);
+      padding: 0.5rem 1rem;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border);
+    }
+    .mockup-body { padding: 1.5rem; }
+
+    /* ===== SPLIT VIEW (side-by-side comparison) ===== */
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    @media (max-width: 700px) { .split { grid-template-columns: 1fr; } }
+
+    /* ===== PROS/CONS ===== */
+    .pros-cons { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+    .pros, .cons { background: var(--bg-secondary); border-radius: 8px; padding: 1rem; }
+    .pros h4 { color: var(--success); font-size: 0.85rem; margin-bottom: 0.5rem; }
+    .cons h4 { color: var(--error); font-size: 0.85rem; margin-bottom: 0.5rem; }
+    .pros ul, .cons ul { margin-left: 1.25rem; font-size: 0.85rem; color: var(--text-secondary); }
+    .pros li, .cons li { margin-bottom: 0.25rem; }
+
+    /* ===== PLACEHOLDER (for mockup areas) ===== */
+    .placeholder {
+      background: var(--bg-tertiary);
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 2rem;
+      text-align: center;
+      color: var(--text-tertiary);
+    }
+
+    /* ===== INLINE MOCKUP ELEMENTS ===== */
+    .mock-nav { background: var(--accent); color: white; padding: 0.75rem 1rem; display: flex; gap: 1.5rem; font-size: 0.9rem; }
+    .mock-sidebar { background: var(--bg-tertiary); padding: 1rem; min-width: 180px; }
+    .mock-content { padding: 1.5rem; flex: 1; }
+    .mock-button { background: var(--accent); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.85rem; }
+    .mock-input { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; width: 100%; }
+  </style>
+</head>
+<body style="padding:1.5rem">
+<!-- Approved brainstorming mockup (2026-10-27). Static: the option cards are not interactive. -->
+<style>
+  .gn-t { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  .gn-t th { text-align: left; color: var(--text-secondary); font-weight: 600; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .gn-t td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .gn-t code { font-size: 0.75rem; }
+  .gn-src { color: var(--text-secondary); font-size: 0.72rem; }
+  .pill { display: inline-block; padding: 0.05rem 0.45rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
+  .p-vuln { background: #ff3b3022; color: #d70015; }
+  .p-rebuild { background: #ff9f0a26; color: #b25000; }
+  .p-eol { background: #af52de22; color: #8e3bb5; }
+  .p-unres { background: #8e8e9326; color: var(--text-secondary); }
+  .p-exc { background: #0071e31f; color: #0060c0; }
+  .p-fixed { background: #34c75926; color: #1f8a3a; }
+  .p-cls { background: var(--bg-tertiary); color: var(--text-secondary); font-weight: 500; }
+  .gn-counters { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 0.75rem 0; }
+  .gn-counter { border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.75rem; min-width: 7.5rem; }
+  .gn-counter b { display: block; font-size: 1.3rem; }
+  .gn-counter span { font-size: 0.75rem; color: var(--text-secondary); }
+  .gn-banner { font-size: 0.78rem; background: var(--bg-tertiary); border-radius: 6px; padding: 0.4rem 0.6rem; margin: 0.5rem 0; }
+  .gn-row { display: flex; gap: 1.5rem; align-items: flex-start; flex-wrap: wrap; }
+  .gn-btn { display: inline-block; border: 1px solid var(--border); border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.78rem; margin-right: 0.35rem; }
+  .gn-bar { display: inline-block; height: 0.5rem; border-radius: 4px; background: var(--bg-tertiary); width: 7rem; vertical-align: middle; overflow: hidden; }
+  .gn-bar i { display: block; height: 100%; background: #34c759; }
+  .gn-filters { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.4rem; }
+</style>
+
+<h2>An advisory, as a programme manager would open it</h2>
+<p class="subtitle">The top part is shared. Below it are two ways to lay out the list of affected repositories. Repository, team and version names are made up.</p>
+
+<div class="mockup">
+  <div class="mockup-header">/supply-chain/advisories/7 &middot; shared header</div>
+  <div class="mockup-body">
+    <div class="gn-row" style="justify-content: space-between;">
+      <div>
+        <div class="label">CVE-2026-41827 &middot; GHSA-7q2m-x3c9-w8fp</div>
+        <h3 style="margin: 0.15rem 0;">Brotli decoder heap overflow</h3>
+        <div class="gn-src">Published 21 Oct 2026 &middot; advisory version 2 (Envoy fixed versions added 23 Oct) &middot; open</div>
+      </div>
+      <div><span class="gn-btn">Export CSV</span><span class="gn-btn">Export Markdown</span><span class="gn-btn">Edit (admin)</span><span class="gn-btn">Close (admin)</span></div>
+    </div>
+    <div class="gn-banner">Default branches only: indexed commits and SBOMs as of 27 Oct 2026 14:05 UTC. Running images and clusters are not scanned. You see the 112 repositories you are authorised for.</div>
+    <div class="gn-row">
+      <div class="gn-counters" style="flex: 1;">
+        <div class="gn-counter"><b>53</b><span>open (prod + CI)</span></div>
+        <div class="gn-counter"><b>12</b><span class="pill p-vuln">vulnerable</span></div>
+        <div class="gn-counter"><b>31</b><span class="pill p-rebuild">needs rebuild</span></div>
+        <div class="gn-counter"><b>4</b><span class="pill p-eol">EOL</span></div>
+        <div class="gn-counter"><b>6</b><span class="pill p-unres">unresolved</span></div>
+        <div class="gn-counter"><b>18</b><span class="pill p-fixed">fixed</span></div>
+        <div class="gn-counter"><b>3</b><span class="pill p-exc">excepted</span></div>
+        <div class="gn-counter"><b>9</b><span>non-production only (not counted)</span></div>
+      </div>
+      <div>
+        <div class="label">Open repositories since publication</div>
+        <svg width="260" height="110" viewBox="0 0 260 110" role="img" aria-label="Open repositories fell from 71 to 53">
+          <line x1="30" y1="95" x2="250" y2="95" stroke="var(--border)"/>
+          <line x1="30" y1="10" x2="30" y2="95" stroke="var(--border)"/>
+          <polyline fill="none" stroke="var(--accent)" stroke-width="2" points="30,20 66,24 102,18 138,34 174,50 210,58 246,64"/>
+          <line x1="102" y1="10" x2="102" y2="95" stroke="var(--text-tertiary)" stroke-dasharray="3 3"/>
+          <text x="105" y="16" font-size="9" fill="var(--text-secondary)">v2</text>
+          <text x="4" y="24" font-size="9" fill="var(--text-secondary)">71</text>
+          <text x="4" y="68" font-size="9" fill="var(--text-secondary)">53</text>
+          <text x="30" y="107" font-size="9" fill="var(--text-secondary)">21 Oct</text>
+          <text x="222" y="107" font-size="9" fill="var(--text-secondary)">27 Oct</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top: 1.25rem;">Which list should sit under it?</h3>
+<div class="options">
+  <div class="option selected" data-choice="table">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Repository table, most urgent first</h3>
+      <p>One row per repository, with filters for status, path class, owner and org. Click a row for every evidence line, its history and the exception form.</p>
+      <div class="gn-filters">Filters: status &#9662; &middot; path class: prod, ci &#9662; &middot; owner &#9662; &middot; org &#9662; &middot; search</div>
+      <table class="gn-t">
+        <tr><th>Repository</th><th>Owner</th><th>Status</th><th>Worst evidence</th><th>Fix underway</th><th>Since</th></tr>
+        <tr><td>acme/checkout-api</td><td>@acme/payments<div class="gn-src">CODEOWNERS</div></td><td><span class="pill p-vuln">vulnerable</span></td><td><code>Dockerfile:3</code> <code>FROM node:22.18.0-slim</code> <span class="pill p-cls">prod</span></td><td>PR #412 open</td><td>21 Oct</td></tr>
+        <tr><td>acme/edge-proxy</td><td>platform-admins<div class="gn-src">admin team</div></td><td><span class="pill p-vuln">vulnerable</span></td><td><code>deploy/Dockerfile:1</code> <code>envoyproxy/envoy:v1.37.2</code> <span class="pill p-cls">prod</span></td><td>branch <code>fix/CVE-2026-41827</code></td><td>23 Oct</td></tr>
+        <tr><td>acme/storefront</td><td>@acme/web<div class="gn-src">CODEOWNERS</div></td><td><span class="pill p-rebuild">needs rebuild</span></td><td><code>Dockerfile:1</code> <code>FROM node:22-slim</code> <span class="pill p-cls">prod</span></td><td>default branch changed since fix shipped</td><td>21 Oct</td></tr>
+        <tr><td>acme/etl-jobs</td><td>dana<div class="gn-src">admin</div></td><td><span class="pill p-eol">EOL</span></td><td><code>.github/workflows/ci.yml:14</code> <code>node-version: 18</code> <span class="pill p-cls">ci</span></td><td>&mdash;</td><td>21 Oct</td></tr>
+        <tr><td>acme/search-ui</td><td>acme<div class="gn-src">org (no owner found)</div></td><td><span class="pill p-unres">unresolved</span></td><td><code>Dockerfile:5</code> <code>FROM node:${NODE_VERSION}</code> no default <span class="pill p-cls">prod</span></td><td>&mdash;</td><td>21 Oct</td></tr>
+        <tr><td>acme/billing-worker</td><td>@acme/billing<div class="gn-src">CODEOWNERS</div></td><td><span class="pill p-fixed">fixed</span></td><td><code>Dockerfile:2</code> <code>node:22.21.1-slim</code> at <code>4f2c9e1</code></td><td>PR #88 merged</td><td>fixed 25 Oct</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="option" data-choice="owners">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Grouped by owner, least progress first</h3>
+      <p>One row per owner with status counts and progress. Expanding an owner shows the same repository rows as A.</p>
+      <div class="gn-filters">Filters: path class: prod, ci &#9662; &middot; org &#9662; &middot; search</div>
+      <table class="gn-t">
+        <tr><th>Owner</th><th>Open</th><th><span class="pill p-vuln">vuln</span></th><th><span class="pill p-rebuild">rebuild</span></th><th><span class="pill p-eol">EOL</span></th><th><span class="pill p-unres">unres.</span></th><th>Progress</th></tr>
+        <tr><td>&#9656; acme <div class="gn-src">org (no owner found)</div></td><td>6</td><td>2</td><td>1</td><td>1</td><td>2</td><td><span class="gn-bar"><i style="width: 0%"></i></span> 0 of 6</td></tr>
+        <tr><td>&#9656; platform-admins <div class="gn-src">admin team</div></td><td>7</td><td>4</td><td>2</td><td>1</td><td>0</td><td><span class="gn-bar"><i style="width: 22%"></i></span> 2 of 9</td></tr>
+        <tr><td>&#9656; @acme/web <div class="gn-src">CODEOWNERS</div></td><td>12</td><td>1</td><td>10</td><td>0</td><td>1</td><td><span class="gn-bar"><i style="width: 33%"></i></span> 6 of 18</td></tr>
+        <tr><td>&#9662; @acme/payments <div class="gn-src">CODEOWNERS</div></td><td>9</td><td>3</td><td>5</td><td>0</td><td>1</td><td><span class="gn-bar"><i style="width: 31%"></i></span> 4 of 13</td></tr>
+        <tr><td colspan="7" style="padding-left: 1.5rem;" class="gn-src">acme/checkout-api &middot; <span class="pill p-vuln">vulnerable</span> &middot; <code>Dockerfile:3</code> node:22.18.0-slim &middot; PR #412 open<br>acme/payments-gateway &middot; <span class="pill p-rebuild">needs rebuild</span> &middot; <code>Dockerfile:1</code> node:22-alpine<br>&hellip; 7 more</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
