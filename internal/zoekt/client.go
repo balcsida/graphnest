@@ -265,7 +265,9 @@ func (client *Client) call(ctx context.Context, payload wireRequest, maxBytes in
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusBadRequest {
-		return wireResult{}, ErrInvalidQuery
+		var rejected struct{ Error string }
+		_ = json.NewDecoder(io.LimitReader(response.Body, 4<<10)).Decode(&rejected)
+		return wireResult{}, invalidQuery(rejected.Error)
 	}
 	if response.StatusCode != http.StatusOK {
 		return wireResult{}, fmt.Errorf("%w: HTTP %d", ErrUnavailable, response.StatusCode)
@@ -286,9 +288,19 @@ func (client *Client) call(ctx context.Context, payload wireRequest, maxBytes in
 		return wireResult{}, fmt.Errorf("%w: trailing JSON", ErrUnavailable)
 	}
 	if envelope.Error != "" {
-		return wireResult{}, fmt.Errorf("%w: %s", ErrInvalidQuery, envelope.Error)
+		return wireResult{}, invalidQuery(envelope.Error)
 	}
 	return envelope.Result, nil
+}
+
+// invalidQuery passes Zoekt's query parse errors to the caller. Other
+// rejections, such as failing to decode GraphNest's own request, stay generic
+// so no internal detail reaches the caller.
+func invalidQuery(message string) error {
+	if strings.HasPrefix(message, "query: ") || strings.HasPrefix(message, "error parsing regexp: ") {
+		return fmt.Errorf("%w: %w", ErrInvalidQuery, search.NewQueryError(message))
+	}
+	return ErrInvalidQuery
 }
 
 func normalize(files []wireFile, maxBytes int64) api.SearchResponse {

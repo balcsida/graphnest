@@ -254,3 +254,20 @@ func TestSearchRefusesInlineCaseFlags(t *testing.T) {
 		}
 	}
 }
+
+type failingBackend struct{ err error }
+
+func (backend failingBackend) Search(context.Context, BackendRequest) (api.SearchResponse, error) {
+	return api.SearchResponse{}, backend.err
+}
+
+func (failingBackend) Health(context.Context) error { return nil }
+
+func TestSearchAttachesQueryToBackendQueryError(t *testing.T) {
+	service := NewService(failingBackend{NewQueryError("error parsing regexp: missing closing ]: `[0-9`")}, authorizer(), Limits{})
+	_, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{Query: "FROM node:[0-9 ]"})
+	var queryErr *QueryError
+	if !errors.As(err, &queryErr) || !strings.Contains(queryErr.Message(), `quote the term ("FROM node:[0-9 ]")`) {
+		t.Fatalf("error = %v, want a hint quoting the query", err)
+	}
+}

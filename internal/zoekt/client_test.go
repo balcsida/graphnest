@@ -390,3 +390,41 @@ func TestListRejectsInvalidResponses(t *testing.T) {
 		})
 	}
 }
+
+func TestSearchPassesParseErrors(t *testing.T) {
+	const parseError = "error parsing regexp: missing closing ]: `[0-9`"
+	for _, test := range []struct {
+		name, body string
+		status     int
+		reason     string
+	}{
+		{"regexp parse error", `{"Error":"error parsing regexp: missing closing ]: ` + "`[0-9`" + `"}`, http.StatusBadRequest, parseError},
+		{"query parse error in an OK envelope", `{"Error":"query: unterminated quoted string"}`, http.StatusOK, "query: unterminated quoted string"},
+		{"request decoding error", `{"Error":"json: cannot unmarshal string into Go struct field"}`, http.StatusBadRequest, ""},
+		{"body that is not JSON", `nope`, http.StatusBadRequest, ""},
+		{"body over the read limit", `{"Error":"query: ` + strings.Repeat("a", 5000) + `"}`, http.StatusBadRequest, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.WriteHeader(test.status)
+				_, _ = io.WriteString(writer, test.body)
+			}))
+			defer server.Close()
+			client, err := New(server.URL, server.Client(), 64<<10, observability.New())
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.Search(t.Context(), search.BackendRequest{Query: "needle"})
+			if !errors.Is(err, ErrInvalidQuery) {
+				t.Fatalf("error = %v, want ErrInvalidQuery", err)
+			}
+			if test.reason != "" && !errors.Is(err, search.ErrInvalidQuery) {
+				t.Fatalf("error = %v, want search.ErrInvalidQuery as well", err)
+			}
+			var queryErr *search.QueryError
+			if passed := errors.As(err, &queryErr); passed != (test.reason != "") || passed && queryErr.Reason != test.reason {
+				t.Fatalf("error = %#v, want reason %q", err, test.reason)
+			}
+		})
+	}
+}

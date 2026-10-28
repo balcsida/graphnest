@@ -80,6 +80,10 @@ func (service *Service) Search(ctx context.Context, principal authn.Principal, r
 	}
 	response, err := service.backend.Search(ctx, backendRequest)
 	if err != nil {
+		var queryErr *QueryError
+		if errors.As(err, &queryErr) {
+			queryErr.Query = request.Query
+		}
 		return api.SearchResponse{}, err
 	}
 	if response.Consistency != nil && response.Consistency.Backend == "github" {
