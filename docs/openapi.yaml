@@ -370,6 +370,7 @@ paths:
         '504': {$ref: '#/components/responses/Timeout'}
   /v1/search:
     post:
+      description: Code search over the caller's authorized repositories using Zoekt query syntax. A 400 invalid_request message names the offending construct (search query is invalid, then the reason and sometimes a hint). Queries with inline case flags such as (?i) are refused because the backend ignores them; use case:no or case:yes.
       security: [{bearerAuth: []}, {sessionCookie: []}]
       requestBody:
         required: true
@@ -1108,6 +1109,219 @@ paths:
         '405': {$ref: '#/components/responses/InvalidRequest'}
         '413': {$ref: '#/components/responses/InvalidRequest'}
         '415': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/advisories:
+    get:
+      description: Advisories GraphNest tracks. Administrators supply them; GraphNest fetches no advisory feeds. Every principal allowed to read the inventory sees every advisory, and counts cover only the caller's authorized repositories. Available only when GRAPHNEST_SUPPLY_CHAIN=true.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: state, in: query, required: false, schema: {type: string, enum: [open, closed, all], default: open}}
+        - {name: cursor, in: query, required: false, description: next_cursor from a previous response, schema: {type: string, minLength: 1}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200': {description: Advisories, open first, content: {application/json: {schema: {$ref: '#/components/schemas/AdvisoryList'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+    post:
+      description: Administrator-only. Create an advisory (version 1) from YAML or JSON in the AdvisoryDefinition format, or from a plain OSV record. Validation errors name the field path and the offending value. The id must be unique, and the original input is preserved. Every repository is checked in the background within minutes.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      requestBody: {required: true, description: At most 256 KiB. YAML anchors and aliases are refused., content: {application/yaml: {schema: {type: string}}, application/json: {schema: {$ref: '#/components/schemas/AdvisoryDefinition'}}}}
+      responses:
+        '201': {description: Advisory created, content: {application/json: {schema: {$ref: '#/components/schemas/AdvisoryDetail'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '409': {description: An advisory with this id already exists (conflict), content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/advisory-checks:
+    post:
+      description: Dry run. Classifies the caller's authorized repositories against an advisory definition exactly as a saved advisory would, without saving anything. Available to every principal allowed to read the inventory. Each page is recomputed, and the cursor is bound to the definition. Fix signals need a saved advisory.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: cursor, in: query, required: false, description: next_cursor from a previous response for the same definition, schema: {type: string, minLength: 1}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100}}
+      requestBody: {required: true, description: At most 256 KiB, in the same formats as advisory creation., content: {application/yaml: {schema: {type: string}}, application/json: {schema: {$ref: '#/components/schemas/AdvisoryDefinition'}}}}
+      responses:
+        '200': {description: Classification without saving, content: {application/json: {schema: {$ref: '#/components/schemas/AdvisoryCheckResponse'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {description: The check exceeded its time budget, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+  /v1/supply-chain/advisories/{id}:
+    get:
+      description: One advisory with its current definition, inferred release lines, counts, coverage, burn-down, and versions, computed over the caller's authorized repositories.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Advisory, content: {application/json: {schema: {$ref: '#/components/schemas/AdvisoryDetail'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+    put:
+      description: Administrator-only. Records a new version of the advisory. The id in the body must equal the advisory's id. Earlier versions and their original input stay readable, and every repository is re-checked against the new version.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+      requestBody: {required: true, description: At most 256 KiB, in the same formats as advisory creation., content: {application/yaml: {schema: {type: string}}, application/json: {schema: {$ref: '#/components/schemas/AdvisoryDefinition'}}}}
+      responses:
+        '200': {description: New version recorded, content: {application/json: {schema: {$ref: '#/components/schemas/AdvisoryDetail'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/advisories/{id}/versions/{version}:
+    get:
+      description: One version of an advisory, normalized and as originally submitted.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: version, in: path, required: true, schema: {type: integer, minimum: 1}}
+      responses:
+        '200': {description: Advisory version, content: {application/json: {schema: {$ref: '#/components/schemas/AdvisoryVersion'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/advisories/{id}/close:
+    post:
+      description: Administrator-only. Stops re-checking the advisory. Results and history stay readable. Closing a closed advisory changes nothing.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Advisory closed, content: {application/json: {schema: {$ref: '#/components/schemas/AdvisoryDetail'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/advisories/{id}/reopen:
+    post:
+      description: Administrator-only. Resumes re-checking a closed advisory. Reopening an open advisory changes nothing.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Advisory reopened, content: {application/json: {schema: {$ref: '#/components/schemas/AdvisoryDetail'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/advisories/{id}/repositories:
+    get:
+      description: Repository rows for the caller's authorized repositories, most urgent status first, then by name. Following next_cursor reaches every matching repository. Covers default branches only.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: status, in: query, required: false, style: form, explode: true, schema: {type: array, items: {$ref: '#/components/schemas/AdvisoryStatus'}}}
+        - {name: class, in: query, required: false, style: form, explode: true, description: Keep repositories with evidence in these path classes, schema: {type: array, items: {$ref: '#/components/schemas/AdvisoryPathClass'}}}
+        - {name: owner, in: query, required: false, description: Case-insensitive substring of the owner, schema: {type: string, maxLength: 200}}
+        - {name: org, in: query, required: false, description: Repository organization, schema: {type: string, maxLength: 200}}
+        - {name: q, in: query, required: false, description: Case-insensitive substring of the repository name, schema: {type: string, maxLength: 200}}
+        - {name: cursor, in: query, required: false, description: next_cursor from a previous response with the same filters, schema: {type: string, minLength: 1}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200': {description: Repository rows, content: {application/json: {schema: {$ref: '#/components/schemas/AdvisoryRepositoryList'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/advisories/{id}/repositories/{repository_id}:
+    get:
+      description: Every evidence line, the history, signals, and exceptions for one authorized repository, plus the basis fingerprint that recording an exception must echo. An unauthorized repository is indistinguishable from a missing one.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: repository_id, in: path, required: true, description: GitHub repository ID, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Repository evidence and history, content: {application/json: {schema: {$ref: '#/components/schemas/AdvisoryRepositoryDetail'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/advisories/{id}/repositories/{repository_id}/exceptions:
+    post:
+      description: Records an exception for one repository. Allowed for administrators and holders of the repository's supply-chain review grant. not_affected and risk_accepted need an expiry at most one year ahead. rebuilt applies only while the repository needs a rebuild. withdrawn supersedes the current exception. The basis must equal the current fingerprint; the exception lapses when the counted evidence changes or it expires.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: repository_id, in: path, required: true, description: GitHub repository ID, schema: {type: integer, format: int64, minimum: 1}}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdvisoryExceptionRequest'}}}}
+      responses:
+        '201': {description: Exception recorded, content: {application/json: {schema: {$ref: '#/components/schemas/AdvisoryException'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {description: Review permission required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '409': {description: Evidence changed since it was viewed (stale_basis), content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/advisories/{id}/export.csv:
+    get:
+      description: Every authorized repository matching the filters, as CSV with one row per evidence line. Cells that begin with formula characters are neutralized.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: status, in: query, required: false, style: form, explode: true, schema: {type: array, items: {$ref: '#/components/schemas/AdvisoryStatus'}}}
+        - {name: class, in: query, required: false, style: form, explode: true, schema: {type: array, items: {$ref: '#/components/schemas/AdvisoryPathClass'}}}
+        - {name: owner, in: query, required: false, schema: {type: string, maxLength: 200}}
+        - {name: org, in: query, required: false, schema: {type: string, maxLength: 200}}
+        - {name: q, in: query, required: false, schema: {type: string, maxLength: 200}}
+      responses:
+        '200': {description: CSV export, headers: {Content-Disposition: {schema: {type: string}}}, content: {text/csv: {schema: {type: string}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/advisories/{id}/export.md:
+    get:
+      description: Every authorized repository matching the filters, as Markdown. The header states the advisory, its version, the generation time, that only default branches are covered, and coverage counts. Markdown syntax in untrusted values is escaped.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: status, in: query, required: false, style: form, explode: true, schema: {type: array, items: {$ref: '#/components/schemas/AdvisoryStatus'}}}
+        - {name: class, in: query, required: false, style: form, explode: true, schema: {type: array, items: {$ref: '#/components/schemas/AdvisoryPathClass'}}}
+        - {name: owner, in: query, required: false, schema: {type: string, maxLength: 200}}
+        - {name: org, in: query, required: false, schema: {type: string, maxLength: 200}}
+        - {name: q, in: query, required: false, schema: {type: string, maxLength: 200}}
+      responses:
+        '200': {description: Markdown export, headers: {Content-Disposition: {schema: {type: string}}}, content: {text/markdown: {schema: {type: string}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/SupplyChainNotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/auth/config:
     get:
@@ -3106,6 +3320,318 @@ components:
       properties:
         job: {$ref: '#/components/schemas/SupplyChainJob'}
         created: {type: boolean}
+    AdvisoryStatus:
+      type: string
+      enum: [vulnerable, eol, unresolved, needs_rebuild, fixed, not_affected, non_production, excepted]
+      description: vulnerable, eol, unresolved and needs_rebuild are open. non_production means only test or docs paths matched. excepted means a current exception covers an open status.
+    AdvisoryPathClass: {type: string, enum: [prod, ci, test, docs]}
+    AdvisoryOwnerSource: {type: string, enum: [codeowners, admin_team, admin_user, org]}
+    AdvisoryCounts:
+      type: object
+      additionalProperties: false
+      required: [open, vulnerable, eol, unresolved, needs_rebuild, fixed, excepted, not_affected, non_production]
+      properties:
+        open: {type: integer, minimum: 0, description: Repositories whose status is vulnerable, eol, unresolved or needs_rebuild}
+        vulnerable: {type: integer, minimum: 0}
+        eol: {type: integer, minimum: 0}
+        unresolved: {type: integer, minimum: 0}
+        needs_rebuild: {type: integer, minimum: 0}
+        fixed: {type: integer, minimum: 0}
+        excepted: {type: integer, minimum: 0}
+        not_affected: {type: integer, minimum: 0}
+        non_production: {type: integer, minimum: 0}
+    AdvisorySummary:
+      type: object
+      additionalProperties: false
+      required: [id, key, title, aliases, state, version, published_at, updated_at, counts]
+      properties:
+        id: {type: integer, format: int64, minimum: 1}
+        key: {type: string, pattern: '^[A-Za-z0-9:_.-]{1,64}$'}
+        title: {type: string}
+        aliases: {type: array, maxItems: 20, items: {type: string}}
+        state: {type: string, enum: [open, closed]}
+        version: {type: integer, minimum: 1}
+        published_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        counts: {$ref: '#/components/schemas/AdvisoryCounts'}
+    AdvisoryList:
+      type: object
+      additionalProperties: false
+      required: [advisories]
+      properties:
+        advisories: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/AdvisorySummary'}}
+        next_cursor: {type: string, minLength: 1}
+    AdvisoryRange:
+      type: object
+      additionalProperties: false
+      properties:
+        introduced: {type: string}
+        fixed: {type: string}
+        last_affected: {type: string}
+    AdvisoryProduct:
+      type: object
+      additionalProperties: false
+      description: A product as GraphNest normalized it, including the release-line precision it inferred.
+      required: [name, match, line_precision, fixed, affected, eol, tag_aliases]
+      properties:
+        name: {type: string}
+        match: {type: array, items: {type: string}}
+        line_precision: {type: string, enum: [all, major, minor, patch]}
+        fixed: {type: array, items: {type: string}}
+        affected: {type: array, items: {$ref: '#/components/schemas/AdvisoryRange'}}
+        introduced: {type: string}
+        eol: {type: array, items: {type: string}}
+        tag_aliases: {type: object, additionalProperties: {type: string}}
+    AdvisoryVersionRef:
+      type: object
+      additionalProperties: false
+      required: [version, title, created_by, created_at]
+      properties:
+        version: {type: integer, minimum: 1}
+        title: {type: string}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+    AdvisoryCoverage:
+      type: object
+      additionalProperties: false
+      required: [repositories, runtime_not_checked, dependencies_not_checked]
+      properties:
+        repositories: {type: integer, minimum: 0, description: Authorized repositories considered}
+        runtime_not_checked: {type: integer, minimum: 0, description: Repositories whose runtime inventory is missing or older than the indexed commit}
+        dependencies_not_checked: {type: integer, minimum: 0, description: Repositories without a GitHub dependency-graph snapshot}
+    AdvisoryBurndownPoint:
+      type: object
+      additionalProperties: false
+      required: [day, open, marks]
+      properties:
+        day: {type: string, format: date, description: UTC day}
+        open: {type: integer, minimum: 0}
+        marks: {type: array, items: {type: string, enum: [published, edited, closed, reopened]}}
+    AdvisoryDetail:
+      type: object
+      additionalProperties: false
+      required: [id, key, title, aliases, state, version, published_at, updated_at, counts, references, products, versions, coverage, burndown, scope, created_by, created_at]
+      properties:
+        id: {type: integer, format: int64, minimum: 1}
+        key: {type: string, pattern: '^[A-Za-z0-9:_.-]{1,64}$'}
+        title: {type: string}
+        aliases: {type: array, maxItems: 20, items: {type: string}}
+        state: {type: string, enum: [open, closed]}
+        version: {type: integer, minimum: 1}
+        published_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        counts: {$ref: '#/components/schemas/AdvisoryCounts'}
+        summary: {type: string}
+        references: {type: array, items: {type: string}, description: Displayed, never fetched}
+        products: {type: array, items: {$ref: '#/components/schemas/AdvisoryProduct'}}
+        versions: {type: array, items: {$ref: '#/components/schemas/AdvisoryVersionRef'}}
+        coverage: {$ref: '#/components/schemas/AdvisoryCoverage'}
+        burndown: {type: array, items: {$ref: '#/components/schemas/AdvisoryBurndownPoint'}}
+        scope: {type: string, description: States that only default branches are covered and that running images and clusters are not scanned}
+        evidence_as_of: {type: string, format: date-time, description: Time of the newest evidence}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+        closed_by: {type: string}
+        closed_at: {type: string, format: date-time}
+    AdvisoryVersion:
+      type: object
+      additionalProperties: false
+      required: [version, title, aliases, published_at, products, source, source_media_type, created_by, created_at]
+      properties:
+        version: {type: integer, minimum: 1}
+        title: {type: string}
+        aliases: {type: array, items: {type: string}}
+        published_at: {type: string, format: date-time}
+        products: {type: array, items: {$ref: '#/components/schemas/AdvisoryProduct'}}
+        source: {type: string, description: The input exactly as submitted}
+        source_media_type: {type: string, enum: [application/yaml, application/json]}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+    AdvisoryDefinition:
+      type: object
+      additionalProperties: false
+      required: [id, title, published]
+      description: The advisory input format. At least one of products or osv is required. YAML input uses the same fields. A plain OSV record is also accepted as the whole body.
+      properties:
+        id: {type: string, pattern: '^[A-Za-z0-9:_.-]{1,64}$'}
+        aliases: {type: array, maxItems: 20, items: {type: string}}
+        title: {type: string, minLength: 1, maxLength: 200}
+        published: {type: string, description: Date or RFC 3339 time}
+        summary: {type: string, maxLength: 4096}
+        references: {type: array, maxItems: 50, items: {type: string}}
+        products: {type: array, maxItems: 200, items: {$ref: '#/components/schemas/AdvisoryDefinitionProduct'}}
+        osv: {type: array, maxItems: 50, items: {type: object, description: A plain OSV record}}
+    AdvisoryDefinitionProduct:
+      type: object
+      additionalProperties: false
+      required: [name, match]
+      description: Give either fixed (each version closes its release line) or affected ranges.
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        match: {type: array, minItems: 1, maxItems: 20, items: {type: string, description: 'A package URL without a version; * matches within a segment. Types: docker, generic, nuget, npm, pypi, golang, maven, cargo, gem, composer, hex, pub, githubactions'}}
+        fixed: {type: array, maxItems: 100, items: {type: string}}
+        affected: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/AdvisoryRange'}}
+        line: {type: string, enum: [major, minor, patch], description: Overrides the inferred release-line precision}
+        introduced: {type: string}
+        eol: {type: array, maxItems: 100, items: {type: string, description: 'A line such as 21, or <20'}}
+        tag_aliases: {type: object, maxProperties: 100, additionalProperties: {type: [string, integer]}}
+    AdvisoryEvidence:
+      type: object
+      additionalProperties: false
+      required: [stream, snapshot_id, element_id, class, product, purl, version, status, reason]
+      properties:
+        stream: {type: string}
+        snapshot_id: {type: integer, format: int64, minimum: 1}
+        element_id: {type: string}
+        path: {type: string, description: Absent for dependency-graph occurrences}
+        line: {type: integer, minimum: 1}
+        context: {type: string, maxLength: 300, description: Untrusted text from the repository}
+        class: {$ref: '#/components/schemas/AdvisoryPathClass'}
+        product: {type: string}
+        purl: {type: string}
+        version: {type: string}
+        status: {$ref: '#/components/schemas/AdvisoryStatus'}
+        reason: {type: string}
+        commit: {type: string, pattern: '^[0-9a-f]{40}$'}
+    AdvisorySignal:
+      type: object
+      additionalProperties: false
+      required: [kind, ref, first_seen_at]
+      properties:
+        kind: {type: string, enum: [pull_request, branch, evidence_changed]}
+        ref: {type: string}
+        title: {type: string, description: Untrusted text from GitHub}
+        state: {type: string, enum: [open, merged, closed]}
+        url: {type: string}
+        first_seen_at: {type: string, format: date-time}
+    AdvisoryException:
+      type: object
+      additionalProperties: false
+      required: [id, kind, reason, recorded_by, recorded_at]
+      properties:
+        id: {type: integer, format: int64, minimum: 1}
+        kind: {type: string, enum: [not_affected, risk_accepted, rebuilt, withdrawn]}
+        reason: {type: string}
+        expires_at: {type: string, format: date-time}
+        recorded_by: {type: string}
+        recorded_at: {type: string, format: date-time}
+        lapsed_at: {type: string, format: date-time}
+        lapse_reason: {type: string, enum: [evidence_changed, expired, superseded]}
+    AdvisoryOwner:
+      type: object
+      additionalProperties: false
+      required: [name, source]
+      properties:
+        name: {type: string}
+        source: {$ref: '#/components/schemas/AdvisoryOwnerSource'}
+    AdvisoryRepositoryRef:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: {type: integer, format: int64, minimum: 1, description: GitHub repository ID}
+        name: {type: string}
+        web_url: {type: string}
+    AdvisoryRepository:
+      type: object
+      additionalProperties: false
+      required: [repository, status, status_since, counted, owner, evidence_count, signals]
+      properties:
+        repository: {$ref: '#/components/schemas/AdvisoryRepositoryRef'}
+        status: {$ref: '#/components/schemas/AdvisoryStatus'}
+        status_since: {type: string, format: date-time}
+        counted: {type: boolean, description: Whether prod or ci evidence matched}
+        owner: {$ref: '#/components/schemas/AdvisoryOwner'}
+        worst_evidence: {$ref: '#/components/schemas/AdvisoryEvidence'}
+        evidence_count: {type: integer, minimum: 0}
+        evidence_commit: {type: string, pattern: '^[0-9a-f]{40}$'}
+        signals: {type: array, maxItems: 50, items: {$ref: '#/components/schemas/AdvisorySignal'}}
+        signals_error: {type: string, description: Why a signal is unavailable, for example pull_requests_permission_missing}
+        signals_checked_at: {type: string, format: date-time}
+        exception: {$ref: '#/components/schemas/AdvisoryException'}
+    AdvisoryRepositoryList:
+      type: object
+      additionalProperties: false
+      required: [repositories, scope]
+      properties:
+        repositories: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/AdvisoryRepository'}}
+        next_cursor: {type: string, minLength: 1}
+        scope: {type: string}
+    AdvisoryEvent:
+      type: object
+      additionalProperties: false
+      required: [at, kind]
+      properties:
+        at: {type: string, format: date-time}
+        kind: {type: string, enum: [status_changed, exception_recorded, exception_lapsed, exception_withdrawn, signal_seen, advisory_versioned, advisory_closed, advisory_reopened]}
+        from_status: {$ref: '#/components/schemas/AdvisoryStatus'}
+        to_status: {$ref: '#/components/schemas/AdvisoryStatus'}
+        commit: {type: string, pattern: '^[0-9a-f]{40}$'}
+        advisory_version: {type: integer, minimum: 1}
+        actor: {type: string}
+        detail: {type: object}
+    AdvisoryRepositoryDetail:
+      type: object
+      additionalProperties: false
+      required: [repository, status, status_since, counted, owner, evidence_count, signals, evidence, evidence_total, history, exceptions, basis, can_record_exception]
+      properties:
+        repository: {$ref: '#/components/schemas/AdvisoryRepositoryRef'}
+        status: {$ref: '#/components/schemas/AdvisoryStatus'}
+        status_since: {type: string, format: date-time}
+        counted: {type: boolean}
+        owner: {$ref: '#/components/schemas/AdvisoryOwner'}
+        worst_evidence: {$ref: '#/components/schemas/AdvisoryEvidence'}
+        evidence_count: {type: integer, minimum: 0}
+        evidence_commit: {type: string, pattern: '^[0-9a-f]{40}$'}
+        signals: {type: array, maxItems: 50, items: {$ref: '#/components/schemas/AdvisorySignal'}}
+        signals_error: {type: string}
+        signals_checked_at: {type: string, format: date-time}
+        exception: {$ref: '#/components/schemas/AdvisoryException'}
+        evidence: {type: array, maxItems: 200, items: {$ref: '#/components/schemas/AdvisoryEvidence'}}
+        evidence_total: {type: integer, minimum: 0}
+        history: {type: array, maxItems: 500, items: {$ref: '#/components/schemas/AdvisoryEvent'}}
+        exceptions: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/AdvisoryException'}}
+        basis: {type: string, pattern: '^[0-9a-f]{64}$', description: Fingerprint of the counted evidence; echo it when recording an exception}
+        can_record_exception: {type: boolean}
+    AdvisoryExceptionRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, reason, basis]
+      properties:
+        kind: {type: string, enum: [not_affected, risk_accepted, rebuilt, withdrawn]}
+        reason: {type: string, minLength: 1, maxLength: 2000}
+        expires_at: {type: string, format: date-time, description: Required for not_affected and risk_accepted (at most one year ahead); refused for rebuilt and withdrawn}
+        basis: {type: string, pattern: '^[0-9a-f]{64}$'}
+    AdvisoryWarning:
+      type: object
+      additionalProperties: false
+      required: [code, detail]
+      properties:
+        code: {type: string, enum: [no_match, unknown_tag, skipped_range, skipped_ecosystem]}
+        product: {type: string}
+        detail: {type: string}
+    AdvisoryProductCheck:
+      type: object
+      additionalProperties: false
+      required: [name, line_precision, matched_repositories]
+      properties:
+        name: {type: string}
+        line_precision: {type: string, enum: [all, major, minor, patch]}
+        matched_repositories: {type: integer, minimum: 0}
+    AdvisoryCheckResponse:
+      type: object
+      additionalProperties: false
+      required: [key, title, products, counts, coverage, repositories, warnings, scope]
+      properties:
+        key: {type: string}
+        title: {type: string}
+        products: {type: array, items: {$ref: '#/components/schemas/AdvisoryProductCheck'}}
+        counts: {$ref: '#/components/schemas/AdvisoryCounts'}
+        coverage: {$ref: '#/components/schemas/AdvisoryCoverage'}
+        repositories: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/AdvisoryRepository'}}
+        next_cursor: {type: string, minLength: 1}
+        warnings: {type: array, items: {$ref: '#/components/schemas/AdvisoryWarning'}}
+        scope: {type: string}
     ErrorResponse:
       type: object
       additionalProperties: false

@@ -249,4 +249,9 @@ end
   raise OpenAPIError, "#{schema_name}.#{property_name} cap is undocumented" unless property.fetch("description", "").include?(cap.to_s)
 end
 
+%w[AdvisoryList AdvisoryRepositoryList AdvisoryCheckResponse].zip(%w[advisories repositories repositories]).each do |schema_name, field|
+  require_value(schemas.fetch(schema_name).dig("properties", field, "maxItems"), 100, "#{schema_name}.#{field} maxItems")
+end
+require_value(schemas.fetch("AdvisoryExceptionRequest")["required"], %w[kind reason basis], "AdvisoryExceptionRequest required")
+
 puts "OpenAPI validation passed"
