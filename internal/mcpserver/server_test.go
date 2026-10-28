@@ -828,6 +828,7 @@ func TestSearchToolErrorsAreSafe(t *testing.T) {
 		name, query, message string
 	}{
 		{"invalid query", " ", "search query is invalid"},
+		{"inline case flag", "(?i)brotli", "search query is invalid: inline flag (?i) is not supported; use case:no brotli"},
 		{"backend failure", "needle", "search service is unavailable"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

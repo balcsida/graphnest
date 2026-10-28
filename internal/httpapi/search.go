@@ -65,7 +65,10 @@ func invalidRequestStatus(err error) int {
 }
 
 func writeSearchError(writer http.ResponseWriter, err error) {
+	var queryErr *search.QueryError
 	switch {
+	case errors.As(err, &queryErr):
+		writeError(writer, http.StatusBadRequest, "invalid_request", queryErr.Message(), false)
 	case errors.Is(err, context.DeadlineExceeded):
 		writeError(writer, http.StatusGatewayTimeout, "timeout", "search timed out", true)
 	case errors.Is(err, search.ErrInvalidQuery), errors.Is(err, zoekt.ErrInvalidQuery):

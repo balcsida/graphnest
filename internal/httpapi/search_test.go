@@ -42,6 +42,10 @@ func TestSearchHTTP(t *testing.T) {
 		{"trailing data exceeds body limit", http.MethodPost, "application/json", `{"query":"needle"}x`, "secret", nil, 18, http.StatusRequestEntityTooLarge, false, "invalid_request", "request is invalid", false},
 		{"wrong method", http.MethodGet, "application/json", `{"query":"needle"}`, "secret", nil, 1024, http.StatusMethodNotAllowed, false, "invalid_request", "request is invalid", false},
 		{"backend timeout", http.MethodPost, "application/json", `{"query":"needle"}`, "secret", context.DeadlineExceeded, 1024, http.StatusGatewayTimeout, true, "timeout", "search timed out", true},
+		{"backend parse error", http.MethodPost, "application/json", `{"query":"foo)"}`, "secret", search.NewQueryError(`query: extra tokens found at end input: ")"`), 1024, http.StatusBadRequest, true, "invalid_request",
+			`search query is invalid: query: extra tokens found at end input: ")"; hint: parentheses group query terms; escape them as \( and \) to match them literally`, false},
+		{"inline case flag", http.MethodPost, "application/json", `{"query":"(?i)brotli"}`, "secret", nil, 1024, http.StatusBadRequest, false, "invalid_request",
+			"search query is invalid: inline flag (?i) is not supported; use case:no brotli", false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

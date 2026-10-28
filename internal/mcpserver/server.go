@@ -319,6 +319,10 @@ func positiveIntegerSchema(description string) map[string]any {
 func runSearch(ctx context.Context, service *search.Service, input api.SearchRequest, maxBytes int64) (*mcp.CallToolResult, output, error) {
 	response, err := service.Search(ctx, httpapi.PrincipalFromContext(ctx), input)
 	if err != nil {
+		var queryErr *search.QueryError
+		if errors.As(err, &queryErr) {
+			return nil, output{}, errors.New(queryErr.Message())
+		}
 		if errors.Is(err, search.ErrInvalidQuery) || errors.Is(err, zoekt.ErrInvalidQuery) {
 			return nil, output{}, errInvalidSearch
 		}
