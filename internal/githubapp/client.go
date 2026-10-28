@@ -350,6 +350,9 @@ func (c *Client) doInstallationJSON(ctx context.Context, operation string, insta
 type HTTPStatusError struct {
 	StatusCode  int
 	RateLimited bool
+	// Message is GitHub's validation message for a 422, such as why a search
+	// query was rejected; it is empty for every other status.
+	Message string
 }
 
 func (err HTTPStatusError) Error() string {
@@ -358,6 +361,12 @@ func (err HTTPStatusError) Error() string {
 
 func (err HTTPStatusError) HTTPStatus() int     { return err.StatusCode }
 func (err HTTPStatusError) IsRateLimited() bool { return err.RateLimited }
+
+// InvalidQueryReason reports GitHub's reason when it rejected the request as
+// invalid (422).
+func (err HTTPStatusError) InvalidQueryReason() (string, bool) {
+	return err.Message, err.StatusCode == http.StatusUnprocessableEntity
+}
 
 func (c *Client) doJSON(ctx context.Context, operation, method string, endpoint *url.URL, body []byte, authorization, mediaType string, limit int64, target any) (link string, resultErr error) {
 	result := "error"
@@ -380,7 +389,11 @@ func (c *Client) doJSON(ctx context.Context, operation, method string, endpoint 
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", HTTPStatusError{StatusCode: response.StatusCode, RateLimited: response.StatusCode == http.StatusTooManyRequests || response.Header.Get("X-RateLimit-Remaining") == "0" || response.Header.Get("Retry-After") != ""}
+		statusErr := HTTPStatusError{StatusCode: response.StatusCode, RateLimited: response.StatusCode == http.StatusTooManyRequests || response.Header.Get("X-RateLimit-Remaining") == "0" || response.Header.Get("Retry-After") != ""}
+		if response.StatusCode == http.StatusUnprocessableEntity {
+			statusErr.Message = validationMessage(io.LimitReader(response.Body, 4<<10))
+		}
+		return "", statusErr
 	}
 	reader := io.LimitReader(response.Body, limit+1)
 	data, err := io.ReadAll(reader)
@@ -400,6 +413,24 @@ func (c *Client) doJSON(ctx context.Context, operation, method string, endpoint 
 	}
 	result = "success"
 	return response.Header.Get("Link"), nil
+}
+
+// validationMessage returns the most specific message of a GitHub 422 body:
+// the first errors[].message, else the top-level message.
+func validationMessage(body io.Reader) string {
+	var wire struct {
+		Message string `json:"message"`
+		Errors  []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	_ = json.NewDecoder(body).Decode(&wire)
+	for _, detail := range wire.Errors {
+		if detail.Message != "" {
+			return detail.Message
+		}
+	}
+	return wire.Message
 }
 
 func (c *Client) apiURL(segments ...string) *url.URL {

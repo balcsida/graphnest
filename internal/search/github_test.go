@@ -3,10 +3,12 @@ package search
 import (
 	"context"
 	"errors"
+	"net/http"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/balcsida/graphnest/internal/githubapp"
 	"github.com/balcsida/graphnest/pkg/api"
 )
 
@@ -93,3 +95,18 @@ type rateLimitError struct{ status int }
 func (err rateLimitError) Error() string       { return "rate limited" }
 func (err rateLimitError) HTTPStatus() int     { return err.status }
 func (err rateLimitError) IsRateLimited() bool { return true }
+
+func TestGitHubBackendReportsInvalidQuery(t *testing.T) {
+	for _, test := range []struct{ message, want string }{
+		{"The search query is longer than 256 characters.", "search query is invalid: The search query is longer than 256 characters."},
+		{"", "search query is invalid: GitHub code search rejected the query"},
+	} {
+		client := &githubSearchClient{err: githubapp.HTTPStatusError{StatusCode: http.StatusUnprocessableEntity, Message: test.message}}
+		backend := NewGitHubBackend(client, 1)
+		_, err := backend.Search(t.Context(), BackendRequest{Query: "needle", InstallationID: 10, RepositoryScopes: []RepositoryScope{{Name: "acme/one"}}})
+		var queryErr *QueryError
+		if !errors.As(err, &queryErr) || queryErr.Message() != test.want {
+			t.Errorf("message %q: error = %#v, want %q", test.message, err, test.want)
+		}
+	}
+}

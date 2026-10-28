@@ -585,3 +585,33 @@ func signerAuthorization(t *testing.T, signer *Signer) string {
 	}
 	return "Bearer " + jwt
 }
+
+func TestDoJSONCapturesValidationMessage(t *testing.T) {
+	now := time.Date(2026, time.October, 28, 12, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		name, body, want string
+		status           int
+	}{
+		{"specific validation error", `{"message":"Validation Failed","errors":[{"message":"The search query is longer than 256 characters."}]}`, "The search query is longer than 256 characters.", http.StatusUnprocessableEntity},
+		{"only the summary", `{"message":"Validation Failed"}`, "Validation Failed", http.StatusUnprocessableEntity},
+		{"not a validation failure", `{"message":"Not Found"}`, "", http.StatusNotFound},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.EscapedPath(), "/access_tokens") {
+					fmt.Fprintf(w, `{"token":"opaque","expires_at":%q}`, now.Add(10*time.Minute).Format(time.RFC3339))
+					return
+				}
+				w.WriteHeader(test.status)
+				_, _ = io.WriteString(w, test.body)
+			}))
+			defer server.Close()
+			client := testClient(t, server, &now, 32<<10)
+			_, err := client.SearchCode(t.Context(), 9, "needle repo:acme/one", []int64{101})
+			var statusErr HTTPStatusError
+			if !errors.As(err, &statusErr) || statusErr.StatusCode != test.status || statusErr.Message != test.want {
+				t.Fatalf("error = %#v, want status %d and message %q", err, test.status, test.want)
+			}
+		})
+	}
+}
