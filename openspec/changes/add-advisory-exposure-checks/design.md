@@ -477,7 +477,10 @@ A refresher runs in the server beside the evaluation loop:
 - **Errors:**
   - `zoekt.Client.call` reads at most 4 KiB of a 400 body and returns
     `search.QueryError{Reason}`, which wraps `ErrInvalidQuery`, from
-    `{"Error": …}`.
+    `{"Error": …}`. Only Zoekt's parse errors (messages starting `query: ` or
+    `error parsing regexp: `) pass through. Zoekt also answers 400 when it
+    cannot decode GraphNest's own request; such messages stay generic so
+    internal detail never reaches the caller.
   - `search.Service.Search` first refuses flag groups that set or clear `i`:
     `(?…i…)` or `(?…i…:` not preceded by a backslash, with the group named
     and `case:no`/`case:yes` suggested. Non-capturing `(?:` and other flags

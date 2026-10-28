@@ -5,16 +5,16 @@ documentation. Group 2 is independent of the rest and can ship first.
 
 ## 1. Decision record and contracts
 
-- [ ] 1.1 Write `docs/adr/0020-runtime-inventory-and-advisories.md` (indexer-produced `graphnest:runtime` stream, operator-supplied advisories, not a vulnerability database) and add it to `docs/adr/README.md`; verify links render and ADR-0017 references it as amended
-- [ ] 1.2 Add the advisory routes, schemas, and the more specific search error text to `docs/openapi.yaml`; verify with `make openapi-check`
+- [x] 1.1 Write `docs/adr/0020-runtime-inventory-and-advisories.md` (indexer-produced `graphnest:runtime` stream, operator-supplied advisories, not a vulnerability database) and add it to `docs/adr/README.md`; verify links render and ADR-0017 references it as amended
+- [x] 1.2 Add the advisory routes, schemas, and the more specific search error text to `docs/openapi.yaml`; verify with `make openapi-check`
 
 ## 2. Search query errors
 
-- [ ] 2.1 Make `internal/zoekt` read at most 4 KiB of an HTTP 400 body and return `search.QueryError{Reason}` wrapping `ErrInvalidQuery`; verify with a client test whose server answers 400 with a JSON `Error` reporting the missing `]`
-- [ ] 2.2 Refuse unescaped flag groups that set or clear `i` (`(?i)`, `(?-i)`, `(?i:`) in `search.Service.Search` and add the hint table; verify with table tests, including `\(\?i\)` and `(?:22|20)` passing through
-- [ ] 2.3 Render `search query is invalid: <reason>[; hint: …]` in `writeSearchError` and MCP `runSearch` with control characters stripped and length bounded; update the `internal/mcpserver` "invalid query" expectations and verify REST and MCP tests
-- [ ] 2.4 Map GitHub code search `422` to `QueryError` with GitHub's bounded `message`; verify with an `httptest` GitHub server test
-- [ ] 2.5 Document `case:no` and term quoting in the README search section and add a CHANGELOG `Changed` entry (inline flags now return 400); verify `make test`
+- [x] 2.1 Make `internal/zoekt` read at most 4 KiB of an HTTP 400 body and return `search.QueryError{Reason}` wrapping `ErrInvalidQuery`; verify with a client test whose server answers 400 with a JSON `Error` reporting the missing `]`
+- [x] 2.2 Refuse unescaped flag groups that set or clear `i` (`(?i)`, `(?-i)`, `(?i:`) in `search.Service.Search` and add the hint table; verify with table tests, including `\(\?i\)` and `(?:22|20)` passing through
+- [x] 2.3 Render `search query is invalid: <reason>[; hint: …]` in `writeSearchError` and MCP `runSearch` with control characters stripped and length bounded; update the `internal/mcpserver` "invalid query" expectations and verify REST and MCP tests
+- [x] 2.4 Map GitHub code search `422` to `QueryError` with GitHub's bounded `message`; verify with an `httptest` GitHub server test
+- [x] 2.5 Document `case:no` and term quoting in the README search section and add a CHANGELOG `Changed` entry (inline flags now return 400); verify `make test`
 
 ## 3. Storage
 
