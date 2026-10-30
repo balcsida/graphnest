@@ -60,6 +60,15 @@ func (backend *GitHubBackend) Search(ctx context.Context, request BackendRequest
 		}
 		got, err := backend.client.SearchCode(ctx, installationID, request.Query+" "+strings.Join(qualifiers, " "), ids)
 		if err != nil {
+			var invalid interface{ InvalidQueryReason() (string, bool) }
+			if errors.As(err, &invalid) {
+				if reason, ok := invalid.InvalidQueryReason(); ok {
+					if reason == "" {
+						reason = "GitHub code search rejected the query"
+					}
+					return api.SearchResponse{}, NewQueryError(reason)
+				}
+			}
 			var rateLimit interface{ IsRateLimited() bool }
 			if errors.As(err, &rateLimit) && rateLimit.IsRateLimited() {
 				response.Truncated = true

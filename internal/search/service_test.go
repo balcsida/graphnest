@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -208,4 +209,65 @@ func authorizerWith(repositories ...repository.Repository) authz.Authorizer {
 
 func principalFor(name string) authn.Principal {
 	return authn.Principal{Subject: "user", RepositoryNames: []string{name}}
+}
+
+func TestCaseFlagGroup(t *testing.T) {
+	for _, test := range []struct {
+		query, group string
+		clears, ok   bool
+	}{
+		{`(?i)brotli`, `(?i)`, false, true},
+		{`(?-i)Brotli`, `(?-i)`, true, true},
+		{`foo (?i:bar)`, `(?i:`, false, true},
+		{`(?im)x`, `(?im)`, false, true},
+		{`(?si:x)`, `(?si:`, false, true},
+		{`"(?i)brotli"`, `(?i)`, false, true},
+		{`\\(?i)x`, `(?i)`, false, true},
+		{`\(?i)x`, "", false, false},
+		{`\(\?i\)`, "", false, false},
+		{`(?s)x`, "", false, false},
+		{`FROM node:(?:22|20)`, "", false, false},
+		{`(22|20)`, "", false, false},
+	} {
+		group, clears, ok := caseFlagGroup(test.query)
+		if group != test.group || clears != test.clears || ok != test.ok {
+			t.Errorf("caseFlagGroup(%q) = %q, %v, %v; want %q, %v, %v", test.query, group, clears, ok, test.group, test.clears, test.ok)
+		}
+	}
+}
+
+func TestSearchRefusesInlineCaseFlags(t *testing.T) {
+	for _, test := range []struct{ query, want string }{
+		{"(?i)brotli", "search query is invalid: inline flag (?i) is not supported; use case:no brotli"},
+		{"(?-i)Brotli", "search query is invalid: inline flag (?-i) is not supported; use case:yes Brotli"},
+		{"foo (?i:bar)", "search query is invalid: inline flag (?i: is not supported; use case:no and remove the group"},
+	} {
+		backend := &recordingBackend{}
+		service := NewService(backend, authorizer(), Limits{})
+		_, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{Query: test.query})
+		var queryErr *QueryError
+		if !errors.As(err, &queryErr) || queryErr.Message() != test.want {
+			t.Errorf("Search(%q) error = %v; want message %q", test.query, err, test.want)
+		}
+		if backend.calls != 0 {
+			t.Errorf("Search(%q) reached the backend", test.query)
+		}
+	}
+}
+
+type failingBackend struct{ err error }
+
+func (backend failingBackend) Search(context.Context, BackendRequest) (api.SearchResponse, error) {
+	return api.SearchResponse{}, backend.err
+}
+
+func (failingBackend) Health(context.Context) error { return nil }
+
+func TestSearchAttachesQueryToBackendQueryError(t *testing.T) {
+	service := NewService(failingBackend{NewQueryError("error parsing regexp: missing closing ]: `[0-9`")}, authorizer(), Limits{})
+	_, err := service.Search(t.Context(), principalFor("acme/one"), api.SearchRequest{Query: "FROM node:[0-9 ]"})
+	var queryErr *QueryError
+	if !errors.As(err, &queryErr) || !strings.Contains(queryErr.Message(), `quote the term ("FROM node:[0-9 ]")`) {
+		t.Fatalf("error = %v, want a hint quoting the query", err)
+	}
 }

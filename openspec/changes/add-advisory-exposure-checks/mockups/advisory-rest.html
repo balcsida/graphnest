@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Advisory list, new advisory, repository sheet</title>
+  <style>
+    /*
+     * BRAINSTORM COMPANION FRAME TEMPLATE
+     *
+     * This template provides a consistent frame with:
+     * - OS-aware light/dark theming
+     * - Header branding and connection status
+     * - Scrollable main content area
+     * - CSS helpers for common UI patterns
+     *
+     * Content is injected via placeholder comment in #frame-content.
+     */
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+
+    /* ===== THEME VARIABLES ===== */
+    :root {
+      --bg-primary: #f5f5f7;
+      --bg-secondary: #ffffff;
+      --bg-tertiary: #e5e5e7;
+      --border: #d1d1d6;
+      --text-primary: #1d1d1f;
+      --text-secondary: #86868b;
+      --text-tertiary: #aeaeb2;
+      --accent: #0071e3;
+      --accent-hover: #0077ed;
+      --success: #34c759;
+      --warning: #ff9f0a;
+      --error: #ff3b30;
+      --selected-bg: #e8f4fd;
+      --selected-border: #0071e3;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-primary: #1d1d1f;
+        --bg-secondary: #2d2d2f;
+        --bg-tertiary: #3d3d3f;
+        --border: #424245;
+        --text-primary: #f5f5f7;
+        --text-secondary: #86868b;
+        --text-tertiary: #636366;
+        --accent: #0a84ff;
+        --accent-hover: #409cff;
+        --selected-bg: rgba(10, 132, 255, 0.15);
+        --selected-border: #0a84ff;
+      }
+    }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      display: flex;
+      flex-direction: column;
+      line-height: 1.5;
+    }
+
+    /* ===== FRAME STRUCTURE ===== */
+    .brand { display: flex; align-items: center; min-width: 0; overflow: hidden; color: var(--text-secondary); line-height: 1; }
+    .brand a { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 0.5rem; min-width: 0; max-width: 100%; line-height: 1; }
+    .brand-copy { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1; transform: translateY(-1px); }
+    .brand-logo { display: block; height: 1em; width: auto; max-width: 180px; flex-shrink: 0; filter: invert(1); }
+    @media (prefers-color-scheme: dark) {
+      .brand-logo { filter: none; }
+    }
+    .status { font-size: 0.7rem; color: var(--status-color, var(--success)); display: flex; align-items: center; gap: 0.4rem; justify-self: end; white-space: nowrap; line-height: 1; }
+    .status::before { content: ''; width: 6px; height: 6px; background: var(--status-color, var(--success)); border-radius: 50%; }
+
+    .main { flex: 1; overflow-y: auto; }
+    #frame-content { padding: 2rem; min-height: 100%; }
+
+    .header {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 0.5rem 1.5rem;
+      flex-shrink: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 1rem;
+      min-height: 42px;
+    }
+    .header .brand { justify-self: start; width: 100%; font-size: 0.75rem; line-height: 1; }
+    .header .status { grid-column: 2; line-height: 1; }
+    .header span {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+    .header .selected-text {
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    /* ===== TYPOGRAPHY ===== */
+    h2 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem; }
+    h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.25rem; }
+    .subtitle { color: var(--text-secondary); margin-bottom: 1.5rem; }
+    .section { margin-bottom: 2rem; }
+    .label { font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+
+    /* ===== OPTIONS (for A/B/C choices) ===== */
+    .options { display: flex; flex-direction: column; gap: 0.75rem; }
+    .option {
+      background: var(--bg-secondary);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+    .option:hover { border-color: var(--accent); }
+    .option.selected { background: var(--selected-bg); border-color: var(--selected-border); }
+    .option .letter {
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+      width: 1.75rem; height: 1.75rem;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 600; font-size: 0.85rem; flex-shrink: 0;
+    }
+    .option.selected .letter { background: var(--accent); color: white; }
+    .option .content { flex: 1; }
+    .option .content h3 { font-size: 0.95rem; margin-bottom: 0.15rem; }
+    .option .content p { color: var(--text-secondary); font-size: 0.85rem; margin: 0; }
+
+    /* ===== CARDS (for showing designs/mockups) ===== */
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+    .card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    .card.selected { border-color: var(--selected-border); border-width: 2px; }
+    .card-image { background: var(--bg-tertiary); aspect-ratio: 16/10; display: flex; align-items: center; justify-content: center; }
+    .card-body { padding: 1rem; }
+    .card-body h3 { margin-bottom: 0.25rem; }
+    .card-body p { color: var(--text-secondary); font-size: 0.85rem; }
+
+    /* ===== MOCKUP CONTAINER ===== */
+    .mockup {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 1.5rem;
+    }
+    .mockup-header {
+      background: var(--bg-tertiary);
+      padding: 0.5rem 1rem;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border);
+    }
+    .mockup-body { padding: 1.5rem; }
+
+    /* ===== SPLIT VIEW (side-by-side comparison) ===== */
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    @media (max-width: 700px) { .split { grid-template-columns: 1fr; } }
+
+    /* ===== PROS/CONS ===== */
+    .pros-cons { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+    .pros, .cons { background: var(--bg-secondary); border-radius: 8px; padding: 1rem; }
+    .pros h4 { color: var(--success); font-size: 0.85rem; margin-bottom: 0.5rem; }
+    .cons h4 { color: var(--error); font-size: 0.85rem; margin-bottom: 0.5rem; }
+    .pros ul, .cons ul { margin-left: 1.25rem; font-size: 0.85rem; color: var(--text-secondary); }
+    .pros li, .cons li { margin-bottom: 0.25rem; }
+
+    /* ===== PLACEHOLDER (for mockup areas) ===== */
+    .placeholder {
+      background: var(--bg-tertiary);
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 2rem;
+      text-align: center;
+      color: var(--text-tertiary);
+    }
+
+    /* ===== INLINE MOCKUP ELEMENTS ===== */
+    .mock-nav { background: var(--accent); color: white; padding: 0.75rem 1rem; display: flex; gap: 1.5rem; font-size: 0.9rem; }
+    .mock-sidebar { background: var(--bg-tertiary); padding: 1rem; min-width: 180px; }
+    .mock-content { padding: 1.5rem; flex: 1; }
+    .mock-button { background: var(--accent); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.85rem; }
+    .mock-input { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; width: 100%; }
+  </style>
+</head>
+<body style="padding:1.5rem">
+<!-- Approved brainstorming mockup (2026-10-27). Static: the option cards are not interactive. -->
+<style>
+  .gn-t { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  .gn-t th { text-align: left; color: var(--text-secondary); font-weight: 600; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .gn-t td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .gn-t code, .gn-yaml { font-size: 0.75rem; }
+  .gn-src { color: var(--text-secondary); font-size: 0.72rem; }
+  .pill { display: inline-block; padding: 0.05rem 0.45rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
+  .p-vuln { background: #ff3b3022; color: #d70015; }
+  .p-rebuild { background: #ff9f0a26; color: #b25000; }
+  .p-eol { background: #af52de22; color: #8e3bb5; }
+  .p-unres { background: #8e8e9326; color: var(--text-secondary); }
+  .p-exc { background: #0071e31f; color: #0060c0; }
+  .p-fixed { background: #34c75926; color: #1f8a3a; }
+  .p-cls { background: var(--bg-tertiary); color: var(--text-secondary); font-weight: 500; }
+  .gn-btn { display: inline-block; border: 1px solid var(--border); border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.78rem; margin-right: 0.35rem; }
+  .gn-btn.primary { background: var(--accent); color: white; border-color: var(--accent); }
+  .gn-yaml { background: var(--bg-tertiary); border-radius: 6px; padding: 0.6rem 0.75rem; white-space: pre; overflow-x: auto; line-height: 1.35; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .gn-note { font-size: 0.78rem; border-left: 3px solid var(--accent); padding: 0.3rem 0.6rem; margin: 0.5rem 0; background: var(--bg-tertiary); }
+  .gn-warn { border-left-color: #ff9f0a; }
+  .gn-sheet { border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; }
+  .gn-tl { list-style: none; padding-left: 0; margin: 0.3rem 0; font-size: 0.78rem; }
+  .gn-tl li { padding: 0.15rem 0 0.15rem 1rem; border-left: 2px solid var(--border); margin-left: 0.3rem; }
+  .gn-field { display: block; margin: 0.35rem 0; font-size: 0.78rem; }
+  .gn-field .mock-input { width: 100%; }
+  .gn-radio { margin-right: 0.9rem; }
+  .gn-spark { vertical-align: middle; }
+</style>
+
+<h2>The rest of the advisories view</h2>
+<p class="subtitle">Three more screens built on layout A: the list of advisories, pasting a new one, and what opens when you click a repository row. Everything here is a proposal for you to correct.</p>
+
+<div class="mockup">
+  <div class="mockup-header">1 &middot; /supply-chain/advisories</div>
+  <div class="mockup-body">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+      <div class="gn-src">Open advisories first. Counts cover only the repositories you can read.</div>
+      <span class="gn-btn primary">New advisory (admin)</span>
+    </div>
+    <table class="gn-t">
+      <tr><th>Advisory</th><th>Published</th><th>Open (prod + CI)</th><th>Fixed / excepted</th><th>Trend</th><th>State</th></tr>
+      <tr><td><b>CVE-2026-41827</b> Brotli decoder heap overflow<div class="gn-src">GHSA-7q2m-x3c9-w8fp &middot; version 2</div></td><td>21 Oct 2026</td><td>53</td><td>18 / 3</td><td><svg class="gn-spark" width="80" height="22"><polyline fill="none" stroke="var(--accent)" stroke-width="2" points="2,4 15,5 28,3 41,9 54,14 67,16 78,18"/></svg></td><td>open</td></tr>
+      <tr><td><b>CVE-2026-33410</b> TLS session resumption bypass<div class="gn-src">version 1</div></td><td>2 Sep 2026</td><td>0</td><td>64 / 2</td><td><svg class="gn-spark" width="80" height="22"><polyline fill="none" stroke="var(--text-tertiary)" stroke-width="2" points="2,3 20,9 40,15 60,20 78,20"/></svg></td><td>closed 30 Sep</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top: 1rem;">
+  <div class="mockup-header">2 &middot; New advisory (administrators): paste, check, publish</div>
+  <div class="mockup-body">
+    <div style="display: grid; grid-template-columns: 1.1fr 1fr; gap: 1rem;">
+      <div>
+        <div class="label">Paste YAML, or a plain OSV record as JSON</div>
+<div class="gn-yaml">id: CVE-2026-41827
+aliases: [GHSA-7q2m-x3c9-w8fp]
+title: Brotli decoder heap overflow
+published: 2026-10-21
+products:
+  - name: Node.js
+    match: [pkg:generic/node, pkg:docker/library/node]
+    fixed: [20.19.6, 22.21.1, 24.11.1, 25.1.1]
+    eol: ["&lt;20", "21", "23"]
+    tag_aliases: {iron: 20, jod: 22, krypton: 24}
+  - name: Envoy
+    match: [pkg:docker/envoyproxy/envoy]
+    fixed: [1.35.8, 1.36.5, 1.37.3, 1.38.1]
+    eol: ["&lt;1.35"]
+  - name: pyarrow (bundles libbrotli 1.0.9)
+    match: [pkg:pypi/pyarrow]
+    fixed: [22.0.0]
+osv:
+  - {...GHSA record: PyPI brotli, brotlicffi...}
+  - {...GO record: github.com/andybalholm/brotli...}</div>
+        <div style="margin-top: 0.5rem;"><span class="gn-btn">Check</span><span class="gn-btn primary">Publish</span></div>
+      </div>
+      <div>
+        <div class="label">Check result (nothing saved yet)</div>
+        <div class="gn-note">Would match <b>80 repositories</b>: 12 <span class="pill p-vuln">vulnerable</span> 31 <span class="pill p-rebuild">needs rebuild</span> 4 <span class="pill p-eol">EOL</span> 6 <span class="pill p-unres">unresolved</span> 18 <span class="pill p-fixed">fixed</span>, plus 9 non-production only.</div>
+        <div class="gn-note gn-warn">Tag <code>gallium-slim</code> (3 repositories) is not in <code>tag_aliases</code>, so those stay unresolved.</div>
+        <div class="gn-note gn-warn">Nothing matched <code>pkg:pypi/brotlicffi</code>. Check the name, or ignore if you don't use it.</div>
+        <div class="gn-note gn-warn">1 OSV range has type GIT and was skipped; only version ranges are used.</div>
+        <div class="gn-src" style="margin-top: 0.5rem;">How the shorthand reads: each fixed version closes its own release line (Node lines are majors, Envoy lines are minors, inferred from the list). Lines with no fixed version count as vulnerable unless listed under <code>eol</code>. A floating tag like <code>node:22-slim</code> needs only a rebuild when its line has a fix.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top: 1rem;">
+  <div class="mockup-header">3 &middot; Clicking acme/checkout-api in the table (side sheet)</div>
+  <div class="mockup-body">
+    <div class="gn-sheet">
+      <div style="display: flex; justify-content: space-between;">
+        <div><b>acme/checkout-api</b> <span class="pill p-vuln">vulnerable</span><div class="gn-src">Owner @acme/payments from CODEOWNERS rule <code>* @acme/payments</code> &middot; indexed commit <code>9a1b2c3</code> (26 Oct)</div></div>
+      </div>
+      <div class="label" style="margin-top: 0.6rem;">Evidence (4 lines)</div>
+      <table class="gn-t">
+        <tr><th>Status</th><th>Where</th><th>What it says</th><th>Why</th></tr>
+        <tr><td><span class="pill p-vuln">vulnerable</span></td><td><code>Dockerfile:3</code> <span class="pill p-cls">prod</span></td><td><code>FROM node:${NODE_VERSION}-slim</code><div class="gn-src">ARG NODE_VERSION=22.18.0 at <code>Dockerfile:1</code></div></td><td>Node.js 22.18.0, fixed in 22.21.1</td></tr>
+        <tr><td><span class="pill p-rebuild">needs rebuild</span></td><td><code>.github/workflows/ci.yml:22</code> <span class="pill p-cls">ci</span></td><td><code>node-version: 22</code></td><td>floats to the newest 22.x; 22.21.1 is out</td></tr>
+        <tr><td><span class="pill p-vuln">vulnerable</span></td><td><code>.nvmrc:1</code> <span class="pill p-cls">prod</span></td><td><code>22.18</code></td><td>floats within 22.18.x, which has no fix</td></tr>
+        <tr><td><span class="pill p-eol">EOL</span></td><td><code>test/fixtures/legacy/Dockerfile:1</code> <span class="pill p-cls">test</span></td><td><code>FROM node:16</code></td><td>line 16 is EOL; test only, not counted</td></tr>
+      </table>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 0.6rem;">
+        <div>
+          <div class="label">Fix underway</div>
+          <div style="font-size: 0.78rem;">PR #412 <i>chore: bump node to 22.21.1 (CVE-2026-41827)</i>, open since 24 Oct</div>
+          <div class="label" style="margin-top: 0.6rem;">History</div>
+          <ul class="gn-tl">
+            <li>21 Oct: vulnerable at <code>7e3d1a0</code></li>
+            <li>23 Oct: re-checked against advisory version 2, unchanged</li>
+            <li>26 Oct: new commit <code>9a1b2c3</code>; CI moved from 20 to 22, still vulnerable</li>
+          </ul>
+        </div>
+        <div>
+          <div class="label">Record an exception (needs this repository's review grant)</div>
+          <span class="gn-field"><span class="gn-radio">&#9675; Not affected</span><span class="gn-radio">&#9675; Risk accepted</span><span class="gn-radio">&#9675; Rebuilt</span></span>
+          <span class="gn-field">Reason <input class="mock-input" placeholder="e.g. Brotli decoding is never reached: the service only serves gzip"></span>
+          <span class="gn-field">Expires <input class="mock-input" placeholder="2027-01-25 (at most one year)"></span>
+          <div class="gn-src">Applies to the 4 evidence lines above. If they change, or the exception expires, the repository returns to the list. "Rebuilt" applies only to needs-rebuild lines.</div>
+          <div style="margin-top: 0.4rem;"><span class="gn-btn primary">Record exception</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

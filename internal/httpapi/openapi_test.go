@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"os"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -62,5 +63,71 @@ func TestOpenAPIAdminJobsPaginationContract(t *testing.T) {
 	nextCursor := jobs.Properties["next_cursor"]
 	if nextCursor.Type != "string" || nextCursor.MinLength != 1 || slices.Contains(jobs.Required, "next_cursor") {
 		t.Errorf("AdminJobList.next_cursor = %#v with required %v, want optional non-empty string", nextCursor, jobs.Required)
+	}
+}
+
+func TestOpenAPIAdvisoryContract(t *testing.T) {
+	data, err := os.ReadFile("../../docs/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	dig := func(keys ...string) any {
+		var value any = document
+		for _, key := range keys {
+			object, ok := value.(map[string]any)
+			if !ok {
+				return nil
+			}
+			value = object[key]
+		}
+		return value
+	}
+	for _, route := range [][2]string{
+		{"/v1/supply-chain/advisories", "get"},
+		{"/v1/supply-chain/advisories", "post"},
+		{"/v1/supply-chain/advisory-checks", "post"},
+		{"/v1/supply-chain/advisories/{id}", "get"},
+		{"/v1/supply-chain/advisories/{id}", "put"},
+		{"/v1/supply-chain/advisories/{id}/versions/{version}", "get"},
+		{"/v1/supply-chain/advisories/{id}/close", "post"},
+		{"/v1/supply-chain/advisories/{id}/reopen", "post"},
+		{"/v1/supply-chain/advisories/{id}/repositories", "get"},
+		{"/v1/supply-chain/advisories/{id}/repositories/{repository_id}", "get"},
+		{"/v1/supply-chain/advisories/{id}/repositories/{repository_id}/exceptions", "post"},
+		{"/v1/supply-chain/advisories/{id}/export.csv", "get"},
+		{"/v1/supply-chain/advisories/{id}/export.md", "get"},
+	} {
+		if dig("paths", route[0], route[1]) == nil {
+			t.Errorf("missing %s %s", route[1], route[0])
+		}
+	}
+	if got := dig("components", "schemas", "AdvisoryRepositoryList", "properties", "repositories", "maxItems"); got != 100 {
+		t.Errorf("AdvisoryRepositoryList.repositories.maxItems = %v, want 100", got)
+	}
+	if got := dig("components", "schemas", "AdvisoryRepositoryList", "properties", "next_cursor", "minLength"); got != 1 {
+		t.Errorf("AdvisoryRepositoryList.next_cursor.minLength = %v, want 1", got)
+	}
+	if required, _ := dig("components", "schemas", "AdvisoryRepositoryList", "required").([]any); slices.Contains(required, any("next_cursor")) {
+		t.Error("AdvisoryRepositoryList.next_cursor must be optional")
+	}
+	if got := dig("components", "schemas", "AdvisoryExceptionRequest", "required"); !reflect.DeepEqual(got, []any{"kind", "reason", "basis"}) {
+		t.Errorf("AdvisoryExceptionRequest.required = %v, want [kind reason basis]", got)
+	}
+	if got := dig("components", "schemas", "AdvisoryDefinition", "additionalProperties"); got != false {
+		t.Errorf("AdvisoryDefinition.additionalProperties = %v, want false", got)
+	}
+	for _, status := range []string{"413", "415"} {
+		if dig("paths", "/v1/supply-chain/advisories", "post", "responses", status) == nil {
+			t.Errorf("advisory creation does not document %s", status)
+		}
+	}
+	for _, media := range []string{"application/yaml", "application/json"} {
+		if dig("paths", "/v1/supply-chain/advisories", "post", "requestBody", "content", media) == nil {
+			t.Errorf("advisory creation does not accept %s", media)
+		}
 	}
 }

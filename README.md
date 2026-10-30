@@ -159,6 +159,8 @@ curl --fail-with-body http://127.0.0.1:8080/v1/search \
 
 Requests for repositories outside the authenticated principal's scope return no matches rather than revealing whether those repositories exist.
 
+Queries use [Zoekt query syntax](https://github.com/sourcegraph/zoekt/blob/main/doc/query_syntax.md). Use `case:no` for a case-insensitive search. Inline flags such as `(?i)` are refused, because Zoekt ignores them and returns wrong matches. Spaces separate query terms, so quote a term that contains spaces (`"FROM node:[0-9 ]"`). An invalid query returns `400` with a message naming the offending construct, for example `search query is invalid: error parsing regexp: missing closing ]: ...`, followed by a hint when GraphNest recognises the mistake.
+
 ### 4. Stop the fixture
 
 ```sh

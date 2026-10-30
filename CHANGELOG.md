@@ -11,6 +11,16 @@ the compatibility and migration notes before upgrading.
   publishing a release, the Release workflow asks the tap to update its formula
   (with the `TAP_DISPATCH_TOKEN` secret; see `docs/release-process.md`).
 
+### Changed
+
+- Invalid code searches now say what is wrong. `POST /v1/search`,
+  `search_code` and `find_files` return `search query is invalid: <reason>`
+  with Zoekt's parse message or GitHub's validation message, plus a hint for
+  known mistakes (a space inside a character class, unbalanced parentheses).
+  Other backend rejections stay generic so no internal detail leaks.
+- Queries with inline case flags such as `(?i)` now fail with `400` instead of
+  silently returning wrong matches; use `case:no` or `case:yes`.
+
 ## [0.11.0] - 2026-10-08
 
 This release lets `graphnest` sign in through the browser with OAuth instead of

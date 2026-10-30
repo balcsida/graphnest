@@ -51,6 +51,9 @@ func (service *Service) Search(ctx context.Context, principal authn.Principal, r
 	if strings.TrimSpace(request.Query) == "" {
 		return api.SearchResponse{}, ErrInvalidQuery
 	}
+	if group, clears, ok := caseFlagGroup(request.Query); ok {
+		return api.SearchResponse{}, inlineFlagError(request.Query, group, clears)
+	}
 	repositories, err := service.authorizer.AuthorizedRepositories(ctx, principal, authz.RepositorySelection{Names: request.Repositories})
 	if err != nil {
 		return api.SearchResponse{}, err
@@ -77,6 +80,10 @@ func (service *Service) Search(ctx context.Context, principal authn.Principal, r
 	}
 	response, err := service.backend.Search(ctx, backendRequest)
 	if err != nil {
+		var queryErr *QueryError
+		if errors.As(err, &queryErr) {
+			queryErr.Query = request.Query
+		}
 		return api.SearchResponse{}, err
 	}
 	if response.Consistency != nil && response.Consistency.Backend == "github" {
@@ -85,6 +92,51 @@ func (service *Service) Search(ctx context.Context, principal authn.Principal, r
 		response.Matches = enrich(response.Matches, metadata)
 	}
 	return limitResponse(response, backendRequest.Limit, maxResponseBytes), nil
+}
+
+// caseFlagGroup finds the first unescaped inline flag group that sets or
+// clears case sensitivity, such as (?i), (?-i) or (?i:. Zoekt returns wrong
+// matches for them without an error, so GraphNest refuses them.
+func caseFlagGroup(query string) (group string, clears, ok bool) {
+	for start := 0; ; {
+		index := strings.Index(query[start:], "(?")
+		if index < 0 {
+			return "", false, false
+		}
+		open := start + index
+		start = open + 2
+		backslashes := 0
+		for i := open - 1; i >= 0 && query[i] == '\\'; i-- {
+			backslashes++
+		}
+		if backslashes%2 == 1 {
+			continue
+		}
+		end := start
+		for end < len(query) && (query[end] == '-' || 'a' <= query[end] && query[end] <= 'z' || 'A' <= query[end] && query[end] <= 'Z') {
+			end++
+		}
+		if end == len(query) || query[end] != ')' && query[end] != ':' {
+			continue
+		}
+		flags := query[start:end]
+		if at := strings.IndexByte(flags, 'i'); at >= 0 {
+			return query[open : end+1], strings.Contains(flags[:at], "-"), true
+		}
+	}
+}
+
+func inlineFlagError(query, group string, clears bool) *QueryError {
+	use := "case:no"
+	if clears {
+		use = "case:yes"
+	}
+	if strings.HasSuffix(group, ":") {
+		return NewQueryError("inline flag " + group + " is not supported; use " + use + " and remove the group")
+	}
+	// shortcut: removes the first textual copy of group, which is wrong only when an escaped copy comes first; fine for a hint.
+	rest := strings.TrimSpace(strings.Replace(query, group, "", 1))
+	return NewQueryError("inline flag " + group + " is not supported; use " + use + " " + rest)
 }
 
 func enrichGitHub(matches []api.SearchMatch, metadata map[uint32]api.Repository) []api.SearchMatch {

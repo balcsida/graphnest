@@ -1,6 +1,7 @@
 # ADR-0017: Supply-Chain Inventory From Preserved SBOM Observations
 
-- Status: Accepted
+- Status: Accepted; amended by [ADR-0020](0020-runtime-inventory-and-advisories.md)
+  (the indexer produces the `graphnest:runtime` stream)
 - Date: 2026-09-22
 
 ## Decision
