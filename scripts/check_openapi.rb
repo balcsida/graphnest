@@ -120,10 +120,10 @@ selection_segment = schemas.fetch("GraphExploreSelection").dig("properties", "se
 require_value(selection_segment["minimum"], -1, "GraphExploreSelection.segment minimum")
 raise OpenAPIError, "GraphExploreSelection.segment must document -1" unless selection_segment.fetch("description", "").include?("-1")
 nullable_collections = %w[GraphExploreResponse GraphExploreFile GraphTraverseResponse].flat_map do |schema_name|
-  schemas.fetch(schema_name).fetch("properties").filter_map do |field, property|
-    types = property.fetch("anyOf", []).filter_map { |variant| variant["type"] }.sort
+  schemas.fetch(schema_name).fetch("properties").map do |field, property|
+    types = property.fetch("anyOf", []).map { |variant| variant["type"] }.compact.sort
     [schema_name, field] if types == %w[array null]
-  end
+  end.compact
 end
 expected_nullable_collections = [
   ["GraphExploreResponse", "files"],
