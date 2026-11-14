@@ -19,6 +19,11 @@ Security: images include SBOMs, provenance, and GitHub attestations.'
 git push origin v0.1.0
 ```
 
+When the release adds a migration, decide whether the previous release can
+still run on the new schema, because it does during a rolling upgrade. If it
+cannot, give the changelog entry an "Upgrade guidance" section that tells
+operators to stop the server and the node before `helm upgrade`.
+
 The Release workflow publishes only the version and commit tags, never
 floating tags. It publishes multi-architecture application and node images,
 their SBOMs, provenance, and GitHub attestations, then packages an OCI chart

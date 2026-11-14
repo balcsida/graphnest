@@ -72,10 +72,11 @@ command and the complete values file. Roll back with:
 helm rollback graphnest <REVISION> -n graphnest --wait --timeout 15m
 ```
 
-Helm rollback does not execute the pre-install/pre-upgrade migration hook.
-Before rolling the application image back after a schema-changing upgrade,
-verify database backward compatibility and follow the release-specific database
-rollback or restore procedure.
+Helm rollback does not execute the pre-install/pre-upgrade migration hook, and
+migrations only move forward. To go back across a schema-changing upgrade,
+restore the database backup taken before it. The operations guide describes
+this under "Backup, restore, and upgrade", together with the releases that
+need the server and node stopped before `helm upgrade`.
 
 The `graphnest-migrate` pre-install/pre-upgrade hook must succeed before the
 release proceeds. A migration failure blocks install or upgrade, and the failed

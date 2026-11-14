@@ -94,7 +94,9 @@ older PostgreSQL backup merely to restore LadybugDB: PostgreSQL graph data is
 authoritative and should be preserved.
 
 Rollback does not make a mismatched Zoekt revision safe. Reindex until Zoekt
-and PostgreSQL agree, or restore a matching shard snapshot and its corresponding
+and PostgreSQL agree (`POST /v1/admin/repositories/{github_id}/reindex`; see
+"Lost or empty index volume" in the operations guide), or restore a matching
+shard snapshot and its corresponding
 PostgreSQL backup. Exact-SHA mismatch suppression remains active in either
 direction.
 

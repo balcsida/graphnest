@@ -145,7 +145,9 @@ necessary when querying absent optional fields.
 This is a **drained rollout**, not a mixed-binary rolling upgrade. Retained v1
 generations alone make old binaries unsafe: their queries do not filter active
 rows. Before migration, pause all graph/SCIP/index completion writers and drain
-in-flight requests/jobs. Apply migrations, deploy compatible readers and writers
+in-flight requests/jobs (with the Helm chart: scale the server and the node to
+zero, see "Upgrades" in the operations guide). Apply migrations, deploy
+compatible readers and writers
 across the fleet, then resume writers. V2 generations are written in
 production by every SCIP upload and by `POST /v1/graph/uploads`, so a
 rollback to a binary without v2 readers is not supported once writers resume.
