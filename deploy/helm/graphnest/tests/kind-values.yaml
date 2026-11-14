@@ -1,0 +1,11 @@
+# Values for tests/kind.sh: the required settings, and resource requests that a
+# CI runner can schedule twice. Everything else stays at the chart defaults.
+secrets:
+  runtime: {name: graphnest-runtime}
+  githubApp: {name: graphnest-github-app}
+server:
+  config: {githubAppID: "12345"}
+  resources: {requests: {cpu: 50m, memory: 64Mi}}
+node:
+  zoekt: {resources: {requests: {cpu: 100m, memory: 256Mi}}}
+  indexer: {resources: {requests: {cpu: 100m, memory: 128Mi}}}
