@@ -5,28 +5,39 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-14
+
+This release fixes how MCP tool calls are authorized (see Security) and serves
+`/mcp` without sessions, so any server replica can answer. It is built with Go
+1.27.4. The chart is now installed and upgraded on a cluster in CI, the
+operations guide has a backup, restore and upgrade runbook, and a first
+measured corpus is recorded. No migration is required. One chart configuration
+has to change before upgrading (see Upgrade guidance).
+
 ### Added
 
 - `brew install balcsida/tap/graphnest` installs the command-line tool. After
   publishing a release, the Release workflow asks the tap to update its formula
   (with the `TAP_DISPATCH_TOKEN` secret; see `docs/release-process.md`).
+  ([#151])
 - `make helm-install-test`, which CI now runs, installs the chart on a kind
   cluster with images built from the tree and upgrades the latest released
   chart to it. It checks readiness, an authenticated request before and after
   the upgrade, and that the default network policies keep a pod that is neither
-  server nor node away from Zoekt.
+  server nor node away from Zoekt. ([#160])
 - The operations guide gains "Backup, restore, and upgrade": what to back up,
   how to requeue every repository after losing the index volume, how to
   restore PostgreSQL, and which upgrades need the server and node stopped.
-  An end-to-end test runs the index-volume recovery.
+  An end-to-end test runs the index-volume recovery. ([#162])
 - [Compatibility](docs/compatibility.md#stability) now says which interfaces
   are stable before 1.0 and how they may change. In `docs/openapi.yaml`,
   `x-graphnest-status: planned` marks paths that are specified but not served
   yet (today the advisory routes), and a test fails when any other documented
-  operation is not served.
+  operation is not served. ([#164])
 - `make scale-bench` indexes a directory of real repositories through the
   indexer, PostgreSQL, and Zoekt and reports indexing and search numbers.
   `docs/benchmarking.md` records a first run on 240 public repositories.
+  ([#163])
 
 ### Changed
 
@@ -34,23 +45,23 @@ the compatibility and migration notes before upgrading.
   `search_code` and `find_files` return `search query is invalid: <reason>`
   with Zoekt's parse message or GitHub's validation message, plus a hint for
   known mistakes (a space inside a character class, unbalanced parentheses).
-  Other backend rejections stay generic so no internal detail leaks.
+  Other backend rejections stay generic so no internal detail leaks. ([#157])
 - Queries with inline case flags such as `(?i)` now fail with `400` instead of
-  silently returning wrong matches; use `case:no` or `case:yes`.
+  silently returning wrong matches; use `case:no` or `case:yes`. ([#157])
 - `/mcp` no longer keeps sessions. Any server replica can answer any request,
   and a server restart no longer disconnects clients. The server sends no
   `Mcp-Session-Id`, and `GET /mcp` and `DELETE /mcp` return `405`. Clients on
   the 2026-07-28 MCP protocol also receive the server identity and a result
-  type with each result; both are outside `max_output_bytes`.
+  type with each result; both are outside `max_output_bytes`. ([#161])
 - The Helm chart refuses `server.replicas` above 1 when MCP OAuth and GitHub
   access sync are both enabled, because one server process holds the GitHub
   token between sign-in and code exchange. Set `server.replicas=1` and
-  `server.pdb.enabled=false` for that configuration before upgrading.
+  `server.pdb.enabled=false` for that configuration before upgrading. ([#161])
 - `info.version` in `docs/openapi.yaml` now follows the release version; it
-  still said `0.1.0`.
+  still said `0.1.0`. ([#164])
 - The README no longer calls GraphNest experimental. It stays pre-1.0 pilot
   software: [Compatibility](docs/compatibility.md) says what is stable and
-  what is still unverified.
+  what is still unverified. ([#167])
 
 ### Security
 
@@ -59,7 +70,28 @@ the compatibility and migration notes before upgrading.
   the search, repository, file, symbol navigation and dependency tools, access
   removed from a user or token stayed usable in an open session until the
   client reconnected or the server restarted. A caller with a valid token who
-  knew another session's ID acted with that session's access.
+  knew another session's ID acted with that session's access. ([#161])
+- The images and the command-line tool are built with Go 1.27.4 instead of
+  1.27.1. That brings the standard library security fixes of the releases in
+  between, among them GO-2026-6859, an HTTP/1 server crash through a
+  `MaxBytesReader` header race in `net/http`. ([#155], [#166])
+- go-jose 4.1.6 caps the RSA modulus size accepted when parsing JWKs
+  (GHSA-mgcc-cww5-fp2q). ([#158])
+- The Go binaries in both images, Zoekt's included, are built with
+  golang.org/x/net 0.62.0, which fixes CVE-2026-78661, a denial of service in
+  its HTML parser. GraphNest's own code does not call that parser. ([#169])
+
+### Upgrade guidance
+
+- With MCP OAuth and GitHub access sync both enabled, set `server.replicas=1`
+  and `server.pdb.enabled=false` before `helm upgrade`. The chart refuses to
+  render otherwise.
+- Replace inline case flags such as `(?i)` in saved searches with `case:no` or
+  `case:yes`; they now fail with `400`.
+- MCP clients need no change. A client that relied on `GET /mcp` or
+  `DELETE /mcp` gets `405`.
+- No migration runs, so a rolling upgrade is fine and no writers have to be
+  stopped.
 
 ## [0.11.0] - 2026-10-08
 
@@ -671,7 +703,8 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
-[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/balcsida/graphnest/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/balcsida/graphnest/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/balcsida/graphnest/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/balcsida/graphnest/compare/v0.9.1...v0.9.2
@@ -734,3 +767,15 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
 [#145]: https://github.com/balcsida/graphnest/pull/145
 [#146]: https://github.com/balcsida/graphnest/pull/146
 [#149]: https://github.com/balcsida/graphnest/pull/149
+[#151]: https://github.com/balcsida/graphnest/pull/151
+[#155]: https://github.com/balcsida/graphnest/pull/155
+[#157]: https://github.com/balcsida/graphnest/pull/157
+[#158]: https://github.com/balcsida/graphnest/pull/158
+[#160]: https://github.com/balcsida/graphnest/pull/160
+[#161]: https://github.com/balcsida/graphnest/pull/161
+[#162]: https://github.com/balcsida/graphnest/pull/162
+[#163]: https://github.com/balcsida/graphnest/pull/163
+[#164]: https://github.com/balcsida/graphnest/pull/164
+[#166]: https://github.com/balcsida/graphnest/pull/166
+[#167]: https://github.com/balcsida/graphnest/pull/167
+[#169]: https://github.com/balcsida/graphnest/pull/169
