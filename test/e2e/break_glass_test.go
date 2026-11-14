@@ -1,4 +1,4 @@
-//go:build e2e
+//go:build e2e && unix
 
 package e2e
 
@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -323,6 +324,8 @@ func runAdmin(t *testing.T, binary, databaseURL, userName, first, second string,
 	command := exec.CommandContext(t.Context(), binary, "break-glass", "set-password", userName)
 	command.Env = append(os.Environ(), "GRAPHNEST_DATABASE_URL="+databaseURL)
 	command.Stdin = strings.NewReader(first + "\n" + second + "\n")
+	// In its own session the command has no terminal to prompt; otherwise it ignores stdin when run from one.
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	var output bytes.Buffer
 	command.Stdout, command.Stderr = &output, &output
 	err := command.Run()
