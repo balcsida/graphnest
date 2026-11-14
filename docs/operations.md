@@ -968,7 +968,8 @@ gh attestation verify "oci://ghcr.io/balcsida/graphnest/node@sha256:RELEASE_DIGE
 The pulled OCI chart already embeds both release image digests. The source-tree
 chart remains generic, so its users must supply their own image repositories
 and digests. `make helm-lint helm-test` verifies source chart structure;
-`make image-test` builds and smoke-tests local images.
+`make image-test` builds and smoke-tests local images; `make helm-install-test`
+installs the chart on a kind cluster and upgrades the latest release to it.
 
 An operator must provide external PostgreSQL, digest-pinned application and
 node images, and every existing Secret documented by the chart. The chart does

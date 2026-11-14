@@ -351,7 +351,7 @@ Review the [Helm chart documentation](deploy/helm/graphnest/README.md) for requi
 - GraphNest is pre-1.0 pilot software and makes no stable compatibility promise.
 - Only default branches are indexed.
 - The default GHES contract targets GitHub Enterprise Server 3.17 with REST API version `2022-11-28`; this has not been certified against a live GHES deployment.
-- Kubernetes, OpenShift, backup and restore, upgrade and rollback, ingress, and production-scale capacity still require environment-specific validation.
+- CI installs the chart on a kind cluster and upgrades the latest release to the current tree. OpenShift, backup and restore, rollback, ingress, and production-scale capacity still require environment-specific validation.
 - Optional native graph scanning is not equivalent to a full language server or language-specific indexer.
 - GraphNest does not currently provide embedding-based semantic search.
 - PostgreSQL graph data follows the same backup and recovery policy as other durable repository state.
@@ -373,9 +373,10 @@ Run the main verification suites with:
 make fmt lint staticcheck govulncheck
 make test test-race integration e2e
 make openapi-check compose-test helm-lint helm-test
+make helm-install-test
 ```
 
-CI additionally exercises scanner grammar compatibility, UI smoke tests, and release packaging. Some targets download pinned tools and require Docker.
+CI additionally exercises scanner grammar compatibility, UI smoke tests, and release packaging. Some targets download pinned tools and require Docker. `helm-install-test` also needs `kubectl`: it creates a local [kind](https://kind.sigs.k8s.io) cluster, installs the chart with images built from the tree, and upgrades the latest released chart to it.
 
 ## Documentation
 

@@ -7,8 +7,12 @@ API, upload, and Git endpoints plus a custom CA bundle. GitHub Enterprise Cloud
 uses the same configurable contract. Only default branches are indexed.
 
 The local GHES-compatible fixture is not a certification against a live GHES
-instance. Kubernetes, OpenShift, published images, upgrades, backup/restore,
-and production-scale compatibility remain unverified.
+instance. CI installs the chart on a kind cluster with its default values apart
+from lowered resource requests, checks that a pod in the release namespace
+that is neither server nor node cannot reach Zoekt, and upgrades the latest
+released chart and images to the current tree (`make helm-install-test`). That
+covers one Kubernetes version and an empty index. OpenShift, rollback,
+backup/restore, and production-scale compatibility remain unverified.
 
 ## Graph analysis
 
