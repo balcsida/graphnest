@@ -201,13 +201,14 @@ newest-first page with truncation. Events are append-only, but this release has
 no automatic retention or export policy; PostgreSQL growth, backup retention,
 and external archival remain operator responsibilities.
 
-This remains a local development slice, not a production security boundary.
-Archive expansion and Zoekt shards require separate container and volume
-quotas. Exhausting the ephemeral archive workspace fails the job without
+These controls have been exercised locally and in CI, not on a production
+platform. Archive expansion and Zoekt shards require separate container and
+volume quotas. Exhausting the ephemeral archive workspace fails the job without
 publishing a new indexed SHA; it must not corrupt durable shards.
 Compose keeps its fixture services on an internal network, and the Helm chart
-renders default-deny ingress plus optional CIDR/selector-based egress policy;
-these are repository controls, not evidence that the running platform enforces
-them. Secret delivery, backup/restore, production ingress, and policy
+renders default-deny ingress plus optional CIDR/selector-based egress policy.
+CI checks on a kind cluster that the ingress policies keep a third pod away
+from Zoekt; that is not evidence that another platform's network plugin
+enforces them. Secret delivery, backup/restore, production ingress, and policy
 enforcement remain operator responsibilities. Do not claim production
-readiness from local, Compose, or chart-render success.
+readiness from local, Compose, kind, or chart-render success.

@@ -11,12 +11,12 @@
 
 </div>
 
-GraphNest is an experimental, self-hosted code search and context layer for engineering teams and AI agents. Authorized clients can search GitHub repositories, open files at the exact indexed commit, follow symbols across repositories, and inspect dependency and impact relationships without receiving direct access to the underlying search index.
+GraphNest is a self-hosted code search and context layer for engineering teams and AI agents. Authorized clients can search GitHub repositories, open files at the exact indexed commit, follow symbols across repositories, and inspect dependency and impact relationships without receiving direct access to the underlying search index.
 
 Under the hood, GraphNest combines fast [Zoekt](https://github.com/sourcegraph/zoekt) search, [SCIP](https://github.com/sourcegraph/scip) code navigation, and a PostgreSQL relationship graph behind web, REST, and MCP interfaces.
 
 > [!IMPORTANT]
-> GraphNest is **pre-1.0 pilot software**. It is not production-ready, currently indexes default branches only, and has not yet been validated at production scale or certified against a live GitHub Enterprise Server or OpenShift environment. See [Compatibility](docs/compatibility.md) for the current boundaries.
+> GraphNest is **pre-1.0 pilot software**. It is not production-ready: it indexes default branches only, its size has been measured on one corpus, and it is not certified against a live GitHub Enterprise Server or OpenShift environment. See [Compatibility](docs/compatibility.md) for what is stable and what is still unverified.
 
 ![GraphNest code search with SCIP navigation](docs/images/graphnest-ui.png)
 

@@ -48,6 +48,9 @@ the compatibility and migration notes before upgrading.
   `server.pdb.enabled=false` for that configuration before upgrading.
 - `info.version` in `docs/openapi.yaml` now follows the release version; it
   still said `0.1.0`.
+- The README no longer calls GraphNest experimental. It stays pre-1.0 pilot
+  software: [Compatibility](docs/compatibility.md) says what is stable and
+  what is still unverified.
 
 ### Security
 
