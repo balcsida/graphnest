@@ -43,6 +43,8 @@ the compatibility and migration notes before upgrading.
   access sync are both enabled, because one server process holds the GitHub
   token between sign-in and code exchange. Set `server.replicas=1` and
   `server.pdb.enabled=false` for that configuration before upgrading.
+- `info.version` in `docs/openapi.yaml` now follows the release version; it
+  still said `0.1.0`.
 
 ### Security
 
@@ -52,8 +54,6 @@ the compatibility and migration notes before upgrading.
   removed from a user or token stayed usable in an open session until the
   client reconnected or the server restarted. A caller with a valid token who
   knew another session's ID acted with that session's access.
-- `info.version` in `docs/openapi.yaml` now follows the release version; it
-  still said `0.1.0`.
 
 ## [0.11.0] - 2026-10-08
 
