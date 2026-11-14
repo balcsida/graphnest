@@ -330,13 +330,13 @@ OIDC, GitHub OAuth, SCIM, API-token administration, audit events, and break-glas
 
 The chart under [`deploy/helm/graphnest`](deploy/helm/graphnest) targets Kubernetes 1.25 or newer and models a generic single-node pilot. It expects operator-managed PostgreSQL and existing Kubernetes Secrets; it does not install a database or place plaintext credentials in chart values.
 
-Released OCI charts embed immutable application and node image digests. For the current chart version:
+Released OCI charts embed immutable application and node image digests. Replace `RELEASE_VERSION` below with the release you install, without the leading `v`; it is a placeholder.
 
 Deployments created before the GraphNest rename require fresh GraphNest configuration and a fresh GraphNest installation. This is not an in-place upgrade; GraphNest does not automatically discover or mutate previous deployment state. The `helm upgrade --install` example below applies only to upgrades between GraphNest releases.
 
 ```sh
-helm pull oci://ghcr.io/balcsida/graphnest/charts/graphnest --version 0.2.0
-helm upgrade --install graphnest graphnest-0.2.0.tgz \
+helm pull oci://ghcr.io/balcsida/graphnest/charts/graphnest --version RELEASE_VERSION
+helm upgrade --install graphnest graphnest-RELEASE_VERSION.tgz \
   --namespace graphnest \
   --create-namespace \
   --values my-values.yaml \

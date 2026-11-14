@@ -41,15 +41,16 @@ may contain letters, digits, `-`, `_`, and `.`.
 Deployments created before the GraphNest rename require fresh GraphNest configuration
 and a fresh GraphNest installation. This is not an in-place upgrade; GraphNest does not automatically discover or mutate previous deployment state.
 
-For a release, replace `sha256:RELEASE_DIGEST` with values copied from the
-GitHub Release; they are placeholders, not literal digest values. The OCI chart
+For a release, replace `RELEASE_VERSION` with the release you install,
+without the leading `v`, and `sha256:RELEASE_DIGEST` with values copied from
+that GitHub Release; they are placeholders, not literal values. The OCI chart
 already embeds both copied release digests, so pull and install it directly:
 
 ```sh
 docker pull ghcr.io/balcsida/graphnest/application@sha256:RELEASE_DIGEST
 docker pull ghcr.io/balcsida/graphnest/node@sha256:RELEASE_DIGEST
-helm pull oci://ghcr.io/balcsida/graphnest/charts/graphnest --version 0.1.0
-helm upgrade --install graphnest graphnest-0.1.0.tgz -n graphnest --create-namespace -f my-values.yaml --wait --timeout 15m
+helm pull oci://ghcr.io/balcsida/graphnest/charts/graphnest --version RELEASE_VERSION
+helm upgrade --install graphnest graphnest-RELEASE_VERSION.tgz -n graphnest --create-namespace -f my-values.yaml --wait --timeout 15m
 ```
 
 Use the `gh attestation verify` commands copied from the GitHub Release to
