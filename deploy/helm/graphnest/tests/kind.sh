@@ -139,7 +139,8 @@ request() { # NAMESPACE WGET_ARGUMENTS: from a server pod, so the call crosses t
   pod=$(kubectl -n "$namespace" get pods -l app.kubernetes.io/component=server \
     -o jsonpath='{range .items[*]}{.metadata.deletionTimestamp}{" "}{.metadata.name}{"\n"}{end}' |
     awk 'NF == 1 { print $1; exit }')
-  kubectl -n "$namespace" exec "$pod" -- wget -qO- "$@"
+  # A connection opened just after a rollout can still land on a pod that has gone, hence the retries.
+  kubectl -n "$namespace" exec "$pod" -- wget -qO- -T 5 -t 6 "$@"
 }
 
 smoke() { # NAMESPACE TOKEN
@@ -149,7 +150,12 @@ smoke() { # NAMESPACE TOKEN
   request "$1" --header "Authorization: Bearer $2" http://graphnest-server:8080/v1/repositories |
     jq -e '.repositories == []' >/dev/null
   # The database pod is in the namespace but is neither server nor node: it may reach the API, never Zoekt.
-  kubectl -n "$1" exec deploy/postgres -- bash -c 'exec 3<>/dev/tcp/graphnest-server/8080'
+  tries=0
+  until kubectl -n "$1" exec deploy/postgres -- timeout 5 bash -c 'exec 3<>/dev/tcp/graphnest-server/8080' 2>/dev/null; do
+    tries=$((tries + 1))
+    [ "$tries" -lt 6 ]
+    sleep 2
+  done
   dropped=0
   kubectl -n "$1" exec deploy/postgres -- timeout 5 bash -c 'exec 3<>/dev/tcp/graphnest-zoekt/6070' \
     2>/dev/null || dropped=$?
