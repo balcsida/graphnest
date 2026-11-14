@@ -20,6 +20,24 @@ the compatibility and migration notes before upgrading.
   Other backend rejections stay generic so no internal detail leaks.
 - Queries with inline case flags such as `(?i)` now fail with `400` instead of
   silently returning wrong matches; use `case:no` or `case:yes`.
+- `/mcp` no longer keeps sessions. Any server replica can answer any request,
+  and a server restart no longer disconnects clients. The server sends no
+  `Mcp-Session-Id`, and `GET /mcp` and `DELETE /mcp` return `405`. Clients on
+  the 2026-07-28 MCP protocol also receive the server identity and a result
+  type with each result; both are outside `max_output_bytes`.
+- The Helm chart refuses `server.replicas` above 1 when MCP OAuth and GitHub
+  access sync are both enabled, because one server process holds the GitHub
+  token between sign-in and code exchange. Set `server.replicas=1` and
+  `server.pdb.enabled=false` for that configuration before upgrading.
+
+### Security
+
+- MCP tool calls are authorized by the credential of the request that makes
+  them. Before, a call ran as the principal that opened its MCP session. For
+  the search, repository, file, symbol navigation and dependency tools, access
+  removed from a user or token stayed usable in an open session until the
+  client reconnected or the server restarted. A caller with a valid token who
+  knew another session's ID acted with that session's access.
 
 ## [0.11.0] - 2026-10-08
 
