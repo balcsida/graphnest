@@ -390,7 +390,6 @@ CI additionally exercises scanner grammar compatibility, UI smoke tests, and rel
 | [Threat model](docs/threat-model.md) | Protected assets, security controls, and known limits |
 | [Benchmarking](docs/benchmarking.md) | Measurement guidance for pilot sizing |
 | [Release process](docs/release-process.md) | Signed tags, images, OCI chart, attestations, and release verification |
-| [Implementation report](docs/implementation-report.md) | Delivered milestones, verification evidence, risks, and deferred work |
 | [Dependency pinning](docs/dependency-pinning.md) | Reproducibility and pinned dependency policy |
 | [Archive and graph migration](docs/migrations/archive-postgres-graph.md) | Upgrade, verification, cleanup, and rollback procedure |
 
