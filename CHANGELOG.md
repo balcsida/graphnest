@@ -24,6 +24,9 @@ the compatibility and migration notes before upgrading.
   `x-graphnest-status: planned` marks paths that are specified but not served
   yet (today the advisory routes), and a test fails when any other documented
   operation is not served.
+- `make scale-bench` indexes a directory of real repositories through the
+  indexer, PostgreSQL, and Zoekt and reports indexing and search numbers.
+  `docs/benchmarking.md` records a first run on 240 public repositories.
 
 ### Changed
 

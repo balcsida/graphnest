@@ -376,6 +376,16 @@ type fakeRepository struct {
 	content  string
 	blobSHA  string
 	archived bool
+	// defaultBranch and sizeKB are optional: empty means "main" and 0 means no size gate input.
+	defaultBranch string
+	sizeKB        int64
+}
+
+func (repository fakeRepository) branch() string {
+	if repository.defaultBranch == "" {
+		return "main"
+	}
+	return repository.defaultBranch
 }
 
 type fakeGHES struct {
@@ -438,14 +448,13 @@ func (github *fakeGHES) serveAPI(writer http.ResponseWriter, request *http.Reque
 			response.Repositories = append(response.Repositories, map[string]any{
 				"id": repository.id, "full_name": repository.name, "owner": map[string]string{"login": owner}, "name": name,
 				"clone_url": github.server.URL + "/" + repository.name + ".git", "html_url": github.server.URL + "/" + repository.name,
-				"default_branch": "main", "private": true, "archived": repository.archived, "disabled": false,
+				"default_branch": repository.branch(), "private": true, "archived": repository.archived, "disabled": false, "size": repository.sizeKB,
 			})
 		}
 		_ = json.NewEncoder(writer).Encode(response)
-	case request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/branches/main"):
-		name := strings.TrimSuffix(strings.TrimPrefix(request.URL.Path, "/api/v3/repos/"), "/branches/main")
+	case request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/branches/"):
 		for _, repository := range repositories {
-			if repository.name == name {
+			if request.URL.Path == "/api/v3/repos/"+repository.name+"/branches/"+repository.branch() {
 				_ = json.NewEncoder(writer).Encode(map[string]any{"commit": map[string]string{"sha": repository.sha}})
 				return
 			}
@@ -462,7 +471,9 @@ func (github *fakeGHES) serveAPI(writer http.ResponseWriter, request *http.Reque
 			if repository.name != parts[0] || repository.sha != parts[1] {
 				continue
 			}
-			command := exec.CommandContext(request.Context(), "git", "--git-dir", filepath.Join(github.gitRoot, filepath.FromSlash(repository.name)+".git"), "archive", "--format=tar.gz", "--prefix=snapshot/", parts[1])
+			// GitHub archives carry Git LFS pointers, not the objects a local smudge filter would fetch.
+			command := exec.CommandContext(request.Context(), "git", "--git-dir", filepath.Join(github.gitRoot, filepath.FromSlash(repository.name)+".git"),
+				"-c", "filter.lfs.smudge=", "-c", "filter.lfs.process=", "-c", "filter.lfs.required=false", "archive", "--format=tar.gz", "--prefix=snapshot/", parts[1])
 			archive, err := command.Output()
 			if err != nil {
 				writer.WriteHeader(http.StatusInternalServerError)

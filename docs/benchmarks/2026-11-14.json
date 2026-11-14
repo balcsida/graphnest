@@ -1,0 +1,210 @@
+{
+  "cpus": 14,
+  "database_bytes": 2359296,
+  "date": "2026-11-14T14:50:44Z",
+  "go_arch": "arm64",
+  "go_os": "linux",
+  "index": {
+    "per_repository_ms": {
+      "max": 15645,
+      "p50": 1199,
+      "p95": 10180
+    },
+    "phase_seconds": {
+      "fetch": 338.7265435689996,
+      "index": 258.51652938300015,
+      "visibility": 2.683726060000001
+    },
+    "shard_bytes": 20962385892,
+    "slowest": [
+      {
+        "name": "MisterBooo/LeetCodeAnimation",
+        "source_bytes": 768297805,
+        "ms": 15645
+      },
+      {
+        "name": "LadybirdBrowser/ladybird",
+        "source_bytes": 252621936,
+        "ms": 15155
+      },
+      {
+        "name": "n8n-io/n8n",
+        "source_bytes": 242521022,
+        "ms": 13572
+      },
+      {
+        "name": "juanfont/headscale",
+        "source_bytes": 435643224,
+        "ms": 12379
+      },
+      {
+        "name": "lobehub/lobehub",
+        "source_bytes": 225451399,
+        "ms": 12374
+      }
+    ],
+    "wall_seconds": 612.642983701
+  },
+  "notes": [
+    "fetch is a local git archive served by a fake GitHub, not a GitHub download",
+    "the indexer runs one job at a time",
+    "a single Zoekt process runs on the same host as the indexer, PostgreSQL client and load generator",
+    "graph and SCIP queries are not measured"
+  ],
+  "repositories": {
+    "failed": {},
+    "indexed": 240,
+    "total": 240
+  },
+  "search": {
+    "concurrency": 4,
+    "first_pass": {
+      "by_query": {
+        "README": {
+          "errors": 1,
+          "max_ms": 5004.176,
+          "p50_ms": 37.76,
+          "p95_ms": 303.18,
+          "requests": 22
+        },
+        "TODO": {
+          "errors": 1,
+          "max_ms": 5076.14,
+          "p50_ms": 55.273,
+          "p95_ms": 1836.848,
+          "requests": 23
+        },
+        "class": {
+          "errors": 1,
+          "max_ms": 5079.243,
+          "p50_ms": 62.587,
+          "p95_ms": 494.826,
+          "requests": 22
+        },
+        "error": {
+          "errors": 0,
+          "max_ms": 3824.758,
+          "p50_ms": 57.081,
+          "p95_ms": 430.592,
+          "requests": 22
+        },
+        "file:README": {
+          "errors": 0,
+          "max_ms": 356.024,
+          "p50_ms": 27.646,
+          "p95_ms": 55.142,
+          "requests": 22
+        },
+        "foo.*bar": {
+          "errors": 1,
+          "max_ms": 5002.497,
+          "p50_ms": 383.556,
+          "p95_ms": 1485.498,
+          "requests": 22
+        },
+        "func main": {
+          "errors": 1,
+          "max_ms": 5079.309,
+          "p50_ms": 62.552,
+          "p95_ms": 1898.625,
+          "requests": 23
+        },
+        "http": {
+          "errors": 0,
+          "max_ms": 2973.23,
+          "p50_ms": 53.811,
+          "p95_ms": 353.032,
+          "requests": 22
+        },
+        "import": {
+          "errors": 1,
+          "max_ms": 5080.951,
+          "p50_ms": 58.181,
+          "p95_ms": 742.132,
+          "requests": 22
+        }
+      },
+      "errors": 6,
+      "max_ms": 5080.951,
+      "p50_ms": 55.595,
+      "p95_ms": 1485.498,
+      "requests": 200
+    },
+    "second_pass": {
+      "by_query": {
+        "README": {
+          "errors": 0,
+          "max_ms": 79.559,
+          "p50_ms": 38.521,
+          "p95_ms": 62.759,
+          "requests": 22
+        },
+        "TODO": {
+          "errors": 0,
+          "max_ms": 73.712,
+          "p50_ms": 44.791,
+          "p95_ms": 68.243,
+          "requests": 23
+        },
+        "class": {
+          "errors": 0,
+          "max_ms": 77.476,
+          "p50_ms": 53.596,
+          "p95_ms": 73.943,
+          "requests": 22
+        },
+        "error": {
+          "errors": 0,
+          "max_ms": 67.056,
+          "p50_ms": 48.575,
+          "p95_ms": 63.607,
+          "requests": 22
+        },
+        "file:README": {
+          "errors": 0,
+          "max_ms": 43.705,
+          "p50_ms": 25.594,
+          "p95_ms": 40.05,
+          "requests": 22
+        },
+        "foo.*bar": {
+          "errors": 0,
+          "max_ms": 410.307,
+          "p50_ms": 359.053,
+          "p95_ms": 394.926,
+          "requests": 22
+        },
+        "func main": {
+          "errors": 0,
+          "max_ms": 101.23,
+          "p50_ms": 50.382,
+          "p95_ms": 88.381,
+          "requests": 23
+        },
+        "http": {
+          "errors": 0,
+          "max_ms": 101.365,
+          "p50_ms": 58.573,
+          "p95_ms": 86.894,
+          "requests": 22
+        },
+        "import": {
+          "errors": 0,
+          "max_ms": 94.837,
+          "p50_ms": 53.435,
+          "p95_ms": 89.561,
+          "requests": 22
+        }
+      },
+      "errors": 0,
+      "max_ms": 410.307,
+      "p50_ms": 50.382,
+      "p95_ms": 366.192,
+      "requests": 200
+    }
+  },
+  "source": {
+    "bytes": 15042960039,
+    "files": 985911
+  }
+}
