@@ -355,6 +355,7 @@ Review the [Helm chart documentation](deploy/helm/graphnest/README.md) for requi
 - Optional native graph scanning is not equivalent to a full language server or language-specific indexer.
 - GraphNest does not currently provide embedding-based semantic search.
 - PostgreSQL graph data follows the same backup and recovery policy as other durable repository state.
+- Size has been measured on one corpus: 240 public repositories with 14 GiB of source were indexed in about ten minutes by one node and took 19.5 GiB of shards. [Benchmarking](docs/benchmarking.md) has the numbers and what they leave out.
 
 Read [Compatibility](docs/compatibility.md), [Benchmarking](docs/benchmarking.md), and [Operations](docs/operations.md) before planning a pilot.
 
@@ -388,7 +389,7 @@ CI additionally exercises scanner grammar compatibility, UI smoke tests, and rel
 | [Helm chart](deploy/helm/graphnest/README.md) | Kubernetes configuration, Secrets, storage, networking, and installation |
 | [Compatibility](docs/compatibility.md) | Supported contracts, platforms, languages, and unverified boundaries |
 | [Threat model](docs/threat-model.md) | Protected assets, security controls, and known limits |
-| [Benchmarking](docs/benchmarking.md) | Measurement guidance for pilot sizing |
+| [Benchmarking](docs/benchmarking.md) | One measured corpus and how to repeat the run |
 | [Release process](docs/release-process.md) | Signed tags, images, OCI chart, attestations, and release verification |
 | [Dependency pinning](docs/dependency-pinning.md) | Reproducibility and pinned dependency policy |
 | [Archive and graph migration](docs/migrations/archive-postgres-graph.md) | Upgrade, verification, cleanup, and rollback procedure |
