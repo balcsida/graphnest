@@ -1,6 +1,10 @@
 ZOEKT_VERSION = $(shell GOWORK=off go -C tools list -m -f '{{.Version}}' github.com/sourcegraph/zoekt)
 STATICCHECK_VERSION := v0.8.2
 GOVULNCHECK_VERSION := v1.8.0
+KIND_VERSION := v0.33.0
+# The node image the kind release notes list for KIND_VERSION.
+KIND_NODE_IMAGE := kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+KIND_REGISTRY_IMAGE := registry:3.1.2@sha256:82f6ff4a7f982960c8aa51617fea3aabc485df6e55cce80d22deb1de36f1bc3c
 POSTGRES_COMPOSE := docker compose -p graphnest-postgres
 GRAPHNEST_TEST_POSTGRES_DSN ?= $(GRAPHNEST_TEST_DATABASE_URL)
 VERSION ?= dev
@@ -12,7 +16,7 @@ NODE_IMAGE ?= graphnest-node:dev
 WEB_INPUTS = web/package.json web/package-lock.json web/vite.config.ts web/index.html web/components.json \
 	$(wildcard web/tsconfig*.json) $(shell find web/src web/public -type f)
 
-.PHONY: brand-check fmt lint staticcheck govulncheck test test-race makefile-test scanner-build scanner-test scanner-vulncheck abi-test integration postgres-test postgres-integration e2e e2e-test tools build cli server image image-test zoekt-version helm-lint helm-test compose-test openapi-check release-chart-test tools-check ui-smoke ui ui-check ui-dev ui-screenshots
+.PHONY: brand-check fmt lint staticcheck govulncheck test test-race makefile-test scanner-build scanner-test scanner-vulncheck abi-test integration postgres-test postgres-integration e2e e2e-test tools build cli server image image-test zoekt-version helm-lint helm-test helm-install-test compose-test openapi-check release-chart-test tools-check ui-smoke ui ui-check ui-dev ui-screenshots
 
 brand-check:
 	@status=0; git grep -I -i -E 'grep[-_]?nest|graph[-_]nest' -- . || status=$$?; test $$status -eq 1
@@ -165,6 +169,14 @@ helm-lint:
 
 helm-test:
 	sh deploy/helm/graphnest/tests/render.sh
+
+# kind nodes run on the Docker server's architecture, so the images must too.
+helm-install-test:
+	$(MAKE) image IMAGE_PLATFORM="$$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}')"
+	mkdir -p .cache/bin
+	GOBIN=$$(pwd)/.cache/bin go install sigs.k8s.io/kind@$(KIND_VERSION)
+	PATH="$$(pwd)/.cache/bin:$$PATH" KIND_NODE_IMAGE='$(KIND_NODE_IMAGE)' KIND_REGISTRY_IMAGE='$(KIND_REGISTRY_IMAGE)' \
+		APPLICATION_IMAGE=$(APPLICATION_IMAGE) NODE_IMAGE=$(NODE_IMAGE) sh deploy/helm/graphnest/tests/kind.sh
 
 release-chart-test:
 	ruby scripts/stage_release_chart_test.rb

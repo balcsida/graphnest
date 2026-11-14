@@ -10,7 +10,8 @@ be reachable from `main`.
 
 ```sh
 make fmt lint staticcheck govulncheck test test-race integration e2e build \
-  compose-test openapi-check helm-lint helm-test image-test release-chart-test
+  compose-test openapi-check helm-lint helm-test helm-install-test image-test \
+  release-chart-test
 git tag -s v0.1.0 -m 'GraphNest v0.1.0
 
 Compatibility: pre-1.0 pilot; Kubernetes 1.25 or newer.

@@ -10,6 +10,11 @@ the compatibility and migration notes before upgrading.
 - `brew install balcsida/tap/graphnest` installs the command-line tool. After
   publishing a release, the Release workflow asks the tap to update its formula
   (with the `TAP_DISPATCH_TOKEN` secret; see `docs/release-process.md`).
+- `make helm-install-test`, which CI now runs, installs the chart on a kind
+  cluster with images built from the tree and upgrades the latest released
+  chart to it. It checks readiness, an authenticated request before and after
+  the upgrade, and that the default network policies keep a pod that is neither
+  server nor node away from Zoekt.
 
 ### Changed
 
