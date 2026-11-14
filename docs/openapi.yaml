@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: GraphNest REST API
-  version: 0.1.0
+  version: 0.11.0
 paths:
   /v1/account/api-tokens:
     get:
@@ -1111,6 +1111,7 @@ paths:
         '415': {$ref: '#/components/responses/InvalidRequest'}
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/supply-chain/advisories:
+    x-graphnest-status: planned
     get:
       description: Advisories GraphNest tracks. Administrators supply them; GraphNest fetches no advisory feeds. Every principal allowed to read the inventory sees every advisory, and counts cover only the caller's authorized repositories. Available only when GRAPHNEST_SUPPLY_CHAIN=true.
       security: [{bearerAuth: []}, {sessionCookie: []}]
@@ -1142,6 +1143,7 @@ paths:
         '415': {$ref: '#/components/responses/InvalidRequest'}
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/supply-chain/advisory-checks:
+    x-graphnest-status: planned
     post:
       description: Dry run. Classifies the caller's authorized repositories against an advisory definition exactly as a saved advisory would, without saving anything. Available to every principal allowed to read the inventory. Each page is recomputed, and the cursor is bound to the definition. Fix signals need a saved advisory.
       security: [{bearerAuth: []}, {sessionCookie: []}]
@@ -1160,6 +1162,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
         '504': {description: The check exceeded its time budget, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
   /v1/supply-chain/advisories/{id}:
+    x-graphnest-status: planned
     get:
       description: One advisory with its current definition, inferred release lines, counts, coverage, burn-down, and versions, computed over the caller's authorized repositories.
       security: [{bearerAuth: []}, {sessionCookie: []}]
@@ -1190,6 +1193,7 @@ paths:
         '415': {$ref: '#/components/responses/InvalidRequest'}
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/supply-chain/advisories/{id}/versions/{version}:
+    x-graphnest-status: planned
     get:
       description: One version of an advisory, normalized and as originally submitted.
       security: [{bearerAuth: []}, {sessionCookie: []}]
@@ -1205,6 +1209,7 @@ paths:
         '500': {description: Response exceeded the configured byte limit}
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/supply-chain/advisories/{id}/close:
+    x-graphnest-status: planned
     post:
       description: Administrator-only. Stops re-checking the advisory. Results and history stay readable. Closing a closed advisory changes nothing.
       security: [{bearerAuth: []}, {sessionCookie: []}]
@@ -1219,6 +1224,7 @@ paths:
         '405': {$ref: '#/components/responses/InvalidRequest'}
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/supply-chain/advisories/{id}/reopen:
+    x-graphnest-status: planned
     post:
       description: Administrator-only. Resumes re-checking a closed advisory. Reopening an open advisory changes nothing.
       security: [{bearerAuth: []}, {sessionCookie: []}]
@@ -1233,6 +1239,7 @@ paths:
         '405': {$ref: '#/components/responses/InvalidRequest'}
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/supply-chain/advisories/{id}/repositories:
+    x-graphnest-status: planned
     get:
       description: Repository rows for the caller's authorized repositories, most urgent status first, then by name. Following next_cursor reaches every matching repository. Covers default branches only.
       security: [{bearerAuth: []}, {sessionCookie: []}]
@@ -1254,6 +1261,7 @@ paths:
         '500': {description: Response exceeded the configured byte limit}
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/supply-chain/advisories/{id}/repositories/{repository_id}:
+    x-graphnest-status: planned
     get:
       description: Every evidence line, the history, signals, and exceptions for one authorized repository, plus the basis fingerprint that recording an exception must echo. An unauthorized repository is indistinguishable from a missing one.
       security: [{bearerAuth: []}, {sessionCookie: []}]
@@ -1269,6 +1277,7 @@ paths:
         '500': {description: Response exceeded the configured byte limit}
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/supply-chain/advisories/{id}/repositories/{repository_id}/exceptions:
+    x-graphnest-status: planned
     post:
       description: Records an exception for one repository. Allowed for administrators and holders of the repository's supply-chain review grant. not_affected and risk_accepted need an expiry at most one year ahead. rebuilt applies only while the repository needs a rebuild. withdrawn supersedes the current exception. The basis must equal the current fingerprint; the exception lapses when the counted evidence changes or it expires.
       security: [{bearerAuth: []}, {sessionCookie: []}]
@@ -1288,6 +1297,7 @@ paths:
         '415': {$ref: '#/components/responses/InvalidRequest'}
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/supply-chain/advisories/{id}/export.csv:
+    x-graphnest-status: planned
     get:
       description: Every authorized repository matching the filters, as CSV with one row per evidence line. Cells that begin with formula characters are neutralized.
       security: [{bearerAuth: []}, {sessionCookie: []}]
@@ -1306,6 +1316,7 @@ paths:
         '405': {$ref: '#/components/responses/InvalidRequest'}
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/supply-chain/advisories/{id}/export.md:
+    x-graphnest-status: planned
     get:
       description: Every authorized repository matching the filters, as Markdown. The header states the advisory, its version, the generation time, that only default branches are covered, and coverage counts. Markdown syntax in untrusted values is escaped.
       security: [{bearerAuth: []}, {sessionCookie: []}]

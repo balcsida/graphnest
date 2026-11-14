@@ -19,6 +19,11 @@ the compatibility and migration notes before upgrading.
   how to requeue every repository after losing the index volume, how to
   restore PostgreSQL, and which upgrades need the server and node stopped.
   An end-to-end test runs the index-volume recovery.
+- [Compatibility](docs/compatibility.md#stability) now says which interfaces
+  are stable before 1.0 and how they may change. In `docs/openapi.yaml`,
+  `x-graphnest-status: planned` marks paths that are specified but not served
+  yet (today the advisory routes), and a test fails when any other documented
+  operation is not served.
 
 ### Changed
 
@@ -47,6 +52,8 @@ the compatibility and migration notes before upgrading.
   removed from a user or token stayed usable in an open session until the
   client reconnected or the server restarted. A caller with a valid token who
   knew another session's ID acted with that session's access.
+- `info.version` in `docs/openapi.yaml` now follows the release version; it
+  still said `0.1.0`.
 
 ## [0.11.0] - 2026-10-08
 

@@ -63,6 +63,10 @@ end
 document_path = File.expand_path("../docs/openapi.yaml", __dir__)
 documents = {}
 document = load_document(document_path, documents)
+chart = YAML.safe_load(File.read(File.expand_path("../deploy/helm/graphnest/Chart.yaml", __dir__)))
+unless document.dig("info", "version") == chart["appVersion"]
+  raise OpenAPIError, "info.version=#{document.dig("info", "version").inspect} differs from Chart.yaml appVersion #{chart["appVersion"].inspect}"
+end
 resolve_local_references(document, document_path, documents)
 
 upload = document.dig("paths", "/v1/scip/uploads", "post", "requestBody", "content", "application/vnd.scip+protobuf", "schema")
@@ -116,10 +120,10 @@ selection_segment = schemas.fetch("GraphExploreSelection").dig("properties", "se
 require_value(selection_segment["minimum"], -1, "GraphExploreSelection.segment minimum")
 raise OpenAPIError, "GraphExploreSelection.segment must document -1" unless selection_segment.fetch("description", "").include?("-1")
 nullable_collections = %w[GraphExploreResponse GraphExploreFile GraphTraverseResponse].flat_map do |schema_name|
-  schemas.fetch(schema_name).fetch("properties").filter_map do |field, property|
-    types = property.fetch("anyOf", []).filter_map { |variant| variant["type"] }.sort
+  schemas.fetch(schema_name).fetch("properties").map do |field, property|
+    types = property.fetch("anyOf", []).map { |variant| variant["type"] }.compact.sort
     [schema_name, field] if types == %w[array null]
-  end
+  end.compact
 end
 expected_nullable_collections = [
   ["GraphExploreResponse", "files"],
