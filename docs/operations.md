@@ -1020,14 +1020,15 @@ the former graph topology.
 
 ## Kubernetes chart boundary
 
-Releases publish multi-architecture images and an OCI chart. Replace each
-`sha256:RELEASE_DIGEST` below with the digest copied from that GitHub Release;
-it is a placeholder, not a literal digest.
+Releases publish multi-architecture images and an OCI chart. Replace
+`RELEASE_VERSION` below with the release you install, without the leading `v`,
+and each `sha256:RELEASE_DIGEST` with the digest copied from that GitHub
+Release; both are placeholders, not literal values.
 
 ```sh
 docker pull ghcr.io/balcsida/graphnest/application@sha256:RELEASE_DIGEST
 docker pull ghcr.io/balcsida/graphnest/node@sha256:RELEASE_DIGEST
-helm pull oci://ghcr.io/balcsida/graphnest/charts/graphnest --version 0.1.0
+helm pull oci://ghcr.io/balcsida/graphnest/charts/graphnest --version RELEASE_VERSION
 ```
 
 Verify the copied artifacts with the commands included in the GitHub Release:
