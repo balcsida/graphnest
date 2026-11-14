@@ -49,7 +49,6 @@ import (
 	"github.com/balcsida/graphnest/internal/webui"
 	"github.com/balcsida/graphnest/internal/zoekt"
 	"github.com/jackc/pgx/v5"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/net/idna"
 )
 
@@ -692,7 +691,7 @@ func newAPIHandlerWithMCP(settings config.Config, metrics *observability.Metrics
 	mcpServer := mcpserver.NewWithLimits(mcpserver.Services{Search: service, Repositories: repositories, SCIP: scipGraph, Graph: graphQueries, SupplyChain: supplyChainMCP}, mcpserver.Limits{
 		MaxItems: settings.Limits.MaxResults, MaxOutputBytes: settings.Limits.MaxResponseBytes, GraphMaxOutputBytes: settings.Graph.MaxResponseBytes,
 	})
-	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer }, nil)
+	mcpHandler := mcpserver.HTTPHandler(mcpServer)
 	mux.Handle("/mcp", httpapi.AuthenticateBearerWithChallenge(oauthBearer, challenge, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		request.Body = http.MaxBytesReader(writer, request.Body, settings.Limits.MaxRequestBytes)
 		mcpHandler.ServeHTTP(writer, request)

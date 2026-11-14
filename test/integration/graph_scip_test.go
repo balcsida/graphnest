@@ -19,7 +19,6 @@ import (
 	"github.com/balcsida/graphnest/internal/httpapi"
 	"github.com/balcsida/graphnest/internal/mcpserver"
 	"github.com/balcsida/graphnest/internal/scipgraph"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const scipDemoSHA = "cccccccccccccccccccccccccccccccccccccccc"
@@ -41,9 +40,7 @@ func TestSCIPUploadServesGraphTools(t *testing.T) {
 	mux := http.NewServeMux()
 	httpapi.RegisterSCIP(mux, authn.RequestAuthenticator{Bearer: authenticator}, scipService, 64<<10, 64<<20, 256<<10)
 	httpapi.RegisterGraphQueries(mux, authenticator, service, 64<<10, 256<<10)
-	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
-		return mcpserver.NewWithLimits(mcpserver.Services{Graph: service, SCIP: scipService}, mcpserver.Limits{MaxOutputBytes: 256 << 10, GraphMaxOutputBytes: 256 << 10})
-	}, nil)))
+	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, mcpserver.HTTPHandler(mcpserver.NewWithLimits(mcpserver.Services{Graph: service, SCIP: scipService}, mcpserver.Limits{MaxOutputBytes: 256 << 10, GraphMaxOutputBytes: 256 << 10}))))
 	server := httptest.NewServer(mux)
 	defer server.Close()
 

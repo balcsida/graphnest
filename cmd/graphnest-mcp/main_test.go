@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/balcsida/graphnest/internal/mcpserver"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -45,7 +46,7 @@ func TestProxyForwardsToolsWithBearerAuthentication(t *testing.T) {
 	}) (*mcp.CallToolResult, map[string]any, error) {
 		return nil, map[string]any{"query": input.Query}, nil
 	})
-	upstreamHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return upstream }, nil)
+	upstreamHandler := mcpserver.HTTPHandler(upstream)
 	httpServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/mcp" {
 			http.NotFound(writer, request)

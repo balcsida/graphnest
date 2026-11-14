@@ -373,7 +373,7 @@ func (g *gate) startServer() {
 	httpapi.RegisterGitHubWebhook(mux, []byte(milestoneWebhookSecret), 1<<20, processor)
 	mcpServer := mcpserver.NewWithLimits(mcpserver.Services{Search: searchService, Repositories: repositoryService, SCIP: scipService, Graph: graphQueries},
 		mcpserver.Limits{MaxItems: 100, MaxOutputBytes: 256 << 10, GraphMaxOutputBytes: 256 << 10})
-	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer }, nil)))
+	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, mcpserver.HTTPHandler(mcpServer)))
 	g.server = httptest.NewServer(mux)
 	t.Cleanup(g.server.Close)
 	g.serverURL = g.server.URL

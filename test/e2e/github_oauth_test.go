@@ -29,7 +29,6 @@ import (
 	"github.com/balcsida/graphnest/internal/sso"
 	"github.com/balcsida/graphnest/internal/sso/githuboauth"
 	oidcclient "github.com/balcsida/graphnest/internal/sso/oidc"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestGitHubOAuthCrossReplicaPreservesCredentialBoundaries(t *testing.T) {
@@ -189,9 +188,7 @@ func newGitHubOAuthReplica(t *testing.T, database milestoneDatabase, github *git
 	httpapi.RegisterAuth(mux, false, false, true, providers, requestAuth, sessions, nil)
 	httpapi.RegisterRepositories(mux, requestAuth, repositories, 64<<10, 10, 64<<10)
 	httpapi.RegisterSearch(mux, requestAuth, searchService, 64<<10, 64<<10)
-	mux.Handle("/mcp", httpapi.AuthenticateBearer(tokens, mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
-		return mcpserver.New(searchService, repositories)
-	}, nil)))
+	mux.Handle("/mcp", httpapi.AuthenticateBearer(tokens, mcpserver.HTTPHandler(mcpserver.New(searchService, repositories))))
 	return mux
 }
 

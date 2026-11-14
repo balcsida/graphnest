@@ -120,9 +120,7 @@ func newSCIME2EHandler(t *testing.T, database milestoneDatabase, idp *oidcTestPr
 	httpapi.RegisterSearch(mux, requestAuth, searchService, 64<<10, 64<<10)
 	httpapi.RegisterAccount(mux, requestAuth, &account.Service{Manager: tokens, Authorizer: authorizer}, 64<<10, 64<<10)
 	httpapi.RegisterAdmin(mux, requestAuth, &admin.Service{Store: database.store}, 10, 64<<10, 64<<10)
-	mux.Handle("/mcp", httpapi.AuthenticateBearer(bearer, mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
-		return mcpserver.New(searchService, repositories)
-	}, nil)))
+	mux.Handle("/mcp", httpapi.AuthenticateBearer(bearer, mcpserver.HTTPHandler(mcpserver.New(searchService, repositories))))
 	provisioning, err := authn.NewProvisioningAuthenticator([]byte(scimToken))
 	if err != nil {
 		t.Fatal(err)

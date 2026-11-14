@@ -28,7 +28,6 @@ import (
 	"github.com/balcsida/graphnest/internal/search"
 	"github.com/balcsida/graphnest/internal/sso"
 	"github.com/balcsida/graphnest/internal/sso/githuboauth"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // TestMCPOAuthAuthorizationCodeFlow acts as an MCP client against the real HTTP
@@ -325,9 +324,7 @@ func newMCPOAuthServer(t *testing.T, database milestoneDatabase, github *githubO
 	httpapi.RegisterSearch(mux, requestAuth, searchService, 64<<10, 64<<10)
 	httpapi.RegisterAccount(mux, requestAuth, newAccountService(database), 64<<10, 64<<10)
 	authorizationServer.Register(mux)
-	mux.Handle("/mcp", httpapi.AuthenticateBearerWithChallenge(bearer, authorizationServer.Challenge, mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
-		return mcpserver.New(searchService, repositories)
-	}, nil)))
+	mux.Handle("/mcp", httpapi.AuthenticateBearerWithChallenge(bearer, authorizationServer.Challenge, mcpserver.HTTPHandler(mcpserver.New(searchService, repositories))))
 	return mux
 }
 

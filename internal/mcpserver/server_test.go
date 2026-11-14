@@ -48,7 +48,7 @@ func TestGraphMCPMatchesService(t *testing.T) {
 	handler := httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{
 		"secret": principal,
 		"admin":  {InstallationID: 10, RepositoryIDs: []int64{101}, Administrator: true},
-	}), mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
+	}), HTTPHandler(server))
 	httpServer := httptest.NewServer(handler)
 	defer httpServer.Close()
 	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: httpServer.URL, HTTPClient: bearerClient(httpServer.Client(), "secret"), DisableStandaloneSSE: true}, nil)
@@ -261,7 +261,7 @@ func TestRepositoryToolsUseAuthenticatedService(t *testing.T) {
 	server := NewWithLimits(Services{Search: testService(t, &recordingBackend{}), Repositories: repositoryService}, Limits{MaxOutputBytes: int64(listBudget)})
 	handler := httpapi.AuthenticateBearer(
 		authn.NewStatic(map[string]authn.Principal{"secret": {InstallationID: 10, RepositoryIDs: []int64{101}}}),
-		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil),
+		HTTPHandler(server),
 	)
 	httpServer := httptest.NewServer(handler)
 	defer httpServer.Close()
@@ -404,7 +404,7 @@ func TestNavigateSymbolMatchesSCIPServiceResponse(t *testing.T) {
 	}
 	budget := mcpResultSize(t, want)
 	server := NewWithLimits(Services{Search: testService(t, &recordingBackend{}), SCIP: scipService}, Limits{MaxOutputBytes: int64(budget)})
-	handler := httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{"secret": principal}), mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
+	handler := httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{"secret": principal}), HTTPHandler(server))
 	httpServer := httptest.NewServer(handler)
 	defer httpServer.Close()
 	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: httpServer.URL, HTTPClient: bearerClient(httpServer.Client(), "secret"), DisableStandaloneSSE: true}, nil)
@@ -446,7 +446,7 @@ func TestNavigateSymbolMatchesSCIPServiceResponse(t *testing.T) {
 	}
 	var got api.SCIPNavigationResponse
 	decodeStructured(t, result.StructuredContent, &got)
-	if !slices.Equal(got.Locations, want.Locations) || got.Truncated != want.Truncated || len(result.Content) != 0 || marshaledSize(t, result) > budget {
+	if !slices.Equal(got.Locations, want.Locations) || got.Truncated != want.Truncated || len(result.Content) != 0 || outputSize(t, result) > budget {
 		t.Fatalf("output = %#v, want %#v", got, want)
 	}
 	if got.Locations[0].PositionEncoding != "UTF16CodeUnitOffsetFromLineStart" {
@@ -464,7 +464,7 @@ func TestNavigateSymbolMatchesSCIPServiceResponse(t *testing.T) {
 	store.occurrenceErr = nil
 
 	tinyServer := NewWithLimits(Services{Search: testService(t, &recordingBackend{}), SCIP: scipService}, Limits{MaxOutputBytes: int64(budget - 1)})
-	tinyHTTPServer := httptest.NewServer(httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{"secret": principal}), mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return tinyServer }, nil)))
+	tinyHTTPServer := httptest.NewServer(httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{"secret": principal}), HTTPHandler(tinyServer)))
 	defer tinyHTTPServer.Close()
 	tinySession, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: tinyHTTPServer.URL, HTTPClient: bearerClient(tinyHTTPServer.Client(), "secret"), DisableStandaloneSSE: true}, nil)
 	if err != nil {
@@ -479,7 +479,7 @@ func TestNavigateSymbolMatchesSCIPServiceResponse(t *testing.T) {
 	}
 
 	nilServer := NewWithLimits(Services{Search: testService(t, &recordingBackend{}), SCIP: nil}, Limits{})
-	nilHTTPServer := httptest.NewServer(httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{"secret": principal}), mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return nilServer }, nil)))
+	nilHTTPServer := httptest.NewServer(httpapi.AuthenticateBearer(authn.NewStatic(map[string]authn.Principal{"secret": principal}), HTTPHandler(nilServer)))
 	defer nilHTTPServer.Close()
 	nilSession, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: nilHTTPServer.URL, HTTPClient: bearerClient(nilHTTPServer.Client(), "secret"), DisableStandaloneSSE: true}, nil)
 	if err != nil {
@@ -595,7 +595,7 @@ func TestRepositoryToolErrorsAreSafe(t *testing.T) {
 	server := New(testService(t, &recordingBackend{}), service)
 	handler := httpapi.AuthenticateBearer(
 		authn.NewStatic(map[string]authn.Principal{"secret": {InstallationID: 10, RepositoryIDs: []int64{101}}}),
-		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil),
+		HTTPHandler(server),
 	)
 	httpServer := httptest.NewServer(handler)
 	defer httpServer.Close()
@@ -714,7 +714,7 @@ func TestSearchToolsUseAuthenticatedService(t *testing.T) {
 	server := New(service)
 	handler := httpapi.AuthenticateBearer(
 		authn.NewStatic(map[string]authn.Principal{"secret": {Subject: "user", RepositoryNames: []string{"acme/one"}}}),
-		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil),
+		HTTPHandler(server),
 	)
 	httpServer := httptest.NewServer(handler)
 	defer httpServer.Close()
@@ -810,7 +810,7 @@ func TestSearchToolErrorsAreSafe(t *testing.T) {
 	server := New(testService(t, backend))
 	handler := httpapi.AuthenticateBearer(
 		authn.NewStatic(map[string]authn.Principal{"secret": {Subject: "user", RepositoryNames: []string{"acme/one"}}}),
-		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil),
+		HTTPHandler(server),
 	)
 	httpServer := httptest.NewServer(handler)
 	defer httpServer.Close()
@@ -891,7 +891,7 @@ func TestSearchCodeLimitsCanonicalOutputThroughZoekt(t *testing.T) {
 	server := New(service)
 	handler := httpapi.AuthenticateBearer(
 		authn.NewStatic(map[string]authn.Principal{"secret": {Subject: "user", RepositoryNames: []string{"acme/one"}}}),
-		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil),
+		HTTPHandler(server),
 	)
 	httpServer := httptest.NewServer(handler)
 	defer httpServer.Close()
@@ -923,8 +923,8 @@ func TestSearchCodeLimitsCanonicalOutputThroughZoekt(t *testing.T) {
 		t.Fatal(err)
 	}
 	decodeStructured(t, result.StructuredContent, &output)
-	if len(output.Matches) != 1 || !output.Truncated || len(result.Content) != 0 || marshaledSize(t, result) > budget {
-		t.Fatalf("output = %#v, content = %#v, size = %d, budget = %d", output, result.Content, marshaledSize(t, result), budget)
+	if len(output.Matches) != 1 || !output.Truncated || len(result.Content) != 0 || outputSize(t, result) > budget {
+		t.Fatalf("output = %#v, content = %#v, size = %d, budget = %d", output, result.Content, outputSize(t, result), budget)
 	}
 }
 
@@ -935,11 +935,19 @@ func mcpResultSize(t *testing.T, value any) int {
 
 func assertMCPResultBudget(t *testing.T, tool string, result *mcp.CallToolResult, budget int) {
 	t.Helper()
-	size := marshaledSize(t, result)
+	size := outputSize(t, result)
 	t.Logf("%s CallTool result size = %d, budget = %d", tool, size, budget)
 	if len(result.Content) != 0 || size > budget {
 		t.Fatalf("content = %#v, size = %d, budget = %d", result.Content, size, budget)
 	}
+}
+
+// outputSize measures what the tool produced. For clients on the 2026-07-28
+// protocol the SDK also puts the server identity and a result type in each
+// result; like the JSON-RPC envelope, those are outside the output budget.
+func outputSize(t *testing.T, result *mcp.CallToolResult) int {
+	t.Helper()
+	return marshaledSize(t, &mcp.CallToolResult{Content: result.Content, StructuredContent: result.StructuredContent})
 }
 
 func marshaledSize(t *testing.T, value any) int {
