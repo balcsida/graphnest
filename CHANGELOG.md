@@ -15,6 +15,10 @@ the compatibility and migration notes before upgrading.
   chart to it. It checks readiness, an authenticated request before and after
   the upgrade, and that the default network policies keep a pod that is neither
   server nor node away from Zoekt.
+- The operations guide gains "Backup, restore, and upgrade": what to back up,
+  how to requeue every repository after losing the index volume, how to
+  restore PostgreSQL, and which upgrades need the server and node stopped.
+  An end-to-end test runs the index-volume recovery.
 
 ### Changed
 

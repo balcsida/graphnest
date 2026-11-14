@@ -66,6 +66,76 @@ Stop the local stack with:
 docker compose -f deploy/compose/compose.yml down
 ```
 
+## Backup, restore, and upgrade
+
+PostgreSQL is the only state that needs a backup. It holds the repositories
+and their indexed commits, access assignments, API tokens, sessions, OAuth
+grants, audit events, uploaded SCIP indexes, graph generations, and the
+dependency inventory. Back it up with the database platform's own tooling.
+Keep the Secrets the deployment references in the same recovery plan: stored
+GitHub user tokens cannot be read without the MCP OAuth sealing key.
+
+The Zoekt index volume needs no backup. Its shards are rebuilt from GitHub.
+
+### Lost or empty index volume
+
+Nothing notices a missing shard. Search returns no matches and no error for
+the affected repositories, `/readyz` stays ready, and the repositories still
+show as `ready`. After losing the index volume, mark every repository as
+pending in PostgreSQL:
+
+```sql
+update repositories set status = 'pending' where enabled and not archived;
+```
+
+The next reconcile, at most five minutes later, queues one job per repository
+for its current default-branch commit, and the indexer works through them one
+at a time; `GET /v1/admin/jobs` shows the queue. A repository whose default
+branch moved since it was indexed comes back at the new commit, so SCIP indexes
+and published graphs for the old commit stop applying, as after any push:
+upload them again.
+
+An administrator can queue a single repository with
+`POST /v1/admin/repositories/{github_id}/reindex`. An administrator API token
+reaches only the repositories it was issued for.
+
+### Restoring PostgreSQL
+
+1. Scale the server and the node to zero, so nothing writes while the database
+   is replaced.
+2. Restore the backup.
+3. Start the release that wrote the backup, or a newer one. An older release
+   must not run on a newer schema.
+4. Wait for the reconcile that runs every five minutes. It queues every
+   repository whose default branch moved after the backup; until such a
+   repository is indexed again its matches are suppressed, because the shard
+   and PostgreSQL disagree about the commit. If the index volume was lost as
+   well, queue every repository as above.
+5. Upload again the SCIP indexes and graph artifacts published after the
+   backup. Tokens, sessions, and grants created after it are gone, and
+   revocations made after it are undone, so review access before reopening
+   the service.
+
+### Upgrades
+
+Migrations only move forward. `helm upgrade` applies them in a pre-upgrade
+hook before it replaces any pod, so during a rolling upgrade the previous
+release serves on the new schema for a short time.
+
+- A release that the previous release cannot share a schema with says so in
+  its changelog entry; 0.10.0 was one. For such a release stop the writers
+  first, then run `helm upgrade`, which migrates and starts the new pods:
+
+  ```sh
+  kubectl -n graphnest scale deployment/graphnest-server statefulset/graphnest-node --replicas=0
+  kubectl -n graphnest wait --for=delete pod -l app.kubernetes.io/instance=graphnest --timeout=5m
+  ```
+
+- Rolling back across a migration is not supported. `helm rollback` brings
+  back the previous images, not the previous schema. Take a database backup
+  before every upgrade; to go back, restore it with the previous release as
+  described above.
+
 ## Graph operation and recovery
 
 PostgreSQL stores graph artifacts, upload metadata, job state, nodes, and
@@ -156,7 +226,9 @@ Recovery of lost graph state uses the normal durable pipeline:
 
 1. Restore PostgreSQL according to the database backup policy.
 2. Requeue indexing for repositories whose current indexed SHA has no completed
-   upload. For native enrichment, install `graphnest-scanner` in the indexer and
+   upload (`POST /v1/admin/repositories/{github_id}/reindex`;
+   [Lost or empty index volume](#lost-or-empty-index-volume) covers all of them).
+   For native enrichment, install `graphnest-scanner` in the indexer and
    set `GRAPHNEST_SCANNER_PATH` to that binary.
 3. Confirm the indexer's `graphnest-scanner enrich` invocation or an exact-SHA
    SCIP upload stores a completed artifact for that repository ID and commit.
