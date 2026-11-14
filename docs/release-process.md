@@ -5,7 +5,8 @@ and release notes describing compatibility and security impact. This is a
 pre-1.0 pilot compatible with Kubernetes 1.25 or newer.
 
 Before tagging, set both `version` and `appVersion` in
-`deploy/helm/graphnest/Chart.yaml` to the release version. The tag commit must
+`deploy/helm/graphnest/Chart.yaml`, and `info.version` in `docs/openapi.yaml`,
+to the release version. The tag commit must
 be reachable from `main`.
 
 ```sh

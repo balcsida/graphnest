@@ -63,6 +63,10 @@ end
 document_path = File.expand_path("../docs/openapi.yaml", __dir__)
 documents = {}
 document = load_document(document_path, documents)
+chart = YAML.safe_load(File.read(File.expand_path("../deploy/helm/graphnest/Chart.yaml", __dir__)))
+unless document.dig("info", "version") == chart["appVersion"]
+  raise OpenAPIError, "info.version=#{document.dig("info", "version").inspect} differs from Chart.yaml appVersion #{chart["appVersion"].inspect}"
+end
 resolve_local_references(document, document_path, documents)
 
 upload = document.dig("paths", "/v1/scip/uploads", "post", "requestBody", "content", "application/vnd.scip+protobuf", "schema")
