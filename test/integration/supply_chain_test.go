@@ -1252,7 +1252,7 @@ func TestSupplyChainMCPAgreesWithREST(t *testing.T) {
 		"acme":  {Subject: "acme", Method: "api_token", InstallationID: 10, RepositoryIDs: []int64{101}},
 		"other": {Subject: "other", Method: "api_token", InstallationID: 20, RepositoryIDs: []int64{201}},
 	})
-	httpServer := httptest.NewServer(httpapi.AuthenticateBearer(authenticator, mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)))
+	httpServer := httptest.NewServer(httpapi.AuthenticateBearer(authenticator, mcpserver.HTTPHandler(server)))
 	defer httpServer.Close()
 	connect := func(token string) *mcp.ClientSession {
 		httpClient := *httpServer.Client()

@@ -92,9 +92,7 @@ func TestPinnedFixtureSearch(t *testing.T) {
 	authenticator := authn.NewStatic(map[string]authn.Principal{token: {Subject: "fixture-user", RepositoryNames: []string{fixtureName}}})
 	mux := http.NewServeMux()
 	httpapi.RegisterSearch(mux, authn.RequestAuthenticator{Bearer: authenticator}, service, 64<<10, 256<<10)
-	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
-		return mcpserver.New(service)
-	}, nil)))
+	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, mcpserver.HTTPHandler(mcpserver.New(service))))
 	server := httptest.NewServer(mux)
 	defer server.Close()
 

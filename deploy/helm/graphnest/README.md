@@ -158,7 +158,10 @@ or shared secret is needed. With GitHub access sync the server keeps each
 grant's GitHub user token encrypted at rest so refreshes re-derive repository
 access; that requires an existing `secrets.mcpOAuth` Secret holding 32 random
 bytes (`head -c 32 /dev/urandom`), mounted read-only at
-`/var/run/secrets/graphnest/mcp-oauth/sealing-key`. Rotating the key
+`/var/run/secrets/graphnest/mcp-oauth/sealing-key`. One server process holds the
+GitHub token between sign-in and code exchange, so this combination also needs
+`server.replicas=1` and `server.pdb.enabled=false`; the chart refuses to render
+more replicas. Rotating the key
 invalidates stored GitHub tokens (grants keep their last-synced access until
 the user signs in again); it does not revoke grants.
 

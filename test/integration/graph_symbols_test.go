@@ -17,7 +17,6 @@ import (
 	"github.com/balcsida/graphnest/internal/httpapi"
 	"github.com/balcsida/graphnest/internal/mcpserver"
 	"github.com/balcsida/graphnest/internal/postgres"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // TestGraphSymbolToolsRESTAndMCP serves the real CodeGraph fixture from
@@ -47,9 +46,7 @@ func TestGraphSymbolToolsRESTAndMCP(t *testing.T) {
 	service := &graphservice.Service{Store: h.store, Backend: &graphquery.Service{Store: h.store}, Limits: graphservice.Limits{MaxResponseBytes: 256 << 10}}
 	mux := http.NewServeMux()
 	httpapi.RegisterGraphQueries(mux, authenticator, service, 64<<10, 256<<10)
-	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
-		return mcpserver.NewWithLimits(mcpserver.Services{Graph: service}, mcpserver.Limits{MaxOutputBytes: 256 << 10, GraphMaxOutputBytes: 256 << 10})
-	}, nil)))
+	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, mcpserver.HTTPHandler(mcpserver.NewWithLimits(mcpserver.Services{Graph: service}, mcpserver.Limits{MaxOutputBytes: 256 << 10, GraphMaxOutputBytes: 256 << 10}))))
 	server := httptest.NewServer(mux)
 	defer server.Close()
 

@@ -889,8 +889,10 @@ remembered consent, and client-ID metadata documents. The provider-token
 hand-off is process-local: the GitHub callback, consent POST, and the MCP client's
 code exchange must reach the same replica. Browser-cookie affinity alone does
 not cover the client's exchange. Use one server replica or route the entire
-flow consistently. A missing hand-off fails code exchange and requires fresh
-authorization; it never issues an access-synced grant without GitHub credentials.
+flow consistently; the Helm chart refuses more than one replica when MCP OAuth
+and GitHub access sync are both on. A missing hand-off fails code exchange and
+requires fresh authorization; it never issues an access-synced grant without
+GitHub credentials.
 
 ### GitHub.com smoke and negative procedure
 

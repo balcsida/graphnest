@@ -35,9 +35,14 @@ Sessions and API tokens resolve live directory state on every request, so SCIM
 deactivation or deletion takes effect immediately.
 
 REST and MCP call the same search service. `/mcp` is hosted Streamable HTTP
-MCP behind bearer authentication. `graphnest-mcp` is a stdio proxy: it connects
-to `<GRAPHNEST_SERVER_URL>/mcp` with `GRAPHNEST_TOKEN`, lists the hosted tools,
-and forwards calls. It does not call Zoekt.
+MCP behind bearer authentication. It keeps no session: every request is
+authenticated and authorized on its own, any server replica can answer it, and
+`GET` and `DELETE` return 405. Signing in through MCP OAuth with GitHub access
+sync is the exception that still needs a single replica; see
+[Operations](operations.md#mcp-oauth-authorization-server). `graphnest-mcp` is
+a stdio proxy: it connects to `<GRAPHNEST_SERVER_URL>/mcp` with
+`GRAPHNEST_TOKEN`, lists the hosted tools, and forwards calls. It does not call
+Zoekt.
 
 The embedded Web UI is a React single-page application
 ([ADR-0018](adr/0018-react-shadcn-web-console.md)) built from `web/` into

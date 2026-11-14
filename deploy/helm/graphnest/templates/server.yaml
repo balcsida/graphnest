@@ -1,3 +1,6 @@
+{{- if and .Values.server.sso.mcpOAuth.enabled .Values.server.sso.githubOAuth.accessSync (gt (int .Values.server.replicas) 1) }}
+{{- fail "server.replicas must be 1, with server.pdb.enabled=false, when server.sso.mcpOAuth.enabled and server.sso.githubOAuth.accessSync are both set: one replica holds the GitHub token between sign-in and code exchange" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

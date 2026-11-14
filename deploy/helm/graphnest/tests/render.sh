@@ -114,7 +114,9 @@ helm template mcp-oauth-sync "$chart" -n graphnest -f "$minimal" \
   --set-string=server.sso.githubOAuth.clientID=graphnest-github \
   --set-string=server.sso.publicURL=https://graphnest.example.invalid \
   --set-string=secrets.githubOAuth.name=graphnest-github-oauth \
-  --set-string=secrets.mcpOAuth.name=graphnest-mcp-oauth >"$tmp/mcp-oauth-sync.yaml"
+  --set-string=secrets.mcpOAuth.name=graphnest-mcp-oauth \
+  --set=server.replicas=1 \
+  --set=server.pdb.enabled=false >"$tmp/mcp-oauth-sync.yaml"
 helm template github-break-glass "$chart" -n graphnest -f "$minimal" \
   --set=breakGlass.enabled=true \
   --set=server.sso.githubOAuth.enabled=true \
@@ -439,6 +441,16 @@ expect_failure "$tmp/mcp-oauth-sync-without-key.err" helm template bad "$chart" 
   --set-string=server.sso.githubOAuth.clientID=graphnest-github \
   --set-string=server.sso.publicURL=https://graphnest.example.invalid \
   --set-string=secrets.githubOAuth.name=graphnest-github-oauth
+expect_failure "$tmp/mcp-oauth-sync-replicas.err" helm template bad "$chart" -f "$minimal" \
+  --set=server.sso.githubOAuth.enabled=true \
+  --set=server.sso.githubOAuth.accessSync=true \
+  --set=server.sso.mcpOAuth.enabled=true \
+  --set-string=server.sso.githubOAuth.clientID=graphnest-github \
+  --set-string=server.sso.publicURL=https://graphnest.example.invalid \
+  --set-string=secrets.githubOAuth.name=graphnest-github-oauth \
+  --set-string=secrets.mcpOAuth.name=graphnest-mcp-oauth \
+  --set=server.replicas=2
+require 'server.replicas must be 1' "$tmp/mcp-oauth-sync-replicas.err"
 
 expect_failure "$tmp/scim-secret.err" helm template bad "$chart" -f "$minimal" \
   --set=server.scim.enabled=true

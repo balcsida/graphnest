@@ -35,7 +35,6 @@ import (
 	"github.com/balcsida/graphnest/internal/repository"
 	"github.com/balcsida/graphnest/internal/scipgraph"
 	"github.com/balcsida/graphnest/pkg/api"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const (
@@ -144,9 +143,7 @@ func newCLIPublishFixture(t *testing.T, commit string) *cliPublishFixture {
 	httpapi.RegisterRepositories(mux, requestAuth, repositories, 64<<10, 100, 256<<10)
 	httpapi.RegisterSCIP(mux, requestAuth, scipService, 64<<10, 64<<20, 256<<10)
 	httpapi.RegisterGraphQueries(mux, authenticator, graphService, 64<<10, 256<<10)
-	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
-		return mcpserver.NewWithLimits(mcpserver.Services{Graph: graphService, SCIP: scipService}, mcpserver.Limits{MaxOutputBytes: 256 << 10, GraphMaxOutputBytes: 256 << 10})
-	}, nil)))
+	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, mcpserver.HTTPHandler(mcpserver.NewWithLimits(mcpserver.Services{Graph: graphService, SCIP: scipService}, mcpserver.Limits{MaxOutputBytes: 256 << 10, GraphMaxOutputBytes: 256 << 10}))))
 	front := &publishFront{next: mux}
 	server := httptest.NewServer(front)
 	t.Cleanup(server.Close)

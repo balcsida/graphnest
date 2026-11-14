@@ -144,9 +144,7 @@ func TestMilestone2Vertical(t *testing.T) {
 	httpapi.RegisterSearch(mux, requestAuth, searchService, 64<<10, 256<<10)
 	httpapi.RegisterRepositories(mux, requestAuth, repositoryService, 64<<10, 100, 256<<10)
 	httpapi.RegisterGitHubWebhook(mux, []byte(milestoneWebhookSecret), 1<<20, processor)
-	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
-		return mcpserver.New(searchService, repositoryService)
-	}, nil)))
+	mux.Handle("/mcp", httpapi.AuthenticateBearer(authenticator, mcpserver.HTTPHandler(mcpserver.New(searchService, repositoryService))))
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
