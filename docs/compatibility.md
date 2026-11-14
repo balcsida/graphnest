@@ -1,6 +1,7 @@
 # Compatibility
 
-Milestones 0-2 are pre-pilot and make no release compatibility promise.
+GraphNest is pre-1.0. [Stability](#stability) says which interfaces carry a
+compatibility promise and how they may change.
 Milestone 2 targets GitHub Enterprise Server 3.17 with REST API version
 `2022-11-28` by default and remains compatible with configurable HTTPS web,
 API, upload, and Git endpoints plus a custom CA bundle. GitHub Enterprise Cloud
@@ -53,3 +54,31 @@ best-effort partial results, and never claims an exact revision. GitHub text
 matches include bounded previews but no absolute source line, so those results
 omit line anchors. `github` is not available in static mode and neither backend
 automatically falls back to the other.
+
+# Stability
+
+Until 1.0, a minor release (0.x) may change a stable interface and a patch
+release may not. The [changelog](../CHANGELOG.md) entry of that release says
+what changed and what an operator or client has to do.
+
+Stable interfaces:
+
+- REST: every operation in [`openapi.yaml`](openapi.yaml) that has no
+  `x-graphnest-status` marker, when its feature is enabled.
+- MCP: the tool names and their documented inputs.
+- Configuration: the `GRAPHNEST_*` settings and the Helm chart values.
+- The commands and flags of the `graphnest` command-line tool.
+
+Only the REST list is checked mechanically today: a test fails when a
+documented operation is not served.
+
+A setting, value, route, or tool that is being replaced keeps working for at
+least one minor release. A replaced setting also logs a warning when it is
+used; `GRAPHNEST_ZOEKT_GIT_INDEX` is in that state today.
+
+`x-graphnest-status` on a path in `openapi.yaml` takes it out of that promise:
+
+| Value | Meaning |
+| --- | --- |
+| `planned` | Specified before it is implemented. The server answers 404. |
+| `preview` | Served, but it may change or disappear in any release. |

@@ -348,7 +348,7 @@ Review the [Helm chart documentation](deploy/helm/graphnest/README.md) for requi
 
 ## Current limits
 
-- GraphNest is pre-1.0 pilot software and makes no stable compatibility promise.
+- GraphNest is pre-1.0 pilot software. [Compatibility](docs/compatibility.md#stability) says which interfaces are stable and how they may change.
 - Only default branches are indexed.
 - The default GHES contract targets GitHub Enterprise Server 3.17 with REST API version `2022-11-28`; this has not been certified against a live GHES deployment.
 - CI installs the chart on a kind cluster and upgrades the latest release to the current tree. OpenShift, backup and restore, rollback, ingress, and production-scale capacity still require environment-specific validation.
