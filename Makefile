@@ -114,6 +114,19 @@ e2e-test:
 	GRAPHNEST_TEST_POSTGRES_DSN='$(GRAPHNEST_TEST_POSTGRES_DSN)' GRAPHNEST_REQUIRE_POSTGRES=1 ZOEKT_INDEX=$$(pwd)/.cache/bin/zoekt-index ZOEKT_GIT_INDEX=$$(pwd)/.cache/bin/zoekt-git-index ZOEKT_WEBSERVER=$$(pwd)/.cache/bin/zoekt-webserver go test -v -tags=e2e ./test/e2e
 	GRAPHNEST_TEST_POSTGRES_DSN='$(GRAPHNEST_TEST_POSTGRES_DSN)' GRAPHNEST_REQUIRE_POSTGRES=1 CGO_ENABLED=1 go -C scanner test -v -tags=e2e ./test/e2e
 
+.PHONY: scale-bench
+scale-bench: tools
+	@test -n '$(SCALE_REPOS)' || { echo 'set SCALE_REPOS to a directory of <owner>/<name>.git clones' >&2; exit 1; }
+	$(POSTGRES_COMPOSE) -f deploy/compose/compose.yml up -d --wait postgres
+	@address="$$($(POSTGRES_COMPOSE) -f deploy/compose/compose.yml port postgres 5432)"; \
+	case "$$address" in ""|"invalid IP:0") \
+		container="$$($(POSTGRES_COMPOSE) -f deploy/compose/compose.yml ps -q postgres)"; \
+		address="$$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$$container")"; \
+		test -n "$$address"; \
+		address="$$address:5432" ;; \
+	esac; \
+	GRAPHNEST_TEST_POSTGRES_DSN="postgres://graphnest:graphnest@$$address/graphnest?sslmode=disable" GRAPHNEST_REQUIRE_POSTGRES=1 GRAPHNEST_SCALE_REPOS='$(SCALE_REPOS)' GRAPHNEST_SCALE_REPORT='$(SCALE_REPORT)' ZOEKT_INDEX=$$(pwd)/.cache/bin/zoekt-index ZOEKT_GIT_INDEX=$$(pwd)/.cache/bin/zoekt-git-index ZOEKT_WEBSERVER=$$(pwd)/.cache/bin/zoekt-webserver go test -v -tags=e2e -run '^TestScaleBenchmark$$' -timeout 24h ./test/e2e
+
 web/node_modules/.package-lock.json: web/package-lock.json
 	npm --prefix web ci
 	touch $@
