@@ -12,7 +12,7 @@ web
 Engineers who search and navigate the code they are authorized to see, administrators who run the pilot (repositories, jobs, deliveries, GitHub, SCIP, users, groups, audit), and directors who review license usage and dependency sharing across onboarded repositories.
 
 ## Product Purpose
-GraphNest is an experimental, self-hosted code search and context layer for engineering teams and AI agents. The embedded browser console is one of its interfaces, next to the REST API and MCP. It searches authorized repositories, opens files at the exact indexed commit and navigates symbols; administrators operate the service; the optional Dependencies & Licenses module shows an observed dependency inventory.
+GraphNest is a self-hosted code search and context layer for engineering teams and AI agents. The embedded browser console is one of its interfaces, next to the REST API and MCP. It searches authorized repositories, opens files at the exact indexed commit and navigates symbols; administrators operate the service; the optional Dependencies & Licenses module shows an observed dependency inventory.
 
 ## Positioning
 Self-hosted and scoped: clients never receive direct access to the search index, files open at the indexed commit, and the dependency inventory preserves each producer document as reported.

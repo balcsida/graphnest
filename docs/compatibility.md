@@ -2,7 +2,8 @@
 
 GraphNest is pre-1.0. [Stability](#stability) says which interfaces carry a
 compatibility promise and how they may change.
-Milestone 2 targets GitHub Enterprise Server 3.17 with REST API version
+
+The GitHub client targets GitHub Enterprise Server 3.17 with REST API version
 `2022-11-28` by default and remains compatible with configurable HTTPS web,
 API, upload, and Git endpoints plus a custom CA bundle. GitHub Enterprise Cloud
 uses the same configurable contract. Only default branches are indexed.
