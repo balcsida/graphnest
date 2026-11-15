@@ -43,6 +43,8 @@ export interface RepositorySummary {
   error_code: string
   search_node: string
   last_indexed_at?: string
+  /** Size GitHub last reported, in bytes; absent while it has reported none. */
+  size_bytes?: number
   scip_status: ScipStatus
   scip_commit?: string
   graph_status: GraphStatus

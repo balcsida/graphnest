@@ -14,6 +14,9 @@ type RepositorySummary struct {
 	ErrorCode     string     `json:"error_code"`
 	SearchNode    string     `json:"search_node"`
 	LastIndexedAt *time.Time `json:"last_indexed_at,omitempty"`
+	// SizeBytes is the repository size GitHub last reported, for ordering work
+	// by size; omitted while it is unknown or zero.
+	SizeBytes int64 `json:"size_bytes,omitempty"`
 	// SCIPStatus reports whether code navigation is usable: "current", "stale",
 	// "absent", or "unknown". Search being healthy says nothing about SCIP, so
 	// callers need this to tell why navigation tools fail on an indexed repository.

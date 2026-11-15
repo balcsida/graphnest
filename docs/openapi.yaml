@@ -1965,6 +1965,13 @@ components:
         error_code: {type: string}
         search_node: {type: string}
         last_indexed_at: {type: string, format: date-time}
+        size_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: >-
+            Repository size as last reported by GitHub, in bytes, for ordering work by size.
+            Omitted while GitHub has reported none; it is not the size of the search index.
         scip_status:
           type: string
           enum: [current, stale, absent, unknown]
