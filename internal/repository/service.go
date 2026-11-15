@@ -210,9 +210,10 @@ func (service *Service) ReadFile(ctx context.Context, principal authn.Principal,
 // unrestricted reports whether the principal reads every active repository
 // instead of a ceiling: an administrator signed in interactively. inventory
 // extends that to an inventory-only token, and only List and Status ask for
-// it, so such a token cannot read content even if a route let it through.
+// it, so such a token cannot read content even if a route let it through. A
+// token that is also marked delegation-only is not an inventory token.
 func unrestricted(principal authn.Principal, inventory bool) bool {
-	return principal.Administrator && (principal.Method != "api_token" || inventory && principal.InventoryOnly)
+	return principal.Administrator && (principal.Method != "api_token" || inventory && principal.InventoryOnly && !principal.DelegationOnly)
 }
 
 func (service *Service) authorizedRepositories(ctx context.Context, principal authn.Principal) ([]Repository, error) {

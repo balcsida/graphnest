@@ -110,7 +110,7 @@ func TestServiceInventoryOnlyTokenReadsTheWholeInventoryButNoFiles(t *testing.T)
 	sha := strings.Repeat("a", 40)
 	repository := Repository{ID: 2, InstallationID: 20, GitHubID: 201, Name: "other/two", IndexedSHA: sha, SearchNode: "node-a", SizeBytes: 4096}
 	outside := errors.New("outside the ceiling")
-	store := &serviceStore{globalRepositories: []Repository{repository}, globalRepository: repository, errors: []error{outside, outside, outside, outside}}
+	store := &serviceStore{globalRepositories: []Repository{repository}, globalRepository: repository, errors: []error{outside, outside, outside, outside, outside}}
 	reader := &contentReader{content: githubapp.Content{Type: "file", Encoding: "base64", Content: base64.StdEncoding.EncodeToString([]byte("one")), SHA: "blob", Size: 3}}
 	service := &Service{Store: store, GitHub: reader}
 	worker := authn.Principal{Subject: "3", Method: "api_token", Administrator: true, InventoryOnly: true}
@@ -139,6 +139,7 @@ func TestServiceInventoryOnlyTokenReadsTheWholeInventoryButNoFiles(t *testing.T)
 		"marker without the role":       {Subject: "3", Method: "api_token", InventoryOnly: true},
 		"scoped administrator token":    {Subject: "3", Method: "api_token", Administrator: true, RepositoryIDs: []int64{101}},
 		"delegation-only administrator": {Subject: "3", Method: "api_token", Administrator: true, DelegationOnly: true},
+		"both markers":                  {Subject: "3", Method: "api_token", Administrator: true, DelegationOnly: true, InventoryOnly: true},
 	} {
 		if list, err := service.List(t.Context(), principal); err != nil || len(list) != 0 {
 			t.Errorf("%s: list=%#v err=%v, want the scoped path", name, list, err)
