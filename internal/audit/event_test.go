@@ -93,3 +93,40 @@ func TestNewEventSetsTimestampAfterValidation(t *testing.T) {
 		t.Fatal("invalid event accepted")
 	}
 }
+
+func TestEventTokenKind(t *testing.T) {
+	base := Event{ActorType: "user", TargetType: "api_token", Operation: OperationAPITokenCreated, Outcome: "success"}
+	for _, kind := range []string{"", TokenKindOrdinary, TokenKindDelegated, TokenKindDelegationOnly, TokenKindInventoryOnly} {
+		event := base
+		event.TokenKind = kind
+		if err := event.Validate(); err != nil {
+			t.Fatalf("kind %q: %v", kind, err)
+		}
+	}
+	unknown := base
+	unknown.TokenKind = "bogus"
+	if err := unknown.Validate(); !errors.Is(err, ErrInvalidEvent) {
+		t.Fatalf("unknown kind error=%v", err)
+	}
+	other := base
+	other.TargetType, other.TokenKind = "user", TokenKindOrdinary
+	if err := other.Validate(); !errors.Is(err, ErrInvalidEvent) {
+		t.Fatalf("non-token target error=%v", err)
+	}
+}
+
+func TestTokenKindFromMarkers(t *testing.T) {
+	for _, test := range []struct {
+		delegationOnly, inventoryOnly, delegated bool
+		want                                     string
+	}{
+		{true, true, true, TokenKindDelegationOnly},
+		{false, true, true, TokenKindInventoryOnly},
+		{false, false, true, TokenKindDelegated},
+		{false, false, false, TokenKindOrdinary},
+	} {
+		if got := TokenKind(test.delegationOnly, test.inventoryOnly, test.delegated); got != test.want {
+			t.Fatalf("%+v got %q", test, got)
+		}
+	}
+}

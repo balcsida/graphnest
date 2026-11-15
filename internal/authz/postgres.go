@@ -14,8 +14,9 @@ type Postgres struct{ store *postgres.Store }
 func NewPostgres(store *postgres.Store) *Postgres { return &Postgres{store: store} }
 
 func (authorizer *Postgres) AuthorizedRepositories(ctx context.Context, principal authn.Principal, selection RepositorySelection) ([]repository.Repository, error) {
-	if principal.DelegationOnly {
-		// A delegation-only token mints for repositories; it never reads them.
+	if principal.DelegationOnly || principal.InventoryOnly {
+		// A delegation-only token mints for repositories and an inventory-only
+		// token lists them through repository.Service; neither reads them.
 		return nil, nil
 	}
 	if principal.Administrator && principal.Method != "api_token" {
@@ -25,7 +26,7 @@ func (authorizer *Postgres) AuthorizedRepositories(ctx context.Context, principa
 }
 
 func (authorizer *Postgres) AuthorizedRepository(ctx context.Context, principal authn.Principal, repositoryID int64) (repository.Repository, error) {
-	if principal.DelegationOnly {
+	if principal.DelegationOnly || principal.InventoryOnly {
 		return repository.Repository{}, pgx.ErrNoRows
 	}
 	if principal.Administrator && principal.Method != "api_token" {

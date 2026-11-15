@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { createApiToken, createDelegationToken, getApiTokens, revokeApiToken } from '@/api/account'
+import { createApiToken, createDelegationToken, createInventoryToken, getApiTokens, revokeApiToken } from '@/api/account'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -23,20 +23,62 @@ function expiryMax(): string {
 
 const expiryBody = (value: string) => (value ? { expires_at: new Date(value).toISOString().replace('.000', '') } : {})
 
+type ServiceKind = 'delegation' | 'inventory'
+
+/** The single-purpose administrator token kinds: no repository ceiling, one permitted use each. */
+const serviceTokens: Record<ServiceKind, { create: (body: { expires_at?: string }) => Promise<{ id: number; token: string }>; description: string }> = {
+  delegation: {
+    create: createDelegationToken,
+    description:
+      'A delegation-only administrator token has no repository access of its own. Its only use is minting short-lived, single-repository tokens for CI jobs through POST /v1/admin/api-tokens.',
+  },
+  inventory: {
+    create: createInventoryToken,
+    description:
+      'An inventory-only administrator token lists every active repository and its index status through GET /v1/repositories. It cannot search, read files, upload or mint tokens.',
+  },
+}
+
+const capitalized = (kind: ServiceKind) => kind[0].toUpperCase() + kind.slice(1)
+
 interface Revealed {
   id: number
   token: string
-  form: 'api' | 'delegation'
+  form: 'api' | ServiceKind
 }
 
-/** `delegation` is offered to interactive administrators only. */
-export function TokensSection({ delegation }: { delegation: boolean }) {
+function ServiceTokenPanel({ kind, max, revealed, onCreate }: { kind: ServiceKind; max: string; revealed: string; onCreate: (body: { expires_at?: string }) => Promise<unknown> }) {
+  const [expires, setExpires] = useState('')
+  return (
+    <Panel title={`Create ${kind} token`}>
+      <p className="text-muted-foreground">{serviceTokens[kind].description}</p>
+      <form
+        className="grid gap-3"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void onCreate(expiryBody(expires))
+        }}
+      >
+        <div className="grid gap-1.5">
+          <Label htmlFor={`${kind}-expires`}>{`${capitalized(kind)} token expires (optional, maximum 90 days)`}</Label>
+          <Input id={`${kind}-expires`} type="datetime-local" max={max} value={expires} onChange={(event) => setExpires(event.target.value)} />
+        </div>
+        <Button type="submit" variant="outline">
+          {`Create ${kind} token`}
+        </Button>
+        <TokenReveal token={revealed} />
+      </form>
+    </Panel>
+  )
+}
+
+/** `administrator`: an interactive administrator, the only caller offered the single-purpose kinds. */
+export function TokensSection({ administrator }: { administrator: boolean }) {
   const query = useQuery({ queryKey: ['account', 'api-tokens'], queryFn: ({ signal }) => getApiTokens(signal), refetchInterval: 30_000, retry: false })
   const { confirmed, dialog } = useAdminActions()
   const [max] = useState(expiryMax)
   const [expires, setExpires] = useState('')
   const [repositories, setRepositories] = useState('')
-  const [delegationExpires, setDelegationExpires] = useState('')
   const [error, setError] = useState('')
   const [revealed, setRevealed] = useState<Revealed | null>(null)
 
@@ -61,16 +103,14 @@ export function TokensSection({ delegation }: { delegation: boolean }) {
     )
   }
 
-  async function createDelegation(event: FormEvent) {
-    event.preventDefault()
-    await confirmed(
-      'Create this delegation-only token?',
-      () => createDelegationToken(expiryBody(delegationExpires)),
-      'Delegation token created.',
+  const createService = (kind: ServiceKind) => (body: { expires_at?: string }) =>
+    confirmed(
+      `Create this ${kind}-only token?`,
+      () => serviceTokens[kind].create(body),
+      `${capitalized(kind)} token created.`,
       'account',
-      (created) => setRevealed({ id: created.id, token: created.token, form: 'delegation' }),
+      (created) => setRevealed({ id: created.id, token: created.token, form: kind }),
     )
-  }
 
   async function revoke(id: number, prefix: string) {
     if (await confirmed(`Revoke token ${prefix}?`, () => revokeApiToken(id), 'Token revoked.', 'account')) {
@@ -102,7 +142,11 @@ export function TokensSection({ delegation }: { delegation: boolean }) {
                 <TableRow key={token.id}>
                   <TableCell className={mono}>{token.prefix}</TableCell>
                   <TableCell className="whitespace-normal">
-                    {token.delegation_only ? 'Delegation only (any active repository)' : (token.repository_ids ?? []).join(', ')}
+                    {token.delegation_only
+                      ? 'Delegation only (any active repository)'
+                      : token.inventory_only
+                        ? 'Inventory only (lists every active repository)'
+                        : (token.repository_ids ?? []).join(', ')}
                   </TableCell>
                   <TableCell>{when(token.created_at)}</TableCell>
                   <TableCell>{when(token.last_used_at)}</TableCell>
@@ -142,23 +186,11 @@ export function TokensSection({ delegation }: { delegation: boolean }) {
             </form>
           </Panel>
         )}
-        {delegation && !unavailable && (
-          <Panel title="Create delegation token">
-            <p className="text-muted-foreground">
-              A delegation-only administrator token has no repository access of its own. Its only use is minting short-lived, single-repository tokens for CI jobs through POST /v1/admin/api-tokens.
-            </p>
-            <form className="grid gap-3" onSubmit={(event) => void createDelegation(event)}>
-              <div className="grid gap-1.5">
-                <Label htmlFor="delegation-expires">Delegation token expires (optional, maximum 90 days)</Label>
-                <Input id="delegation-expires" type="datetime-local" max={max} value={delegationExpires} onChange={(event) => setDelegationExpires(event.target.value)} />
-              </div>
-              <Button type="submit" variant="outline">
-                Create delegation token
-              </Button>
-              <TokenReveal token={revealed?.form === 'delegation' ? revealed.token : ''} />
-            </form>
-          </Panel>
-        )}
+        {administrator &&
+          !unavailable &&
+          (Object.keys(serviceTokens) as ServiceKind[]).map((kind) => (
+            <ServiceTokenPanel key={kind} kind={kind} max={max} revealed={revealed?.form === kind ? revealed.token : ''} onCreate={createService(kind)} />
+          ))}
       </div>
       {dialog}
     </div>

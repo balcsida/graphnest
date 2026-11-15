@@ -203,6 +203,122 @@ func TestRepositoryListPaginatesWithOpaqueCursor(t *testing.T) {
 	}
 }
 
+// An inventory-only token has no ceiling, yet GET /v1/repositories pages
+// through every repository a signed-in administrator sees, and one
+// repository's status is readable for what the listing leaves unresolved.
+// File content is not, although the route is served by the same service.
+func TestInventoryOnlyTokenPagesThroughEveryRepository(t *testing.T) {
+	items := make([]repository.Repository, 0, 7)
+	byID := map[int64]repository.Repository{}
+	for index := range 7 {
+		id := int64(101 + index)
+		item := repository.Repository{ID: id, InstallationID: int64(10 + index%2), GitHubID: id, Name: "acme/repo-" + strconv.Itoa(index), Branch: "main", DesiredSHA: strings.Repeat("a", 40), IndexedSHA: strings.Repeat("a", 40), Status: "ready", SearchNode: "node-a", SizeBytes: int64(index) << 20}
+		items = append(items, item)
+		byID[id] = item
+	}
+	service := repositoryHTTPService()
+	service.Store = &repositoryHTTPStore{globalRepositories: items, globalRepositoriesByID: byID}
+	mux := http.NewServeMux()
+	RegisterRepositories(mux, requestAuthenticator(authn.NewStatic(map[string]authn.Principal{
+		"worker":      {Subject: "3", Method: "api_token", Administrator: true, InventoryOnly: true},
+		"admin":       {Subject: "1", Method: "oidc", Administrator: true},
+		"admin-token": {Subject: "1", Method: "api_token", Administrator: true},
+	})), service, 128, 3, 256<<10)
+
+	type page struct {
+		Repositories []api.RepositorySummary `json:"repositories"`
+		Truncated    bool                    `json:"truncated"`
+		NextCursor   string                  `json:"next_cursor"`
+	}
+	listAll := func(token string) ([]api.RepositorySummary, int) {
+		var all []api.RepositorySummary
+		for pages, cursor := 1, ""; ; pages++ {
+			path := "/v1/repositories"
+			if cursor != "" {
+				path += "?cursor=" + cursor
+			}
+			response := repositoryRequest(t, mux, http.MethodGet, path, "", token, "")
+			if response.Code != http.StatusOK {
+				t.Fatalf("%s page %d status=%d body=%s", token, pages, response.Code, response.Body.String())
+			}
+			var output page
+			decodeRepositoryResponse(t, response, &output)
+			all = append(all, output.Repositories...)
+			if !output.Truncated {
+				return all, pages
+			}
+			cursor = output.NextCursor
+		}
+	}
+	seen, pages := listAll("worker")
+	if len(seen) != 7 || pages != 3 {
+		t.Fatalf("inventory-only token saw %d repositories over %d pages, want 7 over 3", len(seen), pages)
+	}
+	if administrator, _ := listAll("admin"); !slices.Equal(seen, administrator) {
+		t.Fatalf("inventory-only token saw %#v, a signed-in administrator %#v", seen, administrator)
+	}
+	// size_bytes orders work by size; it is omitted while unknown.
+	if seen[0].SizeBytes != 0 || seen[6].SizeBytes != 6<<20 {
+		t.Fatalf("sizes = %d, %d", seen[0].SizeBytes, seen[6].SizeBytes)
+	}
+	first := repositoryRequest(t, mux, http.MethodGet, "/v1/repositories", "", "worker", "")
+	if strings.Count(first.Body.String(), "size_bytes") != 2 || !strings.Contains(first.Body.String(), `"size_bytes":1048576`) {
+		t.Fatalf("first page = %s, want size_bytes on the two repositories with a known size", first.Body.String())
+	}
+	// An ordinary administrator token without a ceiling still sees nothing.
+	if ceilingless, _ := listAll("admin-token"); len(ceilingless) != 0 {
+		t.Fatalf("administrator token without a ceiling saw %#v", ceilingless)
+	}
+
+	for _, path := range []string{"/v1/repositories/107", "/v1/repositories/107/status"} {
+		response := repositoryRequest(t, mux, http.MethodGet, path, "", "worker", "")
+		var summary api.RepositorySummary
+		decodeRepositoryResponse(t, response, &summary)
+		if response.Code != http.StatusOK || summary.GitHubID != 107 || summary.SizeBytes != 6<<20 {
+			t.Fatalf("%s = %d %#v", path, response.Code, summary)
+		}
+	}
+	if response := repositoryRequest(t, mux, http.MethodGet, "/v1/repositories/999/status", "", "worker", ""); response.Code != http.StatusNotFound {
+		t.Fatalf("unknown repository status=%d body=%s", response.Code, response.Body.String())
+	}
+	response := repositoryRequest(t, mux, http.MethodPost, "/v1/files/read", `{"repository_id":107,"path":"main.go"}`, "worker", "application/json")
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("file read status=%d body=%s", response.Code, response.Body.String())
+	}
+	assertRepositoryError(t, response.Body.String(), "forbidden")
+
+	// Spellings of a path that a client controls, through the real mux and
+	// its redirects: each one reads the inventory or is refused, and none
+	// reaches file content.
+	for spelling, want := range map[string]int{
+		"GET /v1/repositories/107%2Fstatus":                  http.StatusOK, // one path segment; the handler reads the decoded path
+		"GET /v1/repositories/%31%30%37":                     http.StatusOK,
+		"GET /v1/repositories//107":                          http.StatusOK, // redirected to the clean path
+		"GET /v1/repositories/107/":                          http.StatusForbidden,
+		"GET /v1/repositories/107%2F..%2F..%2Ffiles%2Fread":  http.StatusForbidden,
+		"GET /v1/repositories/../files/read":                 http.StatusMethodNotAllowed, // redirected to /v1/files/read, which takes POST
+		"HEAD /v1/repositories":                              http.StatusMethodNotAllowed,
+		"POST /v1/repositories/../files/read":                http.StatusForbidden, // redirected to /v1/files/read
+		"POST /v1/repositories/107%2F..%2F..%2Ffiles%2Fread": http.StatusMethodNotAllowed,
+		"POST /v1/repositories/107/status":                   http.StatusMethodNotAllowed,
+	} {
+		method, target, _ := strings.Cut(spelling, " ")
+		for hops := 0; ; hops++ {
+			response = repositoryRequest(t, mux, method, target, `{"repository_id":107,"path":"main.go"}`, "worker", "application/json")
+			if response.Code/100 != 3 || hops == 3 {
+				break
+			}
+			target = response.Header().Get("Location")
+		}
+		if response.Code != want {
+			t.Errorf("%s: status=%d want=%d body=%s", spelling, response.Code, want, response.Body.String())
+		}
+		if body := response.Body.String(); response.Code == http.StatusOK && (!strings.Contains(body, `"github_id":107`) || strings.Contains(body, `"content"`)) {
+			t.Errorf("%s: 200 with something other than a repository summary: %s", spelling, body)
+		}
+	}
+}
+
 func TestRepositoryListRejectsBudgetSmallerThanEmptyEnvelope(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterRepositories(mux, repositoryAuthenticator(), repositoryHTTPService(), 128, 100, 1)

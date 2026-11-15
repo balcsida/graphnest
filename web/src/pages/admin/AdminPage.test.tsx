@@ -421,11 +421,14 @@ describe('sections', () => {
         body: {
           events: [
             { actor_type: 'user', actor_id: '7', target_type: 'api_token', target_id: '3', authentication_method: '', operation: 'api_token_created', outcome: 'success', request_id: '', created_at: '2026-01-01T00:00:00Z' },
+            { actor_type: 'user', actor_id: '7', target_type: 'api_token', target_id: '4', token_kind: 'inventory_only', authentication_method: '', operation: 'api_token_revoked', outcome: 'success', request_id: '', created_at: '2026-01-01T00:00:00Z' },
           ],
           truncated: false,
         },
       },
     })
+    const revoked = await screen.findByRole('row', { name: /api_token_revoked/ })
+    expect(within(revoked).getByText('api_token:4 (inventory_only)')).toBeInTheDocument()
     const row = await screen.findByRole('row', { name: /api_token_created/ })
     expect(within(row).getByText('user:7')).toBeInTheDocument()
     expect(within(row).getByText('api_token:3')).toBeInTheDocument()

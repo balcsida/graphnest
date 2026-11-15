@@ -338,6 +338,136 @@ func TestDelegationOnlyTokenCannotManageCredentials(t *testing.T) {
 	}
 }
 
+// An inventory-only token is the credential a worker holds to see which
+// repositories exist. Any interactive administrator sign-in may mint one, and
+// it is stored with the marker instead of a ceiling.
+func TestCreateInventoryOnlyTokenForInteractiveAdministrator(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	for _, method := range []string{authn.ProviderOIDC, authn.ProviderOAuth, authn.ProviderLocal} {
+		t.Run(method, func(t *testing.T) {
+			store := &storeStub{}
+			s := &Service{Manager: authn.TokenManager{Store: store, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+			token, plaintext, err := s.CreateInventoryOnlyToken(t.Context(), authn.Principal{Subject: "1", Method: method, Administrator: true}, nil)
+			if err != nil || !strings.HasPrefix(plaintext, "gnp_") || token.ID != 7 || token.Prefix != plaintext[:12] ||
+				!token.InventoryOnly || token.DelegationOnly || len(token.RepositoryIDs) != 0 || token.ExpiresAt != nil || !token.CreatedAt.Equal(now) {
+				t.Fatalf("token=%#v plaintext=%q err=%v", token, plaintext, err)
+			}
+			// Stored with an empty ceiling, not an absent one: see TokenManager.
+			if !store.created.InventoryOnly || store.created.DelegationOnly || store.created.Delegated ||
+				store.created.RepositoryIDs == nil || len(store.created.RepositoryIDs) != 0 || store.created.UserID != 1 || store.created.ExpiresAt != nil {
+				t.Fatalf("stored=%#v", store.created)
+			}
+		})
+	}
+}
+
+func TestCreateInventoryOnlyTokenRequiresInteractiveAdministrator(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	store := &storeStub{}
+	s := &Service{Manager: authn.TokenManager{Store: store, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+	for name, principal := range map[string]authn.Principal{
+		"ordinary interactive user":  {Subject: "11", Method: "oidc", RepositoryIDs: []int64{101}},
+		"administrator api token":    {Subject: "11", Method: "api_token", Administrator: true, RepositoryIDs: []int64{101}},
+		"delegated api token":        {Subject: "11", Method: "api_token", Administrator: true, Delegated: true, RepositoryIDs: []int64{101}},
+		"delegation-only token":      {Subject: "3", Method: "api_token", Administrator: true, DelegationOnly: true},
+		"inventory-only token":       {Subject: "3", Method: "api_token", Administrator: true, InventoryOnly: true},
+		"oauth access token":         {Subject: "11", Method: authn.ProviderOAuthToken, Administrator: true},
+		"static administrator token": {Subject: "admin", Administrator: true},
+		// Not shapes a store produces, but a marker must never mint.
+		"interactive principal marked delegation-only": {Subject: "1", Method: "oidc", Administrator: true, DelegationOnly: true},
+		"interactive principal marked inventory-only":  {Subject: "1", Method: "oidc", Administrator: true, InventoryOnly: true},
+	} {
+		if _, _, err := s.CreateInventoryOnlyToken(t.Context(), principal, nil); !errors.Is(err, ErrForbidden) {
+			t.Errorf("%s: err=%v, want ErrForbidden", name, err)
+		}
+	}
+	if store.created.UserID != 0 {
+		t.Fatalf("a refused request stored a token: %#v", store.created)
+	}
+}
+
+func TestCreateInventoryOnlyTokenBoundsExpiry(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	admin := authn.Principal{Subject: "1", Method: "oidc", Administrator: true}
+	for name, tc := range map[string]struct {
+		expires time.Time
+		want    error
+	}{
+		"in the past":            {now.Add(-time.Second), ErrInvalid},
+		"now":                    {now, ErrInvalid},
+		"past the maximum":       {now.Add(MaxTokenLifetime + time.Second), ErrInvalid},
+		"at the maximum":         {now.Add(MaxTokenLifetime), nil},
+		"shortly after creation": {now.Add(time.Minute), nil},
+	} {
+		store := &storeStub{}
+		s := &Service{Manager: authn.TokenManager{Store: store, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))}}
+		token, _, err := s.CreateInventoryOnlyToken(t.Context(), admin, &tc.expires)
+		if !errors.Is(err, tc.want) {
+			t.Errorf("%s: err=%v, want %v", name, err, tc.want)
+			continue
+		}
+		if tc.want == nil && (token.ExpiresAt == nil || !token.ExpiresAt.Equal(tc.expires) || store.created.ExpiresAt == nil || !store.created.ExpiresAt.Equal(tc.expires)) {
+			t.Errorf("%s: token expiry=%v stored expiry=%v", name, token.ExpiresAt, store.created.ExpiresAt)
+		}
+		if tc.want != nil && store.created.UserID != 0 {
+			t.Errorf("%s: a refused request stored a token: %#v", name, store.created)
+		}
+	}
+}
+
+// An inventory-only token exists to list. It must not delegate, even for a
+// repository that is active, nor mint or manage the owning account's
+// credentials, or a leak becomes far more than a list of repository names.
+func TestInventoryOnlyTokenCannotDelegateOrManageCredentials(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	store := &storeStub{}
+	s := &Service{
+		Manager:      authn.TokenManager{Store: store, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 32))},
+		Repositories: activeRepositoryStub{active: map[int64]bool{101: true}},
+	}
+	expires := now.Add(15 * time.Minute)
+	for name, worker := range map[string]authn.Principal{
+		"as stored":            {Subject: "3", Method: "api_token", Administrator: true, InventoryOnly: true},
+		"with a stray ceiling": {Subject: "3", Method: "api_token", Administrator: true, InventoryOnly: true, RepositoryIDs: []int64{101}},
+	} {
+		if _, _, err := s.Delegate(t.Context(), worker, &expires, []int64{101}); !errors.Is(err, ErrForbidden) {
+			t.Errorf("%s: Delegate err=%v", name, err)
+		}
+		if _, _, err := s.CreateToken(t.Context(), worker, &expires, []int64{101}); !errors.Is(err, ErrForbidden) {
+			t.Errorf("%s: CreateToken err=%v", name, err)
+		}
+		if _, _, err := s.CreateDelegationOnlyToken(t.Context(), worker, nil); !errors.Is(err, ErrForbidden) {
+			t.Errorf("%s: CreateDelegationOnlyToken err=%v", name, err)
+		}
+		if _, err := s.Tokens(t.Context(), worker); !errors.Is(err, ErrForbidden) {
+			t.Errorf("%s: Tokens err=%v", name, err)
+		}
+		if err := s.RevokeToken(t.Context(), worker, 1); !errors.Is(err, ErrForbidden) {
+			t.Errorf("%s: RevokeToken err=%v", name, err)
+		}
+	}
+	if store.created.UserID != 0 || store.revokedID != 0 {
+		t.Fatalf("an inventory-only token changed credentials: created=%#v revoked=%d", store.created, store.revokedID)
+	}
+}
+
+// The owner tells the kinds apart in their token list.
+func TestTokensReportSinglePurposeKinds(t *testing.T) {
+	store := &storeStub{tokens: []authn.APITokenMetadata{
+		{ID: 7, Prefix: "gnp_scoped__", RepositoryIDs: []int64{101}},
+		{ID: 8, Prefix: "gnp_broker__", DelegationOnly: true},
+		{ID: 9, Prefix: "gnp_worker__", InventoryOnly: true},
+	}}
+	s := &Service{Manager: authn.TokenManager{Store: store}}
+	tokens, err := s.Tokens(t.Context(), authn.Principal{Subject: "1", Method: "oidc", Administrator: true})
+	if err != nil || len(tokens) != 3 {
+		t.Fatalf("tokens=%#v err=%v", tokens, err)
+	}
+	if tokens[0].DelegationOnly || tokens[0].InventoryOnly || !tokens[1].DelegationOnly || tokens[1].InventoryOnly || tokens[2].DelegationOnly || !tokens[2].InventoryOnly {
+		t.Fatalf("tokens=%#v", tokens)
+	}
+}
+
 // MCP OAuth access tokens act as the user but must never mint or manage
 // long-lived credentials: a leaked hour-long token stays an hour-long token.
 func TestOAuthAccessTokensCannotManageCredentials(t *testing.T) {

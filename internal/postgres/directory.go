@@ -53,13 +53,13 @@ func (s *Store) APIPrincipal(ctx context.Context, tokenHash [32]byte, now time.T
 	defer tx.Rollback(ctx)
 	var userID int64
 	var ceiling []int64
-	var delegationOnly, delegated bool
+	var delegationOnly, inventoryOnly, delegated bool
 	if err := tx.QueryRow(ctx, `update api_tokens token set last_used_at=$2
         from users user_record
         where token.token_hash=$1 and token.user_id=user_record.id
           and token.revoked_at is null and (token.expires_at is null or token.expires_at>$2)
           and user_record.scim_active and user_record.suspended_at is null and user_record.deleted_at is null
-        returning token.user_id, token.repository_ids, token.delegation_only, token.delegated`, tokenHash[:], now).Scan(&userID, &ceiling, &delegationOnly, &delegated); err != nil {
+        returning token.user_id, token.repository_ids, token.delegation_only, token.inventory_only, token.delegated`, tokenHash[:], now).Scan(&userID, &ceiling, &delegationOnly, &inventoryOnly, &delegated); err != nil {
 		return authn.Principal{}, err
 	}
 	principal, err := userPrincipal(ctx, tx, userID, ceiling)
@@ -67,20 +67,24 @@ func (s *Store) APIPrincipal(ctx context.Context, tokenHash [32]byte, now time.T
 		return authn.Principal{}, err
 	}
 	principal.Delegated = delegated
-	if delegationOnly && !principal.Administrator {
+	singlePurpose := delegationOnly || inventoryOnly
+	if singlePurpose && !principal.Administrator {
 		// A delegation-only token is stored with a NULL ceiling, which the
 		// ordinary path below reads as "every grant the owner holds". If the
 		// owner has been demoted (or never was an administrator), falling
 		// through would turn the broker credential into a full-access token,
 		// so it is rejected outright, exactly like an administrator token
-		// with an empty ceiling.
+		// with an empty ceiling. An inventory-only token is stored with an
+		// empty ceiling and would read nothing, but it ends the same way: a
+		// single-purpose token never becomes an ordinary one.
 		return authn.Principal{}, pgx.ErrNoRows
 	}
-	if delegationOnly {
+	if singlePurpose {
 		// The flag replaces the ceiling: the principal authenticates with no
-		// repository access and only the delegation endpoint consults
-		// DelegationOnly.
-		principal.DelegationOnly = true
+		// repository access, and only the delegation endpoint consults
+		// DelegationOnly and only the repository inventory InventoryOnly.
+		principal.DelegationOnly = delegationOnly
+		principal.InventoryOnly = inventoryOnly
 		principal.RepositoryIDs = nil
 		principal.Method = "api_token"
 		if err := tx.Commit(ctx); err != nil {
@@ -120,7 +124,7 @@ func (s *Store) APIPrincipal(ctx context.Context, tokenHash [32]byte, now time.T
 
 func (s *Store) CreateAPIToken(ctx context.Context, token authn.APITokenRecord) (int64, error) {
 	var id int64
-	err := s.pool.QueryRow(ctx, `insert into api_tokens (token_hash, prefix, user_id, repository_ids, delegation_only, delegated, created_at, expires_at) values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`, token.TokenHash[:], token.Prefix, token.UserID, token.RepositoryIDs, token.DelegationOnly, token.Delegated, token.CreatedAt, token.ExpiresAt).Scan(&id)
+	err := s.pool.QueryRow(ctx, `insert into api_tokens (token_hash, prefix, user_id, repository_ids, delegation_only, inventory_only, delegated, created_at, expires_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id`, token.TokenHash[:], token.Prefix, token.UserID, token.RepositoryIDs, token.DelegationOnly, token.InventoryOnly, token.Delegated, token.CreatedAt, token.ExpiresAt).Scan(&id)
 	return id, err
 }
 
@@ -148,13 +152,14 @@ func (s *Store) CreateAPITokenAudited(ctx context.Context, token authn.APITokenR
 	defer tx.Rollback(ctx)
 	var id int64
 	if err := tx.QueryRow(ctx, `insert into api_tokens
-		(token_hash, prefix, user_id, repository_ids, delegation_only, delegated, created_at, expires_at)
-		values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
-		token.TokenHash[:], token.Prefix, token.UserID, token.RepositoryIDs, token.DelegationOnly, token.Delegated,
+		(token_hash, prefix, user_id, repository_ids, delegation_only, inventory_only, delegated, created_at, expires_at)
+		values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id`,
+		token.TokenHash[:], token.Prefix, token.UserID, token.RepositoryIDs, token.DelegationOnly, token.InventoryOnly, token.Delegated,
 		token.CreatedAt, token.ExpiresAt).Scan(&id); err != nil {
 		return 0, err
 	}
 	event.TargetID = strconv.FormatInt(id, 10)
+	event.TokenKind = audit.TokenKind(token.DelegationOnly, token.InventoryOnly, token.Delegated)
 	if err := appendAudit(ctx, tx, event); err != nil {
 		return 0, err
 	}
@@ -175,14 +180,13 @@ func (s *Store) RevokeAPITokenAudited(ctx context.Context, userID, tokenID int64
 		return err
 	}
 	defer tx.Rollback(ctx)
-	tag, err := tx.Exec(ctx, `update api_tokens set revoked_at=now()
-		where id=$1 and user_id=$2 and revoked_at is null`, tokenID, userID)
-	if err != nil {
+	var delegationOnly, inventoryOnly, delegated bool
+	if err := tx.QueryRow(ctx, `update api_tokens set revoked_at=now()
+		where id=$1 and user_id=$2 and revoked_at is null
+		returning delegation_only, inventory_only, delegated`, tokenID, userID).Scan(&delegationOnly, &inventoryOnly, &delegated); err != nil {
 		return err
 	}
-	if tag.RowsAffected() != 1 {
-		return pgx.ErrNoRows
-	}
+	event.TokenKind = audit.TokenKind(delegationOnly, inventoryOnly, delegated)
 	if err := appendAudit(ctx, tx, event); err != nil {
 		return err
 	}
@@ -190,7 +194,7 @@ func (s *Store) RevokeAPITokenAudited(ctx context.Context, userID, tokenID int64
 }
 
 func (s *Store) ListAPITokens(ctx context.Context, userID int64) ([]authn.APITokenMetadata, error) {
-	rows, err := s.pool.Query(ctx, `select id, prefix, repository_ids, delegation_only, delegated, created_at, last_used_at, expires_at from api_tokens where user_id=$1 and revoked_at is null order by id`, userID)
+	rows, err := s.pool.Query(ctx, `select id, prefix, repository_ids, delegation_only, inventory_only, delegated, created_at, last_used_at, expires_at from api_tokens where user_id=$1 and revoked_at is null order by id`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +202,7 @@ func (s *Store) ListAPITokens(ctx context.Context, userID int64) ([]authn.APITok
 	var result []authn.APITokenMetadata
 	for rows.Next() {
 		var item authn.APITokenMetadata
-		if err := rows.Scan(&item.ID, &item.Prefix, &item.RepositoryIDs, &item.DelegationOnly, &item.Delegated, &item.CreatedAt, &item.LastUsedAt, &item.ExpiresAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Prefix, &item.RepositoryIDs, &item.DelegationOnly, &item.InventoryOnly, &item.Delegated, &item.CreatedAt, &item.LastUsedAt, &item.ExpiresAt); err != nil {
 			return nil, err
 		}
 		item.RepositoryIDs = append([]int64(nil), item.RepositoryIDs...)

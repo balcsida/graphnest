@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -326,6 +327,51 @@ func migrateThrough(ctx context.Context, pool *pgxpool.Pool, maximum int64) erro
 	return nil
 }
 
+// Migration 040 runs on a database that already holds tokens. An ordinary
+// scoped token and a delegation-only token must come out of it unmarked and
+// authenticate exactly as they did before.
+func TestMigrateInventoryOnlyTokensLeavesExistingTokensUnchanged(t *testing.T) {
+	pool := testPool(t)
+	if err := migrateThrough(t.Context(), pool, 39); err != nil {
+		t.Fatal(err)
+	}
+	store := New(pool)
+	seedReadyRepository(t, store, 101, testSHA('a'))
+	userID := insertIdentityUser(t, store, "migration-040", "admin")
+	if _, err := pool.Exec(t.Context(), `insert into user_roles (user_id, administrator) values ($1, true)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	scoped, broker := [32]byte{40}, [32]byte{41}
+	if _, err := pool.Exec(t.Context(), `insert into api_tokens (token_hash, prefix, user_id, repository_ids, delegation_only, created_at)
+		values ($1, 'gn_scoped', $3, '{101}', false, $4), ($2, 'gn_broker', $3, null, true, $4)`, scoped[:], broker[:], userID, now); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Migrate(t.Context(), pool); err != nil {
+		t.Fatal(err)
+	}
+	var tokens, marked int
+	if err := pool.QueryRow(t.Context(), `select count(*), count(*) filter (where inventory_only) from api_tokens`).Scan(&tokens, &marked); err != nil || tokens != 2 || marked != 0 {
+		t.Fatalf("tokens=%d inventory-only=%d err=%v", tokens, marked, err)
+	}
+	principal, err := store.APIPrincipal(t.Context(), scoped, now)
+	if err != nil || !principal.Administrator || principal.InventoryOnly || principal.DelegationOnly || len(principal.RepositoryIDs) != 1 || principal.RepositoryIDs[0] != 101 {
+		t.Fatalf("scoped principal=%#v err=%v", principal, err)
+	}
+	principal, err = store.APIPrincipal(t.Context(), broker, now)
+	if err != nil || !principal.Administrator || principal.InventoryOnly || !principal.DelegationOnly || len(principal.RepositoryIDs) != 0 {
+		t.Fatalf("delegation-only principal=%#v err=%v", principal, err)
+	}
+	// Existing rows satisfy the new constraints, which now hold for them too.
+	if _, err := pool.Exec(t.Context(), `update api_tokens set inventory_only=true, repository_ids='{}' where token_hash=$1`, broker[:]); err == nil || !strings.Contains(err.Error(), "api_tokens_single_purpose") {
+		t.Fatalf("marking a delegation-only token inventory-only: err=%v", err)
+	}
+	if _, err := pool.Exec(t.Context(), `update api_tokens set inventory_only=true where token_hash=$1`, scoped[:]); err == nil || !strings.Contains(err.Error(), "api_tokens_inventory_only_empty_ceiling") {
+		t.Fatalf("marking a scoped token inventory-only: err=%v", err)
+	}
+}
+
 func TestMigrateUpgradesAppliedV1(t *testing.T) {
 	pool := testPool(t)
 	legacy, err := migrationFiles.ReadFile("migrations/001_milestone_2.sql")
@@ -485,5 +531,29 @@ func seedLegacySCIP(t *testing.T, store *Store, repositoryID int64, upload scipg
 		if _, err := store.pool.Exec(t.Context(), `insert into scip_occurrences(upload_id,path,symbol,start_line,start_character,end_line,end_character,position_encoding,roles,local,global_symbol_key) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, id, o.Path, o.Symbol, o.StartLine, o.StartCharacter, o.EndLine, o.EndCharacter, o.PositionEncoding, o.Roles, o.Local, key); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// Migration 041 runs on an audit trail that already has events. They keep an
+// empty kind, which the API leaves out.
+func TestMigrateAuditTokenKindKeepsExistingEvents(t *testing.T) {
+	pool := testPool(t)
+	if err := migrateThrough(t.Context(), pool, 40); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), `insert into audit_events (actor_type, target_type, operation, outcome)
+		values ('user', 'api_token', 'api_token_created', 'success')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(t.Context(), pool); err != nil {
+		t.Fatal(err)
+	}
+	events, _, err := New(pool).AuditEvents(t.Context(), 10)
+	if err != nil || len(events) != 1 || events[0].TokenKind != "" {
+		t.Fatalf("events=%#v err=%v", events, err)
+	}
+	encoded, err := json.Marshal(events[0])
+	if err != nil || strings.Contains(string(encoded), "token_kind") {
+		t.Fatalf("json=%s err=%v", encoded, err)
 	}
 }

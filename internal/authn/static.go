@@ -21,6 +21,13 @@ type Principal struct {
 	// by every other endpoint, so a leaked broker credential cannot read,
 	// search, or upload anything directly.
 	DelegationOnly bool
+	// InventoryOnly marks an administrator API token that may only read the
+	// repository inventory (GET /v1/repositories and one repository's status),
+	// where it sees every active repository. It has no ceiling, cannot
+	// delegate, and is refused by every other endpoint, so a leaked worker
+	// credential shows which repositories exist and how far they are indexed,
+	// never their content.
+	InventoryOnly bool
 	// Delegated marks an API token minted by the delegation endpoint. It is
 	// an ordinary scoped token in every other respect, but it may not
 	// delegate again: otherwise each generation could choose a fresh expiry

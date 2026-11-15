@@ -2,8 +2,10 @@ import type {
   APITokenList,
   CreateAPITokenRequest,
   CreateDelegationOnlyTokenRequest,
+  CreateInventoryOnlyTokenRequest,
   CreatedAPIToken,
   CreatedDelegationOnlyToken,
+  CreatedInventoryOnlyToken,
   OAuthGrantList,
 } from './types'
 import { request } from '@/lib/api'
@@ -16,6 +18,8 @@ export const revokeApiToken = (id: number) =>
 
 export const createDelegationToken = (body: CreateDelegationOnlyTokenRequest) =>
   request<CreatedDelegationOnlyToken>('/v1/account/delegation-tokens', { method: 'POST', body })
+export const createInventoryToken = (body: CreateInventoryOnlyTokenRequest) =>
+  request<CreatedInventoryOnlyToken>('/v1/account/inventory-tokens', { method: 'POST', body })
 
 export const getOAuthGrants = (cursor?: string, signal?: AbortSignal) =>
   request<OAuthGrantList>(cursor ? `/v1/account/oauth-grants?cursor=${encodeURIComponent(cursor)}` : '/v1/account/oauth-grants', { signal })

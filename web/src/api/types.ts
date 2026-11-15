@@ -43,6 +43,8 @@ export interface RepositorySummary {
   error_code: string
   search_node: string
   last_indexed_at?: string
+  /** Size GitHub last reported, in bytes; absent while it has reported none. */
+  size_bytes?: number
   scip_status: ScipStatus
   scip_commit?: string
   graph_status: GraphStatus
@@ -614,6 +616,8 @@ export interface AuditEvent {
   actor_id: string
   target_type: 'api_token' | 'authentication' | 'group' | 'oauth_client' | 'oauth_grant' | 'session' | 'user'
   target_id: string
+  /** Kind of API token an api_token event is about; absent on older events. */
+  token_kind?: 'ordinary' | 'delegated' | 'delegation_only' | 'inventory_only'
   authentication_method: '' | 'api_token' | 'local' | 'oauth' | 'oauth_token' | 'oidc' | 'operator' | 'scim_token'
   /** One of the audit operation names in docs/openapi.yaml; shown verbatim. */
   operation: string
@@ -708,6 +712,8 @@ export interface APIToken {
   repository_ids?: number[]
   /** Present and true for delegation-only administrator tokens, which carry no repository ceiling. */
   delegation_only?: boolean
+  /** Present and true for inventory-only administrator tokens, which carry no repository ceiling. */
+  inventory_only?: boolean
   created_at: string
   last_used_at?: string
   expires_at?: string
@@ -739,6 +745,19 @@ export interface CreatedDelegationOnlyToken {
   id: number
   prefix: string
   delegation_only: true
+  created_at: string
+  expires_at?: string
+  token: string
+}
+
+export interface CreateInventoryOnlyTokenRequest {
+  expires_at?: string
+}
+
+export interface CreatedInventoryOnlyToken {
+  id: number
+  prefix: string
+  inventory_only: true
   created_at: string
   expires_at?: string
   token: string

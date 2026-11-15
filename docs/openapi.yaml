@@ -52,6 +52,21 @@ paths:
         '415': {$ref: '#/components/responses/InvalidRequest'}
         '500': {description: Response exceeded the configured byte limit}
         '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/account/inventory-tokens:
+    post:
+      description: Mint an inventory-only administrator API token. The caller must be an interactive administrator (session or OIDC; never an API token of any kind). The new token has no repository ceiling and cannot delegate. Its only permitted operations are GET /v1/repositories, with its cursor pagination, and GET /v1/repositories/{id} and GET /v1/repositories/{id}/status; there it sees every repository an administrator session sees, including repositories onboarded after it was minted. Every other operation answers 403. Intended for workers that need to know which repositories exist and how far each is indexed, so a leak exposes that inventory and no repository content. The token stops authenticating (401) when its owner loses the administrator role, is suspended, or is deleted.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CreateInventoryOnlyTokenRequest'}}}}
+      responses:
+        '201': {description: Token created; retain token now, it is never returned again, content: {application/json: {schema: {$ref: '#/components/schemas/CreatedInventoryOnlyToken'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccountForbidden'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '413': {$ref: '#/components/responses/InvalidRequest'}
+        '415': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
   /v1/admin/api-tokens:
     post:
       description: Administrator API-token delegation. The caller must authenticate with an administrator API token; the new token belongs to the same user and must expire within one hour. An ordinary administrator token may delegate a non-empty subset of its own repository ceiling; a delegation-only token (see /v1/account/delegation-tokens) may delegate for any active repository, and any unknown or inactive repository refuses the whole request. A delegated token cannot delegate again (403), so delegation is one generation deep. Interactive sessions use /v1/account/api-tokens instead.
@@ -295,6 +310,11 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/repositories:
     get:
+      description: >-
+        Repositories the caller is authorized for. An administrator session and an inventory-only token (see /v1/account/inventory-tokens)
+        see every repository; other callers see their grants or token ceiling. Only active repositories are listed: one that is disabled,
+        archived, or on an installation that is not active is omitted for every caller, not marked. Entries report scip_status and
+        graph_status as "unknown"; GET /v1/repositories/{id} resolves them for one repository.
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - name: cursor
@@ -1503,7 +1523,7 @@ paths:
         '200': {description: Prometheus metrics, content: {text/plain: {schema: {type: string}}}}
 components:
   securitySchemes:
-    bearerAuth: {type: http, scheme: bearer, description: 'API token. OAuth access tokens (gno_...) are also accepted on GET /v1/repositories, GET /v1/repositories/{id}, POST /v1/graph/uploads and GET /v1/graph/repositories/{id}/status; publishing with one needs the graph:write scope and the repository publication grant. Other routes mounted beside graph ingestion (v1 uploads, PUT /v1/graph/publication-grants) also see OAuth tokens but stay administrator-only, and OAuth principals are never administrators; all remaining routes accept only API tokens and sessions.'}
+    bearerAuth: {type: http, scheme: bearer, description: 'API token. OAuth access tokens (gno_...) are also accepted on GET /v1/repositories, GET /v1/repositories/{id}, POST /v1/graph/uploads and GET /v1/graph/repositories/{id}/status; publishing with one needs the graph:write scope and the repository publication grant. Other routes mounted beside graph ingestion (v1 uploads, PUT /v1/graph/publication-grants) also see OAuth tokens but stay administrator-only, and OAuth principals are never administrators; all remaining routes accept only API tokens and sessions. Two administrator API token kinds are confined to one purpose and answered 403 everywhere else: a delegation-only token may only call POST /v1/admin/api-tokens, and an inventory-only token only GET /v1/repositories, GET /v1/repositories/{id} and GET /v1/repositories/{id}/status.'}
     sessionCookie: {type: apiKey, in: cookie, name: __Host-graphnest_session, description: Browser session; unsafe methods require the exact configured public Origin.}
   responses:
     InvalidRequest: {description: Invalid request, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
@@ -1530,6 +1550,7 @@ components:
         prefix: {type: string}
         repository_ids: {type: array, maxItems: 100, items: {type: integer, format: int64, minimum: 1}}
         delegation_only: {type: boolean, description: Present and true for delegation-only administrator tokens, which carry no repository ceiling.}
+        inventory_only: {type: boolean, description: Present and true for inventory-only administrator tokens, which carry no repository ceiling. Never true together with delegation_only.}
         created_at: {type: string, format: date-time}
         last_used_at: {type: string, format: date-time}
         expires_at: {type: string, format: date-time}
@@ -1566,6 +1587,23 @@ components:
         id: {type: integer, format: int64, minimum: 1}
         prefix: {type: string}
         delegation_only: {type: boolean, enum: [true]}
+        created_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        token: {type: string}
+    CreateInventoryOnlyTokenRequest:
+      type: object
+      additionalProperties: false
+      description: No repository ceiling is accepted; the token lists every active repository.
+      properties:
+        expires_at: {type: string, format: date-time, description: Optional UTC expiry no more than 90 days after creation.}
+    CreatedInventoryOnlyToken:
+      type: object
+      additionalProperties: false
+      required: [id, prefix, inventory_only, created_at, token]
+      properties:
+        id: {type: integer, format: int64, minimum: 1}
+        prefix: {type: string}
+        inventory_only: {type: boolean, enum: [true]}
         created_at: {type: string, format: date-time}
         expires_at: {type: string, format: date-time}
         token: {type: string}
@@ -1748,6 +1786,7 @@ components:
         actor_id: {type: string, maxLength: 128}
         target_type: {type: string, enum: [api_token, authentication, group, oauth_client, oauth_grant, session, user]}
         target_id: {type: string, maxLength: 128}
+        token_kind: {type: string, enum: [ordinary, delegated, delegation_only, inventory_only], description: Present on api_token_created and api_token_revoked events recorded since the field exists; says which kind of API token the event is about.}
         authentication_method: {type: string, enum: ['', api_token, local, oauth, oauth_token, oidc, operator, scim_token]}
         operation:
           type: string
@@ -1965,6 +2004,13 @@ components:
         error_code: {type: string}
         search_node: {type: string}
         last_indexed_at: {type: string, format: date-time}
+        size_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: >-
+            Repository size as last reported by GitHub, in bytes, for ordering work by size.
+            Omitted while GitHub has reported none; it is not the size of the search index.
         scip_status:
           type: string
           enum: [current, stale, absent, unknown]

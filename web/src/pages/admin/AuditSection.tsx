@@ -38,7 +38,7 @@ export function AuditSection() {
                       {event.actor_type}:{event.actor_id}
                     </TableCell>
                     <TableCell className="break-all whitespace-normal">
-                      {event.target_type}:{event.target_id}
+                      {event.target_type}:{event.target_id}{event.token_kind && ` (${event.token_kind})`}
                     </TableCell>
                     <TableCell>{event.authentication_method || DASH}</TableCell>
                     <TableCell className="break-all whitespace-normal">{event.request_id || DASH}</TableCell>

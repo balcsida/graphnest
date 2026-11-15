@@ -110,6 +110,124 @@ func TestAuthenticateBearerConfinesDelegationOnlyToken(t *testing.T) {
 	}
 }
 
+// An inventory-only token is, like a delegation-only one, an administrator
+// with an empty ceiling. The same gate confines it to reading the repository
+// inventory: one route family, GET only, and nothing that merely looks like it.
+func TestAuthenticateRequestConfinesInventoryOnlyTokenToRepositoryInventory(t *testing.T) {
+	worker := authn.Principal{Subject: "3", Method: "api_token", Administrator: true, InventoryOnly: true}
+	reached := 0
+	handler := AuthenticateRequest(requestAuthenticator(httpSession{principal: worker}), http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		reached++
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	call := func(method, path string) int {
+		request := httptest.NewRequest(method, path, nil)
+		request.Header.Set("Authorization", "Bearer worker")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response.Code
+	}
+	allowed := []string{"/v1/repositories", "/v1/repositories?cursor=eyJ2IjoxLCJuYW1lIjoiYWNtZS9vbmUifQ", "/v1/repositories/101", "/v1/repositories/101/status"}
+	for _, path := range allowed {
+		if code := call(http.MethodGet, path); code != http.StatusNoContent {
+			t.Errorf("GET %s: status=%d, want the inventory to be readable", path, code)
+		}
+	}
+	for _, route := range []struct{ method, path string }{
+		// One or more routes from every family the token must not reach.
+		{http.MethodPost, "/v1/search"},
+		{http.MethodPost, "/v1/files/read"},
+		{http.MethodPost, "/v1/scip/navigation"},
+		{http.MethodPost, "/v1/scip/uploads"},
+		{http.MethodGet, "/v1/scip/dependencies"},
+		{http.MethodPost, "/v1/graph/context"},
+		{http.MethodGet, "/v1/graph/repositories/101/status"},
+		{http.MethodPut, "/v1/graph/publication-grants"},
+		{http.MethodGet, "/v1/supply-chain/overview"},
+		{http.MethodGet, "/v1/supply-chain/repositories/101"},
+		{http.MethodGet, "/v1/admin/overview"},
+		{http.MethodGet, "/v1/admin/repositories"},
+		{http.MethodGet, "/v1/admin/jobs"},
+		{http.MethodPost, "/v1/admin/reconcile"},
+		{http.MethodPost, "/v1/admin/api-tokens"},
+		{http.MethodGet, "/v1/account/api-tokens"},
+		{http.MethodPost, "/v1/account/api-tokens"},
+		{http.MethodDelete, "/v1/account/api-tokens/7"},
+		{http.MethodPost, "/v1/account/inventory-tokens"},
+		{http.MethodPost, "/v1/account/delegation-tokens"},
+		{http.MethodGet, "/v1/account/oauth-grants"},
+		{http.MethodGet, "/v1/auth/session"},
+		{http.MethodPost, "/mcp"},
+		// The inventory itself is read-only.
+		{http.MethodPost, "/v1/repositories"},
+		{http.MethodPut, "/v1/repositories/101"},
+		{http.MethodDelete, "/v1/repositories/101"},
+		{http.MethodPost, "/v1/repositories/101/status"},
+		// Nothing else under the prefix is the inventory.
+		{http.MethodGet, "/v1/repositories/"},
+		{http.MethodGet, "/v1/repositories/0"},
+		{http.MethodGet, "/v1/repositories/abc"},
+		{http.MethodGet, "/v1/repositories/101/files"},
+		{http.MethodGet, "/v1/repositories/101/status/status"},
+		{http.MethodGet, "/v1/repositories/101/status/"},
+		{http.MethodGet, "/v1/repositoriesx"},
+	} {
+		if code := call(route.method, route.path); code != http.StatusForbidden {
+			t.Errorf("%s %s: status=%d want=403", route.method, route.path, code)
+		}
+	}
+	if reached != len(allowed) {
+		t.Fatalf("handler reached %d times, want %d; inventory-only principal leaked past the gate", reached, len(allowed))
+	}
+}
+
+// Graph queries, graph ingestion and /mcp authenticate bearer tokens through
+// AuthenticateBearer rather than AuthenticateRequest; the gate is the same.
+func TestAuthenticateBearerConfinesInventoryOnlyToken(t *testing.T) {
+	worker := authn.Principal{Subject: "3", Method: "api_token", Administrator: true, InventoryOnly: true}
+	handler := AuthenticateBearer(httpSession{principal: worker}, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		t.Fatalf("inventory-only principal reached bearer-only route %s %s", request.Method, request.URL.Path)
+	}))
+	for _, route := range []struct{ method, path string }{
+		{http.MethodPost, "/mcp"},
+		{http.MethodPost, "/v1/graph/uploads"},
+		{http.MethodPost, "/v1/graph/discover"},
+		{http.MethodPost, "/v1/graph/explore"},
+		{http.MethodGet, "/v1/graph/repositories/101/status"},
+	} {
+		request := httptest.NewRequest(route.method, route.path, nil)
+		request.Header.Set("Authorization", "Bearer worker")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusForbidden {
+			t.Errorf("%s %s: status=%d want=403", route.method, route.path, response.Code)
+		}
+	}
+}
+
+// The database forbids a token that is both kinds. Should such a principal
+// ever be built anyway, it must not get the union of the two allowances.
+func TestSinglePurposeMarkersNeverCombineIntoWiderAccess(t *testing.T) {
+	both := authn.Principal{Subject: "3", Method: "api_token", Administrator: true, DelegationOnly: true, InventoryOnly: true}
+	handler := AuthenticateRequest(requestAuthenticator(httpSession{principal: both}), http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		t.Fatalf("principal with both markers reached %s %s", request.Method, request.URL.Path)
+	}))
+	for _, route := range []struct{ method, path string }{
+		{http.MethodPost, "/v1/admin/api-tokens"},
+		{http.MethodGet, "/v1/repositories"},
+		{http.MethodGet, "/v1/repositories/101/status"},
+		{http.MethodGet, "/v1/admin/overview"},
+	} {
+		request := httptest.NewRequest(route.method, route.path, nil)
+		request.Header.Set("Authorization", "Bearer both")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusForbidden {
+			t.Errorf("%s %s: status=%d want=403", route.method, route.path, response.Code)
+		}
+	}
+}
+
 func TestAuthenticateRequestRejectsForcedRotationSession(t *testing.T) {
 	handler := AuthenticateRequest(authn.RequestAuthenticator{Session: httpSession{principal: authn.Principal{
 		Subject: "recovery-admin", Method: "local", Administrator: true, ForceRotation: true,

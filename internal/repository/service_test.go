@@ -27,7 +27,7 @@ func TestServiceList(t *testing.T) {
 	indexedAt := time.Date(2026, time.July, 20, 12, 0, 0, 0, time.UTC)
 	store := &serviceStore{repositories: []Repository{{
 		ID: 1, GitHubID: 101, Name: "acme/one", Branch: "main", DesiredSHA: strings.Repeat("b", 40),
-		IndexedSHA: strings.Repeat("a", 40), WebURL: "https://github.com/acme/one", Status: "ready", SearchNode: "node-a", LastIndexedAt: &indexedAt,
+		IndexedSHA: strings.Repeat("a", 40), WebURL: "https://github.com/acme/one", Status: "ready", SearchNode: "node-a", LastIndexedAt: &indexedAt, SizeBytes: 4096,
 	}}}
 	principal := authn.Principal{InstallationID: 10, RepositoryIDs: []int64{101}, RepositoryNames: []string{"acme/one"}}
 
@@ -37,7 +37,7 @@ func TestServiceList(t *testing.T) {
 	}
 	want := []api.RepositorySummary{{
 		ID: 101, GitHubID: 101, Name: "acme/one", Branch: "main", DesiredSHA: strings.Repeat("b", 40),
-		IndexedSHA: strings.Repeat("a", 40), WebURL: "https://github.com/acme/one", Status: "ready", SearchNode: "node-a", LastIndexedAt: &indexedAt, SCIPStatus: api.SCIPStatusUnknown, GraphStatus: api.GraphStatusUnknown,
+		IndexedSHA: strings.Repeat("a", 40), WebURL: "https://github.com/acme/one", Status: "ready", SearchNode: "node-a", LastIndexedAt: &indexedAt, SizeBytes: 4096, SCIPStatus: api.SCIPStatusUnknown, GraphStatus: api.GraphStatusUnknown,
 	}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %#v, want %#v", got, want)
@@ -100,6 +100,56 @@ func TestServiceAdministratorUsesGlobalAuthorization(t *testing.T) {
 	}
 	if store.globalLists != 1 || store.globalLookups != 3 || store.authorizedCalls != 0 {
 		t.Fatalf("global lists=%d lookups=%d scoped lookups=%d", store.globalLists, store.globalLookups, store.authorizedCalls)
+	}
+}
+
+// An inventory-only token reads the inventory exactly as its owner would in a
+// session: every active repository, through the same store path. It gets no
+// content: ReadFile keeps to the token's ceiling, which is empty.
+func TestServiceInventoryOnlyTokenReadsTheWholeInventoryButNoFiles(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	repository := Repository{ID: 2, InstallationID: 20, GitHubID: 201, Name: "other/two", IndexedSHA: sha, SearchNode: "node-a", SizeBytes: 4096}
+	outside := errors.New("outside the ceiling")
+	store := &serviceStore{globalRepositories: []Repository{repository}, globalRepository: repository, errors: []error{outside, outside, outside, outside, outside}}
+	reader := &contentReader{content: githubapp.Content{Type: "file", Encoding: "base64", Content: base64.StdEncoding.EncodeToString([]byte("one")), SHA: "blob", Size: 3}}
+	service := &Service{Store: store, GitHub: reader}
+	worker := authn.Principal{Subject: "3", Method: "api_token", Administrator: true, InventoryOnly: true}
+
+	list, err := service.List(t.Context(), worker)
+	if err != nil || len(list) != 1 || list[0].GitHubID != 201 || list[0].SizeBytes != 4096 {
+		t.Fatalf("list = %#v, err = %v", list, err)
+	}
+	status, err := service.Status(t.Context(), worker, 201)
+	if err != nil || status.GitHubID != 201 || status.SizeBytes != 4096 {
+		t.Fatalf("status = %#v, err = %v", status, err)
+	}
+	if store.globalLists != 1 || store.globalLookups != 1 || store.authorizedCalls != 0 {
+		t.Fatalf("global lists=%d lookups=%d scoped lookups=%d", store.globalLists, store.globalLookups, store.authorizedCalls)
+	}
+	if _, err := service.ReadFile(t.Context(), worker, api.ReadFileRequest{RepositoryID: 201, Path: "file"}); !errors.Is(err, outside) {
+		t.Fatalf("inventory-only token read a file: err=%v", err)
+	}
+	if store.globalLookups != 1 || store.authorizedCalls != 1 || len(store.repositoryIDs) != 0 || reader.calls != 0 {
+		t.Fatalf("file read: global lookups=%d scoped lookups=%d ceiling=%v GitHub reads=%d", store.globalLookups, store.authorizedCalls, store.repositoryIDs, reader.calls)
+	}
+
+	// The marker widens nothing for a principal that is not an administrator,
+	// and an ordinary administrator token keeps its ceiling.
+	for name, principal := range map[string]authn.Principal{
+		"marker without the role":       {Subject: "3", Method: "api_token", InventoryOnly: true},
+		"scoped administrator token":    {Subject: "3", Method: "api_token", Administrator: true, RepositoryIDs: []int64{101}},
+		"delegation-only administrator": {Subject: "3", Method: "api_token", Administrator: true, DelegationOnly: true},
+		"both markers":                  {Subject: "3", Method: "api_token", Administrator: true, DelegationOnly: true, InventoryOnly: true},
+	} {
+		if list, err := service.List(t.Context(), principal); err != nil || len(list) != 0 {
+			t.Errorf("%s: list=%#v err=%v, want the scoped path", name, list, err)
+		}
+		if _, err := service.Status(t.Context(), principal, 201); !errors.Is(err, outside) {
+			t.Errorf("%s: status err=%v, want the scoped path", name, err)
+		}
+	}
+	if store.globalLists != 1 || store.globalLookups != 1 {
+		t.Fatalf("global lists=%d lookups=%d, want only the inventory-only token's", store.globalLists, store.globalLookups)
 	}
 }
 

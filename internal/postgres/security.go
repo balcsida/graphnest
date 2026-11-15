@@ -315,10 +315,10 @@ func appendAudit(ctx context.Context, executor auditExecutor, event audit.Event)
 		return err
 	}
 	_, err = executor.Exec(ctx, `insert into audit_events
-		(actor_type,actor_id,target_type,target_id,authentication_method,operation,outcome,request_id,created_at)
-		values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		(actor_type,actor_id,target_type,target_id,authentication_method,operation,outcome,request_id,created_at,token_kind)
+		values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
 		event.ActorType, event.ActorID, event.TargetType, event.TargetID,
-		event.AuthenticationMethod, event.Operation, event.Outcome, event.RequestID, event.CreatedAt)
+		event.AuthenticationMethod, event.Operation, event.Outcome, event.RequestID, event.CreatedAt, event.TokenKind)
 	return err
 }
 
@@ -327,7 +327,7 @@ func (s *Store) AuditEvents(ctx context.Context, limit int) ([]audit.Event, bool
 		return nil, false, ErrInvalidAuditLimit
 	}
 	rows, err := s.pool.Query(ctx, `select actor_type,actor_id,target_type,target_id,
-		authentication_method,operation,outcome,request_id,created_at
+		authentication_method,operation,outcome,request_id,created_at,token_kind
 		from audit_events order by created_at desc,id desc limit $1`, limit+1)
 	if err != nil {
 		return nil, false, err
@@ -337,7 +337,7 @@ func (s *Store) AuditEvents(ctx context.Context, limit int) ([]audit.Event, bool
 	for rows.Next() {
 		var event audit.Event
 		if err := rows.Scan(&event.ActorType, &event.ActorID, &event.TargetType, &event.TargetID,
-			&event.AuthenticationMethod, &event.Operation, &event.Outcome, &event.RequestID, &event.CreatedAt); err != nil {
+			&event.AuthenticationMethod, &event.Operation, &event.Outcome, &event.RequestID, &event.CreatedAt, &event.TokenKind); err != nil {
 			return nil, false, err
 		}
 		events = append(events, event)
