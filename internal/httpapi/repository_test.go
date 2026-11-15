@@ -286,6 +286,37 @@ func TestInventoryOnlyTokenPagesThroughEveryRepository(t *testing.T) {
 		t.Fatalf("file read status=%d body=%s", response.Code, response.Body.String())
 	}
 	assertRepositoryError(t, response.Body.String(), "forbidden")
+
+	// Spellings of a path that a client controls, through the real mux and
+	// its redirects: each one reads the inventory or is refused, and none
+	// reaches file content.
+	for spelling, want := range map[string]int{
+		"GET /v1/repositories/107%2Fstatus":                  http.StatusOK, // one path segment; the handler reads the decoded path
+		"GET /v1/repositories/%31%30%37":                     http.StatusOK,
+		"GET /v1/repositories//107":                          http.StatusOK, // redirected to the clean path
+		"GET /v1/repositories/107/":                          http.StatusForbidden,
+		"GET /v1/repositories/107%2F..%2F..%2Ffiles%2Fread":  http.StatusForbidden,
+		"GET /v1/repositories/../files/read":                 http.StatusMethodNotAllowed, // redirected to /v1/files/read, which takes POST
+		"HEAD /v1/repositories":                              http.StatusMethodNotAllowed,
+		"POST /v1/repositories/../files/read":                http.StatusForbidden, // redirected to /v1/files/read
+		"POST /v1/repositories/107%2F..%2F..%2Ffiles%2Fread": http.StatusMethodNotAllowed,
+		"POST /v1/repositories/107/status":                   http.StatusMethodNotAllowed,
+	} {
+		method, target, _ := strings.Cut(spelling, " ")
+		for hops := 0; ; hops++ {
+			response = repositoryRequest(t, mux, method, target, `{"repository_id":107,"path":"main.go"}`, "worker", "application/json")
+			if response.Code/100 != 3 || hops == 3 {
+				break
+			}
+			target = response.Header().Get("Location")
+		}
+		if response.Code != want {
+			t.Errorf("%s: status=%d want=%d body=%s", spelling, response.Code, want, response.Body.String())
+		}
+		if body := response.Body.String(); response.Code == http.StatusOK && (!strings.Contains(body, `"github_id":107`) || strings.Contains(body, `"content"`)) {
+			t.Errorf("%s: 200 with something other than a repository summary: %s", spelling, body)
+		}
+	}
 }
 
 func TestRepositoryListRejectsBudgetSmallerThanEmptyEnvelope(t *testing.T) {
