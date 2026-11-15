@@ -5,6 +5,15 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-15
+
+This release adds inventory-only administrator tokens: a credential for a
+worker that has to see every onboarded repository, including the ones
+onboarded after the token was minted, and that can do nothing else.
+Repository summaries report `size_bytes`, and API token audit events record
+the token kind. Migrations 040 and 041 run at startup, and a rolling upgrade
+is fine (see Upgrade guidance). No configuration has to change.
+
 ### Added
 
 - Inventory-only administrator API tokens, minted by an interactive
@@ -51,7 +60,8 @@ the compatibility and migration notes before upgrading.
   `401` while its owner is an administrator and gives it no repository
   otherwise. No configuration changes are required.
 - Migration 041 adds `audit_events.token_kind`, default empty. It does not
-  rewrite or scan the table.
+  rewrite or scan the table, and a replica still on the previous version keeps
+  writing audit events, without a kind.
 
 ## [0.12.0] - 2026-11-14
 
@@ -751,7 +761,8 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
-[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/balcsida/graphnest/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/balcsida/graphnest/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/balcsida/graphnest/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/balcsida/graphnest/compare/v0.9.2...v0.10.0
