@@ -5,6 +5,7 @@ package postgres
 import (
 	"errors"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 
@@ -576,5 +577,80 @@ func TestAPIPrincipalDistinguishesEmptyTokenCeiling(t *testing.T) {
 	empty, err := store.APIPrincipal(t.Context(), [32]byte{5}, now)
 	if err != nil || len(empty.RepositoryIDs) != 0 {
 		t.Fatalf("empty=%#v err=%v", empty, err)
+	}
+}
+
+// Minting and revoking look the same in the audit trail for every token kind
+// unless the event says which kind it was. The store fills that in from the
+// row it writes, so the trail cannot disagree with the token.
+func TestAPITokenAuditEventsRecordTokenKind(t *testing.T) {
+	store := migratedStore(t)
+	userID, _, _ := inventoryWorker(t, store, "token-kind-1", time.Now().UTC().Truncate(time.Microsecond))
+	manager := authn.TokenManager{Store: store}
+	ceiling := []int64{101}
+	mints := []struct {
+		kind string
+		mint func() (int64, string, error)
+	}{
+		{audit.TokenKindOrdinary, func() (int64, string, error) {
+			return manager.CreateWithMethod(t.Context(), userID, authn.ProviderOIDC, ceiling, nil)
+		}},
+		{audit.TokenKindDelegated, func() (int64, string, error) {
+			return manager.CreateDelegated(t.Context(), userID, authn.ProviderOIDC, ceiling, nil)
+		}},
+		{audit.TokenKindDelegationOnly, func() (int64, string, error) {
+			return manager.CreateDelegationOnly(t.Context(), userID, authn.ProviderOIDC, nil)
+		}},
+		{audit.TokenKindInventoryOnly, func() (int64, string, error) {
+			return manager.CreateInventoryOnly(t.Context(), userID, authn.ProviderOIDC, nil)
+		}},
+	}
+	revoke := func(owner, id int64) error {
+		return store.RevokeAPITokenAudited(t.Context(), owner, id, audit.Event{
+			ActorType: "user", ActorID: strconv.FormatInt(userID, 10), TargetType: "api_token",
+			TargetID: strconv.FormatInt(id, 10), AuthenticationMethod: "oidc",
+			Operation: audit.OperationAPITokenRevoked, Outcome: "success",
+		})
+	}
+	want := map[string]string{}
+	for _, mint := range mints {
+		id, _, err := mint.mint()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want[strconv.FormatInt(id, 10)] = mint.kind
+		if err := revoke(userID, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, _, err := store.AuditEvents(t.Context(), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]int{}
+	for _, event := range events {
+		// inventoryWorker's own token is not one of the tokens minted here.
+		if _, ok := want[event.TargetID]; !ok || event.TargetType != "api_token" {
+			continue
+		}
+		if event.TokenKind != want[event.TargetID] {
+			t.Fatalf("%s of token %s recorded kind %q, want %q", event.Operation, event.TargetID, event.TokenKind, want[event.TargetID])
+		}
+		seen[event.TargetID]++
+	}
+	for id := range want {
+		if seen[id] != 2 {
+			t.Fatalf("token %s has %d token events, want 2", id, seen[id])
+		}
+	}
+	before := len(events)
+	for _, test := range []struct{ owner, id int64 }{{userID, 999999}, {userID + 1000, 1}} {
+		if err := revoke(test.owner, test.id); !errors.Is(err, pgx.ErrNoRows) {
+			t.Fatalf("revoke %+v err=%v, want ErrNoRows", test, err)
+		}
+	}
+	events, _, err = store.AuditEvents(t.Context(), 100)
+	if err != nil || len(events) != before {
+		t.Fatalf("events=%d before=%d err=%v", len(events), before, err)
 	}
 }

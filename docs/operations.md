@@ -729,8 +729,10 @@ the incident. Configuration is read only at process startup, so a partial
 rollout can temporarily leave different route availability across replicas.
 
 Security audit events record bounded actor, target, authentication method,
-operation, outcome, request ID, and creation time fields. They never store
-passwords, session tokens, request bodies, or OIDC claims. The API returns a
+operation, outcome, request ID, and creation time fields. API token events
+also record the token kind (`ordinary`, `delegated`, `delegation_only` or
+`inventory_only`). They never store passwords, session tokens, request
+bodies, or OIDC claims. The API returns a
 bounded newest-first page and reports truncation; this release has no automatic
 audit-retention or deletion mechanism, and the database trigger rejects updates
 deletes, and truncation. Operators must account for that growth in PostgreSQL

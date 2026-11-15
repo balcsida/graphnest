@@ -159,6 +159,7 @@ func (s *Store) CreateAPITokenAudited(ctx context.Context, token authn.APITokenR
 		return 0, err
 	}
 	event.TargetID = strconv.FormatInt(id, 10)
+	event.TokenKind = audit.TokenKind(token.DelegationOnly, token.InventoryOnly, token.Delegated)
 	if err := appendAudit(ctx, tx, event); err != nil {
 		return 0, err
 	}
@@ -179,14 +180,13 @@ func (s *Store) RevokeAPITokenAudited(ctx context.Context, userID, tokenID int64
 		return err
 	}
 	defer tx.Rollback(ctx)
-	tag, err := tx.Exec(ctx, `update api_tokens set revoked_at=now()
-		where id=$1 and user_id=$2 and revoked_at is null`, tokenID, userID)
-	if err != nil {
+	var delegationOnly, inventoryOnly, delegated bool
+	if err := tx.QueryRow(ctx, `update api_tokens set revoked_at=now()
+		where id=$1 and user_id=$2 and revoked_at is null
+		returning delegation_only, inventory_only, delegated`, tokenID, userID).Scan(&delegationOnly, &inventoryOnly, &delegated); err != nil {
 		return err
 	}
-	if tag.RowsAffected() != 1 {
-		return pgx.ErrNoRows
-	}
+	event.TokenKind = audit.TokenKind(delegationOnly, inventoryOnly, delegated)
 	if err := appendAudit(ctx, tx, event); err != nil {
 		return err
 	}

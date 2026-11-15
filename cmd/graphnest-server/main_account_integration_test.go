@@ -311,17 +311,25 @@ func TestInventoryOnlyTokenListsRepositoriesUntilRevoked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var minted, revoked int
+	var minted, revoked, ordinary int
 	for _, event := range events {
 		switch {
 		case event.Operation == audit.OperationAPITokenCreated && event.AuthenticationMethod == authn.ProviderOIDC && event.RequestID != "":
+			if event.TokenKind != audit.TokenKindInventoryOnly {
+				t.Fatalf("session mint recorded kind %q", event.TokenKind)
+			}
 			minted++
 		case event.Operation == audit.OperationAPITokenRevoked && event.TargetID == strconv.FormatInt(tokenID, 10):
+			if event.TokenKind != audit.TokenKindInventoryOnly {
+				t.Fatalf("revocation recorded kind %q", event.TokenKind)
+			}
 			revoked++
+		case event.Operation == audit.OperationAPITokenCreated && event.TokenKind == audit.TokenKindOrdinary:
+			ordinary++
 		}
 	}
-	if minted != 2 || revoked != 1 {
-		t.Fatalf("audited mints from the session=%d revocations=%d, want 2 and 1", minted, revoked)
+	if minted != 2 || revoked != 1 || ordinary != 1 {
+		t.Fatalf("audited mints from the session=%d revocations=%d ordinary=%d, want 2, 1 and 1", minted, revoked, ordinary)
 	}
 }
 

@@ -75,6 +75,26 @@ const (
 	OperationAdminMutationDenied    = "admin_mutation_denied"
 )
 
+const (
+	TokenKindOrdinary       = "ordinary"
+	TokenKindDelegated      = "delegated"
+	TokenKindDelegationOnly = "delegation_only"
+	TokenKindInventoryOnly  = "inventory_only"
+)
+
+// TokenKind returns the audit token kind for the markers a token is stored with.
+func TokenKind(delegationOnly, inventoryOnly, delegated bool) string {
+	switch {
+	case delegationOnly:
+		return TokenKindDelegationOnly
+	case inventoryOnly:
+		return TokenKindInventoryOnly
+	case delegated:
+		return TokenKindDelegated
+	}
+	return TokenKindOrdinary
+}
+
 var operations = map[string]struct{}{
 	OperationOIDCLoginSucceeded: {}, OperationOIDCLoginDenied: {},
 	OperationOAuthLoginSucceeded: {}, OperationOAuthLoginDenied: {},
@@ -98,6 +118,7 @@ type Event struct {
 	ActorID              string    `json:"actor_id"`
 	TargetType           string    `json:"target_type"`
 	TargetID             string    `json:"target_id"`
+	TokenKind            string    `json:"token_kind,omitempty"`
 	AuthenticationMethod string    `json:"authentication_method"`
 	Operation            string    `json:"operation"`
 	Outcome              string    `json:"outcome"`
@@ -121,6 +142,8 @@ func (event Event) Validate() error {
 		!oneOf(event.AuthenticationMethod, "", "api_token", "local", "oauth", "oauth_token", "oidc", "operator", "scim_token") ||
 		!oneOf(event.Outcome, "success", "denied", "invalid", "error") ||
 		!bounded(event.ActorID, 128) || !bounded(event.TargetID, 128) ||
+		!oneOf(event.TokenKind, "", TokenKindOrdinary, TokenKindDelegated, TokenKindDelegationOnly, TokenKindInventoryOnly) ||
+		(event.TokenKind != "" && event.TargetType != "api_token") ||
 		!bounded(event.RequestID, 128) || !operation(event.Operation) {
 		return ErrInvalidEvent
 	}

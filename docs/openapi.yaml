@@ -1786,6 +1786,7 @@ components:
         actor_id: {type: string, maxLength: 128}
         target_type: {type: string, enum: [api_token, authentication, group, oauth_client, oauth_grant, session, user]}
         target_id: {type: string, maxLength: 128}
+        token_kind: {type: string, enum: [ordinary, delegated, delegation_only, inventory_only], description: Present on api_token_created and api_token_revoked events recorded since the field exists; says which kind of API token the event is about.}
         authentication_method: {type: string, enum: ['', api_token, local, oauth, oauth_token, oidc, operator, scim_token]}
         operation:
           type: string

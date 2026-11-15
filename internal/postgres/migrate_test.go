@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -530,5 +531,29 @@ func seedLegacySCIP(t *testing.T, store *Store, repositoryID int64, upload scipg
 		if _, err := store.pool.Exec(t.Context(), `insert into scip_occurrences(upload_id,path,symbol,start_line,start_character,end_line,end_character,position_encoding,roles,local,global_symbol_key) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, id, o.Path, o.Symbol, o.StartLine, o.StartCharacter, o.EndLine, o.EndCharacter, o.PositionEncoding, o.Roles, o.Local, key); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// Migration 041 runs on an audit trail that already has events. They keep an
+// empty kind, which the API leaves out.
+func TestMigrateAuditTokenKindKeepsExistingEvents(t *testing.T) {
+	pool := testPool(t)
+	if err := migrateThrough(t.Context(), pool, 40); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), `insert into audit_events (actor_type, target_type, operation, outcome)
+		values ('user', 'api_token', 'api_token_created', 'success')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(t.Context(), pool); err != nil {
+		t.Fatal(err)
+	}
+	events, _, err := New(pool).AuditEvents(t.Context(), 10)
+	if err != nil || len(events) != 1 || events[0].TokenKind != "" {
+		t.Fatalf("events=%#v err=%v", events, err)
+	}
+	encoded, err := json.Marshal(events[0])
+	if err != nil || strings.Contains(string(encoded), "token_kind") {
+		t.Fatalf("json=%s err=%v", encoded, err)
 	}
 }

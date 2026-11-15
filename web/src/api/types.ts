@@ -616,6 +616,8 @@ export interface AuditEvent {
   actor_id: string
   target_type: 'api_token' | 'authentication' | 'group' | 'oauth_client' | 'oauth_grant' | 'session' | 'user'
   target_id: string
+  /** Kind of API token an api_token event is about; absent on older events. */
+  token_kind?: 'ordinary' | 'delegated' | 'delegation_only' | 'inventory_only'
   authentication_method: '' | 'api_token' | 'local' | 'oauth' | 'oauth_token' | 'oidc' | 'operator' | 'scim_token'
   /** One of the audit operation names in docs/openapi.yaml; shown verbatim. */
   operation: string

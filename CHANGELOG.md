@@ -18,6 +18,11 @@ the compatibility and migration notes before upgrading.
 - Repository summaries carry `size_bytes`, the size GitHub last reported, so a
   consumer can order work by repository size. The field is optional and
   omitted while no size is known. ([#170])
+- `api_token_created` and `api_token_revoked` audit events carry `token_kind`
+  (`ordinary`, `delegated`, `delegation_only` or `inventory_only`), in
+  `GET /v1/admin/audit-events` and the console, so a long-lived token without
+  a ceiling can be told apart in the audit trail. Events recorded earlier have
+  no kind. ([#170])
 
 ### Security
 
@@ -45,6 +50,8 @@ the compatibility and migration notes before upgrading.
   replica still on the previous version answers an inventory-only token with
   `401` while its owner is an administrator and gives it no repository
   otherwise. No configuration changes are required.
+- Migration 041 adds `audit_events.token_kind`, default empty. It does not
+  rewrite or scan the table.
 
 ## [0.12.0] - 2026-11-14
 
