@@ -244,7 +244,7 @@ Besides ordinary API tokens, which are bound to the repository ceiling they were
 | Token kind | Minted with | May call | Use it for |
 | --- | --- | --- | --- |
 | Delegation-only | `POST /v1/account/delegation-tokens` | `POST /v1/admin/api-tokens`, for any active repository | The broker above. See [Service credentials for CI upload brokers](docs/operations.md#service-credentials-for-ci-upload-brokers). |
-| Inventory-only | `POST /v1/account/inventory-tokens` | `GET /v1/repositories` and `GET /v1/repositories/{id}`, for every active repository | A worker that needs the list of repositories and their index status. See [Service credentials for repository inventory workers](docs/operations.md#service-credentials-for-repository-inventory-workers). |
+| Inventory-only | `POST /v1/account/inventory-tokens` | `GET /v1/repositories` and `GET /v1/repositories/{id}` (or `/status`), for every active repository | A worker that needs the list of repositories and their index status. See [Service credentials for repository inventory workers](docs/operations.md#service-credentials-for-repository-inventory-workers). |
 
 A worker that indexes every repository holds one of each: it lists with the inventory-only token and uploads with tokens delegated by the delegation-only token. Either kind stops authenticating when its owner is no longer an administrator.
 

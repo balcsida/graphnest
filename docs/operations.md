@@ -795,8 +795,10 @@ on the Account page of the console. The token:
 - cannot delegate, and is refused with 403 by every other endpoint: it cannot
   search, read files, read or upload SCIP indexes and graphs, call `/mcp` or
   an admin route, mint, list or revoke tokens, or manage OAuth grants. A
-  leaked worker credential therefore shows repository names, branches, commit
-  SHAs, sizes and index state until it is revoked, and no repository content.
+  leaked worker credential therefore shows, for every active repository
+  (private ones included), its name, web URL, branch, commit SHAs, size and
+  index state (status, error code, last index time, search node ID) until it
+  is revoked, and no repository content.
 
 The listing contains active repositories only. A repository that is disabled,
 archived, or on an installation that is not active is left out for every
@@ -815,13 +817,15 @@ mint the other.
 
 Revoke it like any other token from the owner's session
 (`DELETE /v1/account/api-tokens/{id}`); it is listed with
-`"inventory_only": true`. The token is tied to the owner's administrator role
-in the same way as a delegation-only token: if the owner is demoted,
-suspended, or deleted, it stops authenticating altogether (401) rather than
-degrading into an ordinary token over the owner's grants. That does not revoke
-it: it works again once the owner is restored, so revoke it as well when it
-must not come back. Prefer a dedicated local service user as the owner so
-revoking a person's access never disables the worker.
+`"inventory_only": true`. Another administrator can end it with
+`POST /v1/admin/users/{id}/revoke-credentials`, which revokes every credential
+of the owner, a delegation-only token included. The token is tied to the
+owner's administrator role in the same way as a delegation-only token: if the
+owner is demoted, suspended, or deleted, it stops authenticating altogether
+(401) rather than degrading into an ordinary token over the owner's grants.
+That does not revoke it: it works again once the owner is restored, so revoke
+it as well when it must not come back. Prefer a dedicated local service user
+as the owner so revoking a person's access never disables the worker.
 
 ## Production control gates
 

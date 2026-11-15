@@ -27,8 +27,8 @@ the compatibility and migration notes before upgrading.
   upload SCIP indexes and graphs, call `/mcp` or an admin route, delegate, or
   mint and manage tokens, and no API token of any kind can mint one. Request
   authentication enforces this in one place, beside the delegation-only rule.
-  A leaked token shows repository names, commit SHAs, sizes and index state,
-  and no repository content. ([#170])
+  A leaked token shows the name, web URL, branch, commit SHAs, size and index
+  state of every active repository, and no repository content. ([#170])
 - An inventory-only token stops authenticating when its owner loses the
   administrator role, is suspended, or is deleted, instead of degrading into
   an ordinary token over the owner's grants. It is stored with an empty
@@ -43,7 +43,8 @@ the compatibility and migration notes before upgrading.
   runs automatically at startup. Existing tokens are unmarked, satisfy both
   constraints, and keep their current behaviour. A rolling upgrade is fine: a
   replica still on the previous version answers an inventory-only token with
-  `401`. No configuration changes are required.
+  `401` while its owner is an administrator and gives it no repository
+  otherwise. No configuration changes are required.
 
 ## [0.12.0] - 2026-11-14
 
