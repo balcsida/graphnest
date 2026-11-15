@@ -336,6 +336,117 @@ func TestDelegationOnlyTokenRouteIsInteractiveAdministratorOnly(t *testing.T) {
 	}
 }
 
+// Interactive administrators mint inventory-only tokens through their own
+// route, list them with the marker, and revoke them like any other token.
+func TestInventoryOnlyTokenRouteIsInteractiveAdministratorOnly(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	store := &accountStoreStub{listed: []authn.APITokenMetadata{{ID: 3, Prefix: "gnp_worker__", InventoryOnly: true, CreatedAt: now}}}
+	// Three successful mints below; each consumes 32 bytes of Rand.
+	service := &account.Service{Manager: authn.TokenManager{Store: store, Now: func() time.Time { return now }, Rand: strings.NewReader(strings.Repeat("x", 96))}}
+	mux := http.NewServeMux()
+	RegisterAccount(mux, authn.RequestAuthenticator{Bearer: authn.NewStatic(map[string]authn.Principal{
+		"admin-oidc":  {Subject: "1", Method: "oidc", Administrator: true},
+		"admin-local": {Subject: "2", Method: "local", Administrator: true},
+		"user-oidc":   {Subject: "11", Method: "oidc", RepositoryIDs: []int64{101}},
+		"admin-token": {Subject: "1", Method: "api_token", Administrator: true, RepositoryIDs: []int64{101}},
+		"broker":      {Subject: "3", Method: "api_token", Administrator: true, DelegationOnly: true},
+		"worker":      {Subject: "3", Method: "api_token", Administrator: true, InventoryOnly: true},
+	})}, service, 1024, 4096)
+	call := func(method, path, token, body string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(method, path, strings.NewReader(body))
+		request.Header.Set("Authorization", "Bearer "+token)
+		if body != "" {
+			request.Header.Set("Content-Type", "application/json")
+		}
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, request)
+		return response
+	}
+	mint := func(token, body string) *httptest.ResponseRecorder {
+		return call(http.MethodPost, "/v1/account/inventory-tokens", token, body)
+	}
+
+	response := mint("admin-oidc", `{}`)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var created map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	plaintext, _ := created["token"].(string)
+	if !strings.HasPrefix(plaintext, "gnp_") || created["inventory_only"] != true || created["prefix"] != plaintext[:12] || created["id"] != float64(3) || created["created_at"] != "2026-08-01T00:00:00Z" {
+		t.Fatalf("created=%v", created)
+	}
+	// Exactly the documented properties: no ceiling, no other kind, no expiry unless asked for.
+	if len(created) != 5 {
+		t.Fatalf("created carries undocumented properties: %v", created)
+	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control=%q", response.Header().Get("Cache-Control"))
+	}
+	if response := mint("admin-local", `{}`); response.Code != http.StatusCreated {
+		t.Fatalf("local session status=%d body=%s", response.Code, response.Body.String())
+	}
+	if response := mint("admin-oidc", `{"expires_at":"2026-10-30T00:00:00Z"}`); response.Code != http.StatusCreated || !strings.Contains(response.Body.String(), `"expires_at":"2026-10-30T00:00:00Z"`) {
+		t.Fatalf("90-day expiry status=%d body=%s", response.Code, response.Body.String())
+	}
+	for name, tc := range map[string]struct {
+		token, body string
+		want        int
+	}{
+		"ordinary user":            {"user-oidc", `{}`, http.StatusForbidden},
+		"administrator api token":  {"admin-token", `{}`, http.StatusForbidden},
+		"delegation-only token":    {"broker", `{}`, http.StatusForbidden},
+		"inventory-only token":     {"worker", `{}`, http.StatusForbidden},
+		"unknown credential":       {"nobody", `{}`, http.StatusUnauthorized},
+		"repository ceiling":       {"admin-oidc", `{"repository_ids":[101]}`, http.StatusBadRequest},
+		"marker in the body":       {"admin-oidc", `{"inventory_only":true}`, http.StatusBadRequest},
+		"past expiry":              {"admin-oidc", `{"expires_at":"2026-07-01T00:00:00Z"}`, http.StatusBadRequest},
+		"expiry beyond 90 days":    {"admin-oidc", `{"expires_at":"2026-10-30T00:00:01Z"}`, http.StatusBadRequest},
+		"expiry outside UTC":       {"admin-oidc", `{"expires_at":"2026-08-29T00:00:00+02:00"}`, http.StatusBadRequest},
+		"second JSON value":        {"admin-oidc", `{} {}`, http.StatusBadRequest},
+		"missing request body":     {"admin-oidc", ``, http.StatusUnsupportedMediaType},
+		"body over the byte limit": {"admin-oidc", `{"expires_at":"` + strings.Repeat("0", 1024) + `"}`, http.StatusRequestEntityTooLarge},
+	} {
+		if response := mint(tc.token, tc.body); response.Code != tc.want {
+			t.Errorf("%s: status=%d want=%d body=%s", name, response.Code, tc.want, response.Body.String())
+		}
+	}
+	if response := call(http.MethodGet, "/v1/account/inventory-tokens", "admin-oidc", ""); response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodPost {
+		t.Fatalf("GET status=%d Allow=%q", response.Code, response.Header().Get("Allow"))
+	}
+	// Neither other mint route accepts the marker.
+	for _, path := range []string{"/v1/account/api-tokens", "/v1/account/delegation-tokens"} {
+		if response := call(http.MethodPost, path, "admin-oidc", `{"inventory_only":true}`); response.Code != http.StatusBadRequest {
+			t.Errorf("inventory_only on %s status=%d body=%s", path, response.Code, response.Body.String())
+		}
+	}
+
+	// The owner sees the marker in the token list and revokes by ID.
+	response = call(http.MethodGet, "/v1/account/api-tokens", "admin-oidc", "")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"prefix":"gnp_worker__","inventory_only":true`) || strings.Contains(response.Body.String(), "delegation_only") {
+		t.Fatalf("list status=%d body=%s", response.Code, response.Body.String())
+	}
+	if response := call(http.MethodDelete, "/v1/account/api-tokens/3", "admin-oidc", ""); response.Code != http.StatusNoContent || store.user != 1 || store.id != 3 {
+		t.Fatalf("revoke status=%d user=%d id=%d", response.Code, store.user, store.id)
+	}
+	// The token itself can do neither.
+	for name, tc := range map[string]struct{ method, path, body string }{
+		"list tokens":           {http.MethodGet, "/v1/account/api-tokens", ""},
+		"mint ordinary token":   {http.MethodPost, "/v1/account/api-tokens", `{"expires_at":"2026-08-29T00:00:00Z","repository_ids":[101]}`},
+		"revoke itself":         {http.MethodDelete, "/v1/account/api-tokens/3", ""},
+		"mint delegation token": {http.MethodPost, "/v1/account/delegation-tokens", `{}`},
+		"delegate":              {http.MethodPost, "/v1/admin/api-tokens", `{"expires_at":"2026-08-01T00:15:00Z","repository_ids":[101]}`},
+		"list oauth grants":     {http.MethodGet, "/v1/account/oauth-grants", ""},
+		"revoke an oauth grant": {http.MethodDelete, "/v1/account/oauth-grants/5", ""},
+	} {
+		if response := call(tc.method, tc.path, "worker", tc.body); response.Code != http.StatusForbidden {
+			t.Errorf("%s: status=%d want=403 body=%s", name, response.Code, response.Body.String())
+		}
+	}
+}
+
 type grantAccountStore struct {
 	accountStoreStub
 	grants  []authn.OAuthGrantMetadata

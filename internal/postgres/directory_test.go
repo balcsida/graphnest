@@ -8,9 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/balcsida/graphnest/internal/audit"
 	"github.com/balcsida/graphnest/internal/authn"
 	"github.com/balcsida/graphnest/internal/repository"
+	"github.com/balcsida/graphnest/pkg/api"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestDirectoryPrincipalUnionsActiveGrantsAndRoles(t *testing.T) {
@@ -252,6 +255,246 @@ func TestDelegationOnlyTokenIsRejectedOnceOwnerIsDemoted(t *testing.T) {
 	demoted, err := store.APIPrincipal(t.Context(), [32]byte{14}, now)
 	if !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("demoted owner: principal=%#v err=%v, want ErrNoRows", demoted, err)
+	}
+}
+
+// inventoryWorker creates an administrator who also holds a direct grant on
+// repository 101, and an inventory-only token for them. The grant is what an
+// ordinary token without a ceiling would fall back to.
+func inventoryWorker(t *testing.T, store *Store, externalID string, now time.Time) (int64, authn.TokenManager, string) {
+	t.Helper()
+	userID := insertIdentityUser(t, store, externalID, externalID)
+	seedReadyRepository(t, store, 101, testSHA('a'))
+	if err := store.UpsertSearchNode(t.Context(), "node-a", "http://zoekt.invalid"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into user_roles (user_id, administrator) values ($1, true)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into user_repository_grants (user_id, repository_id) values ($1, 101)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	manager := authn.TokenManager{Store: store, Now: func() time.Time { return now }}
+	_, plaintext, err := manager.CreateInventoryOnly(t.Context(), userID, authn.ProviderLocal, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return userID, manager, plaintext
+}
+
+// An inventory-only token has no ceiling to go stale: it lists every active
+// repository, including one onboarded after it was minted, with the size a
+// worker orders by. Repositories that are disabled, archived, or on an
+// installation that is not active are not listed at all.
+func TestInventoryOnlyTokenSeesRepositoriesOnboardedAfterItWasMinted(t *testing.T) {
+	store := migratedStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	userID, manager, plaintext := inventoryWorker(t, store, "inventory-1", now)
+
+	worker, err := manager.Authenticate(t.Context(), plaintext)
+	if err != nil || !worker.Administrator || !worker.InventoryOnly || worker.DelegationOnly || worker.Delegated || worker.Method != "api_token" || len(worker.RepositoryIDs) != 0 {
+		t.Fatalf("principal=%#v err=%v", worker, err)
+	}
+	service := &repository.Service{Store: store, SCIP: store, Graph: store}
+	listed := func() map[string]int64 {
+		t.Helper()
+		// A worker authenticates on every request, so it never holds a stale principal.
+		principal, err := manager.Authenticate(t.Context(), plaintext)
+		if err != nil {
+			t.Fatal(err)
+		}
+		summaries, err := service.List(t.Context(), principal)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sizes := map[string]int64{}
+		for _, summary := range summaries {
+			sizes[summary.Name] = summary.SizeBytes
+		}
+		return sizes
+	}
+	if got := listed(); !reflect.DeepEqual(got, map[string]int64{"acme/repo-101": 0}) {
+		t.Fatalf("listed at mint = %v", got)
+	}
+
+	// Onboarded after the token was minted.
+	if _, err := store.UpsertRepository(t.Context(), RepositoryUpdate{GitHubID: 102, InstallationID: 10, Owner: "acme", Name: "later", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", SizeBytes: 2048, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertInstallation(t.Context(), InstallationUpdate{GitHubID: 20, AccountLogin: "other", AccountType: "Organization", Status: "suspended", SuspendedAt: timePtr(now)}); err != nil {
+		t.Fatal(err)
+	}
+	for _, update := range []RepositoryUpdate{
+		{GitHubID: 103, InstallationID: 10, Owner: "acme", Name: "disabled", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: false},
+		{GitHubID: 104, InstallationID: 10, Owner: "acme", Name: "archived", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true, Archived: true},
+		{GitHubID: 201, InstallationID: 20, Owner: "other", Name: "suspended", CloneURL: "clone", WebURL: "web", DefaultBranch: "main", Enabled: true},
+	} {
+		if _, err := store.UpsertRepository(t.Context(), update); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := map[string]int64{"acme/repo-101": 0, "acme/later": 2048}
+	if got := listed(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("listed after onboarding = %v, want %v", got, want)
+	}
+	// It lists what its owner would list in a session, by the same query.
+	session, err := store.UserPrincipal(t.Context(), userID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromSession, err := service.List(t.Context(), session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromToken, err := service.List(t.Context(), worker)
+	if err != nil || !reflect.DeepEqual(fromToken, fromSession) {
+		t.Fatalf("token lists %#v, session %#v, err=%v", fromToken, fromSession, err)
+	}
+
+	// The status of a listed repository resolves what the listing leaves unknown.
+	status, err := service.Status(t.Context(), worker, 102)
+	if err != nil || status.Name != "acme/later" || status.SizeBytes != 2048 || status.SCIPStatus != "absent" || status.GraphStatus != "absent" {
+		t.Fatalf("status=%#v err=%v", status, err)
+	}
+	for _, hidden := range []int64{103, 104, 201, 999} {
+		if _, err := service.Status(t.Context(), worker, hidden); !errors.Is(err, pgx.ErrNoRows) {
+			t.Errorf("status of repository %d err=%v, want ErrNoRows", hidden, err)
+		}
+	}
+	// No content: file reads keep to the ceiling, and the token has none.
+	if _, err := service.ReadFile(t.Context(), worker, api.ReadFileRequest{RepositoryID: 101, Path: "README.md"}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("file read err=%v, want ErrNoRows", err)
+	}
+
+	tokens, err := store.ListAPITokens(t.Context(), userID)
+	if err != nil || len(tokens) != 1 || !tokens[0].InventoryOnly || tokens[0].DelegationOnly || tokens[0].Delegated || tokens[0].RepositoryIDs != nil {
+		t.Fatalf("tokens=%#v err=%v", tokens, err)
+	}
+}
+
+// An inventory-only token is stored with no ceiling, so read as an ordinary
+// token it would inherit every grant its owner has. Whatever ends the owner's
+// administrator access must therefore end the token, not turn it into one
+// that reads repository 101.
+func TestInventoryOnlyTokenStopsAuthenticatingWithItsOwner(t *testing.T) {
+	for name, end := range map[string]string{
+		"demoted":          `delete from user_roles where user_id=$1`,
+		"suspended":        `update users set suspended_at=now() where id=$1`,
+		"deleted":          `update users set deleted_at=now() where id=$1`,
+		"SCIM-deactivated": `update users set scim_active=false where id=$1`,
+		"token revoked":    `update api_tokens set revoked_at=now() where user_id=$1`,
+		"token expired":    `update api_tokens set expires_at=now() - interval '1 hour' where user_id=$1`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := migratedStore(t)
+			now := time.Now().UTC().Truncate(time.Microsecond)
+			userID, manager, plaintext := inventoryWorker(t, store, "inventory-2", now)
+			if principal, err := manager.Authenticate(t.Context(), plaintext); err != nil || !principal.InventoryOnly {
+				t.Fatalf("principal before=%#v err=%v", principal, err)
+			}
+			if _, err := store.pool.Exec(t.Context(), end, userID); err != nil {
+				t.Fatal(err)
+			}
+			if principal, err := manager.Authenticate(t.Context(), plaintext); !errors.Is(err, authn.ErrUnauthenticated) {
+				t.Fatalf("principal after=%#v err=%v, want ErrUnauthenticated", principal, err)
+			}
+		})
+	}
+
+	// Losing the role through a group is the same demotion.
+	store := migratedStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	userID := insertIdentityUser(t, store, "inventory-3", "group-admin")
+	var groupID int64
+	if err := store.pool.QueryRow(t.Context(), `insert into groups (external_id, display_name) values ('ops', 'Operations') returning id`).Scan(&groupID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into group_memberships (group_id, user_id) values ($1, $2)`, groupID, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `insert into group_roles (group_id, administrator) values ($1, true)`, groupID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{TokenHash: [32]byte{21}, Prefix: "gn_test", UserID: userID, RepositoryIDs: []int64{}, InventoryOnly: true, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if principal, err := store.APIPrincipal(t.Context(), [32]byte{21}, now); err != nil || !principal.InventoryOnly || !principal.Administrator {
+		t.Fatalf("group administrator principal=%#v err=%v", principal, err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `delete from group_memberships where user_id=$1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if principal, err := store.APIPrincipal(t.Context(), [32]byte{21}, now); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("after leaving the group principal=%#v err=%v, want ErrNoRows", principal, err)
+	}
+	// A token for someone who never was an administrator does not authenticate either.
+	plain := insertIdentityUser(t, store, "inventory-4", "plain")
+	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{TokenHash: [32]byte{22}, Prefix: "gn_test", UserID: plain, RepositoryIDs: []int64{}, InventoryOnly: true, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if principal, err := store.APIPrincipal(t.Context(), [32]byte{22}, now); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("non-administrator principal=%#v err=%v, want ErrNoRows", principal, err)
+	}
+}
+
+// The marker is what confines an inventory-only token, and a server from before
+// migration 040 does not read it. The token is therefore stored with an empty
+// ceiling, never an absent one: read as an ordinary token it is refused while
+// its owner is an administrator and matches no repository afterwards, where an
+// absent ceiling would have meant every grant the owner holds.
+func TestInventoryOnlyTokenIsStoredWithAnEmptyCeiling(t *testing.T) {
+	store := migratedStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	userID, manager, plaintext := inventoryWorker(t, store, "inventory-6", now)
+	var empty bool
+	if err := store.pool.QueryRow(t.Context(), `select repository_ids is not null and cardinality(repository_ids) = 0 from api_tokens where user_id=$1`, userID).Scan(&empty); err != nil || !empty {
+		t.Fatalf("stored with an empty ceiling=%v err=%v", empty, err)
+	}
+	var violation *pgconn.PgError
+	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{TokenHash: [32]byte{25}, Prefix: "gn_test", UserID: userID, InventoryOnly: true, CreatedAt: now}); !errors.As(err, &violation) || violation.ConstraintName != "api_tokens_inventory_only_empty_ceiling" {
+		t.Fatalf("absent ceiling err=%v, want api_tokens_inventory_only_empty_ceiling violation", err)
+	}
+	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{TokenHash: [32]byte{26}, Prefix: "gn_test", UserID: userID, RepositoryIDs: []int64{101}, InventoryOnly: true, CreatedAt: now}); !errors.As(err, &violation) || violation.ConstraintName != "api_tokens_inventory_only_empty_ceiling" {
+		t.Fatalf("non-empty ceiling err=%v, want api_tokens_inventory_only_empty_ceiling violation", err)
+	}
+
+	// What a server that ignores the marker makes of the same row.
+	if _, err := store.pool.Exec(t.Context(), `update api_tokens set inventory_only=false where user_id=$1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if principal, err := manager.Authenticate(t.Context(), plaintext); !errors.Is(err, authn.ErrUnauthenticated) {
+		t.Fatalf("administrator's unmarked token principal=%#v err=%v, want ErrUnauthenticated", principal, err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `delete from user_roles where user_id=$1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	// The owner still holds a direct grant on repository 101.
+	principal, err := manager.Authenticate(t.Context(), plaintext)
+	if err != nil || principal.Administrator || len(principal.RepositoryIDs) != 0 {
+		t.Fatalf("demoted owner's unmarked token principal=%#v err=%v, want no repository", principal, err)
+	}
+}
+
+// One token, one purpose: the database refuses a token marked as both kinds,
+// whichever write path tries.
+func TestAPITokenCannotBeBothDelegationOnlyAndInventoryOnly(t *testing.T) {
+	store := migratedStore(t)
+	userID := insertIdentityUser(t, store, "inventory-5", "both")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	both := authn.APITokenRecord{TokenHash: [32]byte{23}, Prefix: "gn_test", UserID: userID, DelegationOnly: true, RepositoryIDs: []int64{}, InventoryOnly: true, CreatedAt: now}
+	var violation *pgconn.PgError
+	if _, err := store.CreateAPIToken(t.Context(), both); !errors.As(err, &violation) || violation.ConstraintName != "api_tokens_single_purpose" {
+		t.Fatalf("CreateAPIToken err=%v, want api_tokens_single_purpose violation", err)
+	}
+	event := audit.Event{ActorType: "user", ActorID: "1", TargetType: "api_token", AuthenticationMethod: "oidc", Operation: audit.OperationAPITokenCreated, Outcome: "success"}
+	if _, err := store.CreateAPITokenAudited(t.Context(), both, event); !errors.As(err, &violation) || violation.ConstraintName != "api_tokens_single_purpose" {
+		t.Fatalf("CreateAPITokenAudited err=%v, want api_tokens_single_purpose violation", err)
+	}
+	if _, err := store.CreateAPIToken(t.Context(), authn.APITokenRecord{TokenHash: [32]byte{24}, Prefix: "gn_test", UserID: userID, RepositoryIDs: []int64{}, InventoryOnly: true, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(t.Context(), `update api_tokens set delegation_only=true where user_id=$1`, userID); !errors.As(err, &violation) || violation.ConstraintName != "api_tokens_single_purpose" {
+		t.Fatalf("update err=%v, want api_tokens_single_purpose violation", err)
 	}
 }
 

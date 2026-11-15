@@ -10,6 +10,9 @@ type APITokenRecord struct {
 	// DelegationOnly tokens have no ceiling and no repository access; they
 	// exist solely to call the delegation endpoint. See Principal.
 	DelegationOnly bool
+	// InventoryOnly tokens exist solely to read the repository inventory,
+	// unbounded by a ceiling; they are stored with an empty one. See Principal.
+	InventoryOnly bool
 	// Delegated tokens were minted by the delegation endpoint and may not
 	// delegate again. See Principal.
 	Delegated bool
@@ -22,6 +25,7 @@ type APITokenMetadata struct {
 	Prefix         string
 	RepositoryIDs  []int64
 	DelegationOnly bool
+	InventoryOnly  bool
 	Delegated      bool
 	CreatedAt      time.Time
 	LastUsedAt     *time.Time

@@ -11,13 +11,31 @@ import (
 // delegationRoutePath is the only request a delegation-only token may make.
 const delegationRoutePath = "/v1/admin/api-tokens"
 
-// confinesDelegationOnly reports whether a delegation-only principal must be
-// refused for this request. Such a principal is an administrator with an
-// empty repository ceiling, which several administrative read paths treat as
-// "every repository"; confining it here means no handler has to know about
-// the special case, and a leaked broker credential can only mint.
-func confinesDelegationOnly(principal authn.Principal, request *http.Request) bool {
-	return principal.DelegationOnly && !(request.Method == http.MethodPost && request.URL.Path == delegationRoutePath)
+// inventoryRoutePath is the listing an inventory-only token exists for. Such a
+// token may also read the status of one repository below it, because the
+// listing does not resolve SCIP or graph status.
+const inventoryRoutePath = "/v1/repositories"
+
+// confined reports whether a single-purpose principal (delegation-only or
+// inventory-only) must be refused for this request. Such a principal is an
+// administrator with an empty repository ceiling, which several administrative
+// read paths treat as "every repository"; confining it here means no handler
+// has to know about the special case: a leaked broker credential can only
+// mint, and a leaked inventory credential can only read the inventory. A
+// principal carrying both markers is refused everywhere.
+func confined(principal authn.Principal, request *http.Request) bool {
+	return principal.DelegationOnly && !(request.Method == http.MethodPost && request.URL.Path == delegationRoutePath) ||
+		principal.InventoryOnly && !(request.Method == http.MethodGet && inventoryRoute(request.URL.Path))
+}
+
+// inventoryRoute matches /v1/repositories, /v1/repositories/{id} and
+// /v1/repositories/{id}/status, and nothing else below that prefix.
+func inventoryRoute(path string) bool {
+	if path == inventoryRoutePath {
+		return true
+	}
+	_, ok := repositoryID(path)
+	return ok && strings.HasPrefix(path, inventoryRoutePath+"/")
 }
 
 func writeForbidden(writer http.ResponseWriter) {
@@ -31,7 +49,7 @@ func AuthenticateRequest(authenticator authn.RequestAuthenticator, next http.Han
 			writeUnauthenticated(writer)
 			return
 		}
-		if confinesDelegationOnly(principal, request) {
+		if confined(principal, request) {
 			writeForbidden(writer)
 			return
 		}
@@ -77,7 +95,7 @@ func AuthenticateBearerWithChallenge(authenticator authn.Authenticator, challeng
 			reject(writer, true)
 			return
 		}
-		if confinesDelegationOnly(principal, request) {
+		if confined(principal, request) {
 			writeForbidden(writer)
 			return
 		}

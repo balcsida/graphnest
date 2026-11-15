@@ -30,6 +30,7 @@ type Token struct {
 	Prefix         string     `json:"prefix"`
 	RepositoryIDs  []int64    `json:"repository_ids,omitempty"`
 	DelegationOnly bool       `json:"delegation_only,omitempty"`
+	InventoryOnly  bool       `json:"inventory_only,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	LastUsedAt     *time.Time `json:"last_used_at,omitempty"`
 	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
@@ -100,7 +101,7 @@ func (s *Service) CreateToken(ctx context.Context, principal authn.Principal, ex
 // generation deep: a child cannot renew itself past its own expiry, and
 // revoking or expiring the parent ends the chain within an hour.
 func (s *Service) Delegate(ctx context.Context, principal authn.Principal, expires *time.Time, repositoryIDs []int64) (Token, string, error) {
-	if principal.Method != "api_token" || !principal.Administrator || principal.Delegated {
+	if principal.Method != "api_token" || !principal.Administrator || principal.Delegated || principal.InventoryOnly {
 		return Token{}, "", ErrForbidden
 	}
 	userID, err := strconv.ParseInt(principal.Subject, 10, 64)
@@ -144,7 +145,23 @@ func (s *Service) Delegate(ctx context.Context, principal authn.Principal, expir
 // leak grants no direct repository access. Only an interactive administrator
 // may mint one; API tokens of any kind cannot.
 func (s *Service) CreateDelegationOnlyToken(ctx context.Context, principal authn.Principal, expires *time.Time) (Token, string, error) {
-	if !authn.IsInteractiveMethod(principal.Method) || !principal.Administrator || principal.DelegationOnly {
+	return s.createSinglePurpose(ctx, principal, expires, Token{DelegationOnly: true}, s.Manager.CreateDelegationOnly)
+}
+
+// CreateInventoryOnlyToken mints an administrator token whose only power is
+// reading the repository inventory. It has no repository ceiling, so it sees
+// repositories onboarded after it was minted, and it is refused by every other
+// endpoint and cannot delegate, so a leak exposes which repositories exist and
+// how far they are indexed but none of their content. Only an interactive
+// administrator may mint one; API tokens of any kind cannot.
+func (s *Service) CreateInventoryOnlyToken(ctx context.Context, principal authn.Principal, expires *time.Time) (Token, string, error) {
+	return s.createSinglePurpose(ctx, principal, expires, Token{InventoryOnly: true}, s.Manager.CreateInventoryOnly)
+}
+
+// createSinglePurpose holds the minting rules the delegation-only and
+// inventory-only kinds share; token carries the marker of the kind mint stores.
+func (s *Service) createSinglePurpose(ctx context.Context, principal authn.Principal, expires *time.Time, token Token, mint func(context.Context, int64, string, *time.Time) (int64, string, error)) (Token, string, error) {
+	if !authn.IsInteractiveMethod(principal.Method) || !principal.Administrator || principal.DelegationOnly || principal.InventoryOnly {
 		return Token{}, "", ErrForbidden
 	}
 	userID, err := userID(principal)
@@ -155,16 +172,16 @@ func (s *Service) CreateDelegationOnlyToken(ctx context.Context, principal authn
 	if expires != nil && (!expires.After(now) || expires.After(now.Add(MaxTokenLifetime))) {
 		return Token{}, "", ErrInvalid
 	}
-	id, plaintext, err := s.Manager.CreateDelegationOnly(ctx, userID, principal.Method, expires)
+	id, plaintext, err := mint(ctx, userID, principal.Method, expires)
 	if err != nil {
 		return Token{}, "", err
 	}
-	var expiry *time.Time
 	if expires != nil {
 		value := *expires
-		expiry = &value
+		token.ExpiresAt = &value
 	}
-	return Token{ID: id, Prefix: plaintext[:12], DelegationOnly: true, CreatedAt: now, ExpiresAt: expiry}, plaintext, nil
+	token.ID, token.Prefix, token.CreatedAt = id, plaintext[:12], now
+	return token, plaintext, nil
 }
 
 func (s *Service) now() time.Time {
@@ -194,7 +211,7 @@ func (s *Service) Tokens(ctx context.Context, principal authn.Principal) ([]Toke
 	}
 	result := make([]Token, len(items))
 	for i, item := range items {
-		result[i] = Token{ID: item.ID, Prefix: item.Prefix, RepositoryIDs: append([]int64(nil), item.RepositoryIDs...), DelegationOnly: item.DelegationOnly, CreatedAt: item.CreatedAt, LastUsedAt: item.LastUsedAt, ExpiresAt: item.ExpiresAt}
+		result[i] = Token{ID: item.ID, Prefix: item.Prefix, RepositoryIDs: append([]int64(nil), item.RepositoryIDs...), DelegationOnly: item.DelegationOnly, InventoryOnly: item.InventoryOnly, CreatedAt: item.CreatedAt, LastUsedAt: item.LastUsedAt, ExpiresAt: item.ExpiresAt}
 	}
 	return result, nil
 }

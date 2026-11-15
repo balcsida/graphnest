@@ -82,7 +82,7 @@ func (service *Service) List(ctx context.Context, principal authn.Principal) ([]
 }
 
 func (service *Service) Status(ctx context.Context, principal authn.Principal, repositoryID int64) (api.RepositorySummary, error) {
-	repository, err := service.authorizedRepository(ctx, principal, repositoryID)
+	repository, err := service.authorizedRepository(ctx, principal, repositoryID, true)
 	if err != nil {
 		return api.RepositorySummary{}, err
 	}
@@ -151,7 +151,7 @@ func (service *Service) withSCIPStatus(ctx context.Context, repo Repository, sum
 }
 
 func (service *Service) ReadFile(ctx context.Context, principal authn.Principal, request api.ReadFileRequest) (api.ReadFileResponse, error) {
-	repository, err := service.authorizedRepository(ctx, principal, request.RepositoryID)
+	repository, err := service.authorizedRepository(ctx, principal, request.RepositoryID, false)
 	if err != nil {
 		return api.ReadFileResponse{}, err
 	}
@@ -194,7 +194,7 @@ func (service *Service) ReadFile(ctx context.Context, principal authn.Principal,
 	if truncated {
 		end = start + service.maxLines() - 1
 	}
-	current, err := service.authorizedRepository(ctx, principal, request.RepositoryID)
+	current, err := service.authorizedRepository(ctx, principal, request.RepositoryID, false)
 	if err != nil {
 		return api.ReadFileResponse{}, err
 	}
@@ -207,15 +207,23 @@ func (service *Service) ReadFile(ctx context.Context, principal authn.Principal,
 	}, nil
 }
 
+// unrestricted reports whether the principal reads every active repository
+// instead of a ceiling: an administrator signed in interactively. inventory
+// extends that to an inventory-only token, and only List and Status ask for
+// it, so such a token cannot read content even if a route let it through.
+func unrestricted(principal authn.Principal, inventory bool) bool {
+	return principal.Administrator && (principal.Method != "api_token" || inventory && principal.InventoryOnly)
+}
+
 func (service *Service) authorizedRepositories(ctx context.Context, principal authn.Principal) ([]Repository, error) {
-	if principal.Administrator && principal.Method != "api_token" {
+	if unrestricted(principal, true) {
 		return service.Store.AllAuthorizedRepositories(ctx, principal.RepositoryNames)
 	}
 	return service.Store.AuthorizedRepositories(ctx, principal.InstallationID, principal.RepositoryIDs, principal.RepositoryNames)
 }
 
-func (service *Service) authorizedRepository(ctx context.Context, principal authn.Principal, repositoryID int64) (Repository, error) {
-	if principal.Administrator && principal.Method != "api_token" {
+func (service *Service) authorizedRepository(ctx context.Context, principal authn.Principal, repositoryID int64, inventory bool) (Repository, error) {
+	if unrestricted(principal, inventory) {
 		return service.Store.AnyAuthorizedRepository(ctx, repositoryID)
 	}
 	return service.Store.AuthorizedRepository(ctx, principal.InstallationID, principal.RepositoryIDs, repositoryID)

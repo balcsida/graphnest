@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -120,48 +121,51 @@ func RegisterAccount(mux *http.ServeMux, authenticator authn.RequestAuthenticato
 	mux.Handle("/v1/admin/api-tokens", privateAuth(exactMethod(http.MethodPost, mint(func(request *http.Request, expires *time.Time, repositoryIDs []int64) (account.Token, string, error) {
 		return service.Delegate(request.Context(), PrincipalFromContext(request.Context()), expires, repositoryIDs)
 	}))))
-	// Interactive administrators mint delegation-only tokens here: a broker
-	// credential with no ceiling that can only call /v1/admin/api-tokens. A
-	// dedicated route (rather than a flag on the ordinary body) keeps the
-	// request shape unambiguous and un-smuggleable.
-	mux.Handle("/v1/account/delegation-tokens", privateAuth(exactMethod(http.MethodPost, AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Header.Get("Content-Type") != "application/json" {
-			writeError(writer, http.StatusUnsupportedMediaType, "invalid_request", "request is invalid", false)
-			return
-		}
-		request.Body = http.MaxBytesReader(writer, request.Body, maxRequestBytes)
-		decoder := json.NewDecoder(request.Body)
-		decoder.DisallowUnknownFields()
-		var input struct {
-			ExpiresAt *string `json:"expires_at"`
-		}
-		if err := decoder.Decode(&input); err != nil {
-			writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
-			return
-		}
-		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-			writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
-			return
-		}
-		expires, ok := tokenExpiry(input.ExpiresAt)
-		if !ok {
-			writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
-			return
-		}
-		token, plaintext, err := service.CreateDelegationOnlyToken(request.Context(), PrincipalFromContext(request.Context()), expires)
-		if err != nil {
-			writeAccountError(writer, err)
-			return
-		}
-		writeBoundedJSONStatus(writer, http.StatusCreated, struct {
-			ID             int64      `json:"id"`
-			Prefix         string     `json:"prefix"`
-			DelegationOnly bool       `json:"delegation_only"`
-			CreatedAt      time.Time  `json:"created_at"`
-			ExpiresAt      *time.Time `json:"expires_at,omitempty"`
-			Token          string     `json:"token"`
-		}{token.ID, token.Prefix, true, token.CreatedAt, token.ExpiresAt, plaintext}, maxResponseBytes)
-	})))))
+	// Interactive administrators mint the single-purpose kinds here: a broker
+	// credential that can only call /v1/admin/api-tokens, and a worker
+	// credential that can only read the repository inventory. Neither has a
+	// ceiling. A dedicated route each (rather than a flag on the ordinary
+	// body) keeps the request shape unambiguous and un-smuggleable.
+	singlePurpose := func(create func(context.Context, authn.Principal, *time.Time) (account.Token, string, error)) http.Handler {
+		return privateAuth(exactMethod(http.MethodPost, AuthenticateRequest(authenticator, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if request.Header.Get("Content-Type") != "application/json" {
+				writeError(writer, http.StatusUnsupportedMediaType, "invalid_request", "request is invalid", false)
+				return
+			}
+			request.Body = http.MaxBytesReader(writer, request.Body, maxRequestBytes)
+			decoder := json.NewDecoder(request.Body)
+			decoder.DisallowUnknownFields()
+			var input struct {
+				ExpiresAt *string `json:"expires_at"`
+			}
+			if err := decoder.Decode(&input); err != nil {
+				writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
+				return
+			}
+			if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+				writeError(writer, invalidRequestStatus(err), "invalid_request", "request is invalid", false)
+				return
+			}
+			expires, ok := tokenExpiry(input.ExpiresAt)
+			if !ok {
+				writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
+				return
+			}
+			token, plaintext, err := create(request.Context(), PrincipalFromContext(request.Context()), expires)
+			if err != nil {
+				writeAccountError(writer, err)
+				return
+			}
+			// account.Token omits what a new single-purpose token lacks (a
+			// ceiling, a last use), leaving its kind marker beside the secret.
+			writeBoundedJSONStatus(writer, http.StatusCreated, struct {
+				account.Token
+				Plaintext string `json:"token"`
+			}{token, plaintext}, maxResponseBytes)
+		}))))
+	}
+	mux.Handle("/v1/account/delegation-tokens", singlePurpose(service.CreateDelegationOnlyToken))
+	mux.Handle("/v1/account/inventory-tokens", singlePurpose(service.CreateInventoryOnlyToken))
 	mux.Handle("/v1/account/api-tokens", privateAuth(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.Method {
 		case http.MethodGet:

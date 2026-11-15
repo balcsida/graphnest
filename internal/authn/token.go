@@ -45,15 +45,22 @@ func (m TokenManager) CreateDelegationOnly(ctx context.Context, userID int64, me
 	return m.create(ctx, userID, method, nil, tokenKind{delegationOnly: true}, expiresAt)
 }
 
+// CreateInventoryOnly mints a token that only the repository inventory
+// honours, where it is not bound by a ceiling. The same caller obligation and
+// store rejection apply as for CreateDelegationOnly.
+func (m TokenManager) CreateInventoryOnly(ctx context.Context, userID int64, method string, expiresAt *time.Time) (int64, string, error) {
+	return m.create(ctx, userID, method, nil, tokenKind{inventoryOnly: true}, expiresAt)
+}
+
 // CreateDelegated mints the child token the delegation endpoint hands out: a
 // scoped token that is marked so it can never delegate in turn.
 func (m TokenManager) CreateDelegated(ctx context.Context, userID int64, method string, repositoryIDs []int64, expiresAt *time.Time) (int64, string, error) {
 	return m.create(ctx, userID, method, repositoryIDs, tokenKind{delegated: true}, expiresAt)
 }
 
-// tokenKind carries the mutually exclusive delegation markers a token is
-// stored with; the zero value is an ordinary token.
-type tokenKind struct{ delegationOnly, delegated bool }
+// tokenKind carries the mutually exclusive markers a token is stored with; the
+// zero value is an ordinary token.
+type tokenKind struct{ delegationOnly, inventoryOnly, delegated bool }
 
 func (m TokenManager) create(ctx context.Context, userID int64, method string, repositoryIDs []int64, kind tokenKind, expiresAt *time.Time) (int64, string, error) {
 	if m.Store == nil || userID <= 0 {
@@ -77,10 +84,17 @@ func (m TokenManager) create(ctx context.Context, userID int64, method string, r
 		value := *expiresAt
 		expiry = &value
 	}
+	ceiling := append([]int64(nil), repositoryIDs...)
+	if kind.inventoryOnly {
+		// An empty ceiling, not an absent one: read without its marker (by a
+		// server from before the kind existed), the token then matches no
+		// repository instead of every grant its owner holds.
+		ceiling = []int64{}
+	}
 	record := APITokenRecord{
 		TokenHash: sha256.Sum256([]byte(plaintext)), Prefix: plaintext[:12], UserID: userID,
-		RepositoryIDs:  append([]int64(nil), repositoryIDs...),
-		DelegationOnly: kind.delegationOnly, Delegated: kind.delegated,
+		RepositoryIDs:  ceiling,
+		DelegationOnly: kind.delegationOnly, InventoryOnly: kind.inventoryOnly, Delegated: kind.delegated,
 		CreatedAt: now, ExpiresAt: expiry,
 	}
 	var id int64
