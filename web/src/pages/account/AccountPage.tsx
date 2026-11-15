@@ -10,7 +10,7 @@ export default function AccountPage() {
   return (
     <div className="grid gap-6">
       <PageHeader title="Account" subtitle="API tokens and connected MCP clients" />
-      <TokensSection delegation={administrator && method !== 'bearer'} />
+      <TokensSection administrator={administrator && method !== 'bearer'} />
       <GrantsSection />
     </div>
   )

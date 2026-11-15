@@ -710,6 +710,8 @@ export interface APIToken {
   repository_ids?: number[]
   /** Present and true for delegation-only administrator tokens, which carry no repository ceiling. */
   delegation_only?: boolean
+  /** Present and true for inventory-only administrator tokens, which carry no repository ceiling. */
+  inventory_only?: boolean
   created_at: string
   last_used_at?: string
   expires_at?: string
@@ -741,6 +743,19 @@ export interface CreatedDelegationOnlyToken {
   id: number
   prefix: string
   delegation_only: true
+  created_at: string
+  expires_at?: string
+  token: string
+}
+
+export interface CreateInventoryOnlyTokenRequest {
+  expires_at?: string
+}
+
+export interface CreatedInventoryOnlyToken {
+  id: number
+  prefix: string
+  inventory_only: true
   created_at: string
   expires_at?: string
   token: string

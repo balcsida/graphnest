@@ -7,6 +7,7 @@ const date = (value: string) => new Intl.DateTimeFormat(undefined, { dateStyle: 
 
 const visible = { id: 3, prefix: 'gnp_visible', repository_ids: [101], created_at: '2026-01-01T00:00:00Z', expires_at: '2026-08-29T00:00:00Z' }
 const broker = { id: 5, prefix: 'gnp_broker__', delegation_only: true, created_at: '2026-01-02T00:00:00Z' }
+const worker = { id: 8, prefix: 'gnp_worker__', inventory_only: true, created_at: '2026-01-03T00:00:00Z' }
 const grant = (id: number, client_name: string) => ({ id, client_name, scope: '', created_at: '2026-09-01T00:00:00Z', last_used_at: '2026-09-04T00:00:00Z', expires_at: '2026-10-01T00:00:00Z' })
 const noGrants = { 'GET /v1/account/oauth-grants': { body: { grants: [], truncated: false } } }
 
@@ -18,7 +19,7 @@ const confirmDialog = async (user: ReturnType<typeof userEvent.setup>) => {
 describe('account tokens', () => {
   it('lists tokens, creates one with expiry and ceiling, reveals it once and revokes it', async () => {
     const user = userEvent.setup()
-    let tokens = [visible, broker]
+    let tokens = [visible, broker, worker]
     const created = { id: 4, prefix: 'gnp_new', repository_ids: [101], created_at: '2026-01-01T00:00:00Z', expires_at: '2026-08-29T00:00:00Z', token: 'gnp_reveal_once' }
     const { calls } = mountConsole('/account', {
       ...noGrants,
@@ -37,6 +38,7 @@ describe('account tokens', () => {
     expect(within(row).getByText(date('2026-08-29T00:00:00Z'))).toBeInTheDocument()
     expect(within(row).getByText('—')).toBeInTheDocument()
     expect(within(screen.getByRole('row', { name: /gnp_broker__/ })).getByText('Delegation only (any active repository)')).toBeInTheDocument()
+    expect(within(screen.getByRole('row', { name: /gnp_worker__/ })).getByText('Inventory only (lists every active repository)')).toBeInTheDocument()
 
     const expires = screen.getByLabelText('Expires (optional, maximum 90 days)')
     expect(expires).toHaveAttribute('max')
@@ -81,13 +83,51 @@ describe('account tokens', () => {
     expect(calls.find((call) => call.path === '/v1/account/delegation-tokens')?.body).toEqual({})
   })
 
+  it('offers inventory tokens to session administrators only, with an expiry, and reveals the secret once', async () => {
+    const user = userEvent.setup()
+    let tokens: { id: number }[] = [visible]
+    const created = { id: 9, prefix: 'gnp_invent', inventory_only: true, created_at: '2026-01-01T00:00:00Z', expires_at: '2026-08-29T00:00:00Z', token: 'gnp_inventory_secret' }
+    const { calls } = mountConsole('/account', {
+      ...noGrants,
+      'GET /v1/account/api-tokens': () => ({ body: { tokens } }),
+      'POST /v1/account/inventory-tokens': () => {
+        tokens = [...tokens, created]
+        return { status: 201, body: created }
+      },
+      'DELETE /v1/account/api-tokens/9': () => {
+        tokens = tokens.filter((token) => token.id !== 9)
+        return { status: 204 }
+      },
+    })
+    fireEvent.change(await screen.findByLabelText('Inventory token expires (optional, maximum 90 days)'), { target: { value: '2026-08-29T00:00' } })
+    await user.click(screen.getByRole('button', { name: 'Create inventory token' }))
+    expect(await screen.findByText('Create this inventory-only token?')).toBeInTheDocument()
+    await confirmDialog(user)
+
+    // Revealed once, under the form that minted it, and listed by its kind.
+    expect(await screen.findAllByText('Copy this token now; it will not be shown again: gnp_inventory_secret')).toHaveLength(1)
+    expect(await screen.findByText('Inventory token created.')).toBeInTheDocument()
+    expect(calls.find((call) => call.path === '/v1/account/inventory-tokens')?.body).toEqual({ expires_at: new Date('2026-08-29T00:00').toISOString().replace('.000', '') })
+    expect(calls.some((call) => call.path === '/v1/account/delegation-tokens')).toBe(false)
+    const row = await screen.findByRole('row', { name: /gnp_invent/ })
+    expect(within(row).getByText('Inventory only (lists every active repository)')).toBeInTheDocument()
+
+    // Revoked through the same control as every other token.
+    await user.click(within(row).getByRole('button', { name: 'Revoke token' }))
+    await confirmDialog(user)
+    expect(await screen.findByText('Token revoked.')).toBeInTheDocument()
+    expect(calls.some((call) => call.method === 'DELETE' && call.path === '/v1/account/api-tokens/9')).toBe(true)
+    expect(screen.queryByText(/gnp_inventory_secret/)).not.toBeInTheDocument()
+  })
+
   it.each([
     ['bearer administrator', 'bearer' as const, {}],
     ['session non-administrator', 'oidc' as const, { 'GET /v1/admin/overview': failure(403) }],
-  ])('hides delegation tokens for a %s', async (_name, method, overrides) => {
+  ])('hides delegation and inventory tokens for a %s', async (_name, method, overrides) => {
     mountConsole('/account', { ...noGrants, 'GET /v1/account/api-tokens': { body: { tokens: [] } }, ...overrides }, method)
     expect(await screen.findByRole('button', { name: 'Create API token' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Create delegation token' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Create inventory token' })).not.toBeInTheDocument()
   })
 })
 
