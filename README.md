@@ -239,6 +239,15 @@ curl --fail-with-body -X POST "https://graphnest.example/v1/admin/api-tokens" \
   -d '{"repository_ids":[101],"expires_at":"2026-08-01T00:15:00Z"}'
 ```
 
+Besides ordinary API tokens, which are bound to the repository ceiling they were minted with, an administrator can mint two single-purpose kinds from a browser session for the long-lived credentials of such services. Both have no ceiling, so they keep working as repositories are onboarded, and both are refused by every endpoint outside their purpose:
+
+| Token kind | Minted with | May call | Use it for |
+| --- | --- | --- | --- |
+| Delegation-only | `POST /v1/account/delegation-tokens` | `POST /v1/admin/api-tokens`, for any active repository | The broker above. See [Service credentials for CI upload brokers](docs/operations.md#service-credentials-for-ci-upload-brokers). |
+| Inventory-only | `POST /v1/account/inventory-tokens` | `GET /v1/repositories` and `GET /v1/repositories/{id}`, for every active repository | A worker that needs the list of repositories and their index status. See [Service credentials for repository inventory workers](docs/operations.md#service-credentials-for-repository-inventory-workers). |
+
+A worker that indexes every repository holds one of each: it lists with the inventory-only token and uploads with tokens delegated by the delegation-only token. Either kind stops authenticating when its owner is no longer an administrator.
+
 ## Importing a local CodeGraph index
 
 The `graphnest` command reads an existing [CodeGraph](https://github.com/colbymchenry/codegraph) index (`.codegraph/codegraph.db`, schema versions 9, 10 and 11 from CodeGraph 1.6.0 to 1.6.2) and converts it to the graph artifact that `POST /v1/graph/uploads` accepts, without re-indexing, without CodeGraph installed, and without cgo. The reader opens the database read-only inside one transaction, so a CodeGraph watcher or daemon that still has it open is left alone and nothing under `.codegraph/` is written.

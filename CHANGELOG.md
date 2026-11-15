@@ -5,6 +5,46 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+### Added
+
+- Inventory-only administrator API tokens, minted by an interactive
+  administrator through `POST /v1/account/inventory-tokens` or on the Account
+  page of the console. Such a token has no repository ceiling, so
+  `GET /v1/repositories` shows it every active repository, including ones
+  onboarded after it was minted, and `GET /v1/repositories/{id}` resolves one
+  repository's SCIP and graph status. It is meant for a worker that has to
+  find the repositories it indexes; the operations guide gains "Service
+  credentials for repository inventory workers". ([#170])
+- Repository summaries carry `size_bytes`, the size GitHub last reported, so a
+  consumer can order work by repository size. The field is optional and
+  omitted while no size is known. ([#170])
+
+### Security
+
+- An inventory-only token is refused with `403` by every endpoint except
+  `GET /v1/repositories`, `GET /v1/repositories/{id}` and
+  `GET /v1/repositories/{id}/status`. It cannot search, read files, read or
+  upload SCIP indexes and graphs, call `/mcp` or an admin route, delegate, or
+  mint and manage tokens, and no API token of any kind can mint one. Request
+  authentication enforces this in one place, beside the delegation-only rule.
+  A leaked token shows repository names, commit SHAs, sizes and index state,
+  and no repository content. ([#170])
+- An inventory-only token stops authenticating when its owner loses the
+  administrator role, is suspended, or is deleted, instead of degrading into
+  an ordinary token over the owner's grants. It is stored with an empty
+  repository ceiling, so a server from before this change gives it no
+  repository either. ([#170])
+
+### Upgrade guidance
+
+- Migration 040 adds the boolean column `api_tokens.inventory_only`, default
+  `false`, and two check constraints: a token cannot be both delegation-only
+  and inventory-only, and an inventory-only token has an empty ceiling. It
+  runs automatically at startup. Existing tokens are unmarked, satisfy both
+  constraints, and keep their current behaviour. A rolling upgrade is fine: a
+  replica still on the previous version answers an inventory-only token with
+  `401`. No configuration changes are required.
+
 ## [0.12.0] - 2026-11-14
 
 This release fixes how MCP tool calls are authorized (see Security) and serves
@@ -779,3 +819,4 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
 [#166]: https://github.com/balcsida/graphnest/pull/166
 [#167]: https://github.com/balcsida/graphnest/pull/167
 [#169]: https://github.com/balcsida/graphnest/pull/169
+[#170]: https://github.com/balcsida/graphnest/pull/170

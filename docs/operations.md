@@ -771,6 +771,58 @@ rather than degrading into an ordinary token over the owner's grants. Prefer a
 dedicated local service user as the owner so revoking a person's access never
 disables the broker.
 
+## Service credentials for repository inventory workers
+
+A worker that acts on every onboarded repository (for example one that
+generates a SCIP index for each of them) first has to learn which repositories
+exist and which commit each is indexed at. Neither credential above can tell
+it. An ordinary administrator API token names its repository ceiling when it
+is minted, so a repository onboarded later is missing from its
+`GET /v1/repositories`. A delegation-only token is refused there.
+
+Use an **inventory-only** token for the listing. Mint it as an interactive
+administrator (session or OIDC sign-in; never from an API token of any kind)
+with `POST /v1/account/inventory-tokens`, optionally passing `expires_at`, or
+on the Account page of the console. The token:
+
+- has no repository ceiling: `GET /v1/repositories` returns every repository
+  an administrator session sees, including repositories onboarded after the
+  token was minted. Follow `next_cursor` while `truncated` is true;
+- may also read `GET /v1/repositories/{id}` (or `/v1/repositories/{id}/status`)
+  for a listed repository. The listing reports `scip_status` and
+  `graph_status` as `unknown`; this request resolves them and adds
+  `scip_commit`, `graph_commit` and `graph_producer`;
+- cannot delegate, and is refused with 403 by every other endpoint: it cannot
+  search, read files, read or upload SCIP indexes and graphs, call `/mcp` or
+  an admin route, mint, list or revoke tokens, or manage OAuth grants. A
+  leaked worker credential therefore shows repository names, branches, commit
+  SHAs, sizes and index state until it is revoked, and no repository content.
+
+The listing contains active repositories only. A repository that is disabled,
+archived, or on an installation that is not active is left out for every
+caller, administrators included, rather than marked. A worker never has to
+tell such repositories apart: one that is no longer listed is no longer to be
+worked on. Each entry carries `indexed_sha`, the commit a SCIP upload must
+name, and `size_bytes`, the size GitHub last reported (omitted while it has
+reported none), for ordering work by repository size.
+
+The token does not upload. Pair it with a delegation-only token from the
+previous section: the worker lists with the inventory-only token, asks
+`POST /v1/admin/api-tokens` with the delegation-only token for a one-hour
+token restricted to the repository it is about to index, and uploads with
+that. Neither long-lived credential reads repository content, and neither can
+mint the other.
+
+Revoke it like any other token from the owner's session
+(`DELETE /v1/account/api-tokens/{id}`); it is listed with
+`"inventory_only": true`. The token is tied to the owner's administrator role
+in the same way as a delegation-only token: if the owner is demoted,
+suspended, or deleted, it stops authenticating altogether (401) rather than
+degrading into an ordinary token over the owner's grants. That does not revoke
+it: it works again once the owner is restored, so revoke it as well when it
+must not come back. Prefer a dedicated local service user as the owner so
+revoking a person's access never disables the worker.
+
 ## Production control gates
 
 Treat the following as deployment prerequisites, not settings supplied by this
