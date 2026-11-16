@@ -102,6 +102,10 @@ func Parse(data []byte) (Upload, error) {
 			encoding = scip.PositionEncoding_UTF8CodeUnitOffsetFromLineStart
 		}
 		upload.Documents = append(upload.Documents, Document{Path: document.RelativePath, Language: document.Language, PositionEncoding: int32(encoding)})
+		// scip_occurrences is unique on (upload, path, range, symbol); indexers
+		// repeat occurrences now and then (scip-go does), so keep one per key
+		// and combine the roles rather than fail the whole upload.
+		seen := make(map[occurrenceKey]int, len(document.Occurrences))
 		for _, occurrence := range document.Occurrences {
 			sourceRange, ok := occurrence.SourceRange()
 			if !ok || sourceRange.Validate() != nil || !validSymbol(occurrence.Symbol) {
@@ -119,6 +123,15 @@ func Parse(data []byte) (Upload, error) {
 			if enclosing, ok := occurrence.EnclosingSourceRange(); ok && enclosing.Validate() == nil {
 				value.Enclosing = &Range{StartLine: enclosing.Start.Line, StartCharacter: enclosing.Start.Character, EndLine: enclosing.End.Line, EndCharacter: enclosing.End.Character}
 			}
+			key := occurrenceKey{value.StartLine, value.StartCharacter, value.EndLine, value.EndCharacter, value.Symbol}
+			if at, repeated := seen[key]; repeated {
+				upload.Occurrences[at].Roles |= value.Roles
+				if upload.Occurrences[at].Enclosing == nil {
+					upload.Occurrences[at].Enclosing = value.Enclosing
+				}
+				continue
+			}
+			seen[key] = len(upload.Occurrences)
 			upload.Occurrences = append(upload.Occurrences, value)
 		}
 
@@ -377,4 +390,11 @@ func validDocument(document *scip.Document, paths map[string]struct{}) bool {
 func validSymbol(symbol string) bool {
 	_, err := scip.ParseSymbol(symbol)
 	return err == nil
+}
+
+// occurrenceKey is the part of scip_occurrences' unique key that varies
+// within one document.
+type occurrenceKey struct {
+	startLine, startCharacter, endLine, endCharacter int32
+	symbol                                           string
 }

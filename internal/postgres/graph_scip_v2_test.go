@@ -223,3 +223,32 @@ func TestReplaceSCIPLogsADroppedGeneration(t *testing.T) {
 		}
 	}
 }
+
+// An upload the database refuses is answered with a generic 503, so the store
+// logs the cause; the previous upload and its generation stay in place.
+func TestReplaceSCIPLogsAFailedUpload(t *testing.T) {
+	store, repositoryID := readyGraphStore(t, testSHA('a'))
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("a.go", globalSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	before, err := scipGeneration(t, store, repositoryID)
+	if err != nil || before == nil {
+		t.Fatalf("generation=%#v err=%v", before, err)
+	}
+	var log bytes.Buffer
+	store.Logger = slog.New(slog.NewTextHandler(&log, nil))
+	// Parse merges repeated occurrences; bypassing it reaches the unique key.
+	repeated := uploadWith("b.go", globalSymbol, definitionRole)
+	repeated.Occurrences = append(repeated.Occurrences, repeated.Occurrences[0])
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), repeated); err == nil {
+		t.Fatal("upload with a repeated occurrence key succeeded")
+	}
+	for _, want := range []string{"level=ERROR", "SCIP upload failed", "commit=" + testSHA('a'), fmt.Sprint("repository_id=", repositoryID), "scip_occurrences_unique"} {
+		if !strings.Contains(log.String(), want) {
+			t.Fatalf("log %q lacks %q", log.String(), want)
+		}
+	}
+	if after, err := scipGeneration(t, store, repositoryID); err != nil || after == nil || after.ID != before.ID {
+		t.Fatalf("generation after failed upload=%#v err=%v", after, err)
+	}
+}
