@@ -60,6 +60,9 @@ the compatibility and migration notes before upgrading.
   the caller's scope, so widely used coordinates no longer make it slow.
 - The component detail (`GET /v1/supply-chain/components/{key}`) finds its
   coordinate through the same index instead of reading every latest snapshot.
+- A SCIP upload that repeats a relationship within one document no longer
+  fails with 503 "SCIP service is unavailable": parsing keeps one relationship
+  per key.
 
 ### Upgrade guidance
 
