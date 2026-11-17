@@ -5,6 +5,15 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-17
+
+This release makes the supply-chain portfolio usable on a large inventory: the
+Dependency graph view no longer fails with 502, the server answers the graph
+in one request (`GET /v1/supply-chain/graph`), and component pages read from
+an index. A SCIP upload that repeats a relationship no longer fails.
+Migration 042 builds an index at startup, and a rolling upgrade is fine (see
+Upgrade guidance). No configuration has to change.
+
 ### Added
 
 - `GET /v1/supply-chain/graph` returns the dependencies that at least
@@ -14,7 +23,7 @@ the compatibility and migration notes before upgrading.
   `q` filters of the component list and a `limit` of up to 150 dependencies.
   A graph holds at most 1,000 repository links: past that every dependency
   lists an equal share of its repositories, lowest GitHub ID first, and
-  `repository_count` stays exact.
+  `repository_count` stays exact. ([#173])
 
 ### Changed
 
@@ -22,20 +31,20 @@ the compatibility and migration notes before upgrading.
   instead of reading up to 30 pages of the component list, so it covers the
   whole inventory rather than its first 3,000 coordinates. When the graph is
   over its link budget the view says so and each dependency shows how many
-  repositories use it.
+  repositories use it. ([#173])
 - `GET /v1/supply-chain/components` pages in the byte order of the coordinate
   key (ecosystem, namespace, name, version) instead of the database
   collation's order, so names with capitals now sort before lowercase ones.
   Cursors issued before this change are refused with `400`; start again from
-  the first page.
+  the first page. ([#173])
 - A page of `GET /v1/supply-chain/components` (and of the MCP tool
   `search_dependency_inventory`) names at most 1,000 repositories across its
   components. Past that every component lists an equal share of its
   repositories, lowest GitHub ID first; `repository_count` stays exact, and
-  `GET /v1/supply-chain/components/{key}` lists the occurrences.
+  `GET /v1/supply-chain/components/{key}` lists the occurrences. ([#173])
 - The Dependency graph view shows `unassessed` beside a dependency's other
   assessment statuses whenever one of its occurrences has no assessment, not
-  only when none has.
+  only when none has. ([#173])
 
 ### Fixed
 
@@ -52,17 +61,19 @@ the compatibility and migration notes before upgrading.
   inventory of 900,000 occurrences with one database CPU a component page went
   from 3.2 s to 15 ms, the overview from 5.6 s to 0.9 s, and the graph from
   about 96 s of paging to one request of 1.4 s or less
-  ([measurements](docs/supply-chain-query-plans.md)).
+  ([measurements](docs/supply-chain-query-plans.md)). ([#173])
 - A component page whose coordinates are used by very many repositories
   answered `500`, because naming every repository for every coordinate
   outgrew `GRAPHNEST_MAX_RESPONSE_BYTES`. The page now stays within a budget
   of repository names (see Changed), and reads only the occurrences inside
   the caller's scope, so widely used coordinates no longer make it slow.
+  ([#173])
 - The component detail (`GET /v1/supply-chain/components/{key}`) finds its
   coordinate through the same index instead of reading every latest snapshot.
+  ([#173])
 - A SCIP upload that repeats a relationship within one document no longer
   fails with 503 "SCIP service is unavailable": parsing keeps one relationship
-  per key.
+  per key. ([#175])
 
 ### Upgrade guidance
 
@@ -74,7 +85,7 @@ the compatibility and migration notes before upgrading.
   size on disk. Reads continue. A rolling upgrade is fine; a replica still on
   the previous version answers as slowly as before and refuses the new
   version's component cursors with `400`, as the new version refuses the old
-  ones. No configuration changes are required.
+  ones. No configuration changes are required. ([#173])
 
 ## [0.13.1] - 2026-11-17
 
@@ -846,7 +857,8 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
-[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/balcsida/graphnest/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/balcsida/graphnest/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/balcsida/graphnest/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/balcsida/graphnest/compare/v0.11.0...v0.12.0
@@ -926,3 +938,5 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
 [#169]: https://github.com/balcsida/graphnest/pull/169
 [#170]: https://github.com/balcsida/graphnest/pull/170
 [#172]: https://github.com/balcsida/graphnest/pull/172
+[#173]: https://github.com/balcsida/graphnest/pull/173
+[#175]: https://github.com/balcsida/graphnest/pull/175
