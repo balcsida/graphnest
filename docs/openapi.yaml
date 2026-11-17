@@ -893,7 +893,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/supply-chain/components:
     get:
-      description: Unique coordinates (ecosystem, namespace, name, version) across the latest snapshots of the caller's authorized repositories, with repository and occurrence counts, keyset-paginated in the byte order of the coordinate key (ecosystem, namespace, name, version). The cursor is bound to the filter set. Filters never reveal repositories outside the scope.
+      description: Unique coordinates (ecosystem, namespace, name, version) across the latest snapshots of the caller's authorized repositories, with repository and occurrence counts, keyset-paginated in the byte order of the coordinate key (ecosystem, namespace, name, version). The cursor is bound to the filter set. A page names at most 1,000 repositories across its components; past that every component lists an equal share of its repositories, lowest GitHub ID first, and `repository_count` stays exact. Filters never reveal repositories outside the scope.
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
@@ -3100,7 +3100,7 @@ components:
         declared_raw: {type: array, items: {type: string}, description: Distinct verbatim producer declarations across occurrences}
         newest_collected_at: {type: string, format: date-time}
         oldest_collected_at: {type: string, format: date-time}
-        repositories: {type: array, items: {type: object, additionalProperties: false, required: [id], properties: {id: {type: integer, format: int64}, name: {type: string}}}}
+        repositories: {type: array, maxItems: 1000, description: Repositories using it by ascending GitHub ID; fewer than repository_count when the page is over its budget of repository names, items: {type: object, additionalProperties: false, required: [id], properties: {id: {type: integer, format: int64}, name: {type: string}}}}
     SupplyChainPortfolioComponentList:
       type: object
       additionalProperties: false

@@ -219,6 +219,7 @@ export interface SupplyChainPortfolioComponent {
   declared_raw: string[]
   newest_collected_at: string
   oldest_collected_at: string
+  /** By ascending GitHub ID; fewer than `repository_count` when the page is over its budget of repository names. */
   repositories: { id: number; name?: string }[]
 }
 

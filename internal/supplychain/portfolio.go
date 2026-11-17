@@ -210,15 +210,37 @@ func (portfolio *Portfolio) Components(ctx context.Context, principal authn.Prin
 		return api.SupplyChainPortfolioComponentList{}, err
 	}
 	result := api.SupplyChainPortfolioComponentList{Stream: stream, Components: make([]api.SupplyChainPortfolioComponent, 0, len(items)), RepositoriesInScope: len(ids)}
-	for index, item := range items {
-		if index == limit {
-			result.Truncated = true
-			result.NextCursor = encodePortfolioCursor(items[index-1].Key, request.filterKey())
-			break
-		}
+	if len(items) > limit {
+		result.Truncated = true
+		result.NextCursor = encodePortfolioCursor(items[limit-1].Key, request.filterKey())
+		items = items[:limit]
+	}
+	links := 0
+	for _, item := range items {
+		links += item.RepositoryCount
+	}
+	share := repositoryShare(links, len(items))
+	for _, item := range items {
+		item.RepositoryGitHubIDs = item.RepositoryGitHubIDs[:min(len(item.RepositoryGitHubIDs), share)]
 		result.Components = append(result.Components, portfolioComponent(item, byGitHubID))
 	}
 	return result, nil
+}
+
+// repositoryLinkBudget bounds the repositories one response names across its
+// components or dependencies. Without it a page of widely used coordinates
+// outgrows the response byte limit, and a graph of them takes a browser
+// seconds to lay out past about a thousand edges.
+const repositoryLinkBudget = 1000
+
+// repositoryShare is how many repositories each of the items may name: all
+// of them while the links fit the budget, an equal share past it. Lists are
+// by ascending GitHub ID, so the items keep naming the same repositories.
+func repositoryShare(links, items int) int {
+	if links <= repositoryLinkBudget {
+		return links
+	}
+	return max(repositoryLinkBudget/items, 1)
 }
 
 func portfolioComponent(item PortfolioComponent, byGitHubID map[int64]repository.Repository) api.SupplyChainPortfolioComponent {
@@ -252,10 +274,6 @@ const (
 	DefaultGraphMinRepositories = 2
 	// MaxGraphDependencies bounds the dependencies of one graph.
 	MaxGraphDependencies = 150
-	// graphEdgeBudget bounds the repository links of one graph. Past about a
-	// thousand edges the layout takes seconds in a browser and the response
-	// outgrows the byte limit.
-	graphEdgeBudget = 1000
 	// graphListLimit bounds the versions and expressions listed per dependency.
 	graphListLimit = 10
 )
@@ -306,13 +324,7 @@ func (portfolio *Portfolio) Graph(ctx context.Context, principal authn.Principal
 	for _, item := range items {
 		edges += item.RepositoryCount
 	}
-	// Within the budget every repository is listed. Past it each dependency
-	// lists an equal share, lowest GitHub ID first so that the dependencies
-	// keep naming the same repositories.
-	share := edges
-	if edges > graphEdgeBudget {
-		share = max(graphEdgeBudget/len(items), 1)
-	}
+	share := repositoryShare(edges, len(items))
 	listed := map[int64]bool{}
 	for _, item := range items {
 		dependency := api.SupplyChainGraphDependency{Ecosystem: item.Ecosystem, Namespace: item.Namespace, Name: item.Name, VersionCount: len(item.Versions),

@@ -41,7 +41,8 @@ type PortfolioFilter struct {
 	Limit             int
 }
 
-// PortfolioComponent is one unique coordinate across the authorized set.
+// PortfolioComponent is one unique coordinate across the authorized set, with
+// the repositories using it by ascending GitHub ID.
 type PortfolioComponent struct {
 	Key                 string
 	Ecosystem           string
