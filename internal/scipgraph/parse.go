@@ -106,6 +106,7 @@ func Parse(data []byte) (Upload, error) {
 		// repeat occurrences now and then (scip-go does), so keep one per key
 		// and combine the roles rather than fail the whole upload.
 		seen := make(map[occurrenceKey]int, len(document.Occurrences))
+		seenRelationships := map[Relationship]struct{}{}
 		for _, occurrence := range document.Occurrences {
 			sourceRange, ok := occurrence.SourceRange()
 			if !ok || sourceRange.Validate() != nil || !validSymbol(occurrence.Symbol) {
@@ -144,11 +145,17 @@ func Parse(data []byte) (Upload, error) {
 				if !validSymbol(relationship.Symbol) {
 					return Upload{}, ErrInvalidIndex
 				}
-				upload.Relationships = append(upload.Relationships, Relationship{
+				value := Relationship{
 					Path: document.RelativePath, Source: symbol.Symbol, Target: relationship.Symbol,
 					Definition: relationship.IsDefinition, Reference: relationship.IsReference,
 					Implementation: relationship.IsImplementation, TypeDefinition: relationship.IsTypeDefinition,
-				})
+				}
+				// scip_relationships is unique on the whole value; keep one.
+				if _, repeated := seenRelationships[value]; repeated {
+					continue
+				}
+				seenRelationships[value] = struct{}{}
+				upload.Relationships = append(upload.Relationships, value)
 			}
 		}
 	}

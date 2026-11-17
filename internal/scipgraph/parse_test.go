@@ -413,3 +413,27 @@ func TestParseMergesRepeatedOccurrences(t *testing.T) {
 		t.Fatalf("merged occurrence = %#v", first)
 	}
 }
+
+// scip_relationships is unique on (upload, document, source, target, flags);
+// a document that repeats a relationship, within one symbol or across
+// repeated entries for the same symbol, failed the whole upload with 503.
+func TestParseMergesRepeatedRelationships(t *testing.T) {
+	a, b := "scip-go gomod example.com/a v1.0.0 A#", "scip-go gomod example.com/a v1.0.0 B#"
+	data := marshalIndex(t, &scip.Index{
+		Metadata: &scip.Metadata{ToolInfo: &scip.ToolInfo{Name: "scip-go", Version: "1"}},
+		Documents: []*scip.Document{{
+			RelativePath: "a.go",
+			Symbols: []*scip.SymbolInformation{
+				{Symbol: a, Relationships: []*scip.Relationship{{Symbol: b, IsImplementation: true}, {Symbol: b, IsImplementation: true}}},
+				{Symbol: a, Relationships: []*scip.Relationship{{Symbol: b, IsImplementation: true}, {Symbol: b, IsReference: true}}},
+			},
+		}},
+	})
+	upload, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(upload.Relationships) != 2 {
+		t.Fatalf("relationships = %#v", upload.Relationships)
+	}
+}
