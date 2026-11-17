@@ -28,9 +28,14 @@ the compatibility and migration notes before upgrading.
   collation's order, so names with capitals now sort before lowercase ones.
   Cursors issued before this change are refused with `400`; start again from
   the first page.
-- A dependency in the graph reports `unassessed` beside its other assessment
-  statuses whenever one of its occurrences has no assessment, not only when
-  none has.
+- A page of `GET /v1/supply-chain/components` (and of the MCP tool
+  `search_dependency_inventory`) names at most 1,000 repositories across its
+  components. Past that every component lists an equal share of its
+  repositories, lowest GitHub ID first; `repository_count` stays exact, and
+  `GET /v1/supply-chain/components/{key}` lists the occurrences.
+- The Dependency graph view shows `unassessed` beside a dependency's other
+  assessment statuses whenever one of its occurrences has no assessment, not
+  only when none has.
 
 ### Fixed
 
@@ -39,13 +44,20 @@ the compatibility and migration notes before upgrading.
   "Request failed with HTTP 502", because its requests outlasted the server's
   10 second write timeout. Every component page sorted and aggregated every
   occurrence in scope, and the overview ran four passes over them. A page now
-  reads its coordinates from an index and aggregates only those, the overview
-  counts coordinates in one pass and reads assessment counts from an index,
-  and facets no longer join components to assessments. On a synthetic
-  inventory of 600,000 occurrences with one database CPU a component page went
-  from 2.7 s to 15 ms, the overview from 3.9 s to 0.75 s, and the graph from
-  about 80 s of paging to one 0.8 s request
+  reads its coordinates from an index and aggregates only those (a page
+  filtered by search, license or assessment still reads the scope once to
+  find its matches), the overview counts coordinates in one pass and reads
+  assessment counts from an index, and facets no longer join components to
+  assessments. On a synthetic
+  inventory of 900,000 occurrences with one database CPU a component page went
+  from 3.2 s to 15 ms, the overview from 5.6 s to 0.9 s, and the graph from
+  about 96 s of paging to one request of 1.4 s or less
   ([measurements](docs/supply-chain-query-plans.md)).
+- A component page whose coordinates are used by very many repositories
+  answered `500`, because naming every repository for every coordinate
+  outgrew `GRAPHNEST_MAX_RESPONSE_BYTES`. The page now stays within a budget
+  of repository names (see Changed), and reads only the occurrences inside
+  the caller's scope, so widely used coordinates no longer make it slow.
 - The component detail (`GET /v1/supply-chain/components/{key}`) finds its
   coordinate through the same index instead of reading every latest snapshot.
 
