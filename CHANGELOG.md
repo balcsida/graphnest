@@ -5,6 +5,15 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+### Fixed
+
+- A SCIP upload with a repeated occurrence (the same range and symbol twice in
+  one document, which scip-go emits now and then) no longer fails with 503
+  "SCIP service is unavailable": parsing keeps one occurrence per key and
+  combines the roles.
+- A SCIP upload the database refuses is logged with its cause (`SCIP upload
+  failed`), instead of only reaching the client as a generic 503.
+
 ## [0.13.0] - 2026-11-15
 
 This release adds inventory-only administrator tokens: a credential for a

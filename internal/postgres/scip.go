@@ -74,7 +74,15 @@ func (s *Store) AdminSCIPDependencies(ctx context.Context, installationID int64,
 	return items, more, nil
 }
 
-func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit string, upload scipgraph.Upload) error {
+func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit string, upload scipgraph.Upload) (err error) {
+	// The HTTP layer answers anything unexpected with a generic 503, so the
+	// cause is logged here. A lost race with indexing is not a failure.
+	defer func() {
+		if err != nil && !errors.Is(err, scipgraph.ErrStaleIndex) && s.Logger != nil {
+			s.Logger.Error("SCIP upload failed", "repository_id", repositoryID, "commit", commit, "error", err.Error(),
+				"occurrences", len(upload.Occurrences), "relationships", len(upload.Relationships))
+		}
+	}()
 	// Both derived graphs are built before the repository row is locked.
 	artifact, err := graphartifact.FromSCIP(graphartifact.SCIPRepository{ID: repositoryID, Commit: commit}, upload.Occurrences, upload.Relationships)
 	if err != nil {

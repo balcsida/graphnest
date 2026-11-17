@@ -382,3 +382,34 @@ func TestParseSkipsDocumentsOutsideProjectRoot(t *testing.T) {
 		}
 	}
 }
+
+// scip_occurrences is unique on (upload, path, range, symbol). A repeated
+// occurrence, which scip-go emits, made the whole upload fail with 503. Parse
+// keeps one per key and combines the roles, so a definition is not lost.
+func TestParseMergesRepeatedOccurrences(t *testing.T) {
+	symbol := "scip-go gomod example.com/a v1.0.0 A#"
+	data := marshalIndex(t, &scip.Index{
+		Metadata: &scip.Metadata{ToolInfo: &scip.ToolInfo{Name: "scip-go", Version: "1"}},
+		Documents: []*scip.Document{{
+			RelativePath: "a.go",
+			Occurrences: []*scip.Occurrence{
+				{Range: []int32{2, 4, 9}, Symbol: symbol, SymbolRoles: int32(scip.SymbolRole_ReadAccess)},
+				{Range: []int32{2, 4, 2, 9}, Symbol: symbol, SymbolRoles: int32(scip.SymbolRole_Definition)},
+				{Range: []int32{2, 4, 9}, Symbol: "local 0"},
+				{Range: []int32{3, 4, 9}, Symbol: symbol},
+			},
+		}},
+	})
+	upload, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(upload.Occurrences) != 3 {
+		t.Fatalf("occurrences = %#v", upload.Occurrences)
+	}
+	first := upload.Occurrences[0]
+	if first.StartLine != 2 || first.Symbol != symbol ||
+		first.Roles != int32(scip.SymbolRole_ReadAccess|scip.SymbolRole_Definition) {
+		t.Fatalf("merged occurrence = %#v", first)
+	}
+}
