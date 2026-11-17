@@ -29,14 +29,18 @@ const packageKey = `((coalesce(c.ecosystem, '') || chr(1) || coalesce(c.purl_nam
 // start and stop at.
 const ecosystemFilter = `($2='' or (` + coordinateKey + ` >= $2 || chr(1) and ` + coordinateKey + ` < $2 || chr(2)))`
 
+// scopedAssessment joins the assessment a of the occurrence c. An assessment
+// is in the snapshot of its component, so naming the snapshots $1 changes
+// nothing about the result; it lets a query read the assessments of the scope
+// instead of those of every retained snapshot, and start from them when a
+// filter needs an assessment.
+const scopedAssessment = `left join supply_chain_component_assessments a on a.component_id=c.id and a.snapshot_id=any($1)`
+
 // occurrenceFilters keeps the occurrences of c (and its assessment a) that
-// match the search ($3), license expression ($4) and assessment status ($5)
-// within the snapshots $1. Naming the assessment's own snapshot is redundant
-// with the scope of c, and is what lets a license or status filter start
-// from the assessments of the scope instead of reading every occurrence.
+// match the search ($3), license expression ($4) and assessment status ($5).
 const occurrenceFilters = `($3='' or lower(coalesce(c.purl_name, c.name)) like '%'||lower($3)||'%' or lower(coalesce(c.purl, '')) like '%'||lower($3)||'%' or lower(c.name) like '%'||lower($3)||'%')
-	and ($4='' or (lower(a.normalized_expression)=lower($4) and a.snapshot_id=any($1)))
-	and ($5='' or ($5='unassessed' and a.component_id is null) or (a.status=$5 and a.snapshot_id=any($1)))`
+	and ($4='' or lower(a.normalized_expression)=lower($4))
+	and ($5='' or ($5='unassessed' and a.component_id is null) or a.status=$5)`
 
 // portfolioCoordinatesQuery reads the occurrences of the snapshots $1 once:
 // a row per coordinate, folded into occurrence, coordinate, PURL-less and
@@ -52,11 +56,14 @@ const portfolioCoordinatesQuery = `select ecosystem, sum(occurrences), count(*),
 // repositories and returns the $7 most shared. Assessments are read for the
 // occurrences of the returned packages only. A repository has one latest
 // snapshot per stream, so distinct snapshots count repositories.
+// shortcut: a returned package carries every snapshot using it although the
+// caller names a share of them, because which share depends on GitHub IDs;
+// order and cut them here once a scope holds tens of thousands of repositories.
 const portfolioGraphQuery = `with packages as (
 		select ` + packageKey + ` as package, count(distinct c.snapshot_id) as repositories, array_agg(distinct c.snapshot_id) as snapshots,
-			array_remove(array_agg(distinct coalesce(c.purl_version, c.version, '')), '') as versions, array_agg(c.id) as occurrences
+			array_remove(array_agg(distinct coalesce(c.purl_version, c.version, '') collate "C"), '') as versions, array_agg(c.id) as occurrences
 		from supply_chain_components c
-		left join supply_chain_component_assessments a on a.component_id=c.id
+		` + scopedAssessment + `
 		where c.snapshot_id=any($1) and ` + ecosystemFilter + ` and ` + occurrenceFilters + `
 		group by 1 having count(distinct c.snapshot_id) >= $6
 	), ranked as (
@@ -209,38 +216,33 @@ func (s *Store) SupplyChainOverview(ctx context.Context, repositoryIDs []int64, 
 	overview.UnassessedComponent = occurrences
 	for _, assessment := range assessments {
 		overview.AssessmentCounts[assessment.Value] = assessment.Count
-		overview.UnassessedComponent -= assessment.Count
+		overview.UnassessedComponent = max(overview.UnassessedComponent-assessment.Count, 0)
 	}
 	return overview, nil
 }
 
 // portfolioComponentsQuery returns the component page statement for the
-// filter and the arguments that follow the scope's snapshots. It picks the
-// page's keys first and aggregates only their occurrences, so a page costs
-// what it returns rather than what the scope holds.
+// filter and the arguments that follow the scope's snapshots. Occurrences
+// arrive in key order and the limit counts coordinates, so a page costs the
+// occurrences of the coordinates it returns rather than what the scope holds.
+// The scope is part of the index condition, which keeps the occurrences of
+// retained history and of other repositories from being read at all.
 func portfolioComponentsQuery(filter supplychain.PortfolioFilter) (string, []any) {
-	keys := `select ` + coordinateKey + ` as key from supply_chain_components c
-		left join supply_chain_component_assessments a on a.component_id=c.id
+	occurrences := `select ` + coordinateKey + ` as key, coalesce(c.ecosystem, '') as ecosystem, coalesce(c.purl_namespace, '') as namespace, coalesce(c.purl_name, c.name) as name,
+			coalesce(c.purl_version, c.version, '') as version, coalesce(c.purl, '') as purl, c.license_declared_raw, c.snapshot_id, a.status, coalesce(a.normalized_expression, '') as expression
+		from supply_chain_components c
+		` + scopedAssessment + `
 		where c.snapshot_id=any($1) and ` + coordinateKey + ` > $6 and ` + ecosystemFilter + ` and ` + occurrenceFilters
 	if filter.Search != "" || filter.LicenseExpression != "" || filter.AssessmentStatus != "" {
 		// Reading the index in key order until the page is full is the plan to
 		// want without these filters and the one to avoid with them: matches
 		// may be anywhere, so it could read the whole index row by row. OFFSET 0
-		// has the planner find the matches first and sort only those.
-		keys = `select key from (` + keys + ` offset 0) matches`
+		// has the planner find the matches first and sort those.
+		occurrences += ` offset 0`
 	}
-	// The scope is an index condition for the keys only: on the join below it
-	// would be costed as one index descent per snapshot and key.
-	return `with page as (` + keys + ` group by 1 order by 1 limit $7)
-		select page.key, min(coalesce(c.ecosystem, '')), min(coalesce(c.purl_namespace, '')), min(coalesce(c.purl_name, c.name)), min(coalesce(c.purl_version, c.version, '')),
-			max(coalesce(c.purl, '')), count(*), array_remove(array_agg(distinct a.status), null), max(coalesce(a.normalized_expression, '')),
-			array_remove(array_agg(distinct c.license_declared_raw), null), array_agg(distinct c.snapshot_id)
-		from page
-		join supply_chain_components c on ` + coordinateKey + `=page.key
-		join unnest($1::bigint[]) as scope(snapshot_id) on scope.snapshot_id=c.snapshot_id
-		left join supply_chain_component_assessments a on a.component_id=c.id
-		where ` + occurrenceFilters + `
-		group by page.key order by page.key`,
+	return `select key, min(ecosystem), min(namespace), min(name), min(version), max(purl), count(*), array_remove(array_agg(distinct status), null), max(expression),
+			array_remove(array_agg(distinct license_declared_raw), null), array_agg(distinct snapshot_id)
+		from (` + occurrences + `) occurrences group by key order by key limit $7`,
 		[]any{filter.Ecosystem, escapeLike(filter.Search), filter.LicenseExpression, filter.AssessmentStatus, filter.AfterKey, filter.Limit}
 }
 

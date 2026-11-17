@@ -575,6 +575,11 @@ func TestSupplyChainPortfolioAuthorization(t *testing.T) {
 	if len(page.Components) != 2 {
 		t.Fatalf("npm unique coordinates for acme = %+v", page.Components)
 	}
+	// An ecosystem is matched whole, not as a prefix of a longer one.
+	decode(t, get("acme", "/v1/supply-chain/components?ecosystem=np"), &page)
+	if len(page.Components) != 0 {
+		t.Fatalf("ecosystem prefix matched %+v", page.Components)
+	}
 	decode(t, get("acme", "/v1/supply-chain/components?license=mit"), &page)
 	if len(page.Components) != 1 || page.Components[0].Name != "left-pad" {
 		t.Fatalf("license filter = %+v", page.Components)
@@ -626,6 +631,7 @@ func TestSupplyChainPortfolioAuthorization(t *testing.T) {
 	// Filters apply to occurrences before packages are counted.
 	for path, want := range map[string]int{
 		"/v1/supply-chain/graph?min_repositories=1&ecosystem=NPM":           2,
+		"/v1/supply-chain/graph?min_repositories=1&ecosystem=np":            0,
 		"/v1/supply-chain/graph?min_repositories=1&q=LEFT":                  1,
 		"/v1/supply-chain/graph?min_repositories=1&assessment=resolved":     1,
 		"/v1/supply-chain/graph?min_repositories=1&assessment=unassessed":   8,
