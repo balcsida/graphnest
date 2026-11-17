@@ -60,6 +60,33 @@ type PortfolioComponent struct {
 	RepositoryGitHubIDs []int64
 }
 
+// GraphFilter bounds a dependency graph query. RepositoryIDs is the
+// authorized scope, already intersected with any requested selection.
+type GraphFilter struct {
+	RepositoryIDs    []int64
+	StreamKey        string
+	Ecosystem        string
+	Search           string
+	AssessmentStatus string
+	// MinRepositories leaves out packages used by fewer repositories.
+	MinRepositories int
+	// Limit is the number of packages returned, most shared first.
+	Limit int
+}
+
+// GraphDependency is one package (a coordinate without its version) and the
+// repositories of the scope that use it, by ascending GitHub ID.
+type GraphDependency struct {
+	Ecosystem           string
+	Namespace           string
+	Name                string
+	Versions            []string
+	AssessmentStatuses  []string
+	Expressions         []string
+	RepositoryCount     int
+	RepositoryGitHubIDs []int64
+}
+
 // PortfolioOccurrence is one repository's occurrence of a coordinate.
 type PortfolioOccurrence struct {
 	RepositoryGitHubID int64

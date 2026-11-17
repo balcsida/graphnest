@@ -20,6 +20,10 @@ import (
 // stops using supply_chain_components_coordinate_key.
 const coordinateKey = `((coalesce(c.ecosystem, '') || chr(1) || coalesce(c.purl_namespace, '') || chr(1) || coalesce(c.purl_name, c.name) || chr(1) || coalesce(c.purl_version, c.version, '')) collate "C")`
 
+// packageKey is the coordinate key without the version; every coordinate key
+// of a package starts with it and chr(1).
+const packageKey = `((coalesce(c.ecosystem, '') || chr(1) || coalesce(c.purl_namespace, '') || chr(1) || coalesce(c.purl_name, c.name)) collate "C")`
+
 // ecosystemFilter keeps the coordinates of the ecosystem ($2). The ecosystem
 // leads the coordinate key, so the filter is a key range an index scan can
 // start and stop at.
@@ -42,6 +46,35 @@ const portfolioCoordinatesQuery = `select ecosystem, sum(occurrences), count(*),
 			count(*) filter (where coalesce(c.purl_version, c.version, '')='') as without_version
 		from supply_chain_components c where c.snapshot_id=any($1) group by ` + coordinateKey + `
 	) coordinates group by ecosystem`
+
+// portfolioGraphQuery ranks the packages of the snapshots $1 by the
+// repositories using them in one pass, keeps those shared by at least $6
+// repositories and returns the $7 most shared. Assessments are read for the
+// occurrences of the returned packages only. A repository has one latest
+// snapshot per stream, so distinct snapshots count repositories.
+const portfolioGraphQuery = `with packages as (
+		select ` + packageKey + ` as package, count(distinct c.snapshot_id) as repositories, array_agg(distinct c.snapshot_id) as snapshots,
+			array_remove(array_agg(distinct coalesce(c.purl_version, c.version, '')), '') as versions, array_agg(c.id) as occurrences
+		from supply_chain_components c
+		left join supply_chain_component_assessments a on a.component_id=c.id
+		where c.snapshot_id=any($1) and ` + ecosystemFilter + ` and ` + occurrenceFilters + `
+		group by 1 having count(distinct c.snapshot_id) >= $6
+	), ranked as (
+		select *, count(*) over () as matching from packages order by repositories desc, package limit $7
+	)
+	select named.ecosystem, named.namespace, named.name, ranked.repositories, ranked.matching, ranked.versions, ranked.snapshots, assessed.statuses, assessed.expressions
+	from ranked
+	cross join lateral (
+		select coalesce(c.ecosystem, '') as ecosystem, coalesce(c.purl_namespace, '') as namespace, coalesce(c.purl_name, c.name) as name
+		from supply_chain_components c where c.id=ranked.occurrences[1]
+	) named
+	cross join lateral (
+		select array_agg(distinct coalesce(a.status, 'unassessed')) as statuses,
+			coalesce(array_agg(distinct a.normalized_expression) filter (where a.normalized_expression<>''), '{}') as expressions
+		from unnest(ranked.occurrences) as occurrence(id)
+		left join supply_chain_component_assessments a on a.component_id=occurrence.id
+	) assessed
+	order by ranked.repositories desc, ranked.package`
 
 // customPlan has PostgreSQL plan a statement for the arguments of each call.
 // The scope ranges from one snapshot to all of them and the filters from none
@@ -256,6 +289,34 @@ func (s *Store) SupplyChainPortfolioComponents(ctx context.Context, filter suppl
 		result = append(result, item)
 	}
 	return result, rows.Err()
+}
+
+// SupplyChainDependencyGraph returns the packages (coordinates without their
+// version) that at least filter.MinRepositories repositories of the scope
+// use, most shared first, and how many packages qualify in total.
+func (s *Store) SupplyChainDependencyGraph(ctx context.Context, filter supplychain.GraphFilter) ([]supplychain.GraphDependency, int, error) {
+	result := []supplychain.GraphDependency{}
+	if len(filter.RepositoryIDs) == 0 {
+		return result, 0, nil
+	}
+	scope, err := s.supplyChainScope(ctx, filter.RepositoryIDs, filter.StreamKey)
+	if err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.pool.Query(ctx, portfolioGraphQuery, customPlan, scope.snapshots, filter.Ecosystem, escapeLike(filter.Search), "", filter.AssessmentStatus, filter.MinRepositories, filter.Limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	matching := 0
+	var item supplychain.GraphDependency
+	var snapshots []int64
+	_, err = pgx.ForEachRow(rows, []any{&item.Ecosystem, &item.Namespace, &item.Name, &item.RepositoryCount, &matching, &item.Versions, &snapshots, &item.AssessmentStatuses, &item.Expressions}, func() error {
+		item.RepositoryGitHubIDs = scope.repositories(snapshots)
+		result = append(result, item)
+		item, snapshots = supplychain.GraphDependency{}, nil
+		return nil
+	})
+	return result, matching, err
 }
 
 // PortfolioFacets returns bounded facet counts for the portfolio filters

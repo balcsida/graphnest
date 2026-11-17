@@ -195,6 +195,7 @@ func TestSupplyChainPortfolioQueryPlans(t *testing.T) {
 	page = supplychain.PortfolioFilter{Limit: 101, Search: "pkg-12"}
 	query, arguments = portfolioComponentsQuery(page)
 	run("portfolio page (first 100 matching a search)", query, append([]any{scope.snapshots}, arguments...)...)
+	run("dependency graph (150 most shared, at least 2 repositories)", portfolioGraphQuery, scope.snapshots, "", "", "", "", 2, 150)
 	run("coordinate occurrences", `select r.github_id, c.element_id from supply_chain_streams st join repositories r on r.id=st.repository_id join supply_chain_components c on c.snapshot_id=st.latest_snapshot_id
 		where st.repository_id=any($1) and st.stream_key=$2 and coalesce(c.ecosystem, '')='npm' and coalesce(c.purl_namespace, '')='' and coalesce(c.purl_name, c.name)='pkg-0005' and coalesce(c.purl_version, c.version, '')='5.0.2'
 		and `+coordinateKey+`='npm' || chr(1) || '' || chr(1) || 'pkg-0005' || chr(1) || '5.0.2' limit 101`, ids, supplychain.StreamGitHubSource)

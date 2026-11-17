@@ -587,6 +587,68 @@ func TestSupplyChainPortfolioAuthorization(t *testing.T) {
 	if len(page.Components) != 1 || page.Components[0].Name != "left-pad" {
 		t.Fatalf("literal percent search = %+v", page.Components)
 	}
+	// Dependency graph: one aggregate inside the caller's scope. left-pad is the only package two of acme's repositories share.
+	var graph api.SupplyChainDependencyGraph
+	response := get("acme", "/v1/supply-chain/graph")
+	decode(t, response, &graph)
+	if graph.RepositoriesInScope != 2 || graph.MinRepositories != 2 || graph.Matching != 1 || graph.Truncated || len(graph.Dependencies) != 1 {
+		t.Fatalf("acme graph = %+v", graph)
+	}
+	if shared := graph.Dependencies[0]; shared.Ecosystem != "npm" || shared.Namespace != "@scope" || shared.Name != "left-pad" || shared.RepositoryCount != 2 || !slices.Equal(shared.RepositoryIDs, []int64{101, 102}) ||
+		shared.VersionCount != 1 || !slices.Equal(shared.Versions, []string{"1.3.0"}) || !slices.Equal(shared.Assessments, []string{"resolved"}) || !slices.Equal(shared.Expressions, []string{"MIT"}) {
+		t.Fatalf("acme shared dependency = %+v", shared)
+	}
+	if len(graph.Repositories) != 2 || graph.Repositories[0] != (api.SupplyChainRepositoryRef{ID: 101, Name: "acme/repo-101"}) || graph.Repositories[1].ID != 102 {
+		t.Fatalf("acme graph repositories = %+v", graph.Repositories)
+	}
+	decode(t, get("admin", "/v1/supply-chain/graph"), &graph)
+	if len(graph.Dependencies) != 1 || graph.Dependencies[0].RepositoryCount != 3 || !slices.Equal(graph.Dependencies[0].RepositoryIDs, []int64{101, 102, 201}) {
+		t.Fatalf("admin graph = %+v", graph)
+	}
+	// Nothing is shared inside one repository, whether the scope is the principal's or a requested selection; lists stay arrays.
+	for _, request := range []struct{ token, path string }{{"one", "/v1/supply-chain/graph"}, {"acme", "/v1/supply-chain/graph?repository_id=201&repository_id=101"}} {
+		response := get(request.token, request.path)
+		decode(t, response, &graph)
+		if graph.RepositoriesInScope != 1 || graph.Matching != 0 || !strings.Contains(response.Body.String(), `"dependencies":[],"repositories":[]`) {
+			t.Fatalf("%s %s = %s", request.token, request.path, response.Body.String())
+		}
+	}
+	// min_repositories=1 lists every package of the scope, most shared first, and never the private one.
+	response = get("acme", "/v1/supply-chain/graph?min_repositories=1")
+	decode(t, response, &graph)
+	if graph.Matching != 9 || len(graph.Dependencies) != 9 || graph.Truncated || graph.Dependencies[0].Name != "left-pad" || strings.Contains(response.Body.String(), "private-thing") || strings.Contains(response.Body.String(), "null") {
+		t.Fatalf("acme graph of every package = %s", response.Body.String())
+	}
+	decode(t, get("acme", "/v1/supply-chain/graph?min_repositories=1&limit=1"), &graph)
+	if graph.Matching != 9 || len(graph.Dependencies) != 1 || !graph.Truncated || graph.Dependencies[0].Name != "left-pad" {
+		t.Fatalf("limited graph = %+v", graph)
+	}
+	// Filters apply to occurrences before packages are counted.
+	for path, want := range map[string]int{
+		"/v1/supply-chain/graph?min_repositories=1&ecosystem=NPM":           2,
+		"/v1/supply-chain/graph?min_repositories=1&q=LEFT":                  1,
+		"/v1/supply-chain/graph?min_repositories=1&assessment=resolved":     1,
+		"/v1/supply-chain/graph?min_repositories=1&assessment=unassessed":   8,
+		"/v1/supply-chain/graph?min_repositories=1&assessment=conflict":     0,
+		"/v1/supply-chain/graph?min_repositories=2&assessment=unassessed":   0,
+		"/v1/supply-chain/graph?ecosystem=npm&q=pad&assessment=resolved":    1,
+		"/v1/supply-chain/graph?stream=import:source:none&ecosystem=npm":    0,
+		"/v1/supply-chain/graph?min_repositories=1&q=%25&repository_id=102": 1,
+	} {
+		decode(t, get("acme", path), &graph)
+		if graph.Matching != want || len(graph.Dependencies) != want {
+			t.Fatalf("%s: matching %d, %d dependencies, want %d", path, graph.Matching, len(graph.Dependencies), want)
+		}
+	}
+	for _, query := range []string{"limit=0", "limit=151", "limit=x", "min_repositories=0", "min_repositories=-1", "assessment=approved", "stream=bogus", "repository_id=0"} {
+		if response := get("acme", "/v1/supply-chain/graph?"+query); response.Code != http.StatusBadRequest {
+			t.Fatalf("graph?%s = %d", query, response.Code)
+		}
+	}
+	if response := get("nobody", "/v1/supply-chain/graph"); response.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated graph = %d", response.Code)
+	}
+
 	// Coordinate detail: authorized occurrences only; the private coordinate is 404 for acme and 200 for other.
 	var leftPadKey, privateKey string
 	var adminPage api.SupplyChainPortfolioComponentList
@@ -622,7 +684,7 @@ func TestSupplyChainPortfolioAuthorization(t *testing.T) {
 	}
 
 	// CSV export: authorized only, formula cells neutralized, provenance columns present.
-	response := get("acme", "/v1/supply-chain/exports/102/components.csv")
+	response = get("acme", "/v1/supply-chain/exports/102/components.csv")
 	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "text/csv; charset=utf-8" || !strings.HasPrefix(response.Header().Get("Content-Disposition"), "attachment;") {
 		t.Fatalf("export = %d %v", response.Code, response.Header())
 	}
@@ -684,6 +746,10 @@ func TestSupplyChainPortfolioAuthorization(t *testing.T) {
 	decode(t, get("acme", "/v1/supply-chain/components?q=legacy-widget"), &page)
 	if len(page.Components) != 1 || page.Components[0].Version != "2.0" || page.Components[0].OccurrenceCount != 1 {
 		t.Fatalf("components after the second widgets snapshot = %+v", page.Components)
+	}
+	decode(t, get("acme", "/v1/supply-chain/graph"), &graph)
+	if len(graph.Dependencies) != 1 || graph.Dependencies[0].RepositoryCount != 2 || !slices.Equal(graph.Dependencies[0].Assessments, []string{"resolved", "unassessed"}) {
+		t.Fatalf("graph after the second widgets snapshot = %+v", graph.Dependencies)
 	}
 	// Snapshot IDs from another repository cannot be compared through an authorized one.
 	otherSnapshots, _ := h.store.SupplyChainSnapshots(t.Context(), secret, supplychain.StreamGitHubSource, 0, 1)

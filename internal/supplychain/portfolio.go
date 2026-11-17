@@ -25,6 +25,7 @@ type PortfolioStore interface {
 	SupplyChainOverview(context.Context, []int64, string, time.Time) (PortfolioOverview, error)
 	SupplyChainPortfolioComponents(context.Context, PortfolioFilter) ([]PortfolioComponent, error)
 	SupplyChainPortfolioFacets(context.Context, []int64, string) (map[string][]FacetCount, error)
+	SupplyChainDependencyGraph(context.Context, GraphFilter) ([]GraphDependency, int, error)
 	SupplyChainCoordinateOccurrences(context.Context, []int64, string, string, string, string, string, int) ([]PortfolioOccurrence, error)
 	SnapshotComponentKeys(context.Context, int64) (map[string][2]string, error)
 	SnapshotEdgeKeys(context.Context, int64) (map[string]bool, error)
@@ -243,6 +244,90 @@ func portfolioComponent(item PortfolioComponent, byGitHubID map[int64]repository
 		RepositoryCount: item.RepositoryCount, OccurrenceCount: item.OccurrenceCount, Assessment: assessment, AssessmentStatuses: statuses, Expression: item.Expression,
 		DeclaredRaw: item.DeclaredRaw, NewestCollectedAt: item.NewestCollectedAt, OldestCollectedAt: item.OldestCollectedAt, Repositories: repositories,
 	}
+}
+
+const (
+	// DefaultGraphMinRepositories is how many repositories have to share a
+	// dependency for it to be in the graph unless the request says otherwise.
+	DefaultGraphMinRepositories = 2
+	// MaxGraphDependencies bounds the dependencies of one graph.
+	MaxGraphDependencies = 150
+	// graphEdgeBudget bounds the repository links of one graph. Past about a
+	// thousand edges the layout takes seconds in a browser and the response
+	// outgrows the byte limit.
+	graphEdgeBudget = 1000
+	// graphListLimit bounds the versions and expressions listed per dependency.
+	graphListLimit = 10
+)
+
+// GraphRequest bounds a dependency graph query. A zero MinRepositories or
+// Limit selects the default.
+type GraphRequest struct {
+	Stream           string
+	RepositoryIDs    []int64
+	Ecosystem        string
+	Search           string
+	AssessmentStatus string
+	MinRepositories  int
+	Limit            int
+}
+
+// Graph returns the dependencies shared across the authorized latest
+// snapshots, most shared first, with the repositories using each. It is one
+// bounded aggregate, so a client does not have to page through every
+// coordinate to draw the graph.
+func (portfolio *Portfolio) Graph(ctx context.Context, principal authn.Principal, request GraphRequest) (api.SupplyChainDependencyGraph, error) {
+	stream, err := normalizeStream(request.Stream)
+	if err != nil {
+		return api.SupplyChainDependencyGraph{}, err
+	}
+	if len(request.Search) > 200 || len(request.Ecosystem) > 64 || !validAssessmentStatuses[request.AssessmentStatus] || len(request.RepositoryIDs) > 200 ||
+		request.MinRepositories < 0 || request.Limit < 0 || request.Limit > MaxGraphDependencies {
+		return api.SupplyChainDependencyGraph{}, ErrInvalidRequest
+	}
+	if request.MinRepositories == 0 {
+		request.MinRepositories = DefaultGraphMinRepositories
+	}
+	if request.Limit == 0 {
+		request.Limit = MaxGraphDependencies
+	}
+	ids, byGitHubID, err := portfolio.scope(ctx, principal, request.RepositoryIDs)
+	if err != nil {
+		return api.SupplyChainDependencyGraph{}, err
+	}
+	items, matching, err := portfolio.Store.SupplyChainDependencyGraph(ctx, GraphFilter{RepositoryIDs: ids, StreamKey: stream, Ecosystem: strings.ToLower(request.Ecosystem), Search: request.Search,
+		AssessmentStatus: request.AssessmentStatus, MinRepositories: request.MinRepositories, Limit: request.Limit})
+	if err != nil {
+		return api.SupplyChainDependencyGraph{}, err
+	}
+	result := api.SupplyChainDependencyGraph{Stream: stream, RepositoriesInScope: len(ids), MinRepositories: request.MinRepositories, Matching: matching, Truncated: matching > len(items),
+		Dependencies: make([]api.SupplyChainGraphDependency, 0, len(items)), Repositories: []api.SupplyChainRepositoryRef{}}
+	edges := 0
+	for _, item := range items {
+		edges += item.RepositoryCount
+	}
+	// Within the budget every repository is listed. Past it each dependency
+	// lists an equal share, lowest GitHub ID first so that the dependencies
+	// keep naming the same repositories.
+	share := edges
+	if edges > graphEdgeBudget {
+		share = max(graphEdgeBudget/len(items), 1)
+	}
+	listed := map[int64]bool{}
+	for _, item := range items {
+		dependency := api.SupplyChainGraphDependency{Ecosystem: item.Ecosystem, Namespace: item.Namespace, Name: item.Name, VersionCount: len(item.Versions),
+			Versions: item.Versions[:min(len(item.Versions), graphListLimit)], Assessments: item.AssessmentStatuses, Expressions: item.Expressions[:min(len(item.Expressions), graphListLimit)],
+			RepositoryCount: item.RepositoryCount, RepositoryIDs: item.RepositoryGitHubIDs[:min(len(item.RepositoryGitHubIDs), share)]}
+		for _, githubID := range dependency.RepositoryIDs {
+			if !listed[githubID] {
+				listed[githubID] = true
+				result.Repositories = append(result.Repositories, api.SupplyChainRepositoryRef{ID: githubID, Name: byGitHubID[githubID].Name})
+			}
+		}
+		result.Dependencies = append(result.Dependencies, dependency)
+	}
+	sort.Slice(result.Repositories, func(i, j int) bool { return result.Repositories[i].ID < result.Repositories[j].ID })
+	return result, nil
 }
 
 // Facets returns bounded filter facets within the authorized scope.

@@ -309,6 +309,36 @@ type SupplyChainPortfolioComponentList struct {
 	NextCursor          string                          `json:"next_cursor,omitempty"`
 }
 
+// SupplyChainDependencyGraph is the dependencies shared across the caller's
+// authorized repositories, most shared first, with the repositories using
+// each. Matching counts the dependencies that passed the filters and
+// min_repositories; Truncated says more of them matched than are returned.
+type SupplyChainDependencyGraph struct {
+	Stream              string                       `json:"stream"`
+	RepositoriesInScope int                          `json:"repositories_in_scope"`
+	MinRepositories     int                          `json:"min_repositories"`
+	Matching            int                          `json:"matching"`
+	Truncated           bool                         `json:"truncated"`
+	Dependencies        []SupplyChainGraphDependency `json:"dependencies"`
+	// Repositories names every repository a dependency lists.
+	Repositories []SupplyChainRepositoryRef `json:"repositories"`
+}
+
+// SupplyChainGraphDependency is one package across its versions. The counts
+// are exact; versions, expressions and repository_ids are bounded lists that
+// can hold fewer entries than their count.
+type SupplyChainGraphDependency struct {
+	Ecosystem       string   `json:"ecosystem"`
+	Namespace       string   `json:"namespace,omitempty"`
+	Name            string   `json:"name"`
+	VersionCount    int      `json:"version_count"`
+	Versions        []string `json:"versions"`
+	Assessments     []string `json:"assessments"`
+	Expressions     []string `json:"expressions"`
+	RepositoryCount int      `json:"repository_count"`
+	RepositoryIDs   []int64  `json:"repository_ids"`
+}
+
 type SupplyChainPortfolioComponentDetail struct {
 	Key         string                           `json:"key"`
 	Stream      string                           `json:"stream"`
