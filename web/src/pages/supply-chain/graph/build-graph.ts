@@ -1,53 +1,10 @@
 import { graphlib, layout as dagreLayout } from '@dagrejs/dagre'
 import type { Edge, Node } from '@xyflow/react'
-import type { SupplyChainPortfolioComponent, SupplyChainPortfolioComponentList } from '@/api/types'
+import type { SupplyChainDependencyGraph } from '@/api/types'
 import { packageLabel } from '../format'
 
-export const SCAN_PAGE_SIZE = 100
-export const SCAN_PAGE_CAP = 30
 export const DEFAULT_MIN_REPOSITORIES = 2
 export const MAX_DEPENDENCY_NODES = 150
-
-export interface ScanResult {
-  components: SupplyChainPortfolioComponent[]
-  pages: number
-  /** The scan stopped at the page cap while the server still had more. */
-  capped: boolean
-}
-
-/** Reads component pages until the server has no more or the cap is reached. `signal` cancels the chain. */
-export async function scanComponents(
-  fetchPage: (cursor: string | undefined, signal: AbortSignal | undefined) => Promise<SupplyChainPortfolioComponentList>,
-  signal?: AbortSignal,
-  pageCap = SCAN_PAGE_CAP,
-): Promise<ScanResult> {
-  const components: SupplyChainPortfolioComponent[] = []
-  let cursor: string | undefined
-  let pages = 0
-  let more: boolean
-  do {
-    const page = await fetchPage(cursor, signal)
-    pages++
-    components.push(...(Array.isArray(page.components) ? page.components : []))
-    more = page.truncated && Boolean(page.next_cursor)
-    cursor = more ? page.next_cursor : undefined
-  } while (more && pages < pageCap)
-  return { components, pages, capped: more }
-}
-
-/** "based on the first N of M unique coordinates"; only when the scan was cut off. */
-export const truncationNotice = (scan: Pick<ScanResult, 'components' | 'capped'>, uniqueCoordinates: number | undefined) =>
-  scan.capped ? `Based on the first ${scan.components.length} of ${uniqueCoordinates ?? 'an unknown number of'} unique coordinates; narrow the filters to see the rest.` : undefined
-
-export interface GraphFilters {
-  /** Dependencies used by fewer repositories are left out. */
-  minRepositories: number
-  /** At most this many dependency nodes, most-shared first. */
-  topN: number
-  ecosystem?: string
-  assessment?: string
-  q?: string
-}
 
 export interface GraphRepository {
   id: number
@@ -62,12 +19,15 @@ export interface GraphDependency {
   namespace?: string
   name: string
   label: string
+  /** The first of `versionCount` versions. */
   versions: string[]
-  componentKeys: string[]
+  versionCount: number
   expressions: string[]
   assessments: string[]
   /** Any occurrence is a conflict or unlicensed. */
   risky: boolean
+  /** Repositories using it; `repositoryIds` are the ones the graph links. */
+  repositoryCount: number
   repositoryIds: number[]
 }
 
@@ -75,72 +35,45 @@ export interface DependencyGraph {
   repositories: GraphRepository[]
   dependencies: GraphDependency[]
   edges: { repositoryId: number; dependencyId: string }[]
-  /** Dependencies that passed the filters and the minimum, before the top-N cut. */
+  /** Dependencies that passed the filters and the minimum, before the limit. */
   matching: number
-  /** Distinct packages in the scan, before any filter. */
-  packages: number
+  /** The server left some repositories of a dependency out to keep the graph within its link budget. */
+  partial: boolean
 }
 
 const sorted = (values: Iterable<string>) => [...new Set(values)].filter(Boolean).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
 
 const RISKY = new Set(['conflict', 'unlicensed'])
 
-const matches = (component: SupplyChainPortfolioComponent, filters: GraphFilters) => {
-  if (filters.ecosystem && component.ecosystem !== filters.ecosystem) return false
-  if (filters.assessment && component.assessment !== filters.assessment && !component.assessment_statuses?.includes(filters.assessment)) return false
-  const q = filters.q?.trim().toLowerCase()
-  return !q || component.name.toLowerCase().includes(q) || (component.purl ?? '').toLowerCase().includes(q)
+/** "1.0.0, 1.1.0 and 3 more": the listed versions and how many the server left out. */
+export const versionsText = (dependency: Pick<GraphDependency, 'versions' | 'versionCount'>) => {
+  const more = dependency.versionCount - dependency.versions.length
+  return `${dependency.versions.join(', ')}${more > 0 ? ` and ${more} more` : ''}`
 }
 
-/**
- * Groups the scanned coordinates into packages (across versions), applies the filters and the minimum shared
- * repositories, keeps the `topN` most shared packages and links each to the repositories using it.
- * `repositoryNames` fills in names the component pages do not carry.
- */
-export function buildGraph(components: SupplyChainPortfolioComponent[], filters: GraphFilters, repositoryNames: ReadonlyMap<number, string> = new Map()): DependencyGraph {
-  const all = new Map<string, SupplyChainPortfolioComponent[]>()
-  const reposById = new Map<number, string>()
-  for (const component of components) {
-    const id = [component.ecosystem, component.namespace ?? '', component.name].join('\u0000')
-    const group = all.get(id)
-    if (group) group.push(component)
-    else all.set(id, [component])
-  }
-
-  const groups: GraphDependency[] = []
-  for (const [id, group] of all) {
-    const kept = group.filter((component) => matches(component, filters))
-    if (kept.length === 0) continue
-    const repositoryIds = new Set<number>()
-    for (const component of kept) {
-      for (const repository of component.repositories ?? []) {
-        repositoryIds.add(repository.id)
-        const name = repository.name || repositoryNames.get(repository.id)
-        if (name) reposById.set(repository.id, name)
+/** Turns the server's graph into nodes and edges: one node per dependency and per repository a dependency lists. */
+export function buildGraph(response: SupplyChainDependencyGraph | undefined): DependencyGraph {
+  const dependencies = (response?.dependencies ?? [])
+    .map((dependency): GraphDependency => {
+      const assessments = sorted(dependency.assessments)
+      return {
+        id: [dependency.ecosystem, dependency.namespace ?? '', dependency.name].join('\u0000'),
+        ecosystem: dependency.ecosystem,
+        namespace: dependency.namespace,
+        name: dependency.name,
+        label: packageLabel(dependency.namespace, dependency.name),
+        versions: sorted(dependency.versions),
+        versionCount: dependency.version_count,
+        expressions: sorted(dependency.expressions),
+        assessments,
+        risky: assessments.some((status) => RISKY.has(status)),
+        repositoryCount: dependency.repository_count,
+        repositoryIds: dependency.repository_ids,
       }
-    }
-    const [first] = kept
-    const assessments = sorted(kept.flatMap((component) => component.assessment_statuses?.length ? component.assessment_statuses : [component.assessment]))
-    groups.push({
-      id,
-      ecosystem: first.ecosystem,
-      namespace: first.namespace,
-      name: first.name,
-      label: packageLabel(first.namespace, first.name),
-      versions: sorted(kept.map((component) => component.version)),
-      componentKeys: kept.map((component) => component.key),
-      expressions: sorted(kept.map((component) => component.expression ?? '')),
-      assessments,
-      risky: assessments.some((status) => RISKY.has(status)),
-      repositoryIds: [...repositoryIds].sort((a, b) => a - b),
     })
-  }
+    .sort((a, b) => b.repositoryCount - a.repositoryCount || a.label.localeCompare(b.label) || a.ecosystem.localeCompare(b.ecosystem))
 
-  const shared = groups
-    .filter((group) => group.repositoryIds.length >= filters.minRepositories)
-    .sort((a, b) => b.repositoryIds.length - a.repositoryIds.length || a.label.localeCompare(b.label) || a.ecosystem.localeCompare(b.ecosystem))
-  const dependencies = shared.slice(0, filters.topN)
-
+  const names = new Map((response?.repositories ?? []).map((repository) => [repository.id, repository.name]))
   const byRepository = new Map<number, string[]>()
   const edges: DependencyGraph['edges'] = []
   for (const dependency of dependencies) {
@@ -150,10 +83,16 @@ export function buildGraph(components: SupplyChainPortfolioComponent[], filters:
     }
   }
   const repositories = [...byRepository]
-    .map(([id, dependencyIds]) => ({ id, name: reposById.get(id) ?? repositoryNames.get(id) ?? `Repository ${id}`, dependencyIds }))
+    .map(([id, dependencyIds]) => ({ id, name: names.get(id) || `Repository ${id}`, dependencyIds }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id)
 
-  return { repositories, dependencies, edges, matching: shared.length, packages: all.size }
+  return {
+    repositories,
+    dependencies,
+    edges,
+    matching: response?.matching ?? 0,
+    partial: dependencies.some((dependency) => dependency.repositoryIds.length < dependency.repositoryCount),
+  }
 }
 
 export const repositoryNodeId = (id: number) => `r:${id}`

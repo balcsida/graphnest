@@ -264,6 +264,35 @@ function portfolioComponent(coordinate, scope) {
     repositories: ids.map((id) => ({ id, name: byId(id).name })),
   };
 }
+/** What the server aggregates for the graph: packages across their versions that enough repositories share, most shared first. */
+function dependencyGraph(query) {
+  const text = (query.get("q") ?? "").toLowerCase();
+  const minimum = Number(query.get("min_repositories") ?? 2);
+  const packages = new Map();
+  for (const coordinate of coordinates) {
+    if ((query.get("ecosystem") && coordinate.ecosystem !== query.get("ecosystem")) || (query.get("assessment") && coordinate.status !== query.get("assessment")) ||
+      (text && !coordinate.name.toLowerCase().includes(text) && !coordinate.purl.toLowerCase().includes(text))) continue;
+    const id = [coordinate.ecosystem, coordinate.namespace, coordinate.name].join("\u0000");
+    const item = packages.get(id) ?? { coordinate, versions: new Set(), assessments: new Set(), expressions: new Set(), repositories: new Set() };
+    item.versions.add(coordinate.version);
+    item.assessments.add(coordinate.status);
+    if (coordinate.status === "resolved" || coordinate.status === "declared") item.expressions.add(coordinate.expression);
+    coordinate.repoIds.forEach((repository) => item.repositories.add(repository));
+    packages.set(id, item);
+  }
+  const shared = [...packages.values()].filter((item) => item.repositories.size >= minimum)
+    .sort((a, b) => b.repositories.size - a.repositories.size || a.coordinate.name.localeCompare(b.coordinate.name));
+  const dependencies = shared.slice(0, Number(query.get("limit") ?? 150)).map(({ coordinate, versions, assessments, expressions, repositories: ids }) => ({
+    ecosystem: coordinate.ecosystem, ...(coordinate.namespace ? { namespace: coordinate.namespace } : {}), name: coordinate.name,
+    version_count: versions.size, versions: [...versions], assessments: [...assessments], expressions: [...expressions],
+    repository_count: ids.size, repository_ids: [...ids].sort((a, b) => a - b),
+  }));
+  const listed = [...new Set(dependencies.flatMap((dependency) => dependency.repository_ids))].sort((a, b) => a - b);
+  return {
+    stream: STREAM, repositories_in_scope: inventoryRepositories.size, min_repositories: minimum, matching: shared.length, truncated: shared.length > dependencies.length,
+    dependencies, repositories: listed.map((id) => ({ id, name: byId(id).name })),
+  };
+}
 const PAGE_SIZE = 30;
 function componentList(query) {
   const scope = query.get("repository_id") ? [Number(query.get("repository_id"))] : null;
@@ -468,6 +497,7 @@ function api(method, url, bearer, requestBody) {
   if (p === "/v1/supply-chain/overview") return [200, overview(q.getAll("repository_id").map(Number))];
   if (p === "/v1/supply-chain/facets") return [200, facets(q.get("repository_id") ? [Number(q.get("repository_id"))] : null)];
   if (p === "/v1/supply-chain/components") return [200, componentList(q)];
+  if (p === "/v1/supply-chain/graph") return [200, dependencyGraph(q)];
   if (p.startsWith("/v1/supply-chain/components/")) {
     const key = decodeURIComponent(p.slice("/v1/supply-chain/components/".length));
     const coordinate = coordinates.find((item) => item.key === key);

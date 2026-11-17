@@ -103,6 +103,22 @@ export const portfolioPage2 = {
   truncated: false,
 }
 
+export const graphFixture = {
+  stream: 'github:source',
+  repositories_in_scope: 9,
+  min_repositories: 2,
+  matching: 2,
+  truncated: false,
+  dependencies: [
+    { ecosystem: 'npm', namespace: '@acme', name: '<i>x</i>', version_count: 1, versions: ['1.1.0'], assessments: ['conflict', 'resolved'], expressions: [], repository_count: 2, repository_ids: [101, 202] },
+    { ecosystem: 'npm', name: 'second', version_count: 1, versions: ['2.0.0'], assessments: ['resolved'], expressions: ['MIT'], repository_count: 2, repository_ids: [101, 202] },
+  ],
+  repositories: [
+    { id: 101, name: 'acme/widgets' },
+    { id: 202, name: 'acme/gadgets' },
+  ],
+}
+
 export const portfolioDetail = {
   key: 'npm||pkg-1|1.1.0',
   stream: 'github:source',

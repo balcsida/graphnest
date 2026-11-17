@@ -7,25 +7,21 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
-import { getSupplyChainFacets, getSupplyChainOverview, listSupplyChainComponents } from '@/api/supply-chain'
+import { getSupplyChainFacets, getSupplyChainGraph } from '@/api/supply-chain'
 import type { SupplyChainFacet } from '@/api/types'
 import { ErrorNotice } from '@/pages/admin/shared'
 import { ANY, facetLabel, isDisabled } from '../format'
 import { useViewParams } from '../params'
 import { ChoiceSelect, DisabledModule, StateMessage, StreamSelect, ViewHeader, type Choice } from '../shared'
-import { useSupplyChainRepositories } from '../use-repositories'
 import {
   DEFAULT_MIN_REPOSITORIES,
   MAX_DEPENDENCY_NODES,
-  SCAN_PAGE_SIZE,
   buildGraph,
   dependencyNodeId,
   ecosystemColor,
   ecosystemColorIndexes,
   layoutGraph,
   repositoryNodeId,
-  scanComponents,
-  truncationNotice,
   type GraphFlowNode,
 } from './build-graph'
 import { EdgeTable } from './EdgeTable'
@@ -74,30 +70,21 @@ export default function GraphView() {
   const [hovered, setHovered] = useState<string>()
   const dark = useSyncExternalStore(subscribeToTheme, isDark)
 
-  const overview = useQuery({
-    queryKey: ['supply-chain', 'overview', stream, []],
-    queryFn: ({ signal }) => getSupplyChainOverview({ stream }, signal),
-    retry: false,
-  })
   const facets = useQuery({
     queryKey: ['supply-chain', 'facets', stream],
     queryFn: ({ signal }) => getSupplyChainFacets({ stream }, signal),
     retry: false,
   })
-  const repositories = useSupplyChainRepositories()
-  const scan = useQuery({
-    queryKey: ['supply-chain', 'graph-scan', stream, { ecosystem, assessment, q }],
-    queryFn: ({ signal }) =>
-      scanComponents((cursor, pageSignal) => listSupplyChainComponents({ stream, ecosystem, assessment, q, cursor, limit: SCAN_PAGE_SIZE }, pageSignal), signal),
+  // The server aggregates the shared dependencies; paging through every coordinate here took minutes on a large inventory.
+  const dependencies = useQuery({
+    queryKey: ['supply-chain', 'graph', stream, { ecosystem, assessment, q, minRepositories, topN }],
+    queryFn: ({ signal }) => getSupplyChainGraph({ stream, ecosystem, assessment, q, min_repositories: minRepositories, limit: topN }, signal),
     retry: false,
     refetchOnWindowFocus: false,
     staleTime: 60_000,
   })
 
-  const graph = useMemo(() => {
-    const names = new Map((repositories.data ?? []).map((repository) => [repository.github_id, repository.name]))
-    return buildGraph(scan.data?.components ?? [], { minRepositories, topN, ecosystem, assessment, q }, names)
-  }, [scan.data, repositories.data, minRepositories, topN, ecosystem, assessment, q])
+  const graph = useMemo(() => buildGraph(dependencies.data), [dependencies.data])
   const layout = useMemo(() => layoutGraph(graph), [graph])
 
   const activeId = hovered ?? (selection ? (selection.kind === 'repository' ? repositoryNodeId(selection.id) : dependencyNodeId(selection.id)) : undefined)
@@ -122,8 +109,10 @@ export default function GraphView() {
   }, [layout, activeId])
 
   const legend = useMemo(() => [...ecosystemColorIndexes(graph.dependencies)], [graph.dependencies])
-  const disabled = [overview.error, facets.error, scan.error].find(isDisabled)
-  const notice = scan.data ? truncationNotice(scan.data, overview.data?.components.unique_coordinates) : undefined
+  const disabled = [facets.error, dependencies.error].find(isDisabled)
+  const notice = graph.partial
+    ? 'Each dependency is linked to the first of the repositories using it, so the graph stays readable. Its node shows how many use it; raise the minimum, lower the dependency limit or narrow the filters to link more of them.'
+    : undefined
   const graphKey = [stream, ecosystem, assessment, q, minRepositories, topN, layout.nodes.length, layout.edges.length].join('|')
 
   return (
@@ -164,11 +153,11 @@ export default function GraphView() {
       ) : (
         <>
           <div aria-live="polite">
-            {scan.isPending && <StateMessage>Reading components…</StateMessage>}
-            {scan.isSuccess && graph.dependencies.length === 0 && <StateMessage>No shared dependencies match these filters</StateMessage>}
-            {scan.isSuccess && graph.dependencies.length > 0 && (
+            {dependencies.isPending && <StateMessage>Reading dependencies…</StateMessage>}
+            {dependencies.isSuccess && graph.dependencies.length === 0 && <StateMessage>No shared dependencies match these filters</StateMessage>}
+            {dependencies.isSuccess && graph.dependencies.length > 0 && (
               <StateMessage>
-                Showing {graph.dependencies.length} of {graph.matching} matching dependencies used by {graph.repositories.length} repositories.
+                Showing {graph.dependencies.length} of {graph.matching} matching dependencies {graph.partial ? 'linked to' : 'used by'} {graph.repositories.length} repositories.
               </StateMessage>
             )}
           </div>
@@ -177,9 +166,9 @@ export default function GraphView() {
               <AlertDescription>{notice}</AlertDescription>
             </Alert>
           )}
-          {scan.isError && <ErrorNotice error={scan.error} onRetry={() => void scan.refetch()} />}
-          {scan.isPending && <Skeleton className="h-96 w-full" aria-label="Loading dependency graph" />}
-          {scan.isSuccess &&
+          {dependencies.isError && <ErrorNotice error={dependencies.error} onRetry={() => void dependencies.refetch()} />}
+          {dependencies.isPending && <Skeleton className="h-96 w-full" aria-label="Loading dependency graph" />}
+          {dependencies.isSuccess &&
             (asTable ? (
               <EdgeTable graph={graph} onSelect={setSelection} />
             ) : (

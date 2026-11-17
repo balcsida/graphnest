@@ -3,7 +3,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Pill } from '../pill'
 import { licenseTone } from '../format'
 import { KeyValues } from '../shared'
-import type { DependencyGraph, GraphDependency, GraphRepository } from './build-graph'
+import { versionsText, type DependencyGraph, type GraphDependency, type GraphRepository } from './build-graph'
 
 export type Selection = { kind: 'repository'; id: number } | { kind: 'dependency'; id: string }
 
@@ -21,7 +21,7 @@ function DependencyDetails({ dependency, graph, stream }: { dependency: GraphDep
       <KeyValues
         rows={[
           ['Ecosystem', dependency.ecosystem],
-          ['Versions', dependency.versions.join(', ') || '—'],
+          ['Versions', versionsText(dependency) || '—'],
           ['License expressions', dependency.expressions.join(', ') || '—'],
         ]}
       />
@@ -34,7 +34,10 @@ function DependencyDetails({ dependency, graph, stream }: { dependency: GraphDep
         </p>
       </div>
       <div className="grid gap-1">
-        <h3 className="text-sm font-medium">Repositories using it ({dependency.repositoryIds.length})</h3>
+        <h3 className="text-sm font-medium">Repositories using it ({dependency.repositoryCount})</h3>
+        {dependency.repositoryIds.length < dependency.repositoryCount && (
+          <p className="text-muted-foreground">The graph links the first {dependency.repositoryIds.length}; the components list has every occurrence.</p>
+        )}
         <ul className="grid gap-1 text-sm">
           {dependency.repositoryIds.map((id) => (
             <li key={id}>
@@ -61,7 +64,7 @@ function RepositoryDetails({ repository, graph, stream }: { repository: GraphRep
         <ul className="grid gap-1 text-sm">
           {dependencies.map((dependency) => (
             <li key={dependency.id}>
-              <span className="break-all">{dependency.label}</span> <span className="text-muted-foreground">({dependency.ecosystem}, {dependency.versions.join(', ') || 'no version'})</span>
+              <span className="break-all">{dependency.label}</span> <span className="text-muted-foreground">({dependency.ecosystem}, {versionsText(dependency) || 'no version'})</span>
             </li>
           ))}
         </ul>

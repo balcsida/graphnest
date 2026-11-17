@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import type { DependencyGraph } from './build-graph'
+import { versionsText, type DependencyGraph } from './build-graph'
 import type { Selection } from './GraphSheet'
 
 /** The graph's edges as a table: the keyboard and screen-reader alternative to the canvas. */
@@ -37,7 +37,7 @@ export function EdgeTable({ graph, onSelect }: { graph: DependencyGraph; onSelec
                 </Button>
               </TableCell>
               <TableCell>{dependency.ecosystem}</TableCell>
-              <TableCell className="break-all whitespace-normal">{dependency.versions.join(', ') || '—'}</TableCell>
+              <TableCell className="break-all whitespace-normal">{versionsText(dependency) || '—'}</TableCell>
               <TableCell>{dependency.assessments.join(', ') || '—'}</TableCell>
             </TableRow>
           )
