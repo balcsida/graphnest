@@ -5,14 +5,19 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-11-17
+
+This release fixes SCIP uploads that repeat an occurrence. No migration or
+configuration change is required.
+
 ### Fixed
 
 - A SCIP upload with a repeated occurrence (the same range and symbol twice in
   one document, which scip-go emits now and then) no longer fails with 503
   "SCIP service is unavailable": parsing keeps one occurrence per key and
-  combines the roles.
+  combines the roles. ([#172])
 - A SCIP upload the database refuses is logged with its cause (`SCIP upload
-  failed`), instead of only reaching the client as a generic 503.
+  failed`), instead of only reaching the client as a generic 503. ([#172])
 
 ## [0.13.0] - 2026-11-15
 
@@ -770,7 +775,8 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
-[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/balcsida/graphnest/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/balcsida/graphnest/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/balcsida/graphnest/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/balcsida/graphnest/compare/v0.10.0...v0.11.0
@@ -848,3 +854,4 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
 [#167]: https://github.com/balcsida/graphnest/pull/167
 [#169]: https://github.com/balcsida/graphnest/pull/169
 [#170]: https://github.com/balcsida/graphnest/pull/170
+[#172]: https://github.com/balcsida/graphnest/pull/172
