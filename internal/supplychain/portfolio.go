@@ -124,6 +124,11 @@ func (portfolio *Portfolio) Overview(ctx context.Context, principal authn.Princi
 	return result, nil
 }
 
+// portfolioCursorVersion is 2 since component pages are ordered by the bytes
+// of the coordinate key. A version 1 cursor points into the database
+// collation's order and would skip or repeat coordinates, so it is refused.
+const portfolioCursorVersion = 2
+
 type portfolioCursor struct {
 	Version int    `json:"v"`
 	Key     string `json:"k"`
@@ -141,14 +146,14 @@ func decodePortfolioCursor(value string) (portfolioCursor, bool) {
 	var cursor portfolioCursor
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&cursor); err != nil || cursor.Version != 1 || cursor.Key == "" {
+	if err := decoder.Decode(&cursor); err != nil || cursor.Version != portfolioCursorVersion || cursor.Key == "" {
 		return portfolioCursor{}, false
 	}
 	return cursor, true
 }
 
 func encodePortfolioCursor(key, filter string) string {
-	data, _ := json.Marshal(portfolioCursor{Version: 1, Key: key, Filter: filter})
+	data, _ := json.Marshal(portfolioCursor{Version: portfolioCursorVersion, Key: key, Filter: filter})
 	return base64.RawURLEncoding.EncodeToString(data)
 }
 
@@ -187,7 +192,7 @@ func (portfolio *Portfolio) Components(ctx context.Context, principal authn.Prin
 		return api.SupplyChainPortfolioComponentList{}, ErrInvalidRequest
 	}
 	cursor, ok := decodePortfolioCursor(request.Cursor)
-	if !ok || cursor.Version == 1 && cursor.Filter != request.filterKey() {
+	if !ok || cursor.Version == portfolioCursorVersion && cursor.Filter != request.filterKey() {
 		return api.SupplyChainPortfolioComponentList{}, ErrInvalidRequest
 	}
 	ids, byGitHubID, err := portfolio.scope(ctx, principal, request.RepositoryIDs)

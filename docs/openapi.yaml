@@ -893,7 +893,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/supply-chain/components:
     get:
-      description: Unique coordinates (ecosystem, namespace, name, version) across the latest snapshots of the caller's authorized repositories, with repository and occurrence counts, keyset-paginated in stable key order. The cursor is bound to the filter set. Filters never reveal repositories outside the scope.
+      description: Unique coordinates (ecosystem, namespace, name, version) across the latest snapshots of the caller's authorized repositories, with repository and occurrence counts, keyset-paginated in the byte order of the coordinate key (ecosystem, namespace, name, version). The cursor is bound to the filter set. Filters never reveal repositories outside the scope.
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}

@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -523,6 +525,10 @@ func TestSupplyChainPortfolioAuthorization(t *testing.T) {
 			t.Fatalf("npm facet = %+v", facet)
 		}
 	}
+	// Assessment and license facets count assessments; occurrences without one are the remainder.
+	if !slices.Equal(facets.Assessments, []api.SupplyChainFacet{{Value: "unassessed", Count: 8}, {Value: "resolved", Count: 2}}) || !slices.Equal(facets.Licenses, []api.SupplyChainFacet{{Value: "MIT", Count: 2}}) {
+		t.Fatalf("acme facets = %+v", facets)
+	}
 	var page api.SupplyChainPortfolioComponentList
 	decode(t, get("acme", "/v1/supply-chain/components?limit=4"), &page)
 	if len(page.Components) != 4 || !page.Truncated || page.NextCursor == "" || page.RepositoriesInScope != 2 {
@@ -551,6 +557,18 @@ func TestSupplyChainPortfolioAuthorization(t *testing.T) {
 	// A cursor is bound to its filter set.
 	if response := get("acme", "/v1/supply-chain/components?limit=4&ecosystem=npm&cursor="+page.NextCursor); response.Code != http.StatusBadRequest {
 		t.Fatalf("cursor reuse across filters = %d", response.Code)
+	}
+	// Pages follow the bytes of the coordinate key, and a cursor from before that order is refused instead of skipping coordinates.
+	for index := 1; index < len(all); index++ {
+		if all[index-1].Key >= all[index].Key {
+			t.Fatalf("component %d key %s does not follow %s", index, all[index].Key, all[index-1].Key)
+		}
+	}
+	for version, want := range map[int]int{1: http.StatusBadRequest, 2: http.StatusOK} {
+		cursor := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(`{"v":%d,"k":"npm","f":"github:source\u001f\u001f\u001f\u001f\u001f"}`, version)))
+		if response := get("acme", "/v1/supply-chain/components?limit=4&cursor="+cursor); response.Code != want {
+			t.Fatalf("version %d cursor = %d, want %d", version, response.Code, want)
+		}
 	}
 	// Filters: ecosystem, license expression, assessment status, search.
 	decode(t, get("acme", "/v1/supply-chain/components?ecosystem=npm"), &page)
@@ -657,6 +675,15 @@ func TestSupplyChainPortfolioAuthorization(t *testing.T) {
 	}
 	if response := get("one", fmt.Sprintf("/v1/supply-chain/compare?repository_id=102&base=%d&head=%d", snapshots[1].ID, snapshots[0].ID)); response.Code != http.StatusNotFound {
 		t.Fatalf("compare across unauthorized repository = %d", response.Code)
+	}
+	// The portfolio reads the new widgets snapshot and nothing of the one it replaced.
+	decode(t, get("acme", "/v1/supply-chain/overview"), &overview)
+	if overview.Components.Occurrences != 10 || overview.Components.UniqueCoordinates != 9 || overview.Components.Unassessed != 9 || overview.Components.Assessments["resolved"] != 1 {
+		t.Fatalf("overview after the second widgets snapshot = %+v", overview.Components)
+	}
+	decode(t, get("acme", "/v1/supply-chain/components?q=legacy-widget"), &page)
+	if len(page.Components) != 1 || page.Components[0].Version != "2.0" || page.Components[0].OccurrenceCount != 1 {
+		t.Fatalf("components after the second widgets snapshot = %+v", page.Components)
 	}
 	// Snapshot IDs from another repository cannot be compared through an authorized one.
 	otherSnapshots, _ := h.store.SupplyChainSnapshots(t.Context(), secret, supplychain.StreamGitHubSource, 0, 1)

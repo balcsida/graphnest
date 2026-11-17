@@ -2,9 +2,12 @@ package postgres
 
 import (
 	"context"
+	"slices"
+	"sort"
 	"time"
 
 	"github.com/balcsida/graphnest/internal/supplychain"
+	"github.com/jackc/pgx/v5"
 )
 
 // Portfolio queries aggregate over the latest snapshot of one stream per
@@ -12,10 +15,120 @@ import (
 // IDs and never reads beyond them; totals, facets, and pages are computed
 // inside that scope.
 
+// coordinateKey is the key the portfolio groups and pages by. It must stay
+// identical to the expression that migration 042 indexes, or the planner
+// stops using supply_chain_components_coordinate_key.
+const coordinateKey = `((coalesce(c.ecosystem, '') || chr(1) || coalesce(c.purl_namespace, '') || chr(1) || coalesce(c.purl_name, c.name) || chr(1) || coalesce(c.purl_version, c.version, '')) collate "C")`
+
+// ecosystemFilter keeps the coordinates of the ecosystem ($2). The ecosystem
+// leads the coordinate key, so the filter is a key range an index scan can
+// start and stop at.
+const ecosystemFilter = `($2='' or (` + coordinateKey + ` >= $2 || chr(1) and ` + coordinateKey + ` < $2 || chr(2)))`
+
+// occurrenceFilters keeps the occurrences of c (and its assessment a) that
+// match the search ($3), license expression ($4) and assessment status ($5)
+// within the snapshots $1. Naming the assessment's own snapshot is redundant
+// with the scope of c, and is what lets a license or status filter start
+// from the assessments of the scope instead of reading every occurrence.
+const occurrenceFilters = `($3='' or lower(coalesce(c.purl_name, c.name)) like '%'||lower($3)||'%' or lower(coalesce(c.purl, '')) like '%'||lower($3)||'%' or lower(c.name) like '%'||lower($3)||'%')
+	and ($4='' or (lower(a.normalized_expression)=lower($4) and a.snapshot_id=any($1)))
+	and ($5='' or ($5='unassessed' and a.component_id is null) or (a.status=$5 and a.snapshot_id=any($1)))`
+
+// portfolioCoordinatesQuery reads the occurrences of the snapshots $1 once:
+// a row per coordinate, folded into occurrence, coordinate, PURL-less and
+// version-less counts per ecosystem.
+const portfolioCoordinatesQuery = `select ecosystem, sum(occurrences), count(*), sum(without_purl), sum(without_version) from (
+		select min(coalesce(c.ecosystem, '')) as ecosystem, count(*) as occurrences, count(*) filter (where c.purl is null) as without_purl,
+			count(*) filter (where coalesce(c.purl_version, c.version, '')='') as without_version
+		from supply_chain_components c where c.snapshot_id=any($1) group by ` + coordinateKey + `
+	) coordinates group by ecosystem`
+
+// customPlan has PostgreSQL plan a statement for the arguments of each call.
+// The scope ranges from one snapshot to all of them and the filters from none
+// to very selective, while a cached generic plan assumes ten snapshots and
+// keeps filters it cannot see through.
+const customPlan = pgx.QueryExecModeDescribeExec
+
+// portfolioScope is what a portfolio query reads: the stream's latest
+// snapshot of each authorized repository. Queries take the snapshot IDs, so
+// the scope is checked inside an index without visiting the components of
+// retained history, and a result names repositories by their snapshot.
+type portfolioScope struct {
+	snapshots  []int64
+	bySnapshot map[int64]scopeSnapshot
+}
+
+type scopeSnapshot struct {
+	githubID    int64
+	collectedAt time.Time
+}
+
+func (s *Store) supplyChainScope(ctx context.Context, repositoryIDs []int64, streamKey string) (portfolioScope, error) {
+	scope := portfolioScope{snapshots: []int64{}, bySnapshot: map[int64]scopeSnapshot{}}
+	rows, err := s.pool.Query(ctx, `select snap.id, r.github_id, snap.collected_at from supply_chain_streams st
+		join supply_chain_snapshots snap on snap.id=st.latest_snapshot_id
+		join repositories r on r.id=st.repository_id
+		where st.repository_id=any($1) and st.stream_key=$2 order by snap.id`, repositoryIDs, streamKey)
+	if err != nil {
+		return scope, err
+	}
+	var id int64
+	var snapshot scopeSnapshot
+	_, err = pgx.ForEachRow(rows, []any{&id, &snapshot.githubID, &snapshot.collectedAt}, func() error {
+		scope.snapshots = append(scope.snapshots, id)
+		scope.bySnapshot[id] = snapshot
+		return nil
+	})
+	return scope, err
+}
+
+// repositories returns the GitHub IDs of the snapshots' repositories in order.
+func (scope portfolioScope) repositories(snapshots []int64) []int64 {
+	ids := make([]int64, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		ids = append(ids, scope.bySnapshot[snapshot].githubID)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+// topFacets orders facets by count, then value, and keeps the first limit.
+func topFacets(facets []supplychain.FacetCount, limit int) []supplychain.FacetCount {
+	sort.Slice(facets, func(i, j int) bool {
+		if facets[i].Count != facets[j].Count {
+			return facets[i].Count > facets[j].Count
+		}
+		return facets[i].Value < facets[j].Value
+	})
+	if len(facets) > limit {
+		facets = facets[:limit]
+	}
+	return facets
+}
+
+// collectFacets reads (value, count) rows.
+func collectFacets(rows pgx.Rows, err error) ([]supplychain.FacetCount, error) {
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (supplychain.FacetCount, error) {
+		var facet supplychain.FacetCount
+		return facet, row.Scan(&facet.Value, &facet.Count)
+	})
+}
+
+// supplyChainAssessmentCounts counts the scope's assessed occurrences by
+// status from the (snapshot_id, status) index alone. Occurrences without an
+// assessment row are the scope's occurrence total minus these.
+func (s *Store) supplyChainAssessmentCounts(ctx context.Context, scope portfolioScope) ([]supplychain.FacetCount, error) {
+	rows, err := s.pool.Query(ctx, `select status, count(*) from supply_chain_component_assessments where snapshot_id=any($1) group by 1`, customPlan, scope.snapshots)
+	return collectFacets(rows, err)
+}
+
 // SupplyChainOverview computes the overview for the stream across the
 // authorized repositories. staleBefore is the freshness cutoff.
 func (s *Store) SupplyChainOverview(ctx context.Context, repositoryIDs []int64, streamKey string, staleBefore time.Time) (supplychain.PortfolioOverview, error) {
-	overview := supplychain.PortfolioOverview{Repositories: len(repositoryIDs), AssessmentCounts: map[string]int{}}
+	overview := supplychain.PortfolioOverview{Repositories: len(repositoryIDs), AssessmentCounts: map[string]int{}, Ecosystems: []supplychain.FacetCount{}}
 	if len(repositoryIDs) == 0 {
 		return overview, nil
 	}
@@ -34,97 +147,92 @@ func (s *Store) SupplyChainOverview(ctx context.Context, repositoryIDs []int64, 
 	}
 	// Repositories with no stream row at all are "never collected" too.
 	overview.NeverCollected = overview.Repositories - overview.WithInventory
-	if err := s.pool.QueryRow(ctx, `select count(distinct (c.ecosystem, coalesce(c.purl_namespace, ''), coalesce(c.purl_name, c.name), coalesce(c.purl_version, c.version, ''))),
-			count(*) filter (where c.purl is null), count(*) filter (where coalesce(c.purl_version, c.version, '')='')
-		from supply_chain_streams st join supply_chain_components c on c.snapshot_id=st.latest_snapshot_id
-		where st.repository_id=any($1) and st.stream_key=$2`, repositoryIDs, streamKey).Scan(&overview.UniqueCoordinates, &overview.WithoutPURL, &overview.WithoutVersion); err != nil {
+	scope, err := s.supplyChainScope(ctx, repositoryIDs, streamKey)
+	if err != nil {
 		return supplychain.PortfolioOverview{}, err
 	}
-	rows, err := s.pool.Query(ctx, `select coalesce(a.status, 'unassessed'), count(*) from supply_chain_streams st
-		join supply_chain_components c on c.snapshot_id=st.latest_snapshot_id
+	rows, err := s.pool.Query(ctx, portfolioCoordinatesQuery, customPlan, scope.snapshots)
+	if err != nil {
+		return supplychain.PortfolioOverview{}, err
+	}
+	occurrences := 0
+	var ecosystem supplychain.FacetCount
+	var coordinates, withoutPURL, withoutVersion int
+	if _, err := pgx.ForEachRow(rows, []any{&ecosystem.Value, &ecosystem.Count, &coordinates, &withoutPURL, &withoutVersion}, func() error {
+		occurrences += ecosystem.Count
+		overview.UniqueCoordinates += coordinates
+		overview.WithoutPURL += withoutPURL
+		overview.WithoutVersion += withoutVersion
+		overview.Ecosystems = append(overview.Ecosystems, ecosystem)
+		return nil
+	}); err != nil {
+		return supplychain.PortfolioOverview{}, err
+	}
+	overview.Ecosystems = topFacets(overview.Ecosystems, 50)
+	assessments, err := s.supplyChainAssessmentCounts(ctx, scope)
+	if err != nil {
+		return supplychain.PortfolioOverview{}, err
+	}
+	overview.UnassessedComponent = occurrences
+	for _, assessment := range assessments {
+		overview.AssessmentCounts[assessment.Value] = assessment.Count
+		overview.UnassessedComponent -= assessment.Count
+	}
+	return overview, nil
+}
+
+// portfolioComponentsQuery returns the component page statement for the
+// filter and the arguments that follow the scope's snapshots. It picks the
+// page's keys first and aggregates only their occurrences, so a page costs
+// what it returns rather than what the scope holds.
+func portfolioComponentsQuery(filter supplychain.PortfolioFilter) (string, []any) {
+	keys := `select ` + coordinateKey + ` as key from supply_chain_components c
 		left join supply_chain_component_assessments a on a.component_id=c.id
-		where st.repository_id=any($1) and st.stream_key=$2 group by 1`, repositoryIDs, streamKey)
-	if err != nil {
-		return supplychain.PortfolioOverview{}, err
+		where c.snapshot_id=any($1) and ` + coordinateKey + ` > $6 and ` + ecosystemFilter + ` and ` + occurrenceFilters
+	if filter.Search != "" || filter.LicenseExpression != "" || filter.AssessmentStatus != "" {
+		// Reading the index in key order until the page is full is the plan to
+		// want without these filters and the one to avoid with them: matches
+		// may be anywhere, so it could read the whole index row by row. OFFSET 0
+		// has the planner find the matches first and sort only those.
+		keys = `select key from (` + keys + ` offset 0) matches`
 	}
-	for rows.Next() {
-		var status string
-		var count int
-		if err := rows.Scan(&status, &count); err != nil {
-			rows.Close()
-			return supplychain.PortfolioOverview{}, err
-		}
-		if status == "unassessed" {
-			overview.UnassessedComponent = count
-		} else {
-			overview.AssessmentCounts[status] = count
-		}
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return supplychain.PortfolioOverview{}, err
-	}
-	rows, err = s.pool.Query(ctx, `select coalesce(c.ecosystem, ''), count(*) from supply_chain_streams st join supply_chain_components c on c.snapshot_id=st.latest_snapshot_id
-		where st.repository_id=any($1) and st.stream_key=$2 group by 1 order by 2 desc, 1 limit 50`, repositoryIDs, streamKey)
-	if err != nil {
-		return supplychain.PortfolioOverview{}, err
-	}
-	defer rows.Close()
-	overview.Ecosystems = []supplychain.FacetCount{}
-	for rows.Next() {
-		var facet supplychain.FacetCount
-		if err := rows.Scan(&facet.Value, &facet.Count); err != nil {
-			return supplychain.PortfolioOverview{}, err
-		}
-		overview.Ecosystems = append(overview.Ecosystems, facet)
-	}
-	return overview, rows.Err()
+	// The scope is an index condition for the keys only: on the join below it
+	// would be costed as one index descent per snapshot and key.
+	return `with page as (` + keys + ` group by 1 order by 1 limit $7)
+		select page.key, min(coalesce(c.ecosystem, '')), min(coalesce(c.purl_namespace, '')), min(coalesce(c.purl_name, c.name)), min(coalesce(c.purl_version, c.version, '')),
+			max(coalesce(c.purl, '')), count(*), array_remove(array_agg(distinct a.status), null), max(coalesce(a.normalized_expression, '')),
+			array_remove(array_agg(distinct c.license_declared_raw), null), array_agg(distinct c.snapshot_id)
+		from page
+		join supply_chain_components c on ` + coordinateKey + `=page.key
+		join unnest($1::bigint[]) as scope(snapshot_id) on scope.snapshot_id=c.snapshot_id
+		left join supply_chain_component_assessments a on a.component_id=c.id
+		where ` + occurrenceFilters + `
+		group by page.key order by page.key`,
+		[]any{filter.Ecosystem, escapeLike(filter.Search), filter.LicenseExpression, filter.AssessmentStatus, filter.AfterKey, filter.Limit}
 }
 
 // SupplyChainPortfolioComponents lists unique coordinates over the authorized
 // latest snapshots with stable keyset ordering.
 func (s *Store) SupplyChainPortfolioComponents(ctx context.Context, filter supplychain.PortfolioFilter) ([]supplychain.PortfolioComponent, error) {
+	result := []supplychain.PortfolioComponent{}
 	if len(filter.RepositoryIDs) == 0 {
-		return []supplychain.PortfolioComponent{}, nil
+		return result, nil
 	}
-	rows, err := s.pool.Query(ctx, `with occurrences as (
-			select c.*, st.repository_id, snap.collected_at, r.github_id, a.status as assessment_status, a.normalized_expression,
-				coalesce(c.ecosystem, '') as eco, coalesce(c.purl_namespace, '') as ns, coalesce(c.purl_name, c.name) as pname, coalesce(c.purl_version, c.version, '') as pversion
-			from supply_chain_streams st
-			join supply_chain_snapshots snap on snap.id=st.latest_snapshot_id
-			join repositories r on r.id=st.repository_id
-			join supply_chain_components c on c.snapshot_id=st.latest_snapshot_id
-			left join supply_chain_component_assessments a on a.component_id=c.id
-			where st.repository_id=any($1) and st.stream_key=$2
-		), grouped as (
-			select eco, ns, pname, pversion,
-				eco || chr(1) || ns || chr(1) || pname || chr(1) || pversion as key,
-				max(coalesce(purl, '')) as purl,
-				count(distinct repository_id) as repositories, count(*) as occurrences,
-				array_remove(array_agg(distinct assessment_status), null) as statuses,
-				max(coalesce(normalized_expression, '')) as expression,
-				array_remove(array_agg(distinct license_declared_raw), null) as declared,
-				max(collected_at) as newest, min(collected_at) as oldest,
-				array_agg(distinct github_id order by github_id) as github_ids
-			from occurrences
-			where ($3='' or eco=$3)
-			and ($4='' or lower(pname) like '%'||lower($4)||'%' or lower(coalesce(purl, '')) like '%'||lower($4)||'%' or lower(name) like '%'||lower($4)||'%')
-			and ($5='' or lower(coalesce(normalized_expression, ''))=lower($5))
-			and ($6='' or coalesce(assessment_status, 'unassessed')=$6)
-			group by eco, ns, pname, pversion
-		)
-		select key, eco, ns, pname, pversion, purl, repositories, occurrences, statuses, expression, declared, newest, oldest, github_ids
-		from grouped where ($7='' or key>$7) order by key limit $8`,
-		filter.RepositoryIDs, filter.StreamKey, filter.Ecosystem, escapeLike(filter.Search), filter.LicenseExpression, filter.AssessmentStatus, filter.AfterKey, filter.Limit)
+	scope, err := s.supplyChainScope(ctx, filter.RepositoryIDs, filter.StreamKey)
+	if err != nil {
+		return nil, err
+	}
+	query, arguments := portfolioComponentsQuery(filter)
+	rows, err := s.pool.Query(ctx, query, append([]any{customPlan, scope.snapshots}, arguments...)...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	result := []supplychain.PortfolioComponent{}
 	for rows.Next() {
 		var item supplychain.PortfolioComponent
-		if err := rows.Scan(&item.Key, &item.Ecosystem, &item.Namespace, &item.Name, &item.Version, &item.PURL, &item.RepositoryCount, &item.OccurrenceCount, &item.AssessmentStatuses, &item.Expression,
-			&item.DeclaredRaw, &item.NewestCollectedAt, &item.OldestCollectedAt, &item.RepositoryGitHubIDs); err != nil {
+		var snapshots []int64
+		if err := rows.Scan(&item.Key, &item.Ecosystem, &item.Namespace, &item.Name, &item.Version, &item.PURL, &item.OccurrenceCount, &item.AssessmentStatuses, &item.Expression,
+			&item.DeclaredRaw, &snapshots); err != nil {
 			return nil, err
 		}
 		if item.AssessmentStatuses == nil {
@@ -132,6 +240,18 @@ func (s *Store) SupplyChainPortfolioComponents(ctx context.Context, filter suppl
 		}
 		if item.DeclaredRaw == nil {
 			item.DeclaredRaw = []string{}
+		}
+		// A repository has one latest snapshot per stream, so the snapshots
+		// of a coordinate are its repositories.
+		item.RepositoryCount, item.RepositoryGitHubIDs = len(snapshots), scope.repositories(snapshots)
+		for index, snapshot := range snapshots {
+			collected := scope.bySnapshot[snapshot].collectedAt
+			if index == 0 || collected.After(item.NewestCollectedAt) {
+				item.NewestCollectedAt = collected
+			}
+			if index == 0 || collected.Before(item.OldestCollectedAt) {
+				item.OldestCollectedAt = collected
+			}
 		}
 		result = append(result, item)
 	}
@@ -145,31 +265,36 @@ func (s *Store) SupplyChainPortfolioFacets(ctx context.Context, repositoryIDs []
 	if len(repositoryIDs) == 0 {
 		return facets, nil
 	}
-	for name, query := range map[string]string{
-		"ecosystem": `select coalesce(c.ecosystem, ''), count(*) from supply_chain_streams st join supply_chain_components c on c.snapshot_id=st.latest_snapshot_id
-			where st.repository_id=any($1) and st.stream_key=$2 group by 1 order by 2 desc, 1 limit 50`,
-		"assessment": `select coalesce(a.status, 'unassessed'), count(*) from supply_chain_streams st join supply_chain_components c on c.snapshot_id=st.latest_snapshot_id
-			left join supply_chain_component_assessments a on a.component_id=c.id where st.repository_id=any($1) and st.stream_key=$2 group by 1 order by 2 desc, 1 limit 20`,
-		"license": `select a.normalized_expression, count(*) from supply_chain_streams st join supply_chain_components c on c.snapshot_id=st.latest_snapshot_id
-			join supply_chain_component_assessments a on a.component_id=c.id where st.repository_id=any($1) and st.stream_key=$2 and a.normalized_expression<>'' group by 1 order by 2 desc, 1 limit 50`,
-	} {
-		rows, err := s.pool.Query(ctx, query, repositoryIDs, streamKey)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			var facet supplychain.FacetCount
-			if err := rows.Scan(&facet.Value, &facet.Count); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			facets[name] = append(facets[name], facet)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
+	scope, err := s.supplyChainScope(ctx, repositoryIDs, streamKey)
+	if err != nil {
+		return nil, err
 	}
+	rows, err := s.pool.Query(ctx, `select coalesce(c.ecosystem, ''), count(*) from supply_chain_components c where c.snapshot_id=any($1) group by 1`, customPlan, scope.snapshots)
+	ecosystems, err := collectFacets(rows, err)
+	if err != nil {
+		return nil, err
+	}
+	assessments, err := s.supplyChainAssessmentCounts(ctx, scope)
+	if err != nil {
+		return nil, err
+	}
+	unassessed := 0
+	for _, ecosystem := range ecosystems {
+		unassessed += ecosystem.Count
+	}
+	for _, assessment := range assessments {
+		unassessed -= assessment.Count
+	}
+	if unassessed > 0 {
+		assessments = append(assessments, supplychain.FacetCount{Value: "unassessed", Count: unassessed})
+	}
+	rows, err = s.pool.Query(ctx, `select normalized_expression, count(*) from supply_chain_component_assessments
+		where snapshot_id=any($1) and normalized_expression<>'' group by 1 order by 2 desc, 1 limit 50`, customPlan, scope.snapshots)
+	licenses, err := collectFacets(rows, err)
+	if err != nil {
+		return nil, err
+	}
+	facets["ecosystem"], facets["assessment"], facets["license"] = topFacets(ecosystems, 50), topFacets(assessments, 20), licenses
 	return facets, nil
 }
 
@@ -186,6 +311,7 @@ func (s *Store) SupplyChainCoordinateOccurrences(ctx context.Context, repository
 		join supply_chain_components c on c.snapshot_id=st.latest_snapshot_id
 		left join supply_chain_component_assessments a on a.component_id=c.id
 		where st.repository_id=any($1) and st.stream_key=$2 and coalesce(c.ecosystem, '')=$3 and coalesce(c.purl_namespace, '')=$4 and coalesce(c.purl_name, c.name)=$5 and coalesce(c.purl_version, c.version, '')=$6
+		and `+coordinateKey+`=$3 || chr(1) || $4 || chr(1) || $5 || chr(1) || $6
 		order by r.owner, r.name, c.ordinal limit $7`, repositoryIDs, streamKey, ecosystem, namespace, name, version, limit)
 	if err != nil {
 		return nil, err
