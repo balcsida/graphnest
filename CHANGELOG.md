@@ -5,6 +5,74 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+### Added
+
+- `GET /v1/supply-chain/graph` returns the dependencies that at least
+  `min_repositories` of the caller's repositories share, most shared first,
+  with the repositories using each, as one aggregate inside the caller's
+  scope. It takes the `stream`, `repository_id`, `ecosystem`, `assessment` and
+  `q` filters of the component list and a `limit` of up to 150 dependencies.
+  A graph holds at most 1,000 repository links: past that every dependency
+  lists an equal share of its repositories, lowest GitHub ID first, and
+  `repository_count` stays exact.
+
+### Changed
+
+- The Dependency graph view asks the server for the graph in one request
+  instead of reading up to 30 pages of the component list, so it covers the
+  whole inventory rather than its first 3,000 coordinates. When the graph is
+  over its link budget the view says so and each dependency shows how many
+  repositories use it.
+- `GET /v1/supply-chain/components` pages in the byte order of the coordinate
+  key (ecosystem, namespace, name, version) instead of the database
+  collation's order, so names with capitals now sort before lowercase ones.
+  Cursors issued before this change are refused with `400`; start again from
+  the first page.
+- A page of `GET /v1/supply-chain/components` (and of the MCP tool
+  `search_dependency_inventory`) names at most 1,000 repositories across its
+  components. Past that every component lists an equal share of its
+  repositories, lowest GitHub ID first; `repository_count` stays exact, and
+  `GET /v1/supply-chain/components/{key}` lists the occurrences.
+- The Dependency graph view shows `unassessed` beside a dependency's other
+  assessment statuses whenever one of its occurrences has no assessment, not
+  only when none has.
+
+### Fixed
+
+- On a large inventory (thousands of repositories, hundreds of thousands of
+  components in the latest snapshots) the Dependency graph view failed with
+  "Request failed with HTTP 502", because its requests outlasted the server's
+  10 second write timeout. Every component page sorted and aggregated every
+  occurrence in scope, and the overview ran four passes over them. A page now
+  reads its coordinates from an index and aggregates only those (a page
+  filtered by search, license or assessment still reads the scope once to
+  find its matches), the overview counts coordinates in one pass and reads
+  assessment counts from an index, and facets no longer join components to
+  assessments. On a synthetic
+  inventory of 900,000 occurrences with one database CPU a component page went
+  from 3.2 s to 15 ms, the overview from 5.6 s to 0.9 s, and the graph from
+  about 96 s of paging to one request of 1.4 s or less
+  ([measurements](docs/supply-chain-query-plans.md)).
+- A component page whose coordinates are used by very many repositories
+  answered `500`, because naming every repository for every coordinate
+  outgrew `GRAPHNEST_MAX_RESPONSE_BYTES`. The page now stays within a budget
+  of repository names (see Changed), and reads only the occurrences inside
+  the caller's scope, so widely used coordinates no longer make it slow.
+- The component detail (`GET /v1/supply-chain/components/{key}`) finds its
+  coordinate through the same index instead of reading every latest snapshot.
+
+### Upgrade guidance
+
+- Migration 042 creates the index `supply_chain_components_coordinate_key` on
+  `supply_chain_components` at startup. Building it reads the whole table,
+  retained history included, and blocks writes to that table meanwhile, so
+  SBOM publication waits until it is done: a few seconds per million component
+  rows in our measurement, and the index takes roughly a third of the table's
+  size on disk. Reads continue. A rolling upgrade is fine; a replica still on
+  the previous version answers as slowly as before and refuses the new
+  version's component cursors with `400`, as the new version refuses the old
+  ones. No configuration changes are required.
+
 ## [0.13.1] - 2026-11-17
 
 This release fixes SCIP uploads that repeat an occurrence. No migration or

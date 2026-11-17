@@ -79,6 +79,33 @@ func RegisterSupplyChainPortfolio(mux *http.ServeMux, authenticator authn.Reques
 		}
 		writeBoundedJSON(writer, response, maxResponseBytes)
 	}))
+	mux.Handle("/v1/supply-chain/graph", authenticated(http.MethodGet, func(writer http.ResponseWriter, request *http.Request) {
+		query := request.URL.Query()
+		repositories, ok := repositoryIDsFrom(query["repository_id"])
+		// Zero selects the service default, so an explicit zero is refused here.
+		bounded := func(name string, maximum int) int {
+			if !query.Has(name) {
+				return 0
+			}
+			parsed, err := strconv.Atoi(query.Get(name))
+			ok = ok && err == nil && parsed >= 1 && parsed <= maximum
+			return parsed
+		}
+		minRepositories, limit := bounded("min_repositories", 1<<20), bounded("limit", supplychain.MaxGraphDependencies)
+		if !ok || !supplychain.ValidStream(query.Get("stream")) {
+			writeError(writer, http.StatusBadRequest, "invalid_request", "request is invalid", false)
+			return
+		}
+		response, err := portfolio.Graph(request.Context(), PrincipalFromContext(request.Context()), supplychain.GraphRequest{
+			Stream: query.Get("stream"), RepositoryIDs: repositories, Ecosystem: query.Get("ecosystem"), Search: query.Get("q"), AssessmentStatus: query.Get("assessment"),
+			MinRepositories: minRepositories, Limit: limit,
+		})
+		if err != nil {
+			writeSupplyChainError(writer, err)
+			return
+		}
+		writeBoundedJSON(writer, response, maxResponseBytes)
+	}))
 	mux.Handle("/v1/supply-chain/components/", authenticated(http.MethodGet, func(writer http.ResponseWriter, request *http.Request) {
 		key := strings.TrimPrefix(request.URL.Path, "/v1/supply-chain/components/")
 		query := request.URL.Query()

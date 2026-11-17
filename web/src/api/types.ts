@@ -219,6 +219,7 @@ export interface SupplyChainPortfolioComponent {
   declared_raw: string[]
   newest_collected_at: string
   oldest_collected_at: string
+  /** By ascending GitHub ID; fewer than `repository_count` when the page is over its budget of repository names. */
   repositories: { id: number; name?: string }[]
 }
 
@@ -228,6 +229,32 @@ export interface SupplyChainPortfolioComponentList {
   components: SupplyChainPortfolioComponent[]
   truncated: boolean
   next_cursor?: string
+}
+
+/** A package across its versions. The counts are exact; the lists are bounded and can hold fewer entries. */
+export interface SupplyChainGraphDependency {
+  ecosystem: string
+  namespace?: string
+  name: string
+  version_count: number
+  versions: string[]
+  assessments: string[]
+  expressions: string[]
+  repository_count: number
+  /** GitHub IDs in ascending order; fewer than `repository_count` when the graph is over its link budget. */
+  repository_ids: number[]
+}
+
+export interface SupplyChainDependencyGraph {
+  stream: string
+  repositories_in_scope: number
+  min_repositories: number
+  /** Dependencies that passed the filters and the minimum, before the limit. */
+  matching: number
+  truncated: boolean
+  dependencies: SupplyChainGraphDependency[]
+  /** Every repository a dependency lists. */
+  repositories: { id: number; name?: string }[]
 }
 
 export interface SupplyChainPortfolioOccurrence {

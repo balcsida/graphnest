@@ -25,6 +25,7 @@ type PortfolioStore interface {
 	SupplyChainOverview(context.Context, []int64, string, time.Time) (PortfolioOverview, error)
 	SupplyChainPortfolioComponents(context.Context, PortfolioFilter) ([]PortfolioComponent, error)
 	SupplyChainPortfolioFacets(context.Context, []int64, string) (map[string][]FacetCount, error)
+	SupplyChainDependencyGraph(context.Context, GraphFilter) ([]GraphDependency, int, error)
 	SupplyChainCoordinateOccurrences(context.Context, []int64, string, string, string, string, string, int) ([]PortfolioOccurrence, error)
 	SnapshotComponentKeys(context.Context, int64) (map[string][2]string, error)
 	SnapshotEdgeKeys(context.Context, int64) (map[string]bool, error)
@@ -124,6 +125,11 @@ func (portfolio *Portfolio) Overview(ctx context.Context, principal authn.Princi
 	return result, nil
 }
 
+// portfolioCursorVersion is 2 since component pages are ordered by the bytes
+// of the coordinate key. A version 1 cursor points into the database
+// collation's order and would skip or repeat coordinates, so it is refused.
+const portfolioCursorVersion = 2
+
 type portfolioCursor struct {
 	Version int    `json:"v"`
 	Key     string `json:"k"`
@@ -141,14 +147,14 @@ func decodePortfolioCursor(value string) (portfolioCursor, bool) {
 	var cursor portfolioCursor
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&cursor); err != nil || cursor.Version != 1 || cursor.Key == "" {
+	if err := decoder.Decode(&cursor); err != nil || cursor.Version != portfolioCursorVersion || cursor.Key == "" {
 		return portfolioCursor{}, false
 	}
 	return cursor, true
 }
 
 func encodePortfolioCursor(key, filter string) string {
-	data, _ := json.Marshal(portfolioCursor{Version: 1, Key: key, Filter: filter})
+	data, _ := json.Marshal(portfolioCursor{Version: portfolioCursorVersion, Key: key, Filter: filter})
 	return base64.RawURLEncoding.EncodeToString(data)
 }
 
@@ -187,7 +193,7 @@ func (portfolio *Portfolio) Components(ctx context.Context, principal authn.Prin
 		return api.SupplyChainPortfolioComponentList{}, ErrInvalidRequest
 	}
 	cursor, ok := decodePortfolioCursor(request.Cursor)
-	if !ok || cursor.Version == 1 && cursor.Filter != request.filterKey() {
+	if !ok || cursor.Version == portfolioCursorVersion && cursor.Filter != request.filterKey() {
 		return api.SupplyChainPortfolioComponentList{}, ErrInvalidRequest
 	}
 	ids, byGitHubID, err := portfolio.scope(ctx, principal, request.RepositoryIDs)
@@ -204,15 +210,37 @@ func (portfolio *Portfolio) Components(ctx context.Context, principal authn.Prin
 		return api.SupplyChainPortfolioComponentList{}, err
 	}
 	result := api.SupplyChainPortfolioComponentList{Stream: stream, Components: make([]api.SupplyChainPortfolioComponent, 0, len(items)), RepositoriesInScope: len(ids)}
-	for index, item := range items {
-		if index == limit {
-			result.Truncated = true
-			result.NextCursor = encodePortfolioCursor(items[index-1].Key, request.filterKey())
-			break
-		}
+	if len(items) > limit {
+		result.Truncated = true
+		result.NextCursor = encodePortfolioCursor(items[limit-1].Key, request.filterKey())
+		items = items[:limit]
+	}
+	links := 0
+	for _, item := range items {
+		links += item.RepositoryCount
+	}
+	share := repositoryShare(links, len(items))
+	for _, item := range items {
+		item.RepositoryGitHubIDs = item.RepositoryGitHubIDs[:min(len(item.RepositoryGitHubIDs), share)]
 		result.Components = append(result.Components, portfolioComponent(item, byGitHubID))
 	}
 	return result, nil
+}
+
+// repositoryLinkBudget bounds the repositories one response names across its
+// components or dependencies. Without it a page of widely used coordinates
+// outgrows the response byte limit, and a graph of them takes a browser
+// seconds to lay out past about a thousand edges.
+const repositoryLinkBudget = 1000
+
+// repositoryShare is how many repositories each of the items may name: all
+// of them while the links fit the budget, an equal share past it. Lists are
+// by ascending GitHub ID, so the items keep naming the same repositories.
+func repositoryShare(links, items int) int {
+	if links <= repositoryLinkBudget {
+		return links
+	}
+	return max(repositoryLinkBudget/items, 1)
 }
 
 func portfolioComponent(item PortfolioComponent, byGitHubID map[int64]repository.Repository) api.SupplyChainPortfolioComponent {
@@ -238,6 +266,80 @@ func portfolioComponent(item PortfolioComponent, byGitHubID map[int64]repository
 		RepositoryCount: item.RepositoryCount, OccurrenceCount: item.OccurrenceCount, Assessment: assessment, AssessmentStatuses: statuses, Expression: item.Expression,
 		DeclaredRaw: item.DeclaredRaw, NewestCollectedAt: item.NewestCollectedAt, OldestCollectedAt: item.OldestCollectedAt, Repositories: repositories,
 	}
+}
+
+const (
+	// DefaultGraphMinRepositories is how many repositories have to share a
+	// dependency for it to be in the graph unless the request says otherwise.
+	DefaultGraphMinRepositories = 2
+	// MaxGraphDependencies bounds the dependencies of one graph.
+	MaxGraphDependencies = 150
+	// graphListLimit bounds the versions and expressions listed per dependency.
+	graphListLimit = 10
+)
+
+// GraphRequest bounds a dependency graph query. A zero MinRepositories or
+// Limit selects the default.
+type GraphRequest struct {
+	Stream           string
+	RepositoryIDs    []int64
+	Ecosystem        string
+	Search           string
+	AssessmentStatus string
+	MinRepositories  int
+	Limit            int
+}
+
+// Graph returns the dependencies shared across the authorized latest
+// snapshots, most shared first, with the repositories using each. It is one
+// bounded aggregate, so a client does not have to page through every
+// coordinate to draw the graph.
+func (portfolio *Portfolio) Graph(ctx context.Context, principal authn.Principal, request GraphRequest) (api.SupplyChainDependencyGraph, error) {
+	stream, err := normalizeStream(request.Stream)
+	if err != nil {
+		return api.SupplyChainDependencyGraph{}, err
+	}
+	if len(request.Search) > 200 || len(request.Ecosystem) > 64 || !validAssessmentStatuses[request.AssessmentStatus] || len(request.RepositoryIDs) > 200 ||
+		request.MinRepositories < 0 || request.Limit < 0 || request.Limit > MaxGraphDependencies {
+		return api.SupplyChainDependencyGraph{}, ErrInvalidRequest
+	}
+	if request.MinRepositories == 0 {
+		request.MinRepositories = DefaultGraphMinRepositories
+	}
+	if request.Limit == 0 {
+		request.Limit = MaxGraphDependencies
+	}
+	ids, byGitHubID, err := portfolio.scope(ctx, principal, request.RepositoryIDs)
+	if err != nil {
+		return api.SupplyChainDependencyGraph{}, err
+	}
+	items, matching, err := portfolio.Store.SupplyChainDependencyGraph(ctx, GraphFilter{RepositoryIDs: ids, StreamKey: stream, Ecosystem: strings.ToLower(request.Ecosystem), Search: request.Search,
+		AssessmentStatus: request.AssessmentStatus, MinRepositories: request.MinRepositories, Limit: request.Limit})
+	if err != nil {
+		return api.SupplyChainDependencyGraph{}, err
+	}
+	result := api.SupplyChainDependencyGraph{Stream: stream, RepositoriesInScope: len(ids), MinRepositories: request.MinRepositories, Matching: matching, Truncated: matching > len(items),
+		Dependencies: make([]api.SupplyChainGraphDependency, 0, len(items)), Repositories: []api.SupplyChainRepositoryRef{}}
+	edges := 0
+	for _, item := range items {
+		edges += item.RepositoryCount
+	}
+	share := repositoryShare(edges, len(items))
+	listed := map[int64]bool{}
+	for _, item := range items {
+		dependency := api.SupplyChainGraphDependency{Ecosystem: item.Ecosystem, Namespace: item.Namespace, Name: item.Name, VersionCount: len(item.Versions),
+			Versions: item.Versions[:min(len(item.Versions), graphListLimit)], Assessments: item.AssessmentStatuses, Expressions: item.Expressions[:min(len(item.Expressions), graphListLimit)],
+			RepositoryCount: item.RepositoryCount, RepositoryIDs: item.RepositoryGitHubIDs[:min(len(item.RepositoryGitHubIDs), share)]}
+		for _, githubID := range dependency.RepositoryIDs {
+			if !listed[githubID] {
+				listed[githubID] = true
+				result.Repositories = append(result.Repositories, api.SupplyChainRepositoryRef{ID: githubID, Name: byGitHubID[githubID].Name})
+			}
+		}
+		result.Dependencies = append(result.Dependencies, dependency)
+	}
+	sort.Slice(result.Repositories, func(i, j int) bool { return result.Repositories[i].ID < result.Repositories[j].ID })
+	return result, nil
 }
 
 // Facets returns bounded filter facets within the authorized scope.

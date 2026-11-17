@@ -2,6 +2,7 @@ import type {
   SupplyChainCollectionList,
   SupplyChainComponentDetail,
   SupplyChainComponentList,
+  SupplyChainDependencyGraph,
   SupplyChainFacets,
   SupplyChainJob,
   SupplyChainOverview,
@@ -87,6 +88,32 @@ export const listSupplyChainComponents = (params: PortfolioComponentsParams = {}
       ['license', params.license],
       ['q', params.q],
       ['cursor', params.cursor],
+    ])}`,
+    { signal },
+  )
+
+export interface DependencyGraphParams {
+  stream?: string
+  ecosystem?: string
+  assessment?: string
+  /** Case-insensitive substring of name or purl. */
+  q?: string
+  /** Leave out dependencies used by fewer repositories. */
+  min_repositories?: number
+  /** Dependencies returned, most shared first. */
+  limit?: number
+}
+
+/** The shared dependencies and the repositories using them, aggregated by the server in one request. */
+export const getSupplyChainGraph = (params: DependencyGraphParams = {}, signal?: AbortSignal) =>
+  request<SupplyChainDependencyGraph>(
+    `/v1/supply-chain/graph${queryString([
+      ['stream', params.stream],
+      ['min_repositories', params.min_repositories],
+      ['limit', params.limit],
+      ['ecosystem', params.ecosystem],
+      ['assessment', params.assessment],
+      ['q', params.q],
     ])}`,
     { signal },
   )

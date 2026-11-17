@@ -893,7 +893,7 @@ paths:
         '503': {$ref: '#/components/responses/Unavailable'}
   /v1/supply-chain/components:
     get:
-      description: Unique coordinates (ecosystem, namespace, name, version) across the latest snapshots of the caller's authorized repositories, with repository and occurrence counts, keyset-paginated in stable key order. The cursor is bound to the filter set. Filters never reveal repositories outside the scope.
+      description: Unique coordinates (ecosystem, namespace, name, version) across the latest snapshots of the caller's authorized repositories, with repository and occurrence counts, keyset-paginated in the byte order of the coordinate key (ecosystem, namespace, name, version). The cursor is bound to the filter set. A page names at most 1,000 repositories across its components; past that every component lists an equal share of its repositories, lowest GitHub ID first, and `repository_count` stays exact. Filters never reveal repositories outside the scope.
       security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
@@ -924,6 +924,25 @@ paths:
         '400': {$ref: '#/components/responses/InvalidRequest'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/InvalidRequest'}
+        '500': {description: Response exceeded the configured byte limit}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/supply-chain/graph:
+    get:
+      description: Dependencies (packages across their versions) that at least `min_repositories` of the caller's authorized repositories share in the latest snapshots, most shared first, with the repositories using each. It is one bounded aggregate, so drawing the graph does not take paging through every coordinate. `matching` counts the dependencies that qualify and `truncated` says more qualify than `limit` returned. A graph holds at most 1,000 repository links; past that every dependency lists an equal share of its repositories, lowest GitHub ID first, and `repository_count` stays exact. Filters apply to occurrences before repositories are counted and never reveal repositories outside the scope.
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: stream, in: query, required: false, schema: {type: string, description: 'github:source or import:<subject>:<label>'}}
+        - {name: repository_id, in: query, required: false, description: Repeatable GitHub repository IDs to narrow the scope (at most 200), schema: {type: integer, format: int64, minimum: 1}}
+        - {name: ecosystem, in: query, required: false, schema: {type: string, maxLength: 64}}
+        - {name: q, in: query, required: false, description: Case-insensitive substring of name or purl, schema: {type: string, maxLength: 200}}
+        - {name: assessment, in: query, required: false, schema: {type: string, enum: [unknown, declared, resolved, conflict, unlicensed, not_applicable, pending, unassessed]}}
+        - {name: min_repositories, in: query, required: false, description: Leave out dependencies used by fewer repositories, schema: {type: integer, minimum: 1, maximum: 1048576, default: 2}}
+        - {name: limit, in: query, required: false, description: Dependencies returned, schema: {type: integer, minimum: 1, maximum: 150, default: 150}}
+      responses:
+        '200': {description: Dependency graph, content: {application/json: {schema: {$ref: '#/components/schemas/SupplyChainDependencyGraph'}}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
         '405': {$ref: '#/components/responses/InvalidRequest'}
         '500': {description: Response exceeded the configured byte limit}
         '503': {$ref: '#/components/responses/Unavailable'}
@@ -3081,7 +3100,7 @@ components:
         declared_raw: {type: array, items: {type: string}, description: Distinct verbatim producer declarations across occurrences}
         newest_collected_at: {type: string, format: date-time}
         oldest_collected_at: {type: string, format: date-time}
-        repositories: {type: array, items: {type: object, additionalProperties: false, required: [id], properties: {id: {type: integer, format: int64}, name: {type: string}}}}
+        repositories: {type: array, maxItems: 1000, description: Repositories using it by ascending GitHub ID; fewer than repository_count when the page is over its budget of repository names, items: {type: object, additionalProperties: false, required: [id], properties: {id: {type: integer, format: int64}, name: {type: string}}}}
     SupplyChainPortfolioComponentList:
       type: object
       additionalProperties: false
@@ -3092,6 +3111,32 @@ components:
         components: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/SupplyChainPortfolioComponent'}}
         truncated: {type: boolean}
         next_cursor: {type: string, minLength: 1}
+    SupplyChainDependencyGraph:
+      type: object
+      additionalProperties: false
+      required: [stream, repositories_in_scope, min_repositories, matching, truncated, dependencies, repositories]
+      properties:
+        stream: {type: string}
+        repositories_in_scope: {type: integer, minimum: 0}
+        min_repositories: {type: integer, minimum: 1}
+        matching: {type: integer, minimum: 0, description: Dependencies that passed the filters and min_repositories}
+        truncated: {type: boolean, description: More dependencies matched than are returned}
+        dependencies: {type: array, maxItems: 150, items: {$ref: '#/components/schemas/SupplyChainGraphDependency'}}
+        repositories: {type: array, maxItems: 1000, description: Every repository a dependency lists, items: {type: object, additionalProperties: false, required: [id], properties: {id: {type: integer, format: int64}, name: {type: string}}}}
+    SupplyChainGraphDependency:
+      type: object
+      additionalProperties: false
+      required: [ecosystem, name, version_count, versions, assessments, expressions, repository_count, repository_ids]
+      properties:
+        ecosystem: {type: string}
+        namespace: {type: string}
+        name: {type: string}
+        version_count: {type: integer, minimum: 0}
+        versions: {type: array, maxItems: 10, description: The first versions in byte order, items: {type: string}}
+        assessments: {type: array, description: 'Assessment statuses of its occurrences, with unassessed for occurrences without one', items: {type: string}}
+        expressions: {type: array, maxItems: 10, items: {type: string}}
+        repository_count: {type: integer, minimum: 1}
+        repository_ids: {type: array, maxItems: 1000, description: GitHub IDs of repositories using it in ascending order; fewer than repository_count when the graph is over its link budget, items: {type: integer, format: int64}}
     SupplyChainPortfolioComponentDetail:
       type: object
       additionalProperties: false

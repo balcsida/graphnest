@@ -34,7 +34,7 @@ export function DependencyNode({ data }: NodeProps<DependencyFlowNode>) {
       </p>
       <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
         <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ backgroundColor: ecosystemColor(data.colorIndex) }} />
-        {dependency.ecosystem} · {dependency.repositoryIds.length} repositories{dependency.risky ? ' · conflict or unlicensed' : ''}
+        {dependency.ecosystem} · {dependency.repositoryCount} repositories{dependency.risky ? ' · conflict or unlicensed' : ''}
       </p>
     </div>
   )

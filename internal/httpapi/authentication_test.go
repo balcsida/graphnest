@@ -144,6 +144,7 @@ func TestAuthenticateRequestConfinesInventoryOnlyTokenToRepositoryInventory(t *t
 		{http.MethodGet, "/v1/graph/repositories/101/status"},
 		{http.MethodPut, "/v1/graph/publication-grants"},
 		{http.MethodGet, "/v1/supply-chain/overview"},
+		{http.MethodGet, "/v1/supply-chain/graph"},
 		{http.MethodGet, "/v1/supply-chain/repositories/101"},
 		{http.MethodGet, "/v1/admin/overview"},
 		{http.MethodGet, "/v1/admin/repositories"},
