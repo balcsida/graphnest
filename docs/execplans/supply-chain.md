@@ -271,6 +271,15 @@ Detailed task lists are appended when each milestone starts.
 - 2026-09-22 D8: The UI is a new embedded page `/supply-chain` reusing the
   console shell, tokens, and auth flow, so `index.html`/`admin.html` change
   only by adding a navigation link.
+- 2026-11-17 D9: D7 stands at a few hundred thousand occurrences, without the
+  coordinate summary table once planned as its upgrade path. Portfolio queries
+  still aggregate at query time, over a coordinate key indexed in `"C"`
+  collation (migration 042): a component page reads its keys from the index
+  and aggregates only those, and the dependency graph is one server-side
+  aggregate (`GET /v1/supply-chain/graph`) instead of a client paging through
+  every coordinate. The index costs nothing to keep consistent, where a
+  summary table would have to follow publication, pruning and every
+  assessment change. Measurements are in `docs/supply-chain-query-plans.md`.
 
 ## Progress
 
