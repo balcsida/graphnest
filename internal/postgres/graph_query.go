@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"sort"
 	"strings"
 
 	"github.com/balcsida/graphnest/internal/graphartifact"
@@ -18,23 +19,104 @@ func (s *Store) Health(ctx context.Context) error {
 	return s.pool.Ping(ctx)
 }
 
+// Manifests picks, per repository, the generation that answers context, impact
+// and trace at the indexed commit: a published v2 generation, then a managed or
+// external v1 graph, then the SCIP-derived v2 generation, then the SCIP-derived
+// v1 graph. An explicit v1 graph outranks the SCIP-derived v2 generation
+// because only the former records call edges.
 func (s *Store) Manifests(ctx context.Context) (map[int64]graphartifact.Manifest, error) {
 	ctx, cancel := s.graphQueryContext(ctx)
 	defer cancel()
-	manifests, err := s.GraphManifests(ctx)
+	rows, err := s.pool.Query(ctx, `select distinct on (repositories.id) repositories.id, repositories.indexed_sha,
+		graph_uploads.id, graph_uploads.schema_version, graph_uploads.content_hash, graph_uploads.source
+		from installations join repositories on repositories.installation_id=installations.id
+		join graph_uploads on graph_uploads.repository_id=repositories.id and graph_uploads.commit=repositories.indexed_sha and graph_uploads.active
+		where installations.status='active' and repositories.enabled and not repositories.archived and repositories.indexed_sha is not null
+		order by repositories.id, case
+			when graph_uploads.schema_version=2 and graph_uploads.source='external' then 0
+			when graph_uploads.schema_version=1 and graph_uploads.source<>'scip' then 1
+			when graph_uploads.schema_version=2 then 2
+			else 3 end`)
 	if err != nil {
 		return nil, err
 	}
-	result := make(map[int64]graphartifact.Manifest, len(manifests))
-	for _, manifest := range manifests {
+	defer rows.Close()
+	result := map[int64]graphartifact.Manifest{}
+	for rows.Next() {
+		var manifest graphartifact.Manifest
+		if err := rows.Scan(&manifest.RepositoryID, &manifest.Commit, &manifest.UploadID, &manifest.SchemaVersion, &manifest.ContentHash, &manifest.Source); err != nil {
+			return nil, err
+		}
 		result[manifest.RepositoryID] = manifest
 	}
-	return result, nil
+	return result, rows.Err()
 }
 
+// Symbols reads each snapshot from the generation Manifests picked for it.
+// A repository is in exactly one generation, so results merge by repository.
 func (s *Store) Symbols(ctx context.Context, query graphquery.SymbolQuery) ([]graphprotocol.Symbol, error) {
 	ctx, cancel := s.graphQueryContext(ctx)
 	defer cancel()
+	legacy, current := splitGenerations(query.Snapshots)
+	if len(current) == 0 {
+		return s.symbolsV1(ctx, query)
+	}
+	query.Snapshots = current
+	symbols, err := s.symbolsV2(ctx, query)
+	if err != nil || len(legacy) == 0 {
+		return symbols, err
+	}
+	query.Snapshots = legacy
+	more, err := s.symbolsV1(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	symbols = append(symbols, more...)
+	sort.SliceStable(symbols, func(i, j int) bool { return symbols[i].RepositoryID < symbols[j].RepositoryID })
+	return symbols[:min(len(symbols), max(query.Limit, 0))], nil
+}
+
+// Neighbors is the frontier counterpart of Symbols.
+func (s *Store) Neighbors(ctx context.Context, query graphquery.NeighborQuery) ([]graphquery.Neighbor, error) {
+	ctx, cancel := s.graphQueryContext(ctx)
+	defer cancel()
+	legacy, current := splitGenerations(query.Snapshots)
+	if len(current) == 0 {
+		return s.neighborsV1(ctx, query)
+	}
+	if len(legacy) == 0 {
+		return s.neighborsV2(ctx, query)
+	}
+	// Both generations in one scope: page after merging.
+	offset, limit := max(query.Offset, 0), max(query.Limit, 0)
+	query.Offset, query.Limit = 0, offset+limit
+	query.Snapshots = legacy
+	neighbors, err := s.neighborsV1(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	query.Snapshots = current
+	more, err := s.neighborsV2(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	neighbors = append(neighbors, more...)
+	sort.SliceStable(neighbors, func(i, j int) bool { return neighbors[i].Symbol.RepositoryID < neighbors[j].Symbol.RepositoryID })
+	return neighbors[min(len(neighbors), offset):min(len(neighbors), offset+limit)], nil
+}
+
+func splitGenerations(snapshots []graphquery.QuerySnapshot) (legacy, current []graphquery.QuerySnapshot) {
+	for _, snapshot := range snapshots {
+		if snapshot.SchemaVersion == 2 {
+			current = append(current, snapshot)
+		} else {
+			legacy = append(legacy, snapshot)
+		}
+	}
+	return legacy, current
+}
+
+func (s *Store) symbolsV1(ctx context.Context, query graphquery.SymbolQuery) ([]graphprotocol.Symbol, error) {
 	repositoryIDs, uploadIDs, commits := graphScope(query.Snapshots)
 	rows, err := s.pool.Query(ctx, `with scope as (
 		select * from unnest($1::bigint[], $2::bigint[], $3::text[]) as value(repository_id, upload_id, commit)
@@ -63,9 +145,7 @@ func (s *Store) Symbols(ctx context.Context, query graphquery.SymbolQuery) ([]gr
 	return symbols, rows.Err()
 }
 
-func (s *Store) Neighbors(ctx context.Context, query graphquery.NeighborQuery) ([]graphquery.Neighbor, error) {
-	ctx, cancel := s.graphQueryContext(ctx)
-	defer cancel()
+func (s *Store) neighborsV1(ctx context.Context, query graphquery.NeighborQuery) ([]graphquery.Neighbor, error) {
 	kind, ok := graphRelationKind(query.Relation)
 	if !ok || query.Direction != "incoming" && query.Direction != "outgoing" {
 		return nil, graphquery.ErrInvalidRequest

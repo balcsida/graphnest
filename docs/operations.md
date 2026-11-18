@@ -149,7 +149,7 @@ published and one SCIP-derived (see [graph storage](graph-storage.md)):
 
 | Generation | Serves | Built by |
 | --- | --- | --- |
-| v1 | `context`, `impact`, `trace` (REST `/v1/graph/context`, `/impact`, `/trace`) | The indexer's optional `graphnest-scanner enrich` run (`GRAPHNEST_SCANNER_PATH`, source `managed`); an administrator's v1 artifact upload to `POST /v1/graph/uploads` (`external`); or a SCIP upload (`scip`, used when neither of the others exists). |
+| v1 | `context`, `impact`, `trace` (REST `/v1/graph/context`, `/impact`, `/trace`), unless a v2 generation answers them (see below) | The indexer's optional `graphnest-scanner enrich` run (`GRAPHNEST_SCANNER_PATH`, source `managed`); an administrator's v1 artifact upload to `POST /v1/graph/uploads` (`external`); or a SCIP upload (`scip`, used when neither of the others exists). |
 | v2 | `graph_capabilities`, `graph_discover`, `graph_callers`, `graph_callees`, `graph_files`, `graph_impact_radius`, `explore` (REST `/v1/graph/capabilities`, `/discover`, `/callers`, `/callees`, `/files`, `/impact-radius`, `/explore`) | Two slots: a SCIP upload to `POST /v1/scip/uploads` fills the SCIP-derived slot (producer `scip`), and a CodeGraph artifact published to `POST /v1/graph/uploads` with the v2 content type fills the published slot. The tools use the published generation when it is at the indexed commit, otherwise the SCIP-derived one. |
 
 Nothing else builds a v2 generation. A default deployment therefore has no
@@ -160,6 +160,48 @@ tools report `graph_missing`. Every generation is pinned to the exact indexed
 commit, so each new default-branch commit needs a new SCIP upload (the CI job
 described in the README) before the graph tools answer again; until then the
 repository status reports `graph_status: stale`.
+
+`context`, `impact` and `trace` keep their v1 request and response contract
+but read whichever generation is at the indexed commit, in this order:
+
+1. the published v2 generation;
+2. a managed or external v1 graph;
+3. the SCIP-derived v2 generation;
+4. the SCIP-derived v1 graph.
+
+A repository indexed with SCIP alone is therefore answered from its v2
+generation, and its v1 graph is no longer read. A scanner or uploaded v1 graph
+stays ahead of the SCIP-derived generation because only it records `calls`
+edges, which `trace` needs. Symbol UIDs do not change: a SCIP symbol is
+`symbol:<SCIP symbol>` from either generation. For a published generation the
+UID is `symbol:` followed by the entity's occurrence.
+
+Answers from a SCIP-derived v2 generation differ from the v1 graph of the same
+index in these ways:
+
+- `kind` is the indexer's own kind in the v2 vocabulary (`class`, `struct`,
+  `interface`, `module`, `method` and so on) where v1 derived `type`,
+  `namespace` and `field` from the symbol string. The `kind` filter still
+  accepts `type` (any type kind) and `namespace` (`namespace` or `module`).
+- `name` is the indexer's display name when it records one, so a Go package
+  is `greet`, not its import path.
+- `language` and, when the indexer records it, `signature` are filled in.
+- A symbol the index references but does not define has an empty `file_path`
+  and a zero range (v1 used its first reference), so `include_content` returns
+  no content for it.
+- Local symbols (`symbol:local N`) are not entities and are not found.
+- A reference to a package or namespace is an `imports` fact in v2 and is not
+  listed under `references`.
+- `resolution_reason` names the source of the edge (`scip_enclosing_range`,
+  `scip_relationship`) instead of `scip`.
+- Relations are still ordered by the related symbol's UID, in byte order.
+  When two symbols have more reference sites between them than one page holds,
+  the sites on each page are in file order, but which sites a page holds
+  follows the v2 edge identity.
+
+`commits` and the `graph_missing` boundary count follow the same choice: a
+repository in scope counts as having a graph when either generation is at its
+indexed commit.
 
 The two v2 slots are independent. A SCIP upload never replaces, retires or
 needs permission to coexist with a publisher's generation, and a publication
@@ -195,7 +237,9 @@ there is none. `GET /v1/graph/repositories/{id}/status` reports the v1 state
 (`ready`, `fallback`, `pending`, `degraded` or `not_indexed`) and, under
 `publication`, `active_generation`, which is the published slot only. A
 publisher therefore sees its own generation go stale while the SCIP-derived
-generation keeps the tools answering.
+generation keeps the tools answering. That v1 state describes the v1 graph
+alone: `context`, `impact` and `trace` also answer while it is `pending` when
+a v2 generation is at the indexed commit.
 
 ### Troubleshooting graph errors
 
@@ -210,6 +254,25 @@ message "graph is not ready".
 | `generation_changed` | The repository was re-indexed or its graph replaced while the request ran. Retryable. | Retry. |
 | `discovery_unavailable` | The active v2 generation predates the current discovery projection. Not retryable. | Upload the SCIP index again or republish the artifact; a new generation carries the current projection. |
 | `graph_not_ready` | Graph state is inconsistent for the request: facts outside the authorized scope, or generation metadata that does not match the selected commit. Not retryable. | Compare `graph_commit` with `indexed_sha` in the repository status and upload again if they differ. |
+
+`context`, `impact` and `trace` report a repository without a graph
+differently from the v2 tools, and answering them from v2 generations did not
+change that:
+
+- `404 not_found` means the `repo` selector matches no repository the token
+  can read: the name is not the full `owner/name`, the repository is outside
+  the token's scope, or it is disabled or archived. It never describes graph
+  state.
+- `409` is `ambiguous` (no `repo` given and more than one repository in
+  scope, or a selector matching several), `branch_not_indexed`, `not_indexed`,
+  `generation_changed` or `graph_not_ready`. `generation_changed` now also
+  covers a v2 generation replaced while the request ran.
+- A repository with no generation at its indexed commit answers `200` with
+  `status: not_found` (`no_path` for `trace`) and a `graph_missing` boundary
+  naming the repository; these calls never return `409 graph_missing`. The
+  same request starts answering once either generation reaches the indexed
+  commit, for example a SCIP upload for the new commit while a scanner graph
+  is still at the previous one.
 
 ### Recovering existing repositories after an upgrade
 

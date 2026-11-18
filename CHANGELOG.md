@@ -5,6 +5,26 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+### Changed
+
+- `context`, `impact` and `trace` (REST `/v1/graph/context`, `/impact`,
+  `/trace` and the MCP tools of the same names) read whichever graph
+  generation is at the indexed commit: a published v2 generation, then a
+  scanner or uploaded v1 graph, then the SCIP-derived v2 generation, then the
+  SCIP-derived v1 graph. Requests, response fields, limits, ordering and error
+  codes are unchanged, and SCIP symbol UIDs stay `symbol:<SCIP symbol>`. A
+  repository indexed with SCIP alone is now answered from its v2 generation,
+  so some values differ from before: `kind` uses the v2 vocabulary (`class`,
+  `struct`, `interface`, `module`, `method`; the `kind` filter still accepts
+  `type` and `namespace`), `language` is filled in, a package is named by its
+  display name, a symbol the index does not define has no `file_path`, local
+  symbols and references to packages are not listed, and `resolution_reason`
+  is more specific than `scip`. A repository whose v2 generation is at the
+  indexed commit while its v1 graph is not now gets an answer instead of
+  `status: not_found` with a `graph_missing` boundary. SCIP uploads still
+  derive the v1 graph. See [what builds a
+  graph](docs/operations.md#what-builds-a-graph). ([#177])
+
 ## [0.14.0] - 2026-11-17
 
 This release makes the supply-chain portfolio usable on a large inventory: the
@@ -940,3 +960,4 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
 [#172]: https://github.com/balcsida/graphnest/pull/172
 [#173]: https://github.com/balcsida/graphnest/pull/173
 [#175]: https://github.com/balcsida/graphnest/pull/175
+[#177]: https://github.com/balcsida/graphnest/pull/177

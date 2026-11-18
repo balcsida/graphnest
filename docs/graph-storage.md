@@ -3,9 +3,10 @@
 Migration 027 retains immutable graph generations in `graph_uploads`. Since
 migrations 038 and 039, partial unique indexes permit one active v1 generation
 per internal repository ID and two active v2 generations, one per source: the
-v1 generation serves `context`, `impact` and `trace`, the v2 generations serve
-the entity, discovery, exploration and symbol workflows, and no write retires
-a generation in another slot. A SCIP upload publishes the v1 generation and
+v2 generations serve the entity, discovery, exploration and symbol workflows,
+`context`, `impact` and `trace` read either version (see [Legacy queries over
+v2](#legacy-queries-over-v2)), and no write retires a generation in another
+slot. A SCIP upload publishes the v1 generation and
 the SCIP-derived v2 generation (see [Versions and
 publication](#versions-and-publication)). Each publication locks the
 repository, checks its indexed SHA, and writes all facts plus activation in
@@ -48,6 +49,31 @@ when one is active at that commit, otherwise the SCIP-derived generation at
 that commit, otherwise nothing (`graph_missing`). A publisher whose generation
 goes stale therefore no longer blocks the SCIP-derived generation from
 answering, and a publisher that catches up takes precedence again.
+
+## Legacy queries over v2
+
+`context`, `impact` and `trace` run the v1 engine (`graphquery.Service`) over
+the three-method `graphquery.Store`. `Store.Manifests` picks one generation per
+repository at its indexed commit: the published v2 generation, then a v1 graph
+with source `managed` or `external`, then the SCIP-derived v2 generation, then
+the SCIP-derived v1 graph. The pick travels as
+`graphquery.QuerySnapshot.SchemaVersion`, and `Symbols` and `Neighbors` read
+`graph_nodes`/`graph_edges` or `graph_v2_nodes`/`graph_v2_edges` accordingly.
+Limits, ordering, boundaries and the snapshot check that reports
+`generation_changed` stay in the engine and are the same for both.
+
+Read through that store, a v2 entity is a symbol unless its kind is `file` or
+`repository`. Its UID is `symbol:` plus the occurrence, its name, kind, path,
+language, signature and range come from the stored fact, and it is a test
+symbol by the same path rule as v1. The `calls`, `references`, `extends` and
+`implements` relations read the edge kinds of the same name; in a SCIP-derived
+generation `extends` also reads `type_of`, because the v1 SCIP graph reported
+SCIP's `is_type_definition` relationships as `extends`. An edge without a
+recorded confidence passes every `min_confidence` and reports 1. Frontier
+lookups use `graph_v2_edges_outgoing` and `graph_v2_edges_incoming`.
+
+Writes are unchanged: a SCIP upload still derives the v1 graph even where it is
+no longer read.
 
 `postgres.ReplaceGraphV2` is the storage entry point for external publication;
 `ReplaceSCIP` publishes SCIP-derived generations through the same transactional

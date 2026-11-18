@@ -109,7 +109,7 @@ func (service *Service) ready(ctx context.Context, scope graphprotocol.Scope) (r
 			continue
 		}
 		ready.snapshots = append(ready.snapshots, snapshot)
-		querySnapshot := QuerySnapshot{RepositoryID: snapshot.ID, UploadID: manifest.UploadID, Commit: snapshot.Commit}
+		querySnapshot := QuerySnapshot{RepositoryID: snapshot.ID, UploadID: manifest.UploadID, Commit: snapshot.Commit, SchemaVersion: manifest.SchemaVersion}
 		ready.queries = append(ready.queries, querySnapshot)
 		ready.commits[snapshot.Name] = snapshot.Commit
 		if scope.SelectedRepositoryID == snapshot.ID {
