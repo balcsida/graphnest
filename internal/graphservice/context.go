@@ -41,7 +41,8 @@ func (s *Service) Context(ctx context.Context, principal authn.Principal, reques
 		if convertErr != nil {
 			return api.GraphContextResponse{}, convertErr
 		}
-		if request.IncludeContent {
+		// A symbol defined outside the indexed sources has no file to read.
+		if request.IncludeContent && value.FilePath != "" {
 			if snapshot, ok := snapshots[internal.RepositoryID]; ok && s.Files != nil {
 				file, readErr := s.Files.ReadFileAt(ctx, principal, api.ReadFileRequest{RepositoryID: snapshot.GitHubID, Path: value.FilePath, StartLine: value.Range.StartLine + 1, EndLine: value.Range.EndLine + 1}, snapshot.Commit)
 				if readErr != nil {

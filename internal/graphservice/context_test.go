@@ -256,3 +256,20 @@ func TestPublicIdentityRejectsUnknownBackendRepository(t *testing.T) {
 		t.Fatalf("publicBoundary() error = %v", err)
 	}
 }
+
+// A v2 generation records no file for a symbol defined outside the index, so
+// there is no source to attach; the request must still succeed.
+func TestContextSkipsContentForSymbolWithoutFile(t *testing.T) {
+	store := &fakeRepositoryStore{repositories: []repository.Repository{readyRepository("a")}}
+	backend := &fakeBackend{context: func() graphprotocol.ContextResponse {
+		return graphprotocol.ContextResponse{Status: graphprotocol.StatusFound, Symbol: &graphprotocol.Symbol{RepositoryID: 1, UID: "symbol:external"}, Commits: map[string]string{"a": strings.Repeat("a", 40)}}
+	}}
+	service := Service{Store: store, Backend: backend, Files: inspectionReader(func(context.Context, authn.Principal, api.ReadFileRequest, string) (api.ReadFileResponse, error) {
+		t.Fatal("read a file for a symbol without one")
+		return api.ReadFileResponse{}, nil
+	})}
+	got, err := service.Context(t.Context(), principalFor(101), api.GraphContextRequest{Repo: api.GraphRepositorySelector{ID: 101}, GraphSymbolSelector: api.GraphSymbolSelector{UID: "symbol:external"}, IncludeContent: true})
+	if err != nil || got.Symbol == nil || got.Symbol.UID != "symbol:external" || got.Symbol.Content != "" {
+		t.Fatalf("result=%+v err=%v", got, err)
+	}
+}
