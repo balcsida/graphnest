@@ -5,6 +5,15 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-18
+
+`context`, `impact` and `trace` are answered from v2 graph generations where
+that is the generation at the indexed commit, so a repository indexed with
+SCIP alone no longer reads its v1 graph. The request and response contract is
+unchanged; some values differ for those repositories (symbol kinds above
+all), as listed below. There is no migration and no configuration change, and
+a rolling upgrade is fine.
+
 ### Changed
 
 - `context`, `impact` and `trace` (REST `/v1/graph/context`, `/impact`,
@@ -877,7 +886,8 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
   Published images retain SBOMs and provenance; images and charts use immutable
   digests and GitHub attestations. ([#36])
 
-[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/balcsida/graphnest/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/balcsida/graphnest/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/balcsida/graphnest/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/balcsida/graphnest/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/balcsida/graphnest/compare/v0.12.0...v0.13.0
