@@ -42,9 +42,9 @@ func TestPostgresGraphQueryStoreSupportsSCIPFallback(t *testing.T) {
 	upload := scipgraph.Upload{
 		ProjectRoot: "file:///src", IndexerName: "test", IndexerVersion: "1",
 		Occurrences: []scipgraph.Occurrence{
-			{Path: "root.go", Symbol: root, EndCharacter: 1, PositionEncoding: 1},
-			{Path: "next.go", Symbol: next, EndCharacter: 1, PositionEncoding: 1},
-			{Path: "last.go", Symbol: last, EndCharacter: 1, PositionEncoding: 1},
+			{Path: "root.go", Symbol: root, EndCharacter: 1, PositionEncoding: 1, Roles: definitionRole},
+			{Path: "next.go", Symbol: next, EndCharacter: 1, PositionEncoding: 1, Roles: definitionRole},
+			{Path: "last.go", Symbol: last, EndCharacter: 1, PositionEncoding: 1, Roles: definitionRole},
 		},
 		Relationships: []scipgraph.Relationship{
 			{Path: "root.go", Source: root, Target: next, Reference: true},

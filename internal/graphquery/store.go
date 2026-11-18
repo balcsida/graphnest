@@ -25,6 +25,10 @@ type QuerySnapshot struct {
 	RepositoryID int64
 	UploadID     int64
 	Commit       string
+	// SchemaVersion is the generation the legacy store reads for context,
+	// impact and trace: 2 for a v2 generation, otherwise v1. It stays out of
+	// JSON so entity cursor fingerprints do not change.
+	SchemaVersion uint32 `json:"-"`
 }
 
 type SymbolRef struct {
