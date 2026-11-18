@@ -36,6 +36,14 @@ independently for code navigation and derive both the v1 fallback graph and
 the v2 generation the `graph_*` and `explore` tools read; without a SCIP
 upload or a published artifact those tools report `graph_missing`.
 
+`context`, `impact` and `trace` keep their request and response contract and
+read whichever generation is at the indexed commit: a published v2
+generation, then a scanner or uploaded v1 graph, then the SCIP-derived v2
+generation, then the SCIP-derived v1 graph. See [what builds a
+graph](operations.md#what-builds-a-graph) for the values that differ between a
+SCIP-derived v2 generation and the v1 graph of the same index (symbol kinds
+above all).
+
 `GRAPHNEST_ZOEKT_GIT_INDEX` remains a deprecated alias for
 `GRAPHNEST_ZOEKT_INDEX` when its basename is `zoekt-git-index`. New deployments
 must use archive ingestion and `GRAPHNEST_ZOEKT_INDEX`. See the
