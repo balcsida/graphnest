@@ -16,9 +16,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// A SCIP upload publishes the v2 generation the entity, discovery, exploration
-// and symbol workflows read, next to the v1 fallback graph the legacy
-// workflows read.
+// A SCIP upload publishes the v2 generation every graph workflow reads, and no
+// v1 graph beside it.
 func TestReplaceSCIPPublishesV2Generation(t *testing.T) {
 	store, repositoryID := readyGraphStore(t, testSHA('a'))
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("a.go", globalSymbol, definitionRole)); err != nil {
@@ -38,8 +37,8 @@ func TestReplaceSCIPPublishesV2Generation(t *testing.T) {
 		t.Fatalf("entities=%#v err=%v", entities, err)
 	}
 	manifests, err := store.GraphManifests(t.Context())
-	if err != nil || len(manifests) != 1 || manifests[0].SchemaVersion != 1 || manifests[0].Source != string(GraphSourceSCIP) {
-		t.Fatalf("v1 fallback manifest=%#v err=%v", manifests, err)
+	if err != nil || len(manifests) != 0 {
+		t.Fatalf("v1 manifests beside the generation=%#v err=%v", manifests, err)
 	}
 
 	// The same index again is a deduplicated retry, not a new generation.
@@ -57,7 +56,7 @@ func TestReplaceSCIPPublishesV2Generation(t *testing.T) {
 	if err != nil || replaced == nil || replaced.ID == active.ID {
 		t.Fatalf("new index kept the old generation: %#v err=%v", replaced, err)
 	}
-	assertActiveCount(t, store, repositoryID, 2)
+	assertActiveCount(t, store, repositoryID, 1)
 
 	// A publisher's generation is a separate slot: it names no expectation about
 	// the SCIP-derived generation and needs no provider change.
@@ -69,7 +68,7 @@ func TestReplaceSCIPPublishesV2Generation(t *testing.T) {
 	if err != nil || publication.ReplacedID != 0 {
 		t.Fatalf("publication=%#v err=%v", publication, err)
 	}
-	assertActiveCount(t, store, repositoryID, 3)
+	assertActiveCount(t, store, repositoryID, 2)
 
 	// A later SCIP upload replaces only the SCIP-derived slot.
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("c.go", globalSymbol, definitionRole)); err != nil {
@@ -82,7 +81,7 @@ func TestReplaceSCIPPublishesV2Generation(t *testing.T) {
 	if err != nil || len(both) != 2 || both[0].ID != publication.Upload.ID || both[0].Source != api.GraphSourceExternal || both[1].Source != api.GraphSourceSCIP || both[1].ID == replaced.ID {
 		t.Fatalf("active generations=%#v err=%v", both, err)
 	}
-	assertActiveCount(t, store, repositoryID, 3)
+	assertActiveCount(t, store, repositoryID, 2)
 	// Readiness prefers the published generation while it is current.
 	generations, err = store.EntityGenerations(t.Context(), snapshots)
 	if err != nil || len(generations) != 1 || generations[0].UploadID != publication.Upload.ID {
@@ -169,7 +168,7 @@ func assertActiveCount(t *testing.T, store *Store, repositoryID int64, want int)
 }
 
 // A failure while copying the derived generation rolls back the whole upload:
-// navigation rows, the v1 fallback and the v2 generation stay as they were.
+// navigation rows and the v2 generation stay as they were.
 func TestReplaceSCIPRollsBackWhenTheDerivedGenerationCannotBeStored(t *testing.T) {
 	store, repositoryID := readyGraphStore(t, testSHA('a'))
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("a.go", globalSymbol, definitionRole)); err != nil {
@@ -191,7 +190,7 @@ func TestReplaceSCIPRollsBackWhenTheDerivedGenerationCannotBeStored(t *testing.T
 	if after, err := scipGeneration(t, store, repositoryID); err != nil || after == nil || after.ID != before.ID {
 		t.Fatalf("generation after rollback=%#v err=%v", after, err)
 	}
-	assertActiveCount(t, store, repositoryID, 2)
+	assertActiveCount(t, store, repositoryID, 1)
 }
 
 // A derived graph that does not fit the generation limits is dropped: the
@@ -207,7 +206,7 @@ func TestReplaceSCIPLogsADroppedGeneration(t *testing.T) {
 	if log.Len() != 0 {
 		t.Fatalf("published generation logged: %s", log.String())
 	}
-	store.scipGraphLimits = graphartifact.Limits{MaxNodes: 1}
+	store.SCIPGraphLimits = graphartifact.Limits{MaxNodes: 1}
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("b.go", globalSymbol, definitionRole)); err != nil {
 		t.Fatal(err)
 	}

@@ -78,6 +78,8 @@ func TestPostgresGraphQueryStoreSupportsSCIPFallback(t *testing.T) {
 
 func TestSCIPGraphMaterializationRespectsExplicitUploadPrecedence(t *testing.T) {
 	store, repositoryID := readyGraphStore(t, testSHA('a'))
+	// The derived generation is dropped, so the upload writes the v1 fallback.
+	store.SCIPGraphLimits = graphartifact.Limits{MaxNodes: 1}
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("fallback.go", globalSymbol, definitionRole)); err != nil {
 		t.Fatal(err)
 	}

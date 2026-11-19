@@ -62,8 +62,10 @@ const (
 	graphRetiredGrace = time.Hour
 	// One pass deletes at most graphPruneBatches transactions of
 	// graphPruneBatchRows rows: 200,000 rows a minute.
-	graphPruneBatchRows       = 10_000
-	graphPruneBatches         = 20
+	graphPruneBatchRows = 10_000
+	graphPruneBatches   = 20
+	// Retiring is one row per graph; pruning does the deleting.
+	graphRetireBatch          = 500
 	maxPrivateKeyBytes        = 64 << 10
 	maxWebhookKeyBytes        = 64 << 10
 	maxCABytes                = 1 << 20
@@ -524,6 +526,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 }
 
 type graphMaintenanceStore interface {
+	RetireSupersededSCIPGraphs(context.Context, int) (int64, error)
 	PruneRetiredGraphGenerations(context.Context, time.Duration, int) (postgres.GraphPruned, error)
 }
 
@@ -547,10 +550,19 @@ func startGraphMaintenance(ctx context.Context, interval time.Duration, store gr
 	return done
 }
 
-// maintainGraphs is one bounded pass: it deletes generations retired for
-// longer than the grace period, a batch per transaction, and leaves a backlog
-// beyond its budget to the next pass.
+// maintainGraphs is one bounded pass. It retires the SCIP-derived v1 graphs
+// of repositories a v2 generation answers for, then deletes generations
+// retired for longer than the grace period, a batch per transaction, and
+// leaves a backlog beyond its budget to the next pass.
 func maintainGraphs(ctx context.Context, store graphMaintenanceStore, metrics *observability.Metrics, logger *slog.Logger) {
+	if retired, err := store.RetireSupersededSCIPGraphs(ctx, graphRetireBatch); err != nil {
+		if ctx.Err() == nil {
+			logger.Error("retiring SCIP-derived v1 graphs failed", "error", err)
+		}
+	} else if retired > 0 {
+		metrics.AddSCIPGraphsRetired(retired)
+		logger.Info("retired SCIP-derived v1 graphs", "graphs", retired)
+	}
 	var total postgres.GraphPruned
 	for range graphPruneBatches {
 		pruned, err := store.PruneRetiredGraphGenerations(ctx, graphRetiredGrace, graphPruneBatchRows)

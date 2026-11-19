@@ -17,9 +17,9 @@ type Store struct {
 	// Logger receives one record when a SCIP upload lands without its derived
 	// v2 generation (see ReplaceSCIP); nil discards it.
 	Logger *slog.Logger
-	// scipGraphLimits bounds the generation derived from a SCIP upload; the
+	// SCIPGraphLimits bounds the generation derived from a SCIP upload; the
 	// zero value uses the artifact defaults.
-	scipGraphLimits graphartifact.Limits
+	SCIPGraphLimits graphartifact.Limits
 }
 
 func New(pool *pgxpool.Pool) *Store {
