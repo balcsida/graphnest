@@ -149,7 +149,7 @@ published and one SCIP-derived (see [graph storage](graph-storage.md)):
 
 | Generation | Serves | Built by |
 | --- | --- | --- |
-| v1 | `context`, `impact`, `trace` (REST `/v1/graph/context`, `/impact`, `/trace`), unless a v2 generation answers them (see below) | The indexer's optional `graphnest-scanner enrich` run (`GRAPHNEST_SCANNER_PATH`, source `managed`); an administrator's v1 artifact upload to `POST /v1/graph/uploads` (`external`); or a SCIP upload (`scip`, used when neither of the others exists). |
+| v1 | `context`, `impact`, `trace` (REST `/v1/graph/context`, `/impact`, `/trace`), unless a v2 generation answers them (see below) | The indexer's optional `graphnest-scanner enrich` run (`GRAPHNEST_SCANNER_PATH`, source `managed`); an administrator's v1 artifact upload to `POST /v1/graph/uploads` (`external`); or a SCIP upload whose v2 generation was dropped (`scip`, see [SCIP generation limits](#scip-generation-limits)). |
 | v2 | `graph_capabilities`, `graph_discover`, `graph_callers`, `graph_callees`, `graph_files`, `graph_impact_radius`, `explore` (REST `/v1/graph/capabilities`, `/discover`, `/callers`, `/callees`, `/files`, `/impact-radius`, `/explore`) | Two slots: a SCIP upload to `POST /v1/scip/uploads` fills the SCIP-derived slot (producer `scip`), and a CodeGraph artifact published to `POST /v1/graph/uploads` with the v2 content type fills the published slot. The tools use the published generation when it is at the indexed commit, otherwise the SCIP-derived one. |
 
 Nothing else builds a v2 generation. A default deployment therefore has no
@@ -170,8 +170,11 @@ but read whichever generation is at the indexed commit, in this order:
 4. the SCIP-derived v1 graph.
 
 A repository indexed with SCIP alone is therefore answered from its v2
-generation, and its v1 graph is no longer read. A scanner or uploaded v1 graph
-stays ahead of the SCIP-derived generation because only it records `calls`
+generation and has no v1 graph. A SCIP upload derives the v1 graph only when
+its v2 generation was dropped as too large or invalid, and step 4 answers for
+that repository. An upload whose generation is stored retires the repository's
+SCIP-derived v1 graph; it never touches a scanner or uploaded one. A scanner
+or uploaded v1 graph stays ahead of the SCIP-derived generation because only it records `calls`
 edges, which `trace` needs. Symbol UIDs do not change: a SCIP symbol is
 `symbol:<SCIP symbol>` from either generation. For a published generation the
 UID is `symbol:` followed by the entity's occurrence.
@@ -219,11 +222,71 @@ expressions, so these generations contain no `calls` edges: `graph_callers`
 and `graph_callees` list references. Columns are the indexer's own code units
 (UTF-8 for scip-go), not UTF-16. SCIP carries no file contents, so there are
 no file facts: `graph_files` lists nothing and `explore` returns graph facts
-without source excerpts; read source with `read_file`. A derived graph that
-does not fit a generation (500,000 entities, 2,000,000 edges or the 128 MiB
-artifact budget) is dropped: the SCIP navigation data is stored, the previous
-SCIP-derived generation is retired, and the repository status reports the
-published generation if there is one, otherwise `graph_status: absent`.
+without source excerpts; read source with `read_file`.
+
+### SCIP generation limits
+
+A derived graph that does not fit a generation is dropped: the SCIP navigation
+data is stored, the previous SCIP-derived generation is retired, the upload
+derives the v1 graph instead, so `context`, `impact` and `trace` still answer,
+and the repository status reports the published generation if there is one,
+otherwise `graph_status: absent`. The limits are server settings:
+
+| Variable | Default | Maximum | Meaning |
+| --- | --- | --- | --- |
+| `GRAPHNEST_SCIP_GENERATION_MAX_NODES` | `500000` | `2000000` | Entities: files plus non-local symbols. |
+| `GRAPHNEST_SCIP_GENERATION_MAX_EDGES` | `2000000` | `10000000` | Edges: one per reference occurrence, plus containment, imports and relationships. |
+| `GRAPHNEST_SCIP_GENERATION_MAX_BYTES` | `134217728` (128 MiB) | `4294967296` (4 GiB) | Artifact budget: the bytes of every string in the graph plus 16 per field. |
+
+A value that is not a positive integer or is above its maximum stops the
+server at startup. With the Helm chart, set them under `server.extraEnv`.
+
+The byte budget is the limit a large repository reaches first. An edge names
+its two symbols and its own identifier, so with symbols of about 110 bytes one
+reference occurrence costs about 1.1 KiB: the default budget holds about
+120,000 of them, far below the edge limit. Raise `MAX_BYTES` first, and the
+counts only for a repository that reports them.
+
+Why a generation was dropped is stored with the upload.
+`GET /v1/graph/repositories/{id}/status` reports it as
+`scip_generation_dropped`, for example `scip graph exceeds generation limits:
+105000 entities and 600000 edges need more than the 134217728 byte artifact
+budget`, until an upload for that repository is stored as a generation. The
+server also logs it at `WARN` ("SCIP-derived graph generation dropped"). To
+list every repository whose current upload has no generation:
+
+```sql
+select repositories.owner || '/' || repositories.name, scip_uploads.generation_dropped
+from scip_uploads join repositories on repositories.id = scip_uploads.repository_id
+where scip_uploads.generation_dropped is not null;
+```
+
+An existing upload is not converted when the limits change: upload the SCIP
+index again for the indexed commit, or wait for the next push.
+
+The server builds the graph in memory and writes it in the upload's
+transaction, so a larger budget costs memory, time and disk in proportion.
+Measured with a synthetic TypeScript-style index on a laptop against
+PostgreSQL 18 (one upload at a time):
+
+| Reference occurrences | Budget used | Upload time | Server memory at peak | Graph tables with indexes |
+| --- | --- | --- | --- | --- |
+| 70,000 | 75 MiB | 6 s | 0.3 GiB | 0.2 GB |
+| 300,000 | 330 MiB | 38 s | 1.3 GiB | 0.85 GB |
+| 600,000 | 660 MiB | 73 s | 2.6 GiB | 1.7 GB |
+
+As a rule, give the server free memory of four times the budget for each
+upload that can run at the same time, and expect about two minutes and 3 GB
+of table and index space per million edges. A budget of 1 GiB therefore needs
+about 4 GiB of headroom and holds roughly 900,000 reference occurrences; the
+4 GiB maximum needs about 16 GiB. A server that runs out of memory is
+restarted in the middle of the upload, which fails and leaves the previous
+upload and generation in place. The v1 graph derived for a dropped generation
+costs a similar amount per occurrence (57 s and 1.1 GiB for the 300,000 row),
+so raising the budget for a repository that already uploads moves that cost
+rather than adding to it. The replaced generation is deleted an hour later (see [Retired generations
+and disk space](#retired-generations-and-disk-space)), so a repository
+briefly holds two.
 
 ### Checking readiness
 
@@ -239,7 +302,9 @@ there is none. `GET /v1/graph/repositories/{id}/status` reports the v1 state
 publisher therefore sees its own generation go stale while the SCIP-derived
 generation keeps the tools answering. That v1 state describes the v1 graph
 alone: `context`, `impact` and `trace` also answer while it is `pending` when
-a v2 generation is at the indexed commit.
+a v2 generation is at the indexed commit. `scip_generation_dropped` is present
+when the SCIP index uploaded for the indexed commit has no v2 generation and
+says which [limit](#scip-generation-limits) its graph exceeded.
 
 ### Troubleshooting graph errors
 
@@ -273,6 +338,57 @@ change that:
   same request starts answering once either generation reaches the indexed
   commit, for example a SCIP upload for the new commit while a scanner graph
   is still at the previous one.
+
+### Retired generations and disk space
+
+Replacing a generation retires the previous one instead of deleting it, so a
+request that pinned it just before the replacement still reads it and answers
+`generation_changed`. The server deletes a retired generation an hour after it
+was retired. Nothing reads one later than that: a cursor is checked against
+the active generations, not the retired one, and a request lasts seconds. The
+hour is there because a generation is stamped retired when the upload that
+replaces it starts its transaction, and a large upload commits minutes later.
+
+Every minute the server (durable mode; any replica, they do not block each
+other) runs one pass:
+
+1. It retires up to 500 SCIP-derived v1 graphs that nothing reads: those of
+   repositories with a SCIP-derived v2 generation at the same commit or at the
+   indexed commit. Releases before this one derived both from every upload.
+   Scanner and uploaded v1 graphs are never retired this way.
+2. It deletes the facts of generations retired for more than an hour, oldest
+   first, in up to 20 transactions of at most 10,000 rows, and each generation
+   row once its facts are gone: at most 200,000 rows a minute, about 12
+   million an hour. A backlog larger than that waits for the next pass.
+
+A pass that did something logs `retired SCIP-derived v1 graphs` or `pruned
+retired graph generations` at `INFO` with the counts, and `GET /metrics`
+exposes `graphnest_graph_retired_scip_v1_total`,
+`graphnest_graph_pruned_generations_total` and
+`graphnest_graph_pruned_rows_total`. A flat `pruned_rows` counter means there
+is nothing left to delete. To see what is waiting:
+
+```sql
+select schema_version, count(*) as generations, sum(edge_count) as edges
+from graph_uploads where not active group by schema_version;
+```
+
+Deleting rows frees space inside PostgreSQL, not on disk. Autovacuum makes the
+space reusable, so `graph_edges`, `graph_nodes` and the `graph_v2_*` tables
+stop growing and later generations fill the gaps, but the files keep their
+size. Returning the space to the operating system is an operator decision and
+GraphNest never does it:
+
+- `VACUUM FULL graph_edges;` (and the other graph tables) rewrites the table
+  and its indexes. It holds an `ACCESS EXCLUSIVE` lock for the whole rewrite,
+  so every graph query and SCIP upload touching that table waits, and it needs
+  free disk for the new copy. Run it in a maintenance window.
+- `pg_repack` rewrites the table while it stays readable and writable and
+  takes the exclusive lock only briefly at the start and the end. It needs the
+  extension installed in the database and about the same free disk.
+
+Wait until the pruned-rows counter is flat before either, or the rewrite
+copies rows that are about to be deleted.
 
 ### Recovering existing repositories after an upgrade
 

@@ -5,6 +5,78 @@ the compatibility and migration notes before upgrading.
 
 ## [Unreleased]
 
+GraphNest stops storing graph data nothing reads. Retired graph generations
+are deleted an hour after they were retired, a SCIP upload derives the v1
+graph only when its v2 generation was dropped, and the limits of that
+generation are configurable so a large repository can get one. Migration 043
+adds one nullable column, and a rolling upgrade is fine. Read the upgrade
+guidance for the I/O of the first hours and for disk space.
+
+### Added
+
+- The server deletes retired graph generations in the background. Replacing a
+  generation still retires the previous one, so a request that pinned it
+  answers `generation_changed`; an hour later a pass that runs every minute
+  deletes its rows, at most 10,000 per transaction and 200,000 per minute.
+  `graphnest_graph_pruned_generations_total` and
+  `graphnest_graph_pruned_rows_total` count what was deleted, and the server
+  logs each pass that did something. Earlier releases kept retired generations
+  until an operator deleted them offline. See [retired generations and disk
+  space](docs/operations.md#retired-generations-and-disk-space). ([#180])
+- `GRAPHNEST_SCIP_GENERATION_MAX_NODES`, `GRAPHNEST_SCIP_GENERATION_MAX_EDGES`
+  and `GRAPHNEST_SCIP_GENERATION_MAX_BYTES` set the limits of the v2 generation
+  derived from a SCIP upload. The defaults are the previous fixed values
+  (500,000 entities, 2,000,000 edges, 128 MiB) and the maximums are 2,000,000,
+  10,000,000 and 4 GiB. The byte budget is the one a large repository
+  exceeds, at about 1.1 KiB per reference occurrence, and the server needs
+  free memory of about four times the budget during an upload. See [SCIP
+  generation limits](docs/operations.md#scip-generation-limits). ([#180])
+- `GET /v1/graph/repositories/{id}/status` reports `scip_generation_dropped`
+  when the SCIP index uploaded for the indexed commit has no v2 generation,
+  with the limit and the size that exceeded it. Before, only the server log
+  said why. ([#180])
+
+### Changed
+
+- A SCIP upload derives the v1 graph only when its v2 generation was dropped
+  as too large or invalid, and an upload whose generation is stored retires
+  the repository's SCIP-derived v1 graph. `context`, `impact` and `trace`
+  select a generation in the same order as in 0.15.0, so answers do not
+  change: a repository with a v2 generation was already answered from it, and
+  one without keeps its v1 graph. Scanner and uploaded v1 graphs are not
+  affected. The server retires the SCIP-derived v1 graphs that earlier
+  releases stored beside a v2 generation, 500 per minute, counted by
+  `graphnest_graph_retired_scip_v1_total`; they are then deleted like any
+  other retired generation. An upload whose generation is stored no longer
+  builds the second graph, so it takes less time and memory. ([#180])
+- The reason a SCIP-derived generation was dropped names the limit, for
+  example `scip graph exceeds generation limits: 105000 entities and 600000
+  edges need more than the 134217728 byte artifact budget`. ([#180])
+
+### Upgrade guidance
+
+- The first passes after the upgrade delete everything retired so far, and an
+  hour later the SCIP-derived v1 graphs of every repository that has a v2
+  generation. On a deployment with 620 SCIP-indexed repositories that was 523
+  retired generations with 17.9 million edges, then the v1 graphs of 608 of
+  those repositories. At 200,000 rows a minute expect a few hours of
+  steady delete I/O, WAL and autovacuum work on `graph_edges`, `graph_nodes`
+  and the `graph_v2_*` tables. It needs no downtime and can be watched with
+  `graphnest_graph_pruned_rows_total`. ([#180])
+- Deleting does not shrink the files: PostgreSQL reuses the freed space for
+  new generations. To return it to the operating system, run `VACUUM FULL` or
+  `pg_repack` on the graph tables once the pruning has caught up. GraphNest
+  runs neither; `VACUUM FULL` blocks graph queries and SCIP uploads while it
+  rewrites a table. ([#180])
+- Repositories whose generation was dropped as too large keep their v1 graph
+  and get no v2 generation until the limit is raised and their SCIP index is
+  uploaded again. `scip_generation_dropped` in the graph status says which
+  limit to raise. ([#180])
+- Migration 043 adds the nullable column `scip_uploads.generation_dropped`
+  without rewriting the table. A rolling upgrade is fine: a replica still on
+  the previous version keeps deriving v1 graphs, which the new version retires
+  within a minute. ([#180])
+
 ## [0.15.0] - 2026-11-18
 
 `context`, `impact` and `trace` are answered from v2 graph generations where
@@ -971,3 +1043,4 @@ MCP client sign-in, and an expanded experimental graph-analysis foundation.
 [#173]: https://github.com/balcsida/graphnest/pull/173
 [#175]: https://github.com/balcsida/graphnest/pull/175
 [#177]: https://github.com/balcsida/graphnest/pull/177
+[#180]: https://github.com/balcsida/graphnest/pull/180

@@ -89,9 +89,10 @@ reauthorizes selected and returned repositories against that exact snapshot,
 returning `graph_missing` when no generation is active for that commit,
 `generation_changed` when the generation moved during the request,
 `not_indexed` for a repository without an indexed commit and
-`branch_not_indexed` for a non-indexed branch. A SCIP upload derives both the
-v1 fallback graph and the v2 generation the entity, discovery and exploration
-workflows read; see [operations](operations.md#graph-operation-and-recovery).
+`branch_not_indexed` for a non-indexed branch. A SCIP upload derives the v2
+generation every graph workflow reads, or the v1 fallback graph when that
+generation does not fit the configured limits; see
+[operations](operations.md#graph-operation-and-recovery).
 
 The public surface is limited to bounded `context`, `impact`, and `trace`
 operations. Traversal limits, cycle detection, confidence filtering, stable
