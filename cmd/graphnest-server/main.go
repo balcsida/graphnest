@@ -53,8 +53,17 @@ import (
 )
 
 const (
-	searchNodeID              = "primary"
-	reconcileInterval         = 5 * time.Minute
+	searchNodeID             = "primary"
+	reconcileInterval        = 5 * time.Minute
+	graphMaintenanceInterval = time.Minute
+	// A read pins its generation for at most the 10 second request deadline,
+	// but a generation is stamped retired when the transaction replacing it
+	// starts, and a large upload commits minutes later. The grace covers both.
+	graphRetiredGrace = time.Hour
+	// One pass deletes at most graphPruneBatches transactions of
+	// graphPruneBatchRows rows: 200,000 rows a minute.
+	graphPruneBatchRows       = 10_000
+	graphPruneBatches         = 20
 	maxPrivateKeyBytes        = 64 << 10
 	maxWebhookKeyBytes        = 64 << 10
 	maxCABytes                = 1 << 20
@@ -452,7 +461,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 		},
 	}
 	var extras []func(*http.ServeMux)
-	var supplyChainDone []<-chan struct{}
+	var backgroundDone []<-chan struct{}
 	var supplyChainMCP mcpserver.SupplyChainServices
 	if settings.SupplyChain.Enabled {
 		routes, err := license.RoutesFromEnv(os.Getenv, license.ReadSecretFile)
@@ -471,7 +480,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 		}
 		supplyChainService := &supplychain.Service{Store: store, Authorizer: authz.NewPostgres(store), Interval: settings.SupplyChain.Interval, MaxResults: settings.Limits.MaxResults,
 			License: store, EnrichmentEcosystems: registry.Ecosystems()}
-		supplyChainDone = startSupplyChain(loopCtx, settings.SupplyChain, store, githubClient, registry, metrics, logger)
+		backgroundDone = startSupplyChain(loopCtx, settings.SupplyChain, store, githubClient, registry, metrics, logger)
 		portfolio := &supplychain.Portfolio{Store: store, Snapshots: store, Authorizer: authz.NewPostgres(store), Interval: settings.SupplyChain.Interval, MaxResults: settings.Limits.MaxResults}
 		importer := &supplychain.Importer{Store: store, Authorizer: authz.NewPostgres(store), MaxDocumentBytes: settings.SupplyChain.MaxDocumentBytes, Limits: supplychain.Limits{MaxComponents: settings.SupplyChain.MaxComponents}}
 		if len(registry.Ecosystems()) > 0 {
@@ -487,7 +496,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 		}}
 		reviews := &review.Service{Store: store, Authorizer: authorizer, MaxResults: settings.Limits.MaxResults}
 		supplyChainMCP = mcpserver.SupplyChainServices{Inventory: supplyChainService, Portfolio: portfolio}
-		supplyChainDone = append(supplyChainDone, startPolicyEvaluation(loopCtx, reviews, logger))
+		backgroundDone = append(backgroundDone, startPolicyEvaluation(loopCtx, reviews, logger))
 		extras = append(extras, func(mux *http.ServeMux) {
 			httpapi.RegisterSupplyChain(mux, auth.requestAuth, supplyChainService, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes)
 			httpapi.RegisterSupplyChainPortfolio(mux, auth.requestAuth, portfolio, settings.Limits.MaxResults, settings.Limits.MaxResponseBytes, &httpapi.DerivedExport{Service: supplyChainService, PublicOrigin: auth.requestAuth.PublicOrigin})
@@ -495,6 +504,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 			httpapi.RegisterSupplyChainReview(mux, auth.requestAuth, reviews, settings.Limits.MaxRequestBytes, settings.Limits.MaxResponseBytes)
 		})
 	}
+	backgroundDone = append(backgroundDone, startGraphMaintenance(loopCtx, graphMaintenanceInterval, store, metrics, logger))
 	handler := newAPIHandlerWithMCP(settings, metrics, auth.requestAuth, searchService, repositoryService, scipService, graphService, graphQueries, webhookSecret, processor, adminService, durableReadiness{pool: pool, zoekt: backend}, auth.providers, auth.sessions, provisioning, scimService, auth.mcpOAuth, supplyChainMCP, extras...)
 	if localAuth != nil {
 		mux := http.NewServeMux()
@@ -506,11 +516,60 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 		cancel()
 		<-done
 		<-reconcileDone
-		for _, finished := range supplyChainDone {
+		for _, finished := range backgroundDone {
 			<-finished
 		}
 		pool.Close()
 	}, nil
+}
+
+type graphMaintenanceStore interface {
+	PruneRetiredGraphGenerations(context.Context, time.Duration, int) (postgres.GraphPruned, error)
+}
+
+// startGraphMaintenance runs maintainGraphs every interval, first after one
+// interval so it never competes with startup.
+func startGraphMaintenance(ctx context.Context, interval time.Duration, store graphMaintenanceStore, metrics *observability.Metrics, logger *slog.Logger) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				maintainGraphs(ctx, store, metrics, logger)
+			}
+		}
+	}()
+	return done
+}
+
+// maintainGraphs is one bounded pass: it deletes generations retired for
+// longer than the grace period, a batch per transaction, and leaves a backlog
+// beyond its budget to the next pass.
+func maintainGraphs(ctx context.Context, store graphMaintenanceStore, metrics *observability.Metrics, logger *slog.Logger) {
+	var total postgres.GraphPruned
+	for range graphPruneBatches {
+		pruned, err := store.PruneRetiredGraphGenerations(ctx, graphRetiredGrace, graphPruneBatchRows)
+		if err != nil {
+			if ctx.Err() == nil {
+				logger.Error("pruning retired graph generations failed", "error", err)
+			}
+			break
+		}
+		if pruned == (postgres.GraphPruned{}) {
+			break
+		}
+		total.Generations += pruned.Generations
+		total.Rows += pruned.Rows
+	}
+	if total != (postgres.GraphPruned{}) {
+		metrics.AddGraphPruned(total.Generations, total.Rows)
+		logger.Info("pruned retired graph generations", "generations", total.Generations, "rows", total.Rows)
+	}
 }
 
 // startPolicyEvaluation periodically applies the active policy to components

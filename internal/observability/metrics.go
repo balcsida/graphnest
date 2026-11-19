@@ -36,6 +36,8 @@ type Metrics struct {
 	supplyChainDepth   *prometheus.GaugeVec
 	enrichmentRuns     *prometheus.CounterVec
 	enrichmentTime     *prometheus.HistogramVec
+	prunedGenerations  prometheus.Counter
+	prunedRows         prometheus.Counter
 }
 
 func New() *Metrics {
@@ -64,7 +66,9 @@ func New() *Metrics {
 	metrics.supplyChainDepth = prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "graphnest_supply_chain_queue_depth", Help: "Supply chain refresh and enrichment jobs by state."}, []string{"state"})
 	metrics.enrichmentRuns = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "graphnest_supply_chain_enrichment_total", Help: "License enrichment lookups by outcome."}, []string{"outcome"})
 	metrics.enrichmentTime = prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "graphnest_supply_chain_enrichment_duration_seconds", Help: "License enrichment lookup duration by outcome."}, []string{"outcome"})
-	metrics.registry.MustRegister(metrics.enrichmentRuns, metrics.enrichmentTime, metrics.archiveOperations, metrics.archiveDuration, metrics.activeRequests, metrics.httpRequests, metrics.httpDuration, metrics.httpResponseSize, metrics.backendCalls, metrics.backendDuration, metrics.githubRequests, metrics.webhookDeliveries, metrics.indexQueueDepth, metrics.indexPhases, metrics.indexDuration, metrics.graphQueueDepth, metrics.graphPhases, metrics.graphDuration, metrics.graphQueries, metrics.graphQueryDuration, metrics.authEvents, metrics.supplyChainRuns, metrics.supplyChainTime, metrics.supplyChainDepth)
+	metrics.prunedGenerations = prometheus.NewCounter(prometheus.CounterOpts{Name: "graphnest_graph_pruned_generations_total", Help: "Retired graph generations deleted after the grace period."})
+	metrics.prunedRows = prometheus.NewCounter(prometheus.CounterOpts{Name: "graphnest_graph_pruned_rows_total", Help: "Fact rows of retired graph generations deleted."})
+	metrics.registry.MustRegister(metrics.prunedGenerations, metrics.prunedRows, metrics.enrichmentRuns, metrics.enrichmentTime, metrics.archiveOperations, metrics.archiveDuration, metrics.activeRequests, metrics.httpRequests, metrics.httpDuration, metrics.httpResponseSize, metrics.backendCalls, metrics.backendDuration, metrics.githubRequests, metrics.webhookDeliveries, metrics.indexQueueDepth, metrics.indexPhases, metrics.indexDuration, metrics.graphQueueDepth, metrics.graphPhases, metrics.graphDuration, metrics.graphQueries, metrics.graphQueryDuration, metrics.authEvents, metrics.supplyChainRuns, metrics.supplyChainTime, metrics.supplyChainDepth)
 	return metrics
 }
 
@@ -85,6 +89,13 @@ func (metrics *Metrics) ObserveSupplyChainEnrichment(outcome string, duration ti
 	label := fixed(outcome, "resolved", "not_found", "no_license_metadata", "unavailable", "rejected", "too_large", "malformed")
 	metrics.enrichmentRuns.WithLabelValues(label).Inc()
 	metrics.enrichmentTime.WithLabelValues(label).Observe(duration.Seconds())
+}
+
+// AddGraphPruned records what the background prune of retired graph
+// generations deleted.
+func (metrics *Metrics) AddGraphPruned(generations, rows int64) {
+	metrics.prunedGenerations.Add(float64(generations))
+	metrics.prunedRows.Add(float64(rows))
 }
 
 func (metrics *Metrics) ObserveGraphQuery(operation, result string, duration time.Duration) {

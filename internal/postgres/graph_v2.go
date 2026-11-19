@@ -122,7 +122,7 @@ func replaceGraphV2(ctx context.Context, tx pgx.Tx, repositoryID int64, publicat
 	if err != nil {
 		return GraphReplacement{}, err
 	}
-	// ponytail: immutable history grows until offline cleanup; reader-aware retention belongs with future pinning.
+	// Retired, not deleted: see PruneRetiredGraphGenerations.
 	if _, err := tx.Exec(ctx, `update graph_uploads set active=false,retired_at=now() where id=$1`, currentID); err != nil {
 		return GraphReplacement{}, err
 	}
@@ -240,7 +240,8 @@ func validGraphPublisher(value string) bool {
 	return len(value) > 0 && len(value) <= 256 && utf8.ValidString(value) && !strings.ContainsRune(value, 0) && strings.TrimSpace(value) == value
 }
 
-// LoadGraphV2 loads an immutable generation, including retired generations.
+// LoadGraphV2 loads an immutable generation, including a retired generation
+// that has not been pruned yet.
 // The caller must authorize the repository; this is not a public download API.
 func (s *Store) LoadGraphV2(ctx context.Context, repositoryID, uploadID int64) (*graphv2.Artifact, error) {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})

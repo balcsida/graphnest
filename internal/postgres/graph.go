@@ -252,7 +252,8 @@ func replaceGraph(ctx context.Context, tx pgx.Tx, repositoryID int64, source Gra
 		(current.Source == GraphSourceExternal && source != GraphSourceExternal || current.Source == GraphSourceManaged && source == GraphSourceSCIP) {
 		return GraphReplacement{Upload: current}, nil
 	}
-	// ponytail: retain retired generations until offline cleanup; add bounded retention only with reader pinning.
+	// The retired generation stays readable for requests that pinned it until
+	// PruneRetiredGraphGenerations deletes it after the grace period.
 	if current.ID != 0 {
 		if _, err := tx.Exec(ctx, `update graph_uploads set active=false, retired_at=now() where id=$1`, current.ID); err != nil {
 			return GraphReplacement{}, err

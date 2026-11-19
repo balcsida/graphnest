@@ -236,3 +236,15 @@ func scrape(t *testing.T, metrics *Metrics) string {
 	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	return recorder.Body.String()
 }
+
+func TestGraphPruneMetricsCountGenerationsAndRows(t *testing.T) {
+	metrics := New()
+	metrics.AddGraphPruned(2, 30)
+	metrics.AddGraphPruned(0, 5)
+	body := scrape(t, metrics)
+	for _, want := range []string{"graphnest_graph_pruned_generations_total 2", "graphnest_graph_pruned_rows_total 35"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics missing %q:\n%s", want, body)
+		}
+	}
+}
