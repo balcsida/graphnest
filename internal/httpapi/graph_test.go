@@ -103,6 +103,7 @@ func TestGraphStatusContractAndBound(t *testing.T) {
 	store := &graphStoreStub{status: api.GraphStatus{
 		RepositoryID: 101, Commit: graphTestSHA, State: api.GraphStateFallback,
 		Source: api.GraphSourceExternal, SCIPFallback: &api.SCIPFallbackStatus{Commit: graphTestSHA},
+		SCIPGenerationDropped: "scip graph exceeds generation limits: 3 entities (limit 1), 2 edges (limit 2000000)",
 	}}
 	handler := graphHandler(store, 1024, 1024)
 	response := graphRequest(handler, http.MethodGet, "/v1/graph/repositories/101/status", nil, "user", "")
@@ -111,6 +112,9 @@ func TestGraphStatusContractAndBound(t *testing.T) {
 		t.Fatalf("status=%s err=%v", response.Body.String(), err)
 	}
 	got.Publication = nil
+	if !strings.Contains(response.Body.String(), `"scip_generation_dropped":"scip graph exceeds generation limits: 3 entities (limit 1), 2 edges (limit 2000000)"`) {
+		t.Fatalf("status=%s", response.Body.String())
+	}
 	if response.Code != http.StatusOK || !reflect.DeepEqual(got, store.status) {
 		t.Fatalf("status=%d response=%#v", response.Code, got)
 	}

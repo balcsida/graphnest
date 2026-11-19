@@ -15,7 +15,7 @@ type Store struct {
 	pool              *pgxpool.Pool
 	graphQueryTimeout time.Duration
 	// Logger receives one record when a SCIP upload lands without its derived
-	// v2 generation (see ReplaceSCIP); nil discards it.
+	// v2 generation or fails (see ReplaceSCIP); nil discards it.
 	Logger *slog.Logger
 	// SCIPGraphLimits bounds the generation derived from a SCIP upload; the
 	// zero value uses the artifact defaults.

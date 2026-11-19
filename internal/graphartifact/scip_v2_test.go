@@ -174,3 +174,40 @@ func TestFromSCIPV2BoundsProducerTextAndReportsOversizedGraphs(t *testing.T) {
 		t.Fatalf("edge limit=%v", err)
 	}
 }
+
+// The error names the limit and the size that exceeded it, so the reason an
+// operator reads says which setting to raise.
+func TestFromSCIPV2NamesTheLimitAGraphExceeds(t *testing.T) {
+	for name, test := range map[string]struct {
+		limits Limits
+		want   string
+	}{
+		"entities": {Limits{MaxNodes: 1}, " entities (limit 1)"},
+		"edges":    {Limits{MaxEdges: 1}, " edges (limit 1)"},
+		"bytes":    {Limits{MaxArtifactBytes: 2 << 10}, "need more than the 2048 byte artifact budget"},
+	} {
+		_, err := FromSCIPV2("101", demoCommit, demoUpload(t), test.limits)
+		if !errors.Is(err, ErrGraphTooLarge) || !strings.HasPrefix(err.Error(), "scip graph exceeds generation limits: ") || !strings.Contains(err.Error(), test.want) {
+			t.Errorf("%s: err=%v, want it to contain %q", name, err, test.want)
+		}
+	}
+}
+
+// A deployment can raise the limits to the hard maximums and no further.
+func TestFromSCIPV2AcceptsLimitsUpToTheHardMaximums(t *testing.T) {
+	maximums := Limits{MaxNodes: HardMaxNodes, MaxEdges: HardMaxEdges, MaxArtifactBytes: HardMaxArtifactBytes}
+	if _, err := FromSCIPV2("101", demoCommit, demoUpload(t), maximums); err != nil {
+		t.Fatalf("hard maximums: %v", err)
+	}
+	for name, raise := range map[string]func(*Limits){
+		"entities": func(l *Limits) { l.MaxNodes++ },
+		"edges":    func(l *Limits) { l.MaxEdges++ },
+		"bytes":    func(l *Limits) { l.MaxArtifactBytes++ },
+	} {
+		limits := maximums
+		raise(&limits)
+		if _, err := FromSCIPV2("101", demoCommit, demoUpload(t), limits); !errors.Is(err, ErrInvalidArtifact) {
+			t.Errorf("%s above the hard maximum: err=%v", name, err)
+		}
+	}
+}

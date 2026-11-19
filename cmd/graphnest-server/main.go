@@ -385,6 +385,7 @@ func newDurableRuntime(ctx context.Context, settings config.Config, logger *slog
 	metrics := observability.New()
 	store := postgres.New(pool)
 	store.Logger = logger
+	store.SCIPGraphLimits = settings.Limits.SCIPGeneration
 	if err := store.UpsertSearchNode(ctx, searchNodeID, settings.ZoektURL); err != nil {
 		return fail(err)
 	}

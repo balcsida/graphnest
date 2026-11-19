@@ -106,10 +106,14 @@ func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit stri
 		return graphartifact.FromSCIP(graphartifact.SCIPRepository{ID: repositoryID, Commit: commit}, upload.Occurrences, upload.Relationships)
 	}
 	var artifact graphartifact.Artifact
+	// Stored with the upload, so the graph status says why without server logs.
+	var droppedReason *string
 	if generation == nil {
 		if artifact, err = fallback(); err != nil {
 			return err
 		}
+		reason := dropped.Error()
+		droppedReason = &reason
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -128,8 +132,8 @@ func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit stri
 	}
 	var uploadID int64
 	if err := tx.QueryRow(ctx, `insert into scip_uploads
-		(repository_id, commit, project_root, indexer_name, indexer_version)
-		values ($1, $2, $3, $4, $5) returning id`, repositoryID, commit, upload.ProjectRoot, upload.IndexerName, upload.IndexerVersion).Scan(&uploadID); err != nil {
+		(repository_id, commit, project_root, indexer_name, indexer_version, generation_dropped)
+		values ($1, $2, $3, $4, $5, $6) returning id`, repositoryID, commit, upload.ProjectRoot, upload.IndexerName, upload.IndexerVersion, droppedReason).Scan(&uploadID); err != nil {
 		return err
 	}
 	if _, err := tx.CopyFrom(ctx, pgx.Identifier{"scip_occurrences"},
@@ -157,7 +161,7 @@ func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit stri
 		})); err != nil {
 		return err
 	}
-	published, err := publishSCIPGraphV2(ctx, tx, repositoryID, generation)
+	published, err := publishSCIPGraphV2(ctx, tx, repositoryID, generation, s.SCIPGraphLimits)
 	if err != nil {
 		return err
 	}
@@ -197,8 +201,9 @@ func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit stri
 // generation (the derived graph did not fit the generation limits) retires the
 // previous SCIP-derived one, so readiness falls back to the published
 // generation or reports absent rather than an older index's content. It
-// reports whether the repository now has the generation.
-func publishSCIPGraphV2(ctx context.Context, tx pgx.Tx, repositoryID int64, generation *graphv2.Artifact) (bool, error) {
+// reports whether the repository now has the generation. limits are the ones
+// the generation was derived under.
+func publishSCIPGraphV2(ctx context.Context, tx pgx.Tx, repositoryID int64, generation *graphv2.Artifact, limits graphartifact.Limits) (bool, error) {
 	var activeID int64
 	err := tx.QueryRow(ctx, `select id from graph_uploads where repository_id=$1 and active and schema_version=2 and source='scip'`, repositoryID).Scan(&activeID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -208,11 +213,10 @@ func publishSCIPGraphV2(ctx context.Context, tx pgx.Tx, repositoryID int64, gene
 		if activeID == 0 {
 			return false, nil
 		}
-		// ponytail: nothing records why; add a graph_uploads note if operators need the reason without re-uploading.
 		_, err := tx.Exec(ctx, `update graph_uploads set active=false, retired_at=now() where id=$1`, activeID)
 		return false, err
 	}
-	_, err = replaceGraphV2(ctx, tx, repositoryID, GraphPublication{Publisher: graphartifact.SCIPProducer, Capabilities: graphartifact.SCIPCapabilities(), ExpectedActiveID: activeID}, GraphSourceSCIP, generation)
+	_, err = replaceGraphV2(ctx, tx, repositoryID, GraphPublication{Publisher: graphartifact.SCIPProducer, Capabilities: graphartifact.SCIPCapabilities(), ExpectedActiveID: activeID}, GraphSourceSCIP, generation, limits)
 	if errors.Is(err, ErrGraphRepositoryUnavailable) {
 		// A disabled, archived or suspended repository keeps its navigation data
 		// without a queryable generation, as before.

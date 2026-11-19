@@ -43,7 +43,7 @@ func (s *Store) ReplaceGraphV2(ctx context.Context, repositoryID int64, publicat
 		return GraphReplacement{}, err
 	}
 	defer tx.Rollback(ctx)
-	replacement, err := replaceGraphV2(ctx, tx, repositoryID, publication, GraphSourceExternal, artifact)
+	replacement, err := replaceGraphV2(ctx, tx, repositoryID, publication, GraphSourceExternal, artifact, graphartifact.Limits{})
 	if err != nil {
 		return GraphReplacement{}, err
 	}
@@ -56,9 +56,10 @@ func (s *Store) ReplaceGraphV2(ctx context.Context, repositoryID int64, publicat
 // replaceGraphV2 publishes inside the caller's transaction into the slot of
 // source: external for publishers, scip for generations derived from a SCIP
 // upload. Only that slot is read and replaced; replacing a generation of
-// another producer needs AllowProviderChange.
-func replaceGraphV2(ctx context.Context, tx pgx.Tx, repositoryID int64, publication GraphPublication, source GraphSource, artifact *graphv2.Artifact) (GraphReplacement, error) {
-	if err := graphartifact.ValidateV2(artifact, graphartifact.Limits{}); err != nil {
+// another producer needs AllowProviderChange. limits bound the artifact; zero
+// values use the defaults.
+func replaceGraphV2(ctx context.Context, tx pgx.Tx, repositoryID int64, publication GraphPublication, source GraphSource, artifact *graphv2.Artifact, limits graphartifact.Limits) (GraphReplacement, error) {
+	if err := graphartifact.ValidateV2(artifact, limits); err != nil {
 		return GraphReplacement{}, err
 	}
 	if publication.ExpectedActiveID < 0 || !validGraphPublisher(publication.Publisher) || len(publication.Capabilities) > 64 {
@@ -75,7 +76,7 @@ func replaceGraphV2(ctx context.Context, tx pgx.Tx, repositoryID int64, publicat
 	// supplied semantic hash, or caller-owned messages.
 	artifact = proto.Clone(artifact).(*graphv2.Artifact)
 	if len(artifact.ContentHash) == 0 {
-		hash, err := graphartifact.SemanticHashV2(artifact, graphartifact.Limits{})
+		hash, err := graphartifact.SemanticHashV2(artifact, limits)
 		if err != nil {
 			return GraphReplacement{}, err
 		}
@@ -304,7 +305,8 @@ func (s *Store) LoadGraphV2(ctx context.Context, repositoryID, uploadID int64) (
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
-	if err = graphartifact.ValidateV2(artifact, graphartifact.Limits{}); err != nil {
+	// It was validated under its writer's limits, at most the hard maximums.
+	if err = graphartifact.ValidateV2(artifact, graphartifact.Limits{MaxNodes: graphartifact.HardMaxNodes, MaxEdges: graphartifact.HardMaxEdges, MaxArtifactBytes: graphartifact.HardMaxArtifactBytes}); err != nil {
 		return nil, err
 	}
 	return artifact, tx.Commit(ctx)

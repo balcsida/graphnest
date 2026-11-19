@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/balcsida/graphnest/internal/graphartifact"
 )
 
 var ErrInvalid = errors.New("invalid configuration")
@@ -20,6 +22,9 @@ type Limits struct {
 	DefaultTimeout, MaxTimeout              time.Duration
 	MaxRequestBytes, MaxResponseBytes       int64
 	SCIPMaxUploadBytes, GraphMaxUploadBytes int64
+	// SCIPGeneration bounds the v2 generation derived from a SCIP upload:
+	// entities, edges and the artifact byte budget.
+	SCIPGeneration graphartifact.Limits
 }
 
 type GitHub struct {
@@ -131,6 +136,9 @@ func Load() (Config, error) {
 			MaxResponseBytes:    256 << 10,
 			SCIPMaxUploadBytes:  64 << 20,
 			GraphMaxUploadBytes: 64 << 20,
+			SCIPGeneration: graphartifact.Limits{
+				MaxNodes: graphartifact.DefaultMaxNodes, MaxEdges: graphartifact.DefaultMaxEdges, MaxArtifactBytes: graphartifact.DefaultMaxArtifactBytes,
+			},
 		},
 	}
 	if config.SearchBackend != "zoekt" && config.SearchBackend != "github" {
@@ -550,6 +558,19 @@ func loadLimits(limits *Limits) error {
 	}
 	if err := int64Value("GRAPHNEST_GRAPH_MAX_UPLOAD_BYTES", &limits.GraphMaxUploadBytes); err != nil {
 		return err
+	}
+	for name, target := range map[string]*int{
+		"GRAPHNEST_SCIP_GENERATION_MAX_NODES": &limits.SCIPGeneration.MaxNodes,
+		"GRAPHNEST_SCIP_GENERATION_MAX_EDGES": &limits.SCIPGeneration.MaxEdges,
+		"GRAPHNEST_SCIP_GENERATION_MAX_BYTES": &limits.SCIPGeneration.MaxArtifactBytes,
+	} {
+		if err := intValue(name, target); err != nil {
+			return err
+		}
+	}
+	if limits.SCIPGeneration.MaxNodes > graphartifact.HardMaxNodes || limits.SCIPGeneration.MaxEdges > graphartifact.HardMaxEdges ||
+		limits.SCIPGeneration.MaxArtifactBytes > graphartifact.HardMaxArtifactBytes {
+		return invalid("SCIP generation limits exceed server safety caps")
 	}
 	if limits.MaxResults > 100 || limits.MaxContextLines > 20 || limits.MaxTimeout > 5*time.Second || limits.MaxRequestBytes > 64<<10 ||
 		limits.MaxResponseBytes > 256<<10 || limits.SCIPMaxUploadBytes > 256<<20 || limits.GraphMaxUploadBytes > 256<<20 {

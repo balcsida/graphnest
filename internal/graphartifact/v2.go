@@ -53,7 +53,7 @@ func normalizedV2Limits(l Limits) (Limits, bool) {
 		value    *int
 		def, max int
 	}{
-		{&l.MaxArtifactBytes, 128 << 20, 256 << 20},
+		{&l.MaxArtifactBytes, DefaultMaxArtifactBytes, HardMaxArtifactBytes},
 		{&l.MaxFiles, DefaultMaxFiles, HardMaxNodes},
 		{&l.MaxUnresolved, DefaultMaxUnresolved, HardMaxEdges},
 		{&l.MaxDiagnostics, 100_000, HardMaxNodes},

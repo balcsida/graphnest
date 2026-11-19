@@ -3,6 +3,8 @@
 package postgres
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/balcsida/graphnest/internal/graphprotocol"
 	"github.com/balcsida/graphnest/internal/graphquery"
 	"github.com/balcsida/graphnest/internal/scipgraph"
+	"github.com/balcsida/graphnest/pkg/api"
 )
 
 // activeV1 returns the repository's active v1 generation, or zero values.
@@ -252,5 +255,83 @@ func TestMigrateLegacyBackfillDoesNotRecreateSupersededGraphs(t *testing.T) {
 	}
 	if id, source := activeV1(t, store, dropped); id == 0 || source != GraphSourceSCIP {
 		t.Fatalf("backfill left the repository without a generation: id=%d source=%q", id, source)
+	}
+}
+
+// Why a generation was dropped is recorded with the upload and reported by the
+// repository's graph status, until an upload whose generation is stored.
+func TestReplaceSCIPRecordsWhyTheGenerationWasDropped(t *testing.T) {
+	store, repositoryID := readyGraphStore(t, testSHA('a'))
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("a.go", globalSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := store.GraphStatus(t.Context(), repositoryID); err != nil || status.SCIPGenerationDropped != "" {
+		t.Fatalf("status with a stored generation=%#v err=%v", status, err)
+	}
+	store.SCIPGraphLimits = graphartifact.Limits{MaxNodes: 1}
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("b.go", globalSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	const want = "scip graph exceeds generation limits: 2 entities (limit 1), 1 edges (limit 2000000)"
+	status, err := store.GraphStatus(t.Context(), repositoryID)
+	if err != nil || status.State != api.GraphStateFallback || status.SCIPGenerationDropped != want {
+		t.Fatalf("status=%#v err=%v, want dropped reason %q", status, err, want)
+	}
+	// A scanner graph makes the repository ready; the reason still shows.
+	if _, err := store.ReplaceGraph(t.Context(), repositoryID, GraphSourceManaged, artifactFor(repositoryID, testSHA('a'), "managed")); err != nil {
+		t.Fatal(err)
+	}
+	if status, err = store.GraphStatus(t.Context(), repositoryID); err != nil || status.State != api.GraphStateReady || status.SCIPGenerationDropped != want {
+		t.Fatalf("ready status=%#v err=%v", status, err)
+	}
+	store.SCIPGraphLimits = graphartifact.Limits{}
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("c.go", globalSymbol, definitionRole)); err != nil {
+		t.Fatal(err)
+	}
+	if status, err = store.GraphStatus(t.Context(), repositoryID); err != nil || status.SCIPGenerationDropped != "" {
+		t.Fatalf("status after a stored generation=%#v err=%v", status, err)
+	}
+}
+
+// A graph over the default artifact budget is dropped by default and stored
+// once the deployment raises the limit.
+func TestReplaceSCIPStoresAGenerationAboveTheDefaultBudget(t *testing.T) {
+	store, repositoryID := readyGraphStore(t, testSHA('a'))
+	// 530 symbols with documentation at the per-field cap: about 133 MiB.
+	upload := scipgraph.Upload{ProjectRoot: "file:///src", IndexerName: "test", IndexerVersion: "1"}
+	documentation := strings.Repeat("documented ", (256<<10)/len("documented "))
+	for index := range 530 {
+		symbol := fmt.Sprintf("scip go example.com/acme v1 pkg/Type%03d#", index)
+		upload.Occurrences = append(upload.Occurrences, scipgraph.Occurrence{Path: "a.go", Symbol: symbol, StartLine: int32(index), EndLine: int32(index), EndCharacter: 2, PositionEncoding: 1, Roles: definitionRole})
+		upload.Symbols = append(upload.Symbols, scipgraph.SymbolInformation{Symbol: symbol, Documentation: documentation})
+	}
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), upload); err != nil {
+		t.Fatal(err)
+	}
+	status, err := store.GraphStatus(t.Context(), repositoryID)
+	if err != nil || !strings.Contains(status.SCIPGenerationDropped, "need more than the 134217728 byte artifact budget") {
+		t.Fatalf("status under the default budget=%#v err=%v", status, err)
+	}
+	if id, source := activeV1(t, store, repositoryID); id == 0 || source != GraphSourceSCIP {
+		t.Fatalf("v1 fallback=%d source=%q", id, source)
+	}
+
+	store.SCIPGraphLimits = graphartifact.Limits{MaxArtifactBytes: 512 << 20}
+	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), upload); err != nil {
+		t.Fatal(err)
+	}
+	generation, err := scipGeneration(t, store, repositoryID)
+	if err != nil || generation == nil {
+		t.Fatalf("generation under the raised budget=%#v err=%v", generation, err)
+	}
+	if id, _ := activeV1(t, store, repositoryID); id != 0 {
+		t.Fatalf("v1 fallback %d still active", id)
+	}
+	if status, err = store.GraphStatus(t.Context(), repositoryID); err != nil || status.SCIPGenerationDropped != "" {
+		t.Fatalf("status under the raised budget=%#v err=%v", status, err)
+	}
+	// A stored generation stays loadable whatever limits built it.
+	if loaded, err := store.LoadGraphV2(t.Context(), repositoryID, generation.ID); err != nil || len(loaded.Nodes) != 531 {
+		t.Fatalf("loaded generation err=%v", err)
 	}
 }
