@@ -92,8 +92,9 @@ func TestGraphQueryManifestsSelectGeneration(t *testing.T) {
 }
 
 // TestLegacyGraphQueriesAnswerFromSCIPGenerations runs the same context,
-// impact and trace requests against the two generations one SCIP upload
-// derives. The answers must agree except where the generations record
+// impact and trace requests against the generation a SCIP upload derives and
+// against the v1 graph it derives instead when the generation is dropped. The
+// answers must agree except where the generations record
 // different facts, which the per-generation expectations name.
 func TestLegacyGraphQueriesAnswerFromSCIPGenerations(t *testing.T) {
 	const (
@@ -128,7 +129,7 @@ func TestLegacyGraphQueriesAnswerFromSCIPGenerations(t *testing.T) {
 	}
 	for _, generation := range []struct {
 		name                 string
-		retiredSchema        int
+		limits               graphartifact.Limits
 		language, typeKind   string
 		referenceReason      string
 		relationshipReason   string
@@ -136,18 +137,18 @@ func TestLegacyGraphQueriesAnswerFromSCIPGenerations(t *testing.T) {
 		undefined            graphprotocol.Symbol
 		wantTypeKindAccepted []string
 	}{
-		{name: "v2", retiredSchema: 1, language: "go", typeKind: "class", referenceReason: "scip_enclosing_range", relationshipReason: "scip_relationship", wantManifestVersion: 2, wantTypeKindAccepted: []string{"type", "class"},
+		{name: "v2", language: "go", typeKind: "class", referenceReason: "scip_enclosing_range", relationshipReason: "scip_relationship", wantManifestVersion: 2, wantTypeKindAccepted: []string{"type", "class"},
 			undefined: graphprotocol.Symbol{Language: "go"}},
-		{name: "v1 fallback", retiredSchema: 2, typeKind: "type", referenceReason: "scip", relationshipReason: "scip", wantManifestVersion: 1, wantTypeKindAccepted: []string{"type"},
+		{name: "v1 fallback", limits: graphartifact.Limits{MaxNodes: 1}, typeKind: "type", referenceReason: "scip", relationshipReason: "scip", wantManifestVersion: 1, wantTypeKindAccepted: []string{"type"},
 			// v1 places a symbol it never saw defined at its first reference.
 			undefined: graphprotocol.Symbol{FilePath: "pkg/a.go", Range: graphprotocol.Position{StartLine: 31, StartCharacter: 1, EndLine: 31, EndCharacter: 6}}},
 	} {
 		t.Run(generation.name, func(t *testing.T) {
 			store, repositoryID := readyGraphStore(t, testSHA('a'))
+			store.SCIPGraphLimits = generation.limits
 			if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), upload); err != nil {
 				t.Fatal(err)
 			}
-			retireGenerations(t, store, repositoryID, generation.retiredSchema)
 			if manifests, err := store.Manifests(t.Context()); err != nil || manifests[repositoryID].SchemaVersion != generation.wantManifestVersion {
 				t.Fatalf("manifests=%#v err=%v", manifests, err)
 			}
@@ -243,7 +244,6 @@ func TestLegacyGraphQueriesAnswerFromSCIPGenerations(t *testing.T) {
 			if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("b.go", globalSymbol, definitionRole)); err != nil {
 				t.Fatal(err)
 			}
-			retireGenerations(t, store, repositoryID, generation.retiredSchema)
 			if err := service.ValidateContextSnapshots(t.Context(), byUID.Snapshots); !errors.Is(err, graphquery.ErrGenerationChanged) {
 				t.Fatalf("ValidateContextSnapshots() after replacement=%v", err)
 			}
@@ -404,13 +404,6 @@ func TestLegacyV2NeighborQueryUsesEdgeIndexes(t *testing.T) {
 		if !strings.Contains(plan, index) || strings.Contains(plan, "Seq Scan on graph_v2_edges") || strings.Contains(plan, "Seq Scan on graph_v2_nodes") {
 			t.Fatalf("%s frontier plan does not use %s:\n%s", direction, index, plan)
 		}
-	}
-}
-
-func retireGenerations(t *testing.T, store *Store, repositoryID int64, schemaVersion int) {
-	t.Helper()
-	if _, err := store.pool.Exec(t.Context(), `update graph_uploads set active=false, retired_at=now() where repository_id=$1 and schema_version=$2 and active`, repositoryID, schemaVersion); err != nil {
-		t.Fatal(err)
 	}
 }
 

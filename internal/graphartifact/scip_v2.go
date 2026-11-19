@@ -28,7 +28,8 @@ const scipProducerVersion = "1"
 
 // ErrGraphTooLarge reports a SCIP index whose derived graph exceeds the v2
 // generation limits (entity and edge counts or the artifact byte budget); the
-// SCIP navigation data itself stays usable.
+// SCIP navigation data itself stays usable. FromSCIPV2 wraps it with the
+// limit that was exceeded.
 var ErrGraphTooLarge = errors.New("scip graph exceeds generation limits")
 
 // maxDocumentationBytes mirrors the validator's per-field ceiling for
@@ -126,7 +127,7 @@ func FromSCIPV2(repository, commit string, upload scipgraph.Upload, limits Limit
 		}
 	}
 	if len(c.nodes) > limits.MaxNodes || len(c.edges) > limits.MaxEdges {
-		return nil, ErrGraphTooLarge
+		return nil, fmt.Errorf("%w: %d entities (limit %d), %d edges (limit %d)", ErrGraphTooLarge, len(c.nodes), limits.MaxNodes, len(c.edges), limits.MaxEdges)
 	}
 	evidence, err := json.Marshal(map[string]any{"position_encodings": distinct(c.encodings), "file_facts": "absent"})
 	if err != nil {
@@ -149,7 +150,7 @@ func FromSCIPV2(repository, commit string, upload scipgraph.Upload, limits Limit
 	// The validator's byte budget decides whether a large index fits; report
 	// that as too large, not as an invalid artifact.
 	if budget := (v2Budget{limits: limits}); !budget.message(artifact.ProtoReflect()) && budget.size > limits.MaxArtifactBytes {
-		return nil, ErrGraphTooLarge
+		return nil, fmt.Errorf("%w: %d entities and %d edges need more than the %d byte artifact budget", ErrGraphTooLarge, len(artifact.Nodes), len(artifact.Edges), limits.MaxArtifactBytes)
 	}
 	if err := ValidateV2(artifact, limits); err != nil {
 		return nil, err

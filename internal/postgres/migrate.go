@@ -95,7 +95,11 @@ func backfillLegacySCIPGraphs(ctx context.Context, tx pgx.Tx) error {
 		from scip_uploads scip
 		join repositories on repositories.id=scip.repository_id and repositories.indexed_sha=scip.commit
 		left join graph_uploads graph on graph.repository_id=scip.repository_id and graph.active and graph.schema_version=1
-		where graph.id is null or graph.source='scip'
+		where (graph.id is null or graph.source='scip')
+		-- A repository with the SCIP-derived v2 generation is answered from it;
+		-- see RetireSupersededSCIPGraphs.
+		and not exists (select 1 from graph_uploads generation where generation.repository_id=scip.repository_id
+			and generation.active and generation.schema_version=2 and generation.source='scip' and generation.commit=scip.commit)
 		order by scip.repository_id`)
 	if err != nil {
 		return err

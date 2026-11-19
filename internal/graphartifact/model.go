@@ -1,5 +1,7 @@
 package graphartifact
 
+import "math"
+
 type Artifact struct {
 	SchemaVersion uint32
 	Analyzer      Analyzer
@@ -64,6 +66,16 @@ const (
 	HardMaxEdges              = 10_000_000
 	DefaultMaxPathBytes       = 4_096
 	DefaultMaxIdentifierBytes = 16_384
+)
+
+// The v2 artifact byte budget charges every string and 16 bytes per field; a
+// SCIP-derived edge costs about 1 KiB of it. A deployment can raise the budget
+// of SCIP-derived generations to the hard maximum; a published artifact is
+// bounded by its upload size long before. min keeps the constant an int on
+// 32-bit builds.
+const (
+	DefaultMaxArtifactBytes = 128 << 20
+	HardMaxArtifactBytes    = min(4<<30, math.MaxInt)
 )
 
 type Limits struct {

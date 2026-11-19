@@ -6,14 +6,15 @@ per internal repository ID and two active v2 generations, one per source: the
 v2 generations serve the entity, discovery, exploration and symbol workflows,
 `context`, `impact` and `trace` read either version (see [Legacy queries over
 v2](#legacy-queries-over-v2)), and no write retires a generation in another
-slot. A SCIP upload publishes the v1 generation and
-the SCIP-derived v2 generation (see [Versions and
+slot. A SCIP upload publishes the SCIP-derived v2 generation, or the v1
+generation when that one is dropped (see [Versions and
 publication](#versions-and-publication)). Each publication locks the
 repository, checks its indexed SHA, and writes all facts plus activation in
 one transaction. Failure, cancellation, or a failed graph-job
 completion rolls back retirement and all copied facts. A repository's older
 SHA is not selected as current, but its existing generation remains readable
-through its pinned upload ID. Existing `graphquery.QuerySnapshot` triples need
+through its pinned upload ID until it is pruned (see [Retention of retired
+generations](#retention-of-retired-generations)). Existing `graphquery.QuerySnapshot` triples need
 no interface change.
 
 ## Versions and publication
@@ -42,7 +43,9 @@ slot, and never needs or triggers `replace_producer`. A publication's
 `replace_producer=true` is needed only when that generation's producer differs
 from the artifact's; the SCIP-derived generation never counts as another
 producer. Retry deduplication by content hash applies within the slot being
-written. A derived graph that does not fit retires only the SCIP-derived slot.
+written. A derived graph that does not fit the limits in `Store.SCIPGraphLimits`
+(`GRAPHNEST_SCIP_GENERATION_MAX_*`) retires only the SCIP-derived slot; the
+reason, naming the limit, is stored in `scip_uploads.generation_dropped`.
 
 Readiness picks, per repository and indexed commit, the published generation
 when one is active at that commit, otherwise the SCIP-derived generation at
@@ -72,8 +75,17 @@ SCIP's `is_type_definition` relationships as `extends`. An edge without a
 recorded confidence passes every `min_confidence` and reports 1. Frontier
 lookups use `graph_v2_edges_outgoing` and `graph_v2_edges_incoming`.
 
-Writes are unchanged: a SCIP upload still derives the v1 graph even where it is
-no longer read.
+A SCIP upload writes one of the two. When the derived v2 generation is stored,
+the upload derives no v1 graph and retires the repository's active v1
+generation if its source is `scip`. When the generation is dropped (too large,
+invalid, or the repository is unavailable for publication), the upload derives
+the v1 graph (`graphartifact.FromSCIP`) as before, and step 4 of the order
+above answers. A v1 generation with source `managed` or `external` is never
+retired by a SCIP upload. `RetireSupersededSCIPGraphs` does the same for v1
+graphs stored by earlier releases, which derived both: it retires a SCIP-derived
+v1 graph when the repository has an active SCIP-derived v2 generation at the
+same commit or at the indexed commit. The migration 019 backfill skips those
+repositories, so it cannot bring such a graph back.
 
 `postgres.ReplaceGraphV2` is the storage entry point for external publication;
 `ReplaceSCIP` publishes SCIP-derived generations through the same transactional
@@ -118,7 +130,8 @@ original source IDs, lists and extension JSON are preserved. The upload header
 retains project metadata, diagnostics-independent import evidence and extensions.
 Collection ordinals preserve wire ordering without relying on database row IDs.
 `LoadGraphV2(repositoryID, uploadID)` reconstructs and validates the artifact in
-a read-only repeatable-read transaction, including retired generations. The
+a read-only repeatable-read transaction, including a retired generation that
+has not been pruned yet, and accepts any size up to the hard maximums. The
 caller must authorize the repository. V1 `LoadGraph` also uses repeatable-read
 so concurrent deletion cannot return a header with missing nodes/edges.
 
@@ -185,23 +198,48 @@ migration transaction, so the current writer can safely handle historical data.
 Failed publication leaves the previous active generation intact. A stale or
 provider-conflicting publication must re-read state and obtain an explicit new
 publication decision; do not blindly retry with a substituted generation ID.
-There is no automatic old-generation activation or timed pruning. To recover
+There is no automatic old-generation activation, and a retired generation is
+deleted an hour after it was retired. To recover
 facts at the current indexed SHA, publish a validated artifact through the same
 expected-generation checks. Rolling back to an old binary requires draining,
 removing incompatible generations, and verifying its queries and writes against
 the retained schema; it is not guaranteed merely by reverting a binary.
 
-## Offline retention
+## Retention of retired generations
 
-Retired generations intentionally consume disk until operator cleanup. There is
-no bounded history claim and no reader lease/pinning framework in S1.03. Timed
-pruning while queries run would break multi-request traversal snapshots.
+A retired generation (`active = false`, `retired_at` set) is deleted by the
+server an hour after it was retired. `PruneRetiredGraphGenerations` takes the
+generation retired longest (`for update skip locked`, so replicas take
+different ones) and deletes at most a batch of its facts in one transaction,
+dependents first: `graph_edges`, `graph_nodes`, then `graph_v2_discovery`,
+`graph_v2_edges`, `graph_v2_unresolved`, `graph_v2_diagnostics`,
+`graph_v2_files` and `graph_v2_nodes`. The `graph_uploads` row is deleted in
+the transaction that finds no facts left, so an interrupted prune resumes
+where it stopped. The server's pass and its budget are described in the [operations
+guide](operations.md#retired-generations-and-disk-space).
 
-After stopping/draining **all** graph readers, index/SCIP/graph writers and
-background jobs, review the following count and delete only inactive generations
-in the target GraphNest database/schema. Invalidated clients must start new
-queries after the maintenance window; cached snapshot IDs cannot be resumed.
-The transaction locks the generation table and preserves every active upload:
+Readers of a retired generation, and why an hour is enough:
+
+- A request that resolved the generation before its replacement committed
+  reads it by pinned upload ID and then finds the active generation changed
+  (`generation_changed`). Requests are bounded at seconds.
+- A cursor carries a fingerprint over the upload IDs it started on. The next
+  page compares it with the active generations and answers
+  `generation_changed`; it never reads the retired rows.
+- Explore session history is kept in memory per upload ID for 15 minutes and
+  reads no generation.
+- `expected_generation` is compared with the active generation and
+  `replaced_generation` is only a number in the response.
+- `RebuildGraphDiscovery` and `LoadGraphV2` take an explicit upload ID and
+  answer `no rows` for a pruned one.
+
+`retired_at` is the start of the transaction that replaced the generation,
+and a large upload commits minutes after it started. The grace period has to
+cover that, not only the request, which is why it is an hour and not a minute.
+
+Deleting leaves the space allocated to the tables; see the operations guide
+for `VACUUM FULL` and `pg_repack`. To delete every retired generation at once
+during a maintenance window, with all graph readers and writers stopped:
 
 ```sql
 BEGIN;
@@ -211,10 +249,8 @@ DELETE FROM graph_uploads WHERE NOT active;
 COMMIT;
 ```
 
-Foreign keys cascade deletion of the retired generation's facts. Take the usual
-database backup before maintenance if old generations are needed for recovery.
-This SQL is an operator procedure, not a scheduled cleanup service. Add bounded
-online retention only together with a reader pin/expiry contract.
+Foreign keys cascade the deletion to the facts. This is one transaction of
+whatever size the backlog has; the server's batches are the bounded way.
 
 ## Reproduce index-plan evidence
 

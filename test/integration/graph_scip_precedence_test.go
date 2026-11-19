@@ -92,9 +92,10 @@ func TestSCIPUploadAfterPublishedGenerationAdvances(t *testing.T) {
 	if err != nil || len(both) != 2 || both[0].ID != active.ID || both[1].Source != api.GraphSourceSCIP || both[1].Commit != precedenceSHAY {
 		t.Fatalf("active v2 generations=%#v err=%v", both, err)
 	}
-	var v1Source, v1Commit string
-	if err := h.pool.QueryRow(t.Context(), `select source, commit from graph_uploads where repository_id=$1 and active and schema_version=1`, repositoryID).Scan(&v1Source, &v1Commit); err != nil || v1Source != "scip" || v1Commit != precedenceSHAY {
-		t.Fatalf("active v1 generation=%s@%s err=%v", v1Source, v1Commit, err)
+	// The generation fits, so the upload derives no v1 graph beside it.
+	var v1 int
+	if err := h.pool.QueryRow(t.Context(), `select count(*) from graph_uploads where repository_id=$1 and schema_version=1`, repositoryID).Scan(&v1); err != nil || v1 != 0 {
+		t.Fatalf("v1 generations=%d err=%v, want none", v1, err)
 	}
 
 	// 2. Repository status reports the generation the tools use: SCIP-derived at Y.

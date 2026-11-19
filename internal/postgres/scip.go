@@ -83,11 +83,6 @@ func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit stri
 				"occurrences", len(upload.Occurrences), "relationships", len(upload.Relationships))
 		}
 	}()
-	// Both derived graphs are built before the repository row is locked.
-	artifact, err := graphartifact.FromSCIP(graphartifact.SCIPRepository{ID: repositoryID, Commit: commit}, upload.Occurrences, upload.Relationships)
-	if err != nil {
-		return err
-	}
 	var publicID int64
 	if err := s.pool.QueryRow(ctx, `select github_id from repositories where id=$1`, repositoryID).Scan(&publicID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -95,14 +90,30 @@ func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit stri
 		}
 		return err
 	}
-	// A derived graph the generation cannot hold, or producer text the
-	// contract rejects, is dropped: the navigation upload must still land.
-	generation, err := graphartifact.FromSCIPV2(strconv.FormatInt(publicID, 10), commit, upload, s.scipGraphLimits)
+	// The derived graph is built before the repository row is locked. One the
+	// generation cannot hold, or producer text the contract rejects, is
+	// dropped: the navigation upload must still land.
+	generation, err := graphartifact.FromSCIPV2(strconv.FormatInt(publicID, 10), commit, upload, s.SCIPGraphLimits)
 	dropped := err
 	if errors.Is(err, graphartifact.ErrGraphTooLarge) || errors.Is(err, graphartifact.ErrInvalidArtifact) {
 		generation = nil
 	} else if err != nil {
 		return err
+	}
+	// The v1 graph only answers context, impact and trace for a repository
+	// without a v2 generation, so it is derived only when there is none.
+	fallback := func() (graphartifact.Artifact, error) {
+		return graphartifact.FromSCIP(graphartifact.SCIPRepository{ID: repositoryID, Commit: commit}, upload.Occurrences, upload.Relationships)
+	}
+	var artifact graphartifact.Artifact
+	// Stored with the upload, so the graph status says why without server logs.
+	var droppedReason *string
+	if generation == nil {
+		if artifact, err = fallback(); err != nil {
+			return err
+		}
+		reason := dropped.Error()
+		droppedReason = &reason
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -121,8 +132,8 @@ func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit stri
 	}
 	var uploadID int64
 	if err := tx.QueryRow(ctx, `insert into scip_uploads
-		(repository_id, commit, project_root, indexer_name, indexer_version)
-		values ($1, $2, $3, $4, $5) returning id`, repositoryID, commit, upload.ProjectRoot, upload.IndexerName, upload.IndexerVersion).Scan(&uploadID); err != nil {
+		(repository_id, commit, project_root, indexer_name, indexer_version, generation_dropped)
+		values ($1, $2, $3, $4, $5, $6) returning id`, repositoryID, commit, upload.ProjectRoot, upload.IndexerName, upload.IndexerVersion, droppedReason).Scan(&uploadID); err != nil {
 		return err
 	}
 	if _, err := tx.CopyFrom(ctx, pgx.Identifier{"scip_occurrences"},
@@ -150,11 +161,27 @@ func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit stri
 		})); err != nil {
 		return err
 	}
-	if _, err := replaceGraph(ctx, tx, repositoryID, GraphSourceSCIP, artifact); err != nil {
+	published, err := publishSCIPGraphV2(ctx, tx, repositoryID, generation, s.SCIPGraphLimits)
+	if err != nil {
 		return err
 	}
-	if err := publishSCIPGraphV2(ctx, tx, repositoryID, generation); err != nil {
-		return err
+	if published {
+		// Retired, then pruned: the v2 generation answers from here on. A
+		// scanner or uploaded v1 graph is not this upload's to retire.
+		if _, err := tx.Exec(ctx, `update graph_uploads set active=false, retired_at=now()
+			where repository_id=$1 and active and schema_version=1 and source='scip'`, repositoryID); err != nil {
+			return err
+		}
+	} else {
+		if generation != nil {
+			// The generation fits but the repository cannot take one.
+			if artifact, err = fallback(); err != nil {
+				return err
+			}
+		}
+		if _, err := replaceGraph(ctx, tx, repositoryID, GraphSourceSCIP, artifact); err != nil {
+			return err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return err
@@ -173,28 +200,50 @@ func (s *Store) ReplaceSCIP(ctx context.Context, repositoryID int64, commit stri
 // SCIP-derived slot; a publisher's generation is never touched. A nil
 // generation (the derived graph did not fit the generation limits) retires the
 // previous SCIP-derived one, so readiness falls back to the published
-// generation or reports absent rather than an older index's content.
-func publishSCIPGraphV2(ctx context.Context, tx pgx.Tx, repositoryID int64, generation *graphv2.Artifact) error {
+// generation or reports absent rather than an older index's content. It
+// reports whether the repository now has the generation. limits are the ones
+// the generation was derived under.
+func publishSCIPGraphV2(ctx context.Context, tx pgx.Tx, repositoryID int64, generation *graphv2.Artifact, limits graphartifact.Limits) (bool, error) {
 	var activeID int64
 	err := tx.QueryRow(ctx, `select id from graph_uploads where repository_id=$1 and active and schema_version=2 and source='scip'`, repositoryID).Scan(&activeID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return err
+		return false, err
 	}
 	if generation == nil {
 		if activeID == 0 {
-			return nil
+			return false, nil
 		}
-		// ponytail: nothing records why; add a graph_uploads note if operators need the reason without re-uploading.
 		_, err := tx.Exec(ctx, `update graph_uploads set active=false, retired_at=now() where id=$1`, activeID)
-		return err
+		return false, err
 	}
-	_, err = replaceGraphV2(ctx, tx, repositoryID, GraphPublication{Publisher: graphartifact.SCIPProducer, Capabilities: graphartifact.SCIPCapabilities(), ExpectedActiveID: activeID}, GraphSourceSCIP, generation)
+	_, err = replaceGraphV2(ctx, tx, repositoryID, GraphPublication{Publisher: graphartifact.SCIPProducer, Capabilities: graphartifact.SCIPCapabilities(), ExpectedActiveID: activeID}, GraphSourceSCIP, generation, limits)
 	if errors.Is(err, ErrGraphRepositoryUnavailable) {
 		// A disabled, archived or suspended repository keeps its navigation data
 		// without a queryable generation, as before.
-		return nil
+		return false, nil
 	}
-	return err
+	return err == nil, err
+}
+
+// RetireSupersededSCIPGraphs retires at most limit SCIP-derived v1 graphs that
+// nothing reads any more: those of repositories with an active SCIP-derived v2
+// generation at the same commit or at the indexed commit, which outranks the
+// v1 graph in Manifests. Releases before this one derived both from every
+// upload. A scanner or uploaded v1 graph is never touched; the retired graphs
+// are deleted by PruneRetiredGraphGenerations.
+func (s *Store) RetireSupersededSCIPGraphs(ctx context.Context, limit int) (int64, error) {
+	result, err := s.pool.Exec(ctx, `update graph_uploads set active=false, retired_at=now()
+		where active and schema_version=1 and source='scip' and id=any(array(
+			select v1.id from graph_uploads v1
+			join repositories on repositories.id=v1.repository_id
+			join graph_uploads v2 on v2.repository_id=v1.repository_id and v2.active and v2.schema_version=2 and v2.source='scip'
+				and (v2.commit=v1.commit or v2.commit=repositories.indexed_sha)
+			where v1.active and v1.schema_version=1 and v1.source='scip'
+			order by v1.id limit $1 for update of v1 skip locked))`, limit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 func (s *Store) ReplacePackages(ctx context.Context, repositoryID int64, source string, mappings []scipgraph.PackageMapping) error {

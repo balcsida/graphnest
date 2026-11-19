@@ -235,7 +235,10 @@ type GraphStatus struct {
 	JobState     GraphJobState       `json:"job_state,omitempty"`
 	ErrorCode    string              `json:"error_code,omitempty"`
 	SCIPFallback *SCIPFallbackStatus `json:"scip_fallback,omitempty"`
-	Publication  *GraphPublication   `json:"publication,omitempty"`
+	// SCIPGenerationDropped says why the SCIP upload at the indexed commit has
+	// no v2 generation: which generation limit its graph exceeded.
+	SCIPGenerationDropped string            `json:"scip_generation_dropped,omitempty"`
+	Publication           *GraphPublication `json:"publication,omitempty"`
 }
 
 type SCIPFallbackStatus struct {

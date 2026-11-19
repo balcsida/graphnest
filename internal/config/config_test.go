@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/balcsida/graphnest/internal/graphartifact"
 )
 
 func TestLoadUsesGraphNestEnvironmentPrefix(t *testing.T) {
@@ -453,6 +455,37 @@ func TestLoadSCIPUploadLimitIsIndependent(t *testing.T) {
 	}
 }
 
+func TestLoadSCIPGenerationLimits(t *testing.T) {
+	setValidEnvironment(t)
+	got, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (graphartifact.Limits{MaxNodes: 500_000, MaxEdges: 2_000_000, MaxArtifactBytes: 128 << 20}); got.Limits.SCIPGeneration != want {
+		t.Fatalf("default SCIP generation limits = %#v", got.Limits.SCIPGeneration)
+	}
+	t.Setenv("GRAPHNEST_SCIP_GENERATION_MAX_NODES", "1000000")
+	t.Setenv("GRAPHNEST_SCIP_GENERATION_MAX_EDGES", "4000000")
+	t.Setenv("GRAPHNEST_SCIP_GENERATION_MAX_BYTES", "1073741824")
+	if got, err = Load(); err != nil {
+		t.Fatal(err)
+	}
+	if want := (graphartifact.Limits{MaxNodes: 1_000_000, MaxEdges: 4_000_000, MaxArtifactBytes: 1 << 30}); got.Limits.SCIPGeneration != want {
+		t.Fatalf("SCIP generation limits = %#v", got.Limits.SCIPGeneration)
+	}
+	for _, name := range []string{"GRAPHNEST_SCIP_GENERATION_MAX_NODES", "GRAPHNEST_SCIP_GENERATION_MAX_EDGES", "GRAPHNEST_SCIP_GENERATION_MAX_BYTES"} {
+		for _, value := range []string{"0", "-1", "many"} {
+			t.Run(name+"="+value, func(t *testing.T) {
+				setValidEnvironment(t)
+				t.Setenv(name, value)
+				if _, err := Load(); !errors.Is(err, ErrInvalid) {
+					t.Fatalf("Load() error = %v", err)
+				}
+			})
+		}
+	}
+}
+
 func TestLoadGraphUploadLimitIsIndependent(t *testing.T) {
 	setValidEnvironment(t)
 	t.Setenv("GRAPHNEST_GRAPH_MAX_UPLOAD_BYTES", "1048576")
@@ -479,6 +512,9 @@ func TestLoadEnforcesSafetyCaps(t *testing.T) {
 		{"request bytes", "GRAPHNEST_MAX_REQUEST_BYTES", "65536", "65537"},
 		{"SCIP upload bytes", "GRAPHNEST_SCIP_MAX_UPLOAD_BYTES", "268435456", "268435457"},
 		{"graph upload bytes", "GRAPHNEST_GRAPH_MAX_UPLOAD_BYTES", "268435456", "268435457"},
+		{"SCIP generation entities", "GRAPHNEST_SCIP_GENERATION_MAX_NODES", "2000000", "2000001"},
+		{"SCIP generation edges", "GRAPHNEST_SCIP_GENERATION_MAX_EDGES", "10000000", "10000001"},
+		{"SCIP generation bytes", "GRAPHNEST_SCIP_GENERATION_MAX_BYTES", "4294967296", "4294967297"},
 	}
 	for _, test := range cases {
 		t.Run(test.name+" boundary", func(t *testing.T) {

@@ -14,6 +14,8 @@ import (
 
 func TestGraphManifestsPreferCurrentArtifactAndFallBackToSCIP(t *testing.T) {
 	store, repositoryID := readyGraphStore(t, testSHA('a'))
+	// The derived generation is dropped, so the upload writes the v1 fallback.
+	store.SCIPGraphLimits = graphartifact.Limits{MaxNodes: 1}
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("b.go", globalSymbol, definitionRole)); err != nil {
 		t.Fatal(err)
 	}
@@ -78,6 +80,8 @@ func TestGraphSnapshotIDsReserveTheSCIPManifestRange(t *testing.T) {
 
 func TestGraphManifestsUsesOneFallbackSnapshot(t *testing.T) {
 	store, repositoryID := readyGraphStore(t, testSHA('a'))
+	// The derived generation is dropped, so the upload writes the v1 fallback.
+	store.SCIPGraphLimits = graphartifact.Limits{MaxNodes: 1}
 	oldSymbol := "scip go example.com/graphnest v1 pkg/Old#"
 	newSymbol := "scip go example.com/graphnest v1 pkg/New#"
 	if err := store.ReplaceSCIP(t.Context(), repositoryID, testSHA('a'), uploadWith("old.go", oldSymbol, definitionRole)); err != nil {

@@ -173,7 +173,7 @@ func (s *Store) GraphStatus(ctx context.Context, repositoryID int64) (api.GraphS
 	var indexedSHA string
 	var source, jobState, errorCode, scipCommit *string
 	err := s.pool.QueryRow(ctx, `select repositories.github_id, coalesce(repositories.indexed_sha, ''),
-		upload.source, job.state, job.error_code, scip.commit
+		upload.source, job.state, job.error_code, scip.commit, coalesce(scip.generation_dropped, '')
 		from repositories
 		left join graph_uploads upload on upload.repository_id=repositories.id and upload.commit=repositories.indexed_sha and upload.active and upload.schema_version=1
 		left join lateral (
@@ -182,7 +182,7 @@ func (s *Store) GraphStatus(ctx context.Context, repositoryID int64) (api.GraphS
 			order by updated_at desc, id desc limit 1
 		) job on true
 		left join scip_uploads scip on scip.repository_id=repositories.id and scip.commit=repositories.indexed_sha
-		where repositories.id=$1`, repositoryID).Scan(&status.RepositoryID, &indexedSHA, &source, &jobState, &errorCode, &scipCommit)
+		where repositories.id=$1`, repositoryID).Scan(&status.RepositoryID, &indexedSHA, &source, &jobState, &errorCode, &scipCommit, &status.SCIPGenerationDropped)
 	if err != nil {
 		return api.GraphStatus{}, err
 	}
@@ -252,7 +252,8 @@ func replaceGraph(ctx context.Context, tx pgx.Tx, repositoryID int64, source Gra
 		(current.Source == GraphSourceExternal && source != GraphSourceExternal || current.Source == GraphSourceManaged && source == GraphSourceSCIP) {
 		return GraphReplacement{Upload: current}, nil
 	}
-	// ponytail: retain retired generations until offline cleanup; add bounded retention only with reader pinning.
+	// The retired generation stays readable for requests that pinned it until
+	// PruneRetiredGraphGenerations deletes it after the grace period.
 	if current.ID != 0 {
 		if _, err := tx.Exec(ctx, `update graph_uploads set active=false, retired_at=now() where id=$1`, current.ID); err != nil {
 			return GraphReplacement{}, err

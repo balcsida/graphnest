@@ -135,7 +135,7 @@ func TestV2PredecodeBounds(t *testing.T) {
 			t.Fatalf("field %d allocated before rejecting: %.0f", field, allocations)
 		}
 	}
-	for name, limits := range map[string]Limits{"bytes": {MaxArtifactBytes: 1}, "metadata": {MaxMetadataBytes: 1}, "extension": {MaxExtensionBytes: 1}, "identifier": {MaxIdentifierBytes: 1}, "negative": {MaxFiles: -1}, "above hard cap": {MaxArtifactBytes: 257 << 20}} {
+	for name, limits := range map[string]Limits{"bytes": {MaxArtifactBytes: 1}, "metadata": {MaxMetadataBytes: 1}, "extension": {MaxExtensionBytes: 1}, "identifier": {MaxIdentifierBytes: 1}, "negative": {MaxFiles: -1}, "above hard cap": {MaxEdges: HardMaxEdges + 1}} {
 		t.Run(name, func(t *testing.T) {
 			a := v2WithEvidence()
 			data, _ := proto.Marshal(a)

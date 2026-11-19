@@ -32,9 +32,10 @@ indexer invokes its `enrich` subcommand on the same archive snapshot; it is not
 a standalone worker. The compatibility image is not published or selected
 automatically. The scanner produces v1 generations only, which serve
 `context`, `impact` and `trace`. Direct `.scip` uploads remain supported
-independently for code navigation and derive both the v1 fallback graph and
-the v2 generation the `graph_*` and `explore` tools read; without a SCIP
-upload or a published artifact those tools report `graph_missing`.
+independently for code navigation and derive the v2 generation the `graph_*`
+and `explore` tools read, or only the v1 fallback graph when that generation
+does not fit the configured limits; without a SCIP upload or a published
+artifact those tools report `graph_missing`.
 
 `context`, `impact` and `trace` keep their request and response contract and
 read whichever generation is at the indexed commit: a published v2

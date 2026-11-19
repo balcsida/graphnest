@@ -1312,3 +1312,97 @@ func TestMCPOAuthKeyPreservesBinaryWhitespace(t *testing.T) {
 		t.Fatalf("loaded key differs from file bytes: plaintext=%q err=%v", plaintext, err)
 	}
 }
+
+type fakeGraphMaintenance struct {
+	batches []postgres.GraphPruned
+	retired int64
+	retires int
+	calls   atomic.Int64
+	grace   time.Duration
+	limit   int
+	err     error
+}
+
+func (fake *fakeGraphMaintenance) RetireSupersededSCIPGraphs(_ context.Context, limit int) (int64, error) {
+	fake.retires = limit
+	return fake.retired, fake.err
+}
+
+func (fake *fakeGraphMaintenance) PruneRetiredGraphGenerations(_ context.Context, grace time.Duration, limit int) (postgres.GraphPruned, error) {
+	call := int(fake.calls.Add(1))
+	fake.grace, fake.limit = grace, limit
+	if fake.err != nil {
+		return postgres.GraphPruned{}, fake.err
+	}
+	if call > len(fake.batches) {
+		return postgres.GraphPruned{}, nil
+	}
+	return fake.batches[call-1], nil
+}
+
+// One pass retires the SCIP-derived v1 graphs nothing reads, then prunes batch
+// after batch until nothing is due, never more than its budget, and reports
+// what it did.
+func TestGraphMaintenancePassIsBounded(t *testing.T) {
+	var log bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&log, nil))
+	metrics := observability.New()
+	store := &fakeGraphMaintenance{retired: 7, batches: []postgres.GraphPruned{{Rows: 10}, {Generations: 1, Rows: 4}}}
+	maintainGraphs(t.Context(), store, metrics, logger)
+	if store.calls.Load() != 3 || store.grace != graphRetiredGrace || store.limit != graphPruneBatchRows || store.retires != graphRetireBatch {
+		t.Fatalf("calls=%d grace=%s limit=%d retire limit=%d", store.calls.Load(), store.grace, store.limit, store.retires)
+	}
+	for _, want := range []string{"retired SCIP-derived v1 graphs", "graphs=7", "pruned retired graph generations", "generations=1", "rows=14"} {
+		if !strings.Contains(log.String(), want) {
+			t.Fatalf("log %q lacks %q", log.String(), want)
+		}
+	}
+	recorder := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	for _, want := range []string{"graphnest_graph_retired_scip_v1_total 7", "graphnest_graph_pruned_generations_total 1", "graphnest_graph_pruned_rows_total 14"} {
+		if !strings.Contains(recorder.Body.String(), want) {
+			t.Fatalf("metrics lack %q", want)
+		}
+	}
+
+	// A backlog larger than the budget is left for the next pass.
+	busy := &fakeGraphMaintenance{}
+	for range graphPruneBatches + 5 {
+		busy.batches = append(busy.batches, postgres.GraphPruned{Rows: graphPruneBatchRows})
+	}
+	maintainGraphs(t.Context(), busy, metrics, logger)
+	if busy.calls.Load() != graphPruneBatches {
+		t.Fatalf("calls=%d, want the budget of %d", busy.calls.Load(), graphPruneBatches)
+	}
+
+	// Nothing due is silent, a failure is logged and ends the pass.
+	log.Reset()
+	maintainGraphs(t.Context(), &fakeGraphMaintenance{}, metrics, logger)
+	if log.Len() != 0 {
+		t.Fatalf("idle pass logged: %s", log.String())
+	}
+	failing := &fakeGraphMaintenance{err: errors.New("database unavailable")}
+	maintainGraphs(t.Context(), failing, metrics, logger)
+	if failing.calls.Load() != 1 || strings.Count(log.String(), "level=ERROR") != 2 || !strings.Contains(log.String(), "database unavailable") {
+		t.Fatalf("calls=%d log=%q", failing.calls.Load(), log.String())
+	}
+}
+
+func TestGraphMaintenanceRunsInBackgroundAndStops(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	store := &fakeGraphMaintenance{}
+	done := startGraphMaintenance(ctx, time.Millisecond, store, observability.New(), slog.New(slog.DiscardHandler))
+	deadline := time.Now().Add(time.Second)
+	for store.calls.Load() < 3 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if store.calls.Load() < 3 {
+		t.Fatalf("passes=%d", store.calls.Load())
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("graph maintenance did not stop")
+	}
+}

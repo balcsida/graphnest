@@ -2063,6 +2063,9 @@ components:
         job_state: {type: string, enum: [queued, running, succeeded, failed, superseded]}
         error_code: {type: string}
         scip_fallback: {$ref: '#/components/schemas/SCIPFallbackStatus'}
+        scip_generation_dropped:
+          type: string
+          description: Why the SCIP index uploaded for the indexed commit has no v2 generation, naming the generation limit its graph exceeded. Absent when the generation was stored or no index was uploaded.
         publication: {$ref: '#/components/schemas/GraphPublication'}
     GraphPublication:
       type: object
