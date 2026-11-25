@@ -40,5 +40,6 @@ After the GitHub Release exists, the `homebrew` job asks
 `update-graphnest`). The tap takes each binary's SHA-256 from the release's
 checksums file and installs and tests the formula before publishing it. The job
 needs the `TAP_DISPATCH_TOKEN` secret: a fine-grained token with Contents: write
-on `balcsida/homebrew-tap` only. Without it the job leaves a notice and the
-tap's daily check picks up the release; if the job fails, rerun only that job.
+on `balcsida/homebrew-tap` only. Without it the job fails, because the tap no
+longer checks for releases on its own; set the secret and rerun only that job,
+or run the tap's `update-graphnest` workflow by hand for that version.
