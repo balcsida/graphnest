@@ -354,5 +354,9 @@ jobs:
         run: |
           set -euo pipefail
           # The tap no longer polls for releases, so a missed dispatch needs a manual run there.
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::TAP_DISPATCH_TOKEN is not set; run the tap's update-graphnest workflow by hand for v$VERSION"
+            exit 1
+          fi
           gh api repos/balcsida/homebrew-tap/dispatches \
             -f event_type=update-graphnest -f "client_payload[version]=$VERSION"
